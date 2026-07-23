@@ -101,6 +101,12 @@ export default function Documents({ me }) {
   async function upload(e) {
     e.preventDefault();
     const form = e.target;
+    // The file input is hidden, so it can't carry `required` (a hidden required
+    // field is unfocusable and blocks submit silently). Validate it here.
+    if (!form.file.files[0]) {
+      setFileName("Choose a file first");
+      return;
+    }
     const fd = new FormData();
     fd.append("folder", folder.id);
     fd.append("name", form.name.value);
@@ -221,7 +227,7 @@ export default function Documents({ me }) {
                     <option value="">Owner (me)</option>
                     {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
                   </select>
-                  <input ref={uploadRef} type="file" name="file" required style={{ display: "none" }}
+                  <input ref={uploadRef} type="file" name="file" style={{ display: "none" }}
                          onChange={(e) => setFileName(e.target.files[0]?.name || "")} />
                   <button type="button" className="btn" onClick={() => uploadRef.current.click()}>
                     {fileName ? `✓ ${fileName.slice(0, 18)}` : "Choose file"}

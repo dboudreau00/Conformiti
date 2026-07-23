@@ -21,9 +21,14 @@ export default function Calendar({ events = [] }) {
     const offset = (first.getDay() + 6) % 7;
     const start = new Date(year, month, 1 - offset);
     const today = new Date(); today.setHours(0, 0, 0, 0);
+    // Key cells by their LOCAL calendar date. Using toISOString() here would
+    // convert local midnight to UTC and shift the key by a day for anyone not
+    // on UTC, so events (keyed 'YYYY-MM-DD') would land on the wrong cell.
+    const localISO = (dt) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
     return Array.from({ length: 42 }, (_, i) => {
       const d = new Date(start); d.setDate(start.getDate() + i);
-      const iso = d.toISOString().slice(0, 10);
+      const iso = localISO(d);
       return {
         iso, day: d.getDate(),
         out: d.getMonth() !== month,
