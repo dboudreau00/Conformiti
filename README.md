@@ -1,11 +1,47 @@
 # Conformiti
 
+
+<img width="2816" height="1536" alt="Gemini_Generated_Image_35umof35umof35um" src="https://github.com/user-attachments/assets/9d7b80a9-57c3-4723-9686-d5e1f018f274" />
+
+
+<img width="2216" height="1025" alt="Screenshot 2026-07-23 102705" src="https://github.com/user-attachments/assets/51db74b2-eaf6-4189-b3f8-880c3688cff5" />
+
+
+
+
+<details>
+<summary><b>📸 Click to expand Screenshots Gallery (15 screens)</b></summary>
+<br>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/0b882dbb-945d-4d3b-aa93-0ab20401cbec" width="250" alt="App Icon / Logo" />
+</p>
+
+| View | View |
+| :---: | :---: |
+| <img src="https://github.com/user-attachments/assets/24189986-e29b-4cb2-9e2e-0346e7964bbb" width="100%" alt="Screenshot 1"> | <img src="https://github.com/user-attachments/assets/1baa8882-5eb8-4be0-91a5-047ce9ce2709" width="100%" alt="Screenshot 2"> |
+| <img src="https://github.com/user-attachments/assets/4927ea81-03f3-4ec3-b5eb-474a190392a1" width="100%" alt="Screenshot 3"> | <img src="https://github.com/user-attachments/assets/449e4924-aea6-4199-a42e-9c174d8d00b2" width="100%" alt="Screenshot 4"> |
+| <img src="https://github.com/user-attachments/assets/b5f48291-75ca-42c2-b216-489375e7d5a2" width="100%" alt="Screenshot 5"> | <img src="https://github.com/user-attachments/assets/f98614dd-c126-4611-b22a-0e794b1bfd8d" width="100%" alt="Screenshot 6"> |
+| <img src="https://github.com/user-attachments/assets/030f6d62-b918-46f8-960b-b9614d59a0ea" width="100%" alt="Screenshot 7"> | <img src="https://github.com/user-attachments/assets/efd43619-62eb-4ab1-9db1-60d3348d03e6" width="100%" alt="Screenshot 8"> |
+| <img src="https://github.com/user-attachments/assets/791ba0df-fc13-4071-b7a4-78d4a4e315f8" width="100%" alt="Screenshot 9"> | <img src="https://github.com/user-attachments/assets/2fd24bfa-0210-4172-bd7d-a3eb87afa92d" width="100%" alt="Screenshot 10"> |
+| <img src="https://github.com/user-attachments/assets/07144dc7-a2c7-4d56-a007-0aa5197f8c58" width="100%" alt="Screenshot 11"> | <img src="https://github.com/user-attachments/assets/d2601e7f-eee3-4922-84be-a37500222227" width="100%" alt="Screenshot 12"> |
+| <img src="https://github.com/user-attachments/assets/b662f589-2840-4711-854c-0b4b7491cc09" width="100%" alt="Screenshot 13"> | <img src="https://github.com/user-attachments/assets/47c1a091-b72b-4912-867c-b2ff3da94abb" width="100%" alt="Screenshot 14"> |
+
+</details>
+
+
+
 A Vanta-style compliance management application for **SOC 2**, **ISO/IEC 27001:2022**
 and **PCI DSS v4.0.1**. It ships with the full control libraries for all three
 frameworks, an evidence folder tree segregated by control, role-based access to
 folders, document lifecycle management with review scheduling, automated review
 reminders over a **standard IMAP/POP3 + SMTP mailbox** or **Amazon SES**, an
 analytics dashboard, an account settings area, and a dashboard calendar.
+
+
+**For preloaded compliance data you must unzip compliance-data.zip in the root directory before building.
+
+
 
 This is a working foundation (an MVP you can run today), not a finished
 commercial product. The architecture, data model and the specific features you
