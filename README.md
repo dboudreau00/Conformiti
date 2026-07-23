@@ -1,7 +1,8 @@
 # Conformiti
 
 
-<img width="2816" height="1536" alt="Gemini_Generated_Image_35umof35umof35um" src="https://github.com/user-attachments/assets/9d7b80a9-57c3-4723-9686-d5e1f018f274" />
+<img width="1344" height="732" alt="download" src="https://github.com/user-attachments/assets/fe7c1578-b9be-479b-ac5e-a56ddba3c76d" />
+
 
 
 <img width="2216" height="1025" alt="Screenshot 2026-07-23 102705" src="https://github.com/user-attachments/assets/51db74b2-eaf6-4189-b3f8-880c3688cff5" />
