@@ -2,7 +2,8 @@
 # Conformiti
 
 
-<img width="1024" height="559" alt="827b2be6-ec29-41a2-ad11-de0a6ab2ed75" src="https://github.com/user-attachments/assets/2a73b3ce-70b8-4018-a0e5-aea67c09f636" />
+<img width="966" height="297" alt="827b2be6-ec29-41a2-ad11-de0a6ab2ed75" src="https://github.com/user-attachments/assets/e9352e41-8969-41ad-9f6a-159f0a84d360" />
+
 
 
 
