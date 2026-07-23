@@ -1,9 +1,27 @@
 """Records mutating API calls to the audit log. Never breaks the request."""
+import ipaddress
 import logging
 
 logger = logging.getLogger(__name__)
 
 METHOD_ACTION = {"POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}
+
+
+def _client_ip(request):
+    """Best-effort client IP as a validated address, or None.
+
+    Behind our nginx, X-Forwarded-For ends with the real client IP the proxy
+    appended, so the rightmost hop is the least spoofable choice. The value is
+    validated because a header-controlled, malformed IP would otherwise make
+    the AuditLog insert fail on databases with a real inet type (e.g. Postgres),
+    silently dropping the entry."""
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    candidate = xff.split(",")[-1].strip() if xff else request.META.get("REMOTE_ADDR")
+    try:
+        ipaddress.ip_address(candidate)
+        return candidate
+    except (ValueError, TypeError):
+        return None
 
 
 class AuditLogMiddleware:
@@ -29,10 +47,7 @@ class AuditLogMiddleware:
             return
 
         from .models import AuditLog
-        # Behind our nginx, X-Forwarded-For ends with the real client IP that the
-        # proxy appended, so the rightmost hop is the least spoofable choice.
-        xff = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip = xff.split(",")[-1].strip() if xff else request.META.get("REMOTE_ADDR")
+        ip = _client_ip(request)
         # object_type = the collection segment, e.g. /api/documents/5/ -> documents
         segment = request.path.strip("/").split("/")
         object_type = segment[1] if len(segment) > 1 else ""

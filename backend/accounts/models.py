@@ -1,4 +1,5 @@
 """User and Role models -- the foundation of role-based access control."""
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 

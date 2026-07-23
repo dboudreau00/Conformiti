@@ -98,11 +98,17 @@ def _read_csv(data):
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
+    # A single oversized cell makes csv raise csv.Error ("field larger than
+    # field limit"), which is NOT a ValueError — surface it as one so the view
+    # returns a clean 400 instead of a 500.
     rows = []
-    for row in csv.reader(io.StringIO(text), dialect):
-        rows.append([(cell or "").strip() for cell in row])
-        if len(rows) > MAX_ROWS + 1:
-            break
+    try:
+        for row in csv.reader(io.StringIO(text), dialect):
+            rows.append([(cell or "").strip() for cell in row])
+            if len(rows) > MAX_ROWS + 1:
+                break
+    except csv.Error as exc:
+        raise ValueError(f"Could not parse the CSV file: {exc}")
     return rows
 
 
@@ -147,13 +153,19 @@ def _read_xlsx(data):
     if not sheet_names:
         raise ValueError("No worksheet found in the .xlsx file.")
 
-    shared = []
-    if "xl/sharedStrings.xml" in zf.namelist():
-        root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
-        for si in root.iter(f"{_XLSX_NS}si"):
-            shared.append("".join(node.text or "" for node in si.iter(f"{_XLSX_NS}t")))
+    # Malformed XML inside an otherwise-valid zip raises ET.ParseError (a
+    # SyntaxError subclass, not ValueError) — convert it so the view returns a
+    # clean 400 rather than a 500.
+    try:
+        shared = []
+        if "xl/sharedStrings.xml" in zf.namelist():
+            root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+            for si in root.iter(f"{_XLSX_NS}si"):
+                shared.append("".join(node.text or "" for node in si.iter(f"{_XLSX_NS}t")))
 
-    root = ET.fromstring(zf.read(sheet_names[0]))
+        root = ET.fromstring(zf.read(sheet_names[0]))
+    except ET.ParseError:
+        raise ValueError("The .xlsx file is corrupt or unreadable.")
     rows = []
     for row_el in root.iter(f"{_XLSX_NS}row"):
         cells = {}
@@ -240,7 +252,9 @@ def _norm_date(value, field, row_n, issues):
     v = (value or "").strip()
     if not v:
         return None
-    if re.fullmatch(r"\d+(\.0+)?", v):
+    # Excel date-time cells carry a fractional serial (e.g. 45658.5 = midday);
+    # truncating to the integer day yields the correct date.
+    if re.fullmatch(r"\d+(\.\d+)?", v):
         d = _excel_serial_to_date(int(float(v)))
         if d:
             return d

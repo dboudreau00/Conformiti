@@ -3,6 +3,7 @@
 Runs daily via Celery beat (see CELERY_BEAT_SCHEDULE) or on demand via
 `python manage.py send_review_reminders` for cron-based deployments.
 """
+import logging
 from datetime import date
 
 from celery import shared_task
@@ -10,6 +11,8 @@ from django.conf import settings
 
 from documents.models import Document
 from .email_service import send_templated_email
+
+logger = logging.getLogger(__name__)
 
 OVERDUE = -1  # sentinel stored in Document.reminders_sent
 
@@ -55,20 +58,30 @@ def run_review_scan(dry_run=False):
         sent = list(doc.reminders_sent or [])
         changed = False
 
-        if days < 0:
-            if OVERDUE not in sent:
-                if not dry_run:
-                    _notify(doc, days, overdue=True)
-                sent.append(OVERDUE)
-                doc.status = Document.Status.EXPIRED
-                changed = True
-        else:
-            applicable = sorted(l for l in leads if days <= l)
-            if applicable and any(l not in sent for l in applicable):
-                if not dry_run:
-                    _notify(doc, days, overdue=False, window=min(applicable))
-                sent = sorted(set(sent) | set(applicable))
-                changed = True
+        # Isolate each document: a failing send (bad address, provider/network
+        # error) must not abort the whole scan and starve every document after
+        # it. On failure we skip persisting this doc's state so it retries next
+        # run, and move on.
+        try:
+            if days < 0:
+                if OVERDUE not in sent:
+                    if not dry_run:
+                        _notify(doc, days, overdue=True)
+                    sent.append(OVERDUE)
+                    doc.status = Document.Status.EXPIRED
+                    changed = True
+            else:
+                applicable = sorted(l for l in leads if days <= l)
+                if applicable and any(l not in sent for l in applicable):
+                    if not dry_run:
+                        _notify(doc, days, overdue=False, window=min(applicable))
+                    sent = sorted(set(sent) | set(applicable))
+                    changed = True
+        except Exception:
+            logger.exception(
+                "Review reminder failed for document %s; will retry next run", doc.pk
+            )
+            continue
 
         if changed:
             notified += 1

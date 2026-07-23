@@ -3,6 +3,7 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import CanManageDocuments
@@ -34,7 +35,7 @@ def _visible_folders(user):
 
 class FolderViewSet(viewsets.ModelViewSet):
     serializer_class = FolderSerializer
-    permission_classes = [FolderAccessPermission]
+    permission_classes = [IsAuthenticated, FolderAccessPermission]
     filterset_fields = ["parent", "control", "is_framework_root"]
     search_fields = ["name"]
 
@@ -119,7 +120,7 @@ class FolderPermissionViewSet(viewsets.ModelViewSet):
 
 class DocumentViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentSerializer
-    permission_classes = [DocumentAccessPermission]
+    permission_classes = [IsAuthenticated, DocumentAccessPermission]
     filterset_fields = ["folder", "status", "owner", "control", "review_cadence"]
     search_fields = ["name", "description"]
     ordering_fields = ["updated_at", "next_review_date", "name"]

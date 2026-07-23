@@ -161,10 +161,16 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
 
 
 class AccessReviewItemViewSet(viewsets.ModelViewSet):
-    """Rows are created by the snapshot, edited (decision/notes) via PATCH."""
+    """Rows are created by the snapshot, edited (decision/notes) via PATCH.
+
+    Pagination is disabled: a review's rows (one per user account) are a bounded
+    set the grid needs in full to compute decided/total and show every account.
+    Default 50-row pagination would silently truncate the audit grid for orgs
+    with more than 50 users."""
     queryset = AccessReviewItem.objects.select_related("review", "decided_by")
     serializer_class = AccessReviewItemSerializer
     permission_classes = [AccessAuditPermission]
+    pagination_class = None
     filterset_fields = ["review", "decision"]
     http_method_names = ["get", "patch", "head", "options"]
 

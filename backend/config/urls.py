@@ -3,14 +3,23 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from accounts.serializers import MFATokenObtainPairSerializer
 
 
-class LoginRateThrottle(ScopedRateThrottle):
+class LoginRateThrottle(SimpleRateThrottle):
+    """Per-IP limit on the login / token-refresh endpoints.
+
+    Subclasses SimpleRateThrottle so its ``scope`` binds directly to the
+    THROTTLE_LOGIN rate. (ScopedRateThrottle would instead read the scope from
+    a view ``throttle_scope`` attribute these views don't define, which would
+    silently leave the endpoint unthrottled.)"""
     scope = "login"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
 
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):

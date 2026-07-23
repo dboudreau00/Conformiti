@@ -167,7 +167,10 @@ class Document(models.Model):
     )
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    file = models.FileField(upload_to=document_upload_path)
+    # max_length must comfortably exceed the deepest folder path
+    # (documents/<framework>/<category>/<control>/<file>) or Django's storage
+    # raises SuspiciousFileOperation when it can't fit the name in the default 100.
+    file = models.FileField(upload_to=document_upload_path, max_length=500)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="owned_documents",
@@ -215,7 +218,7 @@ class DocumentVersion(models.Model):
     """Immutable snapshot of a prior document file."""
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="versions")
     version = models.PositiveIntegerField()
-    file = models.FileField(upload_to="document_versions/")
+    file = models.FileField(upload_to="document_versions/", max_length=500)
     note = models.CharField(max_length=255, blank=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
@@ -232,7 +235,7 @@ class FormTemplate(models.Model):
     name = models.CharField(max_length=200)
     category = models.CharField(max_length=100, blank=True, help_text="e.g. Policy, Register, Log")
     description = models.TextField(blank=True)
-    file = models.FileField(upload_to="form_templates/")
+    file = models.FileField(upload_to="form_templates/", max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -19,7 +19,12 @@ class FolderPermissionSerializer(serializers.ModelSerializer):
         fields = ["id", "folder", "role", "role_name", "user", "user_name", "access_level", "granted_at"]
 
     def validate(self, attrs):
-        if bool(attrs.get("role")) == bool(attrs.get("user")):
+        # Fall back to the existing instance for fields absent from a partial
+        # update, so a PATCH that touches only access_level (or moves the grant
+        # to another folder) still passes the "exactly one of role/user" rule.
+        role = attrs.get("role", getattr(self.instance, "role", None))
+        user = attrs.get("user", getattr(self.instance, "user", None))
+        if bool(role) == bool(user):
             raise serializers.ValidationError("Set exactly one of role or user.")
         return attrs
 

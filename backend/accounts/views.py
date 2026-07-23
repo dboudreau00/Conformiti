@@ -133,15 +133,28 @@ class UserViewSet(viewsets.ModelViewSet):
 # ==========================================================================
 # Multi-factor authentication (TOTP) — self-service enable/disable + admin reset
 # ==========================================================================
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from .models import MfaDevice
 from . import mfa as mfa_lib
 
 
-class _MfaThrottle(ScopedRateThrottle):
+class _MfaThrottle(SimpleRateThrottle):
+    """Per-identity limit on the MFA setup/verify/disable endpoints.
+
+    Subclasses SimpleRateThrottle so its ``scope`` binds directly to the
+    THROTTLE_MFA rate. (ScopedRateThrottle reads its scope from a view
+    ``throttle_scope`` attribute these APIViews don't set, which would silently
+    disable the limit.)"""
     scope = "mfa"
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = request.user.pk
+        else:
+            ident = self.get_ident(request)
+        return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
 class MfaStatusView(APIView):

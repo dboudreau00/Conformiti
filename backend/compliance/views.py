@@ -50,10 +50,17 @@ class FrameworkViewSet(viewsets.ModelViewSet):
 
 
 class ControlViewSet(viewsets.ModelViewSet):
-    """List/retrieve controls; update status and owner (assign responsibility)."""
+    """List/retrieve controls; update status and owner (assign responsibility).
+
+    Controls are seeded reference data: they're read and PATCHed (status/owner),
+    never created or deleted through the API. Exposing create/PUT/DELETE would
+    either 500 (control_id/title/category are read-only, so a create has no
+    category) or let a manager destroy seeded catalog rows — so restrict the
+    verbs to list/retrieve + PATCH."""
     queryset = Control.objects.select_related("category", "category__framework", "owner").all()
     serializer_class = ControlSerializer
     permission_classes = [CanManageFrameworks]
+    http_method_names = ["get", "patch", "head", "options"]
     search_fields = ["control_id", "title", "objective"]
     filterset_fields = ["status", "owner", "category", "category__framework__key"]
 

@@ -8,6 +8,7 @@ Authentication is HTTP Basic with an Atlassian API token
 (email + token — create one at id.atlassian.com → Security → API tokens).
 """
 import base64
+import http.client
 import ipaddress
 import json
 import socket
@@ -30,7 +31,43 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise JiraError("Jira endpoint attempted a redirect; refusing it for security.")
 
 
-_OPENER = urllib.request.build_opener(_NoRedirect)
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Dials a pre-validated IP address while keeping TLS SNI and certificate
+    verification bound to the original hostname. This closes the DNS-rebind
+    (TOCTOU) SSRF gap: without pinning, urllib re-resolves the hostname at
+    connect time, so an attacker-controlled DNS record could point the safety-
+    checked hostname at an internal IP for the actual connection."""
+
+    def __init__(self, host, *args, pinned_ip=None, **kwargs):
+        super().__init__(host, *args, **kwargs)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        sock = socket.create_connection(
+            (self._pinned_ip or self.host, self.port), self.timeout, self.source_address
+        )
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        server_hostname = self._tunnel_host or self.host
+        self.sock = self._context.wrap_socket(sock, server_hostname=server_hostname)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    """urllib HTTPS handler that connects via a pinned IP (see above)."""
+
+    def __init__(self, pinned_ip):
+        super().__init__()
+        self._pinned_ip = pinned_ip
+
+    def https_open(self, req):
+        # Pass only the handler's SSL context (context=None -> stdlib's secure
+        # default, which verifies the cert against the hostname). Mirrors
+        # HTTPSHandler.https_open on modern Python.
+        return self.do_open(
+            lambda host, **kw: _PinnedHTTPSConnection(host, pinned_ip=self._pinned_ip, **kw),
+            req, context=self._context,
+        )
 
 
 def _ip_is_public(ip_str):
@@ -42,9 +79,11 @@ def _ip_is_public(ip_str):
 
 
 def _assert_safe_base_url(base_url):
-    """Only allow https to a host that resolves exclusively to public IPs.
-    Resolving here (not just checking IP literals) closes the gap where an
-    internal hostname like ``jira.corp.local`` points at a private address."""
+    """Only allow https to a host that resolves exclusively to public IPs, and
+    return the validated IP to pin the connection to. Resolving here (not just
+    checking IP literals) closes the gap where an internal hostname like
+    ``jira.corp.local`` points at a private address; returning the pinned IP
+    lets the caller connect to exactly the address we validated."""
     parsed = urllib.parse.urlparse(base_url or "")
     if parsed.scheme != "https" or not parsed.hostname:
         raise JiraError("Jira base URL must start with https:// (e.g. https://your-team.atlassian.net).")
@@ -55,6 +94,7 @@ def _assert_safe_base_url(base_url):
         infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
         raise JiraError("Could not resolve the Jira host — check the base URL.")
+    pinned = None
     for info in infos:
         addr = info[4][0]
         try:
@@ -62,6 +102,11 @@ def _assert_safe_base_url(base_url):
                 raise JiraError("Jira base URL must resolve to a public host.")
         except ValueError:
             raise JiraError("Jira host resolved to an invalid address.")
+        if pinned is None:
+            pinned = addr
+    if pinned is None:
+        raise JiraError("Could not resolve the Jira host — check the base URL.")
+    return pinned
 
 
 def _request(config, path, params=None):
@@ -69,7 +114,7 @@ def _request(config, path, params=None):
         raise JiraError("The Jira integration is turned off. Enable it in the configuration first.")
     if not (config.base_url and config.email and config.api_token):
         raise JiraError("Jira is not fully configured: base URL, email and API token are all required.")
-    _assert_safe_base_url(config.base_url)
+    pinned_ip = _assert_safe_base_url(config.base_url)
 
     url = config.base_url.rstrip("/") + path
     if params:
@@ -79,8 +124,11 @@ def _request(config, path, params=None):
         "Authorization": f"Basic {token}",
         "Accept": "application/json",
     })
+    # Connect to the exact IP we validated, refusing redirects, so the request
+    # can't be bounced to an internal address after the safety check.
+    opener = urllib.request.build_opener(_NoRedirect, _PinnedHTTPSHandler(pinned_ip))
     try:
-        with _OPENER.open(req, timeout=15) as resp:
+        with opener.open(req, timeout=15) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
