@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+db.sqlite3
+backend/media/
+backend/staticfiles/
+# Node
+node_modules/
+frontend/dist/
+# Env / secrets
+.env
+# Local editor/tooling config
+.claude/
+# OS
+.DS_Store
+Thumbs.db
