@@ -1,0 +1,396 @@
+{
+  "key": "pci_dss_v4",
+  "name": "PCI DSS",
+  "version": "4.0.1",
+  "authority": "PCI SSC",
+  "description": "Payment Card Industry Data Security Standard v4.0.1 - 12 requirements.",
+  "categories": [
+    {
+      "key": "Req1",
+      "name": "Req 1 - Network Security Controls",
+      "controls": [
+        {
+          "control_id": "1.1",
+          "title": "Processes for NSCs",
+          "objective": "Processes and mechanisms for network security controls are defined and understood."
+        },
+        {
+          "control_id": "1.2",
+          "title": "NSC configuration",
+          "objective": "Network security controls are configured and maintained."
+        },
+        {
+          "control_id": "1.3",
+          "title": "CDE network access",
+          "objective": "Network access to and from the cardholder data environment is restricted."
+        },
+        {
+          "control_id": "1.4",
+          "title": "Trusted/untrusted connections",
+          "objective": "Connections between trusted and untrusted networks are controlled."
+        },
+        {
+          "control_id": "1.5",
+          "title": "Dual-connected devices",
+          "objective": "Risks from devices connected to both untrusted networks and the CDE are mitigated."
+        }
+      ]
+    },
+    {
+      "key": "Req2",
+      "name": "Req 2 - Secure Configurations",
+      "controls": [
+        {
+          "control_id": "2.1",
+          "title": "Config processes",
+          "objective": "Processes and mechanisms for secure configurations are defined and understood."
+        },
+        {
+          "control_id": "2.2",
+          "title": "System configuration",
+          "objective": "System components are configured and managed securely."
+        },
+        {
+          "control_id": "2.3",
+          "title": "Wireless configuration",
+          "objective": "Wireless environments are configured and managed securely."
+        }
+      ]
+    },
+    {
+      "key": "Req3",
+      "name": "Req 3 - Protect Stored Account Data",
+      "controls": [
+        {
+          "control_id": "3.1",
+          "title": "Storage processes",
+          "objective": "Processes and mechanisms for protecting stored account data are defined."
+        },
+        {
+          "control_id": "3.2",
+          "title": "Minimise storage",
+          "objective": "Storage of account data is kept to a minimum."
+        },
+        {
+          "control_id": "3.3",
+          "title": "No SAD after auth",
+          "objective": "Sensitive authentication data is not stored after authorisation."
+        },
+        {
+          "control_id": "3.4",
+          "title": "PAN display",
+          "objective": "Access to displays of full PAN and copying of PAN is restricted."
+        },
+        {
+          "control_id": "3.5",
+          "title": "PAN protection",
+          "objective": "PAN is secured wherever it is stored."
+        },
+        {
+          "control_id": "3.6",
+          "title": "Key protection",
+          "objective": "Cryptographic keys protecting stored account data are secured."
+        },
+        {
+          "control_id": "3.7",
+          "title": "Key management",
+          "objective": "Key-management processes and procedures are defined and implemented."
+        }
+      ]
+    },
+    {
+      "key": "Req4",
+      "name": "Req 4 - Protect Data in Transit",
+      "controls": [
+        {
+          "control_id": "4.1",
+          "title": "Transmission processes",
+          "objective": "Processes and mechanisms for protecting data in transit are defined."
+        },
+        {
+          "control_id": "4.2",
+          "title": "Strong cryptography",
+          "objective": "PAN is protected with strong cryptography during transmission over open networks."
+        }
+      ]
+    },
+    {
+      "key": "Req5",
+      "name": "Req 5 - Protect Against Malware",
+      "controls": [
+        {
+          "control_id": "5.1",
+          "title": "Malware processes",
+          "objective": "Processes and mechanisms for protecting against malware are defined."
+        },
+        {
+          "control_id": "5.2",
+          "title": "Malware prevention",
+          "objective": "Malicious software is prevented, or detected and addressed."
+        },
+        {
+          "control_id": "5.3",
+          "title": "Anti-malware upkeep",
+          "objective": "Anti-malware mechanisms are active, maintained and monitored."
+        },
+        {
+          "control_id": "5.4",
+          "title": "Anti-phishing",
+          "objective": "Anti-phishing mechanisms protect personnel."
+        }
+      ]
+    },
+    {
+      "key": "Req6",
+      "name": "Req 6 - Secure Systems and Software",
+      "controls": [
+        {
+          "control_id": "6.1",
+          "title": "Development processes",
+          "objective": "Processes and mechanisms for secure systems and software are defined."
+        },
+        {
+          "control_id": "6.2",
+          "title": "Secure development",
+          "objective": "Bespoke and custom software is developed securely."
+        },
+        {
+          "control_id": "6.3",
+          "title": "Vulnerability management",
+          "objective": "Security vulnerabilities are identified and addressed."
+        },
+        {
+          "control_id": "6.4",
+          "title": "Web app protection",
+          "objective": "Public-facing web applications are protected against attacks."
+        },
+        {
+          "control_id": "6.5",
+          "title": "Change management",
+          "objective": "Changes to system components are managed securely."
+        }
+      ]
+    },
+    {
+      "key": "Req7",
+      "name": "Req 7 - Restrict Access by Need to Know",
+      "controls": [
+        {
+          "control_id": "7.1",
+          "title": "Access processes",
+          "objective": "Processes and mechanisms for restricting access are defined."
+        },
+        {
+          "control_id": "7.2",
+          "title": "Access assignment",
+          "objective": "Access to system components and data is defined and assigned appropriately."
+        },
+        {
+          "control_id": "7.3",
+          "title": "Access control system",
+          "objective": "Access is managed via an access-control system."
+        }
+      ]
+    },
+    {
+      "key": "Req8",
+      "name": "Req 8 - Identify and Authenticate",
+      "controls": [
+        {
+          "control_id": "8.1",
+          "title": "Auth processes",
+          "objective": "Processes and mechanisms for identification and authentication are defined."
+        },
+        {
+          "control_id": "8.2",
+          "title": "User identification",
+          "objective": "User identities and accounts are strictly managed."
+        },
+        {
+          "control_id": "8.3",
+          "title": "Strong authentication",
+          "objective": "Strong authentication for users is established and managed."
+        },
+        {
+          "control_id": "8.4",
+          "title": "MFA for CDE",
+          "objective": "Multi-factor authentication secures access into the CDE."
+        },
+        {
+          "control_id": "8.5",
+          "title": "MFA configuration",
+          "objective": "MFA systems are configured to prevent misuse."
+        },
+        {
+          "control_id": "8.6",
+          "title": "Application/system accounts",
+          "objective": "Use of application and system accounts and factors is strictly managed."
+        }
+      ]
+    },
+    {
+      "key": "Req9",
+      "name": "Req 9 - Restrict Physical Access",
+      "controls": [
+        {
+          "control_id": "9.1",
+          "title": "Physical processes",
+          "objective": "Processes and mechanisms for restricting physical access are defined."
+        },
+        {
+          "control_id": "9.2",
+          "title": "Facility access",
+          "objective": "Physical access controls manage entry into facilities and systems."
+        },
+        {
+          "control_id": "9.3",
+          "title": "Personnel/visitor access",
+          "objective": "Physical access for personnel and visitors is authorised and managed."
+        },
+        {
+          "control_id": "9.4",
+          "title": "Media handling",
+          "objective": "Media with cardholder data is stored, distributed and destroyed securely."
+        },
+        {
+          "control_id": "9.5",
+          "title": "POI device protection",
+          "objective": "Point-of-interaction devices are protected from tampering and substitution."
+        }
+      ]
+    },
+    {
+      "key": "Req10",
+      "name": "Req 10 - Log and Monitor Access",
+      "controls": [
+        {
+          "control_id": "10.1",
+          "title": "Logging processes",
+          "objective": "Processes and mechanisms for logging and monitoring are defined."
+        },
+        {
+          "control_id": "10.2",
+          "title": "Audit logs",
+          "objective": "Audit logs support detection of anomalies and suspicious activity."
+        },
+        {
+          "control_id": "10.3",
+          "title": "Log protection",
+          "objective": "Audit logs are protected from destruction and unauthorised modification."
+        },
+        {
+          "control_id": "10.4",
+          "title": "Log review",
+          "objective": "Audit logs are reviewed to identify anomalies or suspicious activity."
+        },
+        {
+          "control_id": "10.5",
+          "title": "Log retention",
+          "objective": "Audit log history is retained and available for analysis."
+        },
+        {
+          "control_id": "10.6",
+          "title": "Time synchronisation",
+          "objective": "Time-synchronisation mechanisms support consistent time settings."
+        },
+        {
+          "control_id": "10.7",
+          "title": "Control failure response",
+          "objective": "Failures of critical security controls are detected and responded to promptly."
+        }
+      ]
+    },
+    {
+      "key": "Req11",
+      "name": "Req 11 - Test Security Regularly",
+      "controls": [
+        {
+          "control_id": "11.1",
+          "title": "Testing processes",
+          "objective": "Processes and mechanisms for regularly testing security are defined."
+        },
+        {
+          "control_id": "11.2",
+          "title": "Wireless monitoring",
+          "objective": "Wireless access points are identified and monitored."
+        },
+        {
+          "control_id": "11.3",
+          "title": "Vulnerability scanning",
+          "objective": "Internal and external vulnerabilities are identified, prioritised and addressed."
+        },
+        {
+          "control_id": "11.4",
+          "title": "Penetration testing",
+          "objective": "Internal and external penetration testing is performed and findings corrected."
+        },
+        {
+          "control_id": "11.5",
+          "title": "Intrusion detection",
+          "objective": "Network intrusions and unexpected file changes are detected and responded to."
+        },
+        {
+          "control_id": "11.6",
+          "title": "Payment page monitoring",
+          "objective": "Unauthorised changes on payment pages are detected and responded to."
+        }
+      ]
+    },
+    {
+      "key": "Req12",
+      "name": "Req 12 - Organisational Policies",
+      "controls": [
+        {
+          "control_id": "12.1",
+          "title": "Security policy",
+          "objective": "A comprehensive information security policy governs asset protection."
+        },
+        {
+          "control_id": "12.2",
+          "title": "Acceptable use",
+          "objective": "Acceptable-use policies for end-user technologies are defined and implemented."
+        },
+        {
+          "control_id": "12.3",
+          "title": "Risk management",
+          "objective": "Risks to the CDE are formally identified, evaluated and managed."
+        },
+        {
+          "control_id": "12.4",
+          "title": "Compliance management",
+          "objective": "PCI DSS compliance is managed."
+        },
+        {
+          "control_id": "12.5",
+          "title": "Scope validation",
+          "objective": "PCI DSS scope is documented and validated."
+        },
+        {
+          "control_id": "12.6",
+          "title": "Security awareness",
+          "objective": "Security awareness education is an ongoing activity."
+        },
+        {
+          "control_id": "12.7",
+          "title": "Personnel screening",
+          "objective": "Personnel are screened to reduce insider-threat risk."
+        },
+        {
+          "control_id": "12.8",
+          "title": "Third-party management",
+          "objective": "Risk from third-party service provider relationships is managed."
+        },
+        {
+          "control_id": "12.9",
+          "title": "TPSP support",
+          "objective": "Third-party service providers support customer PCI DSS compliance."
+        },
+        {
+          "control_id": "12.10",
+          "title": "Incident response",
+          "objective": "Suspected and confirmed incidents impacting the CDE are responded to immediately."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,392 @@
+{
+  "key": "soc2",
+  "name": "SOC 2",
+  "version": "2017 TSC (rev. 2022)",
+  "authority": "AICPA",
+  "description": "Trust Services Criteria for Security, Availability, Processing Integrity, Confidentiality and Privacy.",
+  "categories": [
+    {
+      "key": "CC1",
+      "name": "CC1 - Control Environment",
+      "controls": [
+        {
+          "control_id": "CC1.1",
+          "title": "Integrity and ethical values",
+          "objective": "The entity demonstrates a commitment to integrity and ethical values."
+        },
+        {
+          "control_id": "CC1.2",
+          "title": "Board oversight",
+          "objective": "The board exercises independent oversight of internal control."
+        },
+        {
+          "control_id": "CC1.3",
+          "title": "Organisational structure",
+          "objective": "Management establishes structures, reporting lines, authorities and responsibilities."
+        },
+        {
+          "control_id": "CC1.4",
+          "title": "Commitment to competence",
+          "objective": "The entity attracts, develops and retains competent people."
+        },
+        {
+          "control_id": "CC1.5",
+          "title": "Accountability",
+          "objective": "The entity holds individuals accountable for their control responsibilities."
+        }
+      ]
+    },
+    {
+      "key": "CC2",
+      "name": "CC2 - Communication and Information",
+      "controls": [
+        {
+          "control_id": "CC2.1",
+          "title": "Relevant information",
+          "objective": "The entity obtains and uses relevant, quality information to support internal control."
+        },
+        {
+          "control_id": "CC2.2",
+          "title": "Internal communication",
+          "objective": "The entity communicates internal-control information internally."
+        },
+        {
+          "control_id": "CC2.3",
+          "title": "External communication",
+          "objective": "The entity communicates relevant information to external parties."
+        }
+      ]
+    },
+    {
+      "key": "CC3",
+      "name": "CC3 - Risk Assessment",
+      "controls": [
+        {
+          "control_id": "CC3.1",
+          "title": "Objectives",
+          "objective": "The entity specifies objectives clearly enough to identify and assess related risks."
+        },
+        {
+          "control_id": "CC3.2",
+          "title": "Risk identification",
+          "objective": "The entity identifies and analyses risks to achieving its objectives."
+        },
+        {
+          "control_id": "CC3.3",
+          "title": "Fraud risk",
+          "objective": "The entity considers the potential for fraud when assessing risk."
+        },
+        {
+          "control_id": "CC3.4",
+          "title": "Change risk",
+          "objective": "The entity identifies and assesses changes that could impact internal control."
+        }
+      ]
+    },
+    {
+      "key": "CC4",
+      "name": "CC4 - Monitoring Activities",
+      "controls": [
+        {
+          "control_id": "CC4.1",
+          "title": "Ongoing evaluations",
+          "objective": "The entity performs ongoing and separate evaluations of its controls."
+        },
+        {
+          "control_id": "CC4.2",
+          "title": "Deficiency communication",
+          "objective": "The entity evaluates and communicates control deficiencies for remediation."
+        }
+      ]
+    },
+    {
+      "key": "CC5",
+      "name": "CC5 - Control Activities",
+      "controls": [
+        {
+          "control_id": "CC5.1",
+          "title": "Control selection",
+          "objective": "The entity selects and develops control activities that mitigate risk."
+        },
+        {
+          "control_id": "CC5.2",
+          "title": "Technology controls",
+          "objective": "The entity selects and develops general control activities over technology."
+        },
+        {
+          "control_id": "CC5.3",
+          "title": "Policy deployment",
+          "objective": "The entity deploys control activities through policies and procedures."
+        }
+      ]
+    },
+    {
+      "key": "CC6",
+      "name": "CC6 - Logical and Physical Access Controls",
+      "controls": [
+        {
+          "control_id": "CC6.1",
+          "title": "Access security",
+          "objective": "Logical access security software and infrastructure protect information assets."
+        },
+        {
+          "control_id": "CC6.2",
+          "title": "User provisioning",
+          "objective": "New internal and external users are registered and authorised before access is granted."
+        },
+        {
+          "control_id": "CC6.3",
+          "title": "Least privilege",
+          "objective": "Access is granted based on roles and least privilege, and reviewed periodically."
+        },
+        {
+          "control_id": "CC6.4",
+          "title": "Physical access",
+          "objective": "Physical access to facilities and assets is restricted to authorised personnel."
+        },
+        {
+          "control_id": "CC6.5",
+          "title": "Asset disposal",
+          "objective": "Data and media are securely disposed of when no longer needed."
+        },
+        {
+          "control_id": "CC6.6",
+          "title": "Boundary protection",
+          "objective": "The entity protects against external threats at system boundaries."
+        },
+        {
+          "control_id": "CC6.7",
+          "title": "Transmission security",
+          "objective": "Information in transit is restricted and protected against unauthorised access."
+        },
+        {
+          "control_id": "CC6.8",
+          "title": "Unauthorised software",
+          "objective": "The entity prevents and detects the introduction of unauthorised software."
+        }
+      ]
+    },
+    {
+      "key": "CC7",
+      "name": "CC7 - System Operations",
+      "controls": [
+        {
+          "control_id": "CC7.1",
+          "title": "Vulnerability management",
+          "objective": "Configurations are monitored and vulnerabilities are detected and remediated."
+        },
+        {
+          "control_id": "CC7.2",
+          "title": "Anomaly monitoring",
+          "objective": "System components are monitored for anomalies indicative of security events."
+        },
+        {
+          "control_id": "CC7.3",
+          "title": "Event evaluation",
+          "objective": "Security events are evaluated to determine whether they are incidents."
+        },
+        {
+          "control_id": "CC7.4",
+          "title": "Incident response",
+          "objective": "The entity responds to identified security incidents through a defined programme."
+        },
+        {
+          "control_id": "CC7.5",
+          "title": "Recovery",
+          "objective": "The entity recovers from identified security incidents."
+        }
+      ]
+    },
+    {
+      "key": "CC8",
+      "name": "CC8 - Change Management",
+      "controls": [
+        {
+          "control_id": "CC8.1",
+          "title": "Change management",
+          "objective": "Changes to infrastructure, data, software and procedures are authorised, tested and approved."
+        }
+      ]
+    },
+    {
+      "key": "CC9",
+      "name": "CC9 - Risk Mitigation",
+      "controls": [
+        {
+          "control_id": "CC9.1",
+          "title": "Business disruption",
+          "objective": "The entity mitigates risk from business disruptions."
+        },
+        {
+          "control_id": "CC9.2",
+          "title": "Vendor risk",
+          "objective": "The entity assesses and manages risks associated with vendors and partners."
+        }
+      ]
+    },
+    {
+      "key": "A1",
+      "name": "A1 - Availability",
+      "controls": [
+        {
+          "control_id": "A1.1",
+          "title": "Capacity",
+          "objective": "Current and future capacity is managed to meet availability commitments."
+        },
+        {
+          "control_id": "A1.2",
+          "title": "Environmental protection",
+          "objective": "Environmental protections, backups and recovery infrastructure are maintained."
+        },
+        {
+          "control_id": "A1.3",
+          "title": "Recovery testing",
+          "objective": "Recovery plans are tested to support availability commitments."
+        }
+      ]
+    },
+    {
+      "key": "C1",
+      "name": "C1 - Confidentiality",
+      "controls": [
+        {
+          "control_id": "C1.1",
+          "title": "Confidential info identification",
+          "objective": "Confidential information is identified and maintained."
+        },
+        {
+          "control_id": "C1.2",
+          "title": "Confidential info disposal",
+          "objective": "Confidential information is disposed of when no longer required."
+        }
+      ]
+    },
+    {
+      "key": "PI1",
+      "name": "PI1 - Processing Integrity",
+      "controls": [
+        {
+          "control_id": "PI1.1",
+          "title": "Processing objectives",
+          "objective": "The entity uses quality information about processing objectives."
+        },
+        {
+          "control_id": "PI1.2",
+          "title": "Input integrity",
+          "objective": "Inputs are complete and accurate."
+        },
+        {
+          "control_id": "PI1.3",
+          "title": "Processing integrity",
+          "objective": "Processing is complete, accurate and timely."
+        },
+        {
+          "control_id": "PI1.4",
+          "title": "Output integrity",
+          "objective": "Outputs are complete, accurate and delivered to the right recipients."
+        },
+        {
+          "control_id": "PI1.5",
+          "title": "Storage integrity",
+          "objective": "Stored inputs and outputs are complete and accurate."
+        }
+      ]
+    },
+    {
+      "key": "P",
+      "name": "P - Privacy",
+      "controls": [
+        {
+          "control_id": "P1.1",
+          "title": "Privacy notice",
+          "objective": "The entity provides notice about its privacy practices."
+        },
+        {
+          "control_id": "P2.1",
+          "title": "Choice and consent",
+          "objective": "The entity communicates choices available and obtains consent."
+        },
+        {
+          "control_id": "P3.1",
+          "title": "Collection",
+          "objective": "Personal information is collected consistently with the privacy notice."
+        },
+        {
+          "control_id": "P3.2",
+          "title": "Explicit consent",
+          "objective": "Explicit consent is obtained for sensitive personal information."
+        },
+        {
+          "control_id": "P4.1",
+          "title": "Use",
+          "objective": "Personal information is used consistently with the privacy notice."
+        },
+        {
+          "control_id": "P4.2",
+          "title": "Retention",
+          "objective": "Personal information is retained only as long as necessary."
+        },
+        {
+          "control_id": "P4.3",
+          "title": "Disposal",
+          "objective": "Personal information is securely disposed of."
+        },
+        {
+          "control_id": "P5.1",
+          "title": "Access",
+          "objective": "Data subjects can access their personal information."
+        },
+        {
+          "control_id": "P5.2",
+          "title": "Correction",
+          "objective": "Data subjects can correct their personal information."
+        },
+        {
+          "control_id": "P6.1",
+          "title": "Disclosure",
+          "objective": "Personal information is disclosed only per the privacy notice."
+        },
+        {
+          "control_id": "P6.2",
+          "title": "Authorised disclosure",
+          "objective": "Disclosures are made only to authorised parties."
+        },
+        {
+          "control_id": "P6.3",
+          "title": "Disclosure tracking",
+          "objective": "Unauthorised disclosures are recorded and addressed."
+        },
+        {
+          "control_id": "P6.4",
+          "title": "Third-party agreements",
+          "objective": "Third parties are bound to equivalent privacy commitments."
+        },
+        {
+          "control_id": "P6.5",
+          "title": "Third-party breaches",
+          "objective": "Third-party unauthorised disclosures are identified and addressed."
+        },
+        {
+          "control_id": "P6.6",
+          "title": "Breach notification",
+          "objective": "Affected parties and authorities are notified of privacy breaches."
+        },
+        {
+          "control_id": "P6.7",
+          "title": "Accounting of disclosures",
+          "objective": "The entity accounts for disclosures of personal information."
+        },
+        {
+          "control_id": "P7.1",
+          "title": "Data quality",
+          "objective": "Personal information is accurate and complete for its intended use."
+        },
+        {
+          "control_id": "P8.1",
+          "title": "Complaint handling",
+          "objective": "The entity manages privacy complaints and disputes."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#eef1f4;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1f2733;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f4;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(16,24,40,.08);">
+        <tr>
+          <td style="background:{% if overdue %}#b42318{% else %}#0b3d59{% endif %};padding:20px 28px;">
+            <span style="color:#fff;font-size:13px;letter-spacing:.14em;text-transform:uppercase;">
+              {% if overdue %}Review overdue{% else %}Document review reminder{% endif %}
+            </span>
+          </td>
+        </tr>
+        <tr><td style="padding:28px;">
+          <p style="margin:0 0 14px;font-size:15px;">Hi {{ owner_name }},</p>
+          {% if overdue %}
+            <p style="margin:0 0 16px;font-size:15px;line-height:1.55;">
+              The document below is <strong>past its review date</strong> and has been marked expired.
+              Please review it and record the review to bring it back into good standing.
+            </p>
+          {% else %}
+            <p style="margin:0 0 16px;font-size:15px;line-height:1.55;">
+              The document below is due for review in <strong>{{ days }} day{{ days|pluralize }}</strong>.
+              Please review it before the due date.
+            </p>
+          {% endif %}
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                 style="border:1px solid #e3e8ef;border-radius:10px;margin:8px 0 20px;">
+            <tr><td style="padding:16px 18px;">
+              <div style="font-size:16px;font-weight:600;margin-bottom:6px;">{{ document.name }}</div>
+              <div style="font-size:13px;color:#5b6675;">{{ folder_path }}</div>
+              <div style="margin-top:12px;font-size:13px;color:#5b6675;">
+                Owner: {{ owner_name }} &nbsp;•&nbsp; Cadence: {{ document.get_review_cadence_display }}<br>
+                Next review: <strong style="color:#1f2733;">{{ document.next_review_date }}</strong>
+              </div>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:12px;color:#8a94a3;">
+            You receive this because you own this document or belong to the compliance team.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

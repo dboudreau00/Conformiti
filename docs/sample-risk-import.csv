@@ -1,0 +1,5 @@
+Risk Title,Description,Status,Category,Probability,Severity,Risk Owner,Control ID,Due Date,Ticket,Remediation Plan,Notes
+Laptops missing disk encryption,Fleet audit found 12 laptops without FileVault/BitLocker enforced,In Progress,Gap,High,High,owen,CC6.1,2026-09-15,SEC-402,Enforce encryption via MDM policy and verify compliance report weekly,MDM policy drafted awaiting change approval
+Offboarding checklist not consistently completed,HR and IT checklists diverge; two leavers retained SaaS access >7 days,Open,Audit Finding,3,4,mia,A.5.18,2026-08-31,,Single combined offboarding runbook with IT sign-off step,
+Data center visitor log gaps,Colo provider visitor logs missing for two months,Open,Vendor,Low,Medium,mia,,2026-10-01,,Request retro logs and add quarterly evidence pull to calendar,
+Legacy TLS 1.0 on internal service,Internal reporting tool still accepts TLS 1.0 connections,Resolved,Pen Test,2,3,owen,,,SEC-377,Disabled legacy protocols; verified with follow-up scan,Closed after re-test on 2026-06-20
