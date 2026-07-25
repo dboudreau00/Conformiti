@@ -131,7 +131,11 @@ a { color: inherit; text-decoration: none; }
 .stat .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
 /* --- cards / panels ----------------------------------------------------- */
-.grid-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start; }
+/* minmax(0, …) so the declared 1.6:1 ratio actually holds. Bare fr units mean
+   minmax(auto, …), which lets a child's min-content (e.g. the long nowrap
+   folder paths in the reviews list) override the ratio and starve the other
+   column. */
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .card-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -171,7 +175,11 @@ tr:last-child td { border-bottom: none; }
   width: 30px; height: 30px; cursor: pointer; color: var(--ink-2); font-size: 15px;
 }
 .cal-nav button:hover { border-color: var(--accent); color: var(--accent); }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+/* minmax(0, 1fr) — not 1fr — so a day column can shrink below the min-content
+   width of a long nowrap event title. With plain 1fr the columns holding long
+   titles blow out, squeeze the empty ones, and overflow the card; the ellipsis
+   on .cal-ev only engages once the cell is allowed to be narrower. */
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .cal-dow { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: center; padding: 4px 0; letter-spacing: 1px; }
 .cal-cell {
   min-height: 78px; border: 1px solid var(--line); border-radius: 8px;
