@@ -83,6 +83,9 @@ keep its credentials where script cannot reach them.
   suite against the production bundle. Backend floors raised to the tested
   versions. **Django stays on the 5.2 LTS line and Tailwind on 3** — both
   deliberate, both recorded in `.github/dependabot.yml` with the reason.
+- Base images: Python **3.14**, Node **26**, nginx **1.31**; the backend CI matrix
+  now includes 3.14 so the image's runtime is a tested Python. GitHub Actions
+  bumped to current majors. Backend floors pinned to the exact tested versions.
 - The API image runs threaded gunicorn workers: a malware scan holds a worker,
   and three sync workers against a slow scanner would block `/api/health/` too.
 - `SQLITE_PATH` and `MEDIA_INTERNAL` settings; `ATTESTATION_*`, `CLAMAV_*`,

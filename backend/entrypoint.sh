@@ -86,11 +86,11 @@ demo = os.getenv("SEED_DEMO_DATA", "true").lower() in ("1", "true", "yes", "on")
 # Read from the environment, not from django.conf: this heredoc runs with no
 # DJANGO_SETTINGS_MODULE, and `set -euo pipefail` above would kill the
 # container on the ImproperlyConfigured that importing settings would raise.
-key_src = ("environment" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY")
-           else "key file" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY_FILE")
+key_src = ("from the environment" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY")
+           else "from the key file" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY_FILE")
            else "derived from the signing key")
 print(f"Conformiti {__version__} — DEBUG={'ON' if debug else 'off'}, demo data={'ON' if demo else 'off'}")
-print(f"   field encryption: key ring from the {key_src}")
+print(f"   field encryption: key ring {key_src}")
 if debug:
     print("!! DJANGO_DEBUG is on. Never expose this container to a network you don't trust.")
 if demo:
