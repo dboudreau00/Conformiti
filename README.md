@@ -194,7 +194,7 @@ Everything in the badge row runs on every push:
 
 | Gate | What it proves |
 |---|---|
-| `tools/validate.py` — 15 static checks | app/route wiring, API contract between SPA and backend, shipped migrations, theme packs, tests + CI present |
+| `tools/validate.py` — 16 static checks | app/route wiring, API contract between SPA and backend, shipped migrations, theme packs, tests + CI present |
 | `manage.py test` — **80 tests** | auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, audit trail, reminders, health, demo retirement, boot guard |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 on SQLite, plus PostgreSQL 16 |
 | Frontend | production build + `npm audit --audit-level=high` |

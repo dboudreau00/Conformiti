@@ -70,6 +70,7 @@ The full method and evidence are in [REVIEW.md](REVIEW.md).
 | 14 | Low | The inline theme bootstrap in `index.html` prevented a `script-src 'self'` CSP, so the shipped nginx config left CSP commented out. | Bootstrap moved to `/theme-init.js`; CSP enabled by default. |
 | 15 | Low | Password minimum of 8 characters is below PCI DSS v4.0.1 §8.3.6 (12). | Default 12 (`PASSWORD_MIN_LENGTH`). |
 | 16 | Low | The container ran as root. | Unprivileged `app` user; writable paths owned by it. |
+| 17 | High | **A development `.env` put the Docker stack into DEBUG.** Compose reads `./.env` for `${...}` substitution *and* into the containers, and that file is written by the *local* installer with `DJANGO_DEBUG=true` and a development signing key — so `./install.sh` followed by `docker compose up` produced a DEBUG container issuing tokens signed with the dev key, despite the compose default being `false`. Found by booting the stack and asserting `settings.DEBUG` inside it, not by reading the file. | Fixed: the stack reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a development `.env` never contains; validator check 16 fails the build if the old interpolation returns. |
 
 ### Findings fixed in the 0.1.0 review (still in force)
 

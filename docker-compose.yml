@@ -5,11 +5,22 @@
 # No .env is required: the defaults below are production-safe (DEBUG off, a
 # strong secret key generated on first boot and persisted in the `secrets`
 # volume, Redis-backed rate limits, API/admin reachable only through nginx).
-# Anything in .env overrides these defaults — see .env.example. The demo
-# dataset (login admin / DemoPass123!) is seeded unless SEED_DEMO_DATA=false.
+# Most keys in .env override these defaults — see .env.example — but DEBUG and
+# the signing key do not, on purpose (see the note on DJANGO_DEBUG below). The
+# demo dataset (login admin / DemoPass123!) is seeded unless SEED_DEMO_DATA=false.
 
 x-backend-env: &backend-env
-  DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+  # DEBUG and the signing key are deliberately NOT read from DJANGO_DEBUG /
+  # DJANGO_SECRET_KEY. Compose loads ./.env both for ${...} substitution *and*
+  # into the containers, and ./.env is what the LOCAL installer writes — with
+  # DJANGO_DEBUG=true and a development signing key. Without this indirection a
+  # developer who ran ./install.sh and then `docker compose up` would silently
+  # get a DEBUG container issuing tokens signed with their dev key. Override the
+  # Docker stack on purpose with CONFORMITI_DEBUG / CONFORMITI_SECRET_KEY;
+  # leaving the key empty makes the container generate and persist its own in
+  # the `secrets` volume (DJANGO_SECRET_KEY_FILE below).
+  DJANGO_DEBUG: ${CONFORMITI_DEBUG:-false}
+  DJANGO_SECRET_KEY: ${CONFORMITI_SECRET_KEY:-}
   DJANGO_SECRET_KEY_FILE: /app/secrets/django_secret_key
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}

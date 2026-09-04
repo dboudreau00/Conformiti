@@ -10,7 +10,7 @@ every push and can be run locally with one command:
 ## 1. Static validator — `python tools/validate.py`
 
 Dependency-free (stdlib only), so it runs on a bare checkout before anything
-is installed. Exits non-zero on any error.
+is installed. Exits non-zero on any error. 16 checks:
 
 | # | Check |
 |---|---|
@@ -29,6 +29,7 @@ is installed. Exits non-zero on any error.
 | 13 | MFA engine against the RFC 4226 / 6238 test vectors |
 | 14 | Review-reminder wiring: beat task → registered task, Celery app import, cron command, templates, provider branches, model fields |
 | 15 | Tests + CI: every app has a `tests.py`, the CI workflow and `LICENSE` exist |
+| 16 | Compose isolation: the Docker stack cannot inherit `DJANGO_DEBUG` or a signing key from a local development `.env` |
 
 ## 2. Backend test suite — `python manage.py test`
 

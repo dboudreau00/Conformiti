@@ -78,8 +78,13 @@ if [ "$MODE" = "docker" ]; then
     cat > .env <<ENV
 # Written by install.sh --docker on $(date -u +%Y-%m-%dT%H:%MZ). Safe production-style
 # defaults for a LAN deployment over plain HTTP. See .env.example for every key.
-DJANGO_DEBUG=false
-DJANGO_SECRET_KEY=${SECRET}
+#
+# The Docker stack reads CONFORMITI_DEBUG / CONFORMITI_SECRET_KEY, not
+# DJANGO_DEBUG / DJANGO_SECRET_KEY: those two belong to the local dev path and
+# must never leak into a container. Leave CONFORMITI_SECRET_KEY unset to have
+# the container generate and persist its own key in the 'secrets' volume.
+CONFORMITI_DEBUG=false
+CONFORMITI_SECRET_KEY=${SECRET}
 DJANGO_ALLOWED_HOSTS=${HOSTS}
 CSRF_TRUSTED_ORIGINS=http://localhost:${PORT},http://127.0.0.1:${PORT}
 CORS_ALLOWED_ORIGINS=http://localhost:${PORT}
@@ -92,9 +97,14 @@ ENV
     ok ".env written (DEBUG off, unique secret key, demo data ${DEMO})"
   else
     ok ".env already present — leaving it untouched"
-    if grep -Eq '^DJANGO_DEBUG=(1|true|yes|on)' .env; then
-      warn "your .env sets DJANGO_DEBUG=true — the Docker stack will run in DEBUG mode."
-      warn "For a real deployment set DJANGO_DEBUG=false (and a strong DJANGO_SECRET_KEY)."
+    if grep -Eq '^CONFORMITI_DEBUG=(1|true|yes|on)' .env; then
+      warn "your .env sets CONFORMITI_DEBUG=true — the Docker stack will run in DEBUG mode."
+      warn "For a real deployment set CONFORMITI_DEBUG=false."
+    fi
+    if grep -Eq '^DJANGO_DEBUG=(1|true|yes|on)' .env && ! grep -q '^CONFORMITI_DEBUG=' .env; then
+      warn "your .env has DJANGO_DEBUG=true (from the local dev path). It does NOT"
+      warn "affect the Docker stack, which stays in production mode. Set"
+      warn "CONFORMITI_DEBUG=true if you deliberately want a DEBUG container."
     fi
     grep -q '^CONFORMITI_PORT=' .env && PORT=$(grep '^CONFORMITI_PORT=' .env | tail -1 | cut -d= -f2)
   fi

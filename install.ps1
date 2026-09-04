@@ -72,8 +72,12 @@ if ($Docker) {
     @(
       "# Written by install.ps1 -Docker on $stamp. Safe production-style",
       "# defaults for a LAN deployment over plain HTTP. See .env.example for every key.",
-      "DJANGO_DEBUG=false",
-      "DJANGO_SECRET_KEY=$(New-Secret)",
+      "#",
+      "# The Docker stack reads CONFORMITI_DEBUG / CONFORMITI_SECRET_KEY, not",
+      "# DJANGO_DEBUG / DJANGO_SECRET_KEY: those two belong to the local dev path",
+      "# and must never leak into a container.",
+      "CONFORMITI_DEBUG=false",
+      "CONFORMITI_SECRET_KEY=$(New-Secret)",
       "DJANGO_ALLOWED_HOSTS=$hosts",
       "CSRF_TRUSTED_ORIGINS=http://localhost:$Port,http://127.0.0.1:$Port",
       "CORS_ALLOWED_ORIGINS=http://localhost:$Port",
@@ -86,8 +90,11 @@ if ($Docker) {
     Ok ".env written (DEBUG off, unique secret key, demo data $demo)"
   } else {
     Ok ".env already present - leaving it untouched"
-    if (Select-String -Path ".env" -Pattern '^DJANGO_DEBUG=(1|true|yes|on)' -Quiet) {
-      Warn "your .env sets DJANGO_DEBUG=true - the Docker stack will run in DEBUG mode."
+    if (Select-String -Path ".env" -Pattern '^CONFORMITI_DEBUG=(1|true|yes|on)' -Quiet) {
+      Warn "your .env sets CONFORMITI_DEBUG=true - the Docker stack will run in DEBUG mode."
+    } elseif (Select-String -Path ".env" -Pattern '^DJANGO_DEBUG=(1|true|yes|on)' -Quiet) {
+      Warn "your .env has DJANGO_DEBUG=true (from the local dev path). It does NOT affect"
+      Warn "the Docker stack, which stays in production mode. Use CONFORMITI_DEBUG to change that."
     }
     $p = Select-String -Path ".env" -Pattern '^CONFORMITI_PORT=(\d+)' | Select-Object -Last 1
     if ($p) { $Port = [int]$p.Matches[0].Groups[1].Value }

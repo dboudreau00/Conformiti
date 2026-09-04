@@ -112,3 +112,28 @@ release for v0.2.0) rather than claimed here in advance.
 4. Back up PostgreSQL and the `media` volume; rehearse a restore.
 5. Roadmap for 0.3: cookie-based auth, SSO (OIDC/SAML), WebAuthn, evidence
    virus scanning, per-control readiness scoring, e2e browser tests in CI.
+
+---
+
+## 6. Post-release verification (added during the 0.2.0 release run)
+
+Two defects were found by *running* the release rather than reading it, after
+the code review above was complete. Both are fixed in the tagged release.
+
+| ID | Sev | Finding | How it was found |
+|---|---|---|---|
+| S-19 | **High** | **`DEBUG=true` leaked into the Docker stack.** Compose reads `./.env` both for `${...}` substitution *and* into the containers, and `./.env` is what the **local** installer writes — with `DJANGO_DEBUG=true` and a development signing key. So a developer who ran `./install.sh` and then `docker compose up` got a DEBUG container issuing tokens signed with their dev key, even though the compose default was `false`. Fixed: the stack reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a development `.env` never contains; validator check 16 fails the build if the interpolation ever returns. | Booting the stack with a developer `.env` present and asserting `settings.DEBUG` inside the container. |
+| C-10 | Med | **Audit-log filter dropdowns listed every action once per entry.** `facets` called `.distinct()` on a queryset carrying the model's `Meta.ordering`, so `-timestamp` joined the SELECT behind DISTINCT and defeated it. Fixed with `.order_by()` plus a regression test. | A React duplicate-key warning during the screenshot run. |
+
+Verification record for the tagged commit:
+
+| Gate | Result |
+|---|---|
+| `tools/validate.py` (16 checks) | PASS, 0 errors, 0 warnings |
+| Backend suite | 83 tests, 0 failures |
+| Frontend build (Vite 7) + `npm audit` | clean, 0 vulnerabilities |
+| Docker: build, boot, health, seed, login, headers, worker, demo removal | all pass; `DEBUG=False`, PostgreSQL, Redis cache, container uid 10001 |
+| Interface walkthrough | 13 screens driven end to end, **0 console errors**; screenshots in `assets/screenshots/` are from that run |
+
+The lesson worth keeping: the code review found the design defects, but only
+executing the artifact found the two that would have shipped.

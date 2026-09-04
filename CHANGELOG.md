@@ -53,6 +53,14 @@ dependencies, and a redesigned interface with four theme packs.
 - **A non-superuser administrator can no longer reset a superuser's MFA.**
 - **Notification dismissals are validated** against the caller's live feed, so
   a client can't grow the receipt table with made-up keys.
+- **A development `.env` can no longer put the Docker stack into DEBUG.**
+  Compose reads `./.env` both for `${...}` substitution and into the
+  containers, and that file is what the *local* installer writes (DEBUG on, a
+  dev signing key) — so running `./install.sh` and then `docker compose up`
+  produced a DEBUG container signing tokens with the development key. The
+  stack now reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a
+  development `.env` never contains, and the validator fails the build if the
+  old interpolation returns.
 - **Docker stack hardened:** the API runs as an unprivileged user; the API/admin
   port is bound to the loopback interface and the admin is proxied through
   nginx; `DJANGO_DEBUG` defaults to *off*; a strong secret key is generated and
@@ -80,8 +88,15 @@ dependencies, and a redesigned interface with four theme packs.
   exist before beat's first tick.
 - Date arithmetic in analytics, reminders and cadence maths now uses the
   configured `TIME_ZONE` (`timezone.localdate()`), not the server's clock.
+- **The audit-log filter dropdowns listed every action once per entry.**
+  `facets` called `.distinct()` on a queryset still carrying the model's
+  `Meta.ordering`, so `-timestamp` joined the SELECT behind DISTINCT and
+  defeated it.
 - A duplicate evidence link or duplicate group membership returns 400, not 500.
 - Access reviews can be filtered by status (`?status=open`).
+- Meetings, User audit, Controls and Jira read only the first page of endpoints
+  paginated at 50, silently truncating long-running series, minutes, reviews,
+  frameworks and boards.
 
 ### Added
 

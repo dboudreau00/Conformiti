@@ -74,7 +74,7 @@ frontend/src/
   components/charts Donut, BarChart, TrendLine
   components/layout Sidebar, TopBar, PanelTransition
   pages/            one file per route
-tools/validate.py   dependency-free static validator (15 checks)
+tools/validate.py   dependency-free static validator (16 checks)
 ```
 
 ## Commit style

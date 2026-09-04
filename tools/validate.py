@@ -504,6 +504,32 @@ def check_notifications_wiring():
 
 
 
+def check_compose_debug_isolation():
+    """Compose reads ./.env both for ${...} substitution and into the
+    containers, and ./.env is what the *local* installer writes (DEBUG on, dev
+    signing key). The Docker stack must therefore never interpolate
+    DJANGO_DEBUG / DJANGO_SECRET_KEY, or a developer who ran ./install.sh and
+    then `docker compose up` gets a DEBUG container signing real tokens."""
+    path = os.path.join(ROOT, "docker-compose.yml")
+    if not os.path.exists(path):
+        err("compose", "docker-compose.yml missing")
+        return
+    dc = read(path)
+    for leaky in ("${DJANGO_DEBUG", "${DJANGO_SECRET_KEY:"):
+        if leaky in dc:
+            err("compose", f"docker-compose.yml interpolates {leaky}...}} from .env — "
+                           "use CONFORMITI_DEBUG / CONFORMITI_SECRET_KEY instead")
+    if "DJANGO_DEBUG: ${CONFORMITI_DEBUG:-false}" not in dc:
+        err("compose", "docker-compose.yml must set DJANGO_DEBUG from ${CONFORMITI_DEBUG:-false}")
+    if "DJANGO_SECRET_KEY_FILE:" not in dc:
+        err("compose", "docker-compose.yml must set DJANGO_SECRET_KEY_FILE so a key is generated")
+    envex = read(os.path.join(ROOT, ".env.example"))
+    for key in ("CONFORMITI_DEBUG", "CONFORMITI_SECRET_KEY"):
+        if key not in envex:
+            err("compose", f"{key} is not documented in .env.example")
+    print(" 16. compose isolation: DEBUG/secret key cannot leak from a local .env into a container")
+
+
 def check_tests_and_ci():
     """A shippable project carries its own proof: a test module per app and
     a CI workflow that runs them."""
@@ -540,6 +566,7 @@ def main():
     check_mfa()
     check_notifications_wiring()
     check_tests_and_ci()
+    check_compose_debug_isolation()
 
     print()
     for w in warnings:
