@@ -5,6 +5,125 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2026-09-04
+
+The release that makes Conformiti useful **at audit time**, not just before
+one. Evidence can now be sealed and handed to an external auditor as a
+verifiable package; readiness is a graded score rather than a ticked box; the
+secrets that must be readable are encrypted at rest; uploaded evidence is read
+through an authorised endpoint and can be scanned for malware; and the SPA can
+keep its credentials where script cannot reach them.
+
+### Added
+
+- **Audit packages — sealed evidence issued to a named external auditor.**
+  Assemble the controls in scope, pin their evidence, write the management
+  assertion, and **seal**: every row is snapshotted (control text, status,
+  owner, document name, version, size, SHA-256) into a canonical manifest with
+  a digest. **Issue** it to one named auditor for a fixed period; they see that
+  package and nothing else, record a **design** and an **operating** conclusion
+  per control that nobody at the assessed organisation can edit, and leave with
+  a self-verifying ZIP — manifest, `SHA256SUMS`, workpaper and evidence CSVs, an
+  audit-trail extract, the files, and a stdlib-only `verify.py`. Exceptions
+  promote into the risk register, which makes `Risk.Type.AUDIT_FINDING`
+  reachable from the product for the first time. Access expires or is withdrawn
+  in one click; what was disclosed, to whom, and every file they opened is
+  permanent.
+  The bundle proves **integrity, not origin** — it carries no signature, and the
+  README, `SECURITY.md` and the UI all say so.
+- **Per-control readiness scoring.** Six signals — implementation, owner,
+  evidence, evidence freshness, test recency, minus a penalty for open risks —
+  normalised to 0–100 and banded. Expanding a control explains the score
+  component by component and names the single change worth the most points.
+  Controls gain `last_tested_on` and a retest interval, recorded with who and
+  when. `GET /api/controls/{id}/readiness/` returns the breakdown; the CSV
+  export carries the score, the band and the test date.
+- **Field encryption for secrets at rest.** The TOTP secret and the Jira API
+  token — the two values the server must be able to read back — are AES-256-GCM
+  encrypted under a rotatable key ring, with associated data binding each
+  ciphertext to its own row and column. `manage.py rotate_field_keys` moves rows
+  onto a new key and reports rows per key.
+- **Optional malware scanning for uploaded evidence** (`docker compose
+  --profile scanning up -d` plus `CONFORMITI_SCANNING=true`). Every path that
+  stores a file goes through it. Scanning runs *after* the folder permission
+  check, and when enabled it fails **closed**.
+- **HttpOnly cookie authentication** as an opt-in transport
+  (`AUTH_TRANSPORT=cookie`): the same tokens, delivered where script cannot read
+  them, with CSRF protection on unsafe methods and a sign-out that works even
+  after the access cookie has expired.
+- **An end-to-end browser suite** (`e2e/`) that drives the *built* SPA through
+  every screen and fails on any console error, plus **a 17th validator check**.
+  CI runs the suite once per authentication transport.
+- The demo dataset now seeds an in-flight access review and a sealed evidence
+  package, so neither screen is empty on a fresh install.
+
+### Security
+
+- **Uploaded evidence is no longer readable without authorisation.** nginx
+  served the whole media volume as a plain alias, and upload paths are derived
+  predictably from the folder tree — so anyone who could reach the site and
+  guess a path could fetch any document regardless of folder permissions, with
+  nothing recorded. Reads now go through `GET /api/documents/<id>/download/`,
+  which resolves folder access first and writes an audit row; both media
+  locations are `internal`, and no serializer publishes a storage path.
+- **The auditor bypass is confined to one module.** `attestations/access.py` is
+  the only place folder permissions are bypassed, behind six gates — assembling
+  is capability-gated, pinning re-checks the packager's own visibility so
+  packaging cannot launder access, the recipient must hold the Auditor role,
+  only sealed packages are visible to a grantee, grants are per user and
+  time-boxed and re-evaluated every request, and every byte that leaves is
+  recorded first.
+- `AlertExceedsMax yes` in the shipped `clamd.conf`: ClamAV's default silently
+  *skips* content that trips a size or recursion limit and answers OK, which
+  would store a file carrying the claim that it was scanned.
+
+### Changed
+
+- React 19, Vite 8, framer-motion 13 and lucide-react 1, verified by the new
+  suite against the production bundle. Backend floors raised to the tested
+  versions. **Django stays on the 5.2 LTS line and Tailwind on 3** — both
+  deliberate, both recorded in `.github/dependabot.yml` with the reason.
+- The API image runs threaded gunicorn workers: a malware scan holds a worker,
+  and three sync workers against a slow scanner would block `/api/health/` too.
+- `SQLITE_PATH` and `MEDIA_INTERNAL` settings; `ATTESTATION_*`, `CLAMAV_*`,
+  `READINESS_*`, `AUTH_*` and field-encryption keys, all documented in
+  `.env.example`.
+
+### Fixed
+
+- `bootstrap_demo` never created an access review, so **User audit was empty on
+  a fresh install** even though the README screenshot showed a populated one.
+- The SPA rendered the shell and fired every page's queries before the session
+  was confirmed — invisible with header auth, three console errors with cookie
+  auth.
+
+### Upgrading from 0.2.x
+
+1. Pull and `docker compose up -d --build`, or re-run the installer. Four
+   migrations apply automatically; the two that encrypt existing secrets are
+   reversible.
+2. **Back up the `secrets` volume with your database.** It now holds the
+   field-encryption key as well as the signing key. Losing it degrades safely —
+   MFA is still demanded, backup codes still work, an administrator can reset a
+   user's enrollment — but enrolled authenticators become unreadable.
+3. Nothing changes for existing sessions: the authentication transport still
+   defaults to `header`.
+4. Saved `/media/...` links stop working, by design. Use the application.
+
+### Verification for this tag
+
+| Gate | Result |
+|---|---|
+| `tools/validate.py` (17 checks) | PASS — 0 errors, 0 warnings |
+| Backend suite | 213 tests, 0 failures |
+| End-to-end (both transports) | 67 + 66 tests, 0 console errors |
+| Frontend build + `npm audit` | clean, 0 vulnerabilities |
+
+**Conformiti is still unaudited beta software.** No third-party penetration
+test has been performed.
+
+---
+
 ## [0.2.0] — 2026-09-03
 
 The first release built to be *shipped* rather than evaluated: a full security

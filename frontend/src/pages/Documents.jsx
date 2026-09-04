@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FileUpIcon, FolderPlusIcon, KeyRoundIcon, Link2Icon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
-import api, { fetchAll } from "../api/client.js";
+import api, { downloadFile, fetchAll } from "../api/client.js";
 import { Badge, Dot } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
@@ -673,14 +673,13 @@ export default function Documents({ me }) {
                                   style={{ gridTemplateColumns: cols }}
                                 >
                                   <span className="min-w-0">
-                                    <a
-                                      href={d.file || undefined}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="block truncate text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:text-accent"
+                                    <button
+                                      type="button"
+                                      onClick={() => downloadFile(`/documents/${d.id}/download/`, d.name)}
+                                      className="block max-w-full truncate text-left text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:text-accent"
                                     >
                                       {d.name}
-                                    </a>
+                                    </button>
                                     <span className="block truncate font-mono text-2xs uppercase tracking-label text-faint">
                                       {d.folder_path}{d.control_id ? ` · ${d.control_id}` : ""}
                                     </span>

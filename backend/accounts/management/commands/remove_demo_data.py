@@ -12,8 +12,8 @@ never survive into a real deployment. This command:
     the account you are running as the only superuser: it refuses to leave the
     installation without an active superuser or administrator;
   * deletes the sample documents, risks, meeting series, champion group,
-    calendar events, and the nine seeded audit-log rows, matching them by the
-    exact names bootstrap_demo created;
+    calendar events, the seeded access review and the nine seeded audit-log
+    rows, matching them by the exact names bootstrap_demo created;
   * drops the back-filled readiness history (points dated before today);
   * leaves the framework/control libraries, folders, roles, and the control
     statuses/owners intact (those are yours to reset from the Controls page).
@@ -25,7 +25,9 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 
-from accounts.management.commands.bootstrap_demo import DEMO_USERS, SAMPLE_DOCS
+from accounts.management.commands.bootstrap_demo import (
+    ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, SAMPLE_DOCS,
+)
 
 DEMO_USERNAMES = [u[0] for u in DEMO_USERS]
 DEMO_RISKS = [
@@ -57,7 +59,8 @@ class Command(BaseCommand):
         from audit.models import AuditLog
         from calendar_app.models import CalendarEvent
         from documents.models import Document
-        from governance.models import ChampionGroup, MeetingSeries, Risk
+        from attestations.models import EvidencePackage
+        from governance.models import AccessReview, ChampionGroup, MeetingSeries, Risk
 
         User = get_user_model()
         dry = opts["dry_run"]
@@ -86,6 +89,14 @@ class Command(BaseCommand):
         groups = ChampionGroup.objects.filter(name__in=DEMO_GROUPS)
         events = CalendarEvent.objects.filter(title__in=DEMO_EVENTS)
         audit_rows = AuditLog.objects.filter(ip_address__in=DEMO_AUDIT_IPS, detail__regex=r"^[a-z]")
+        # Only the seeded review, and only while a demo account owns it — a real
+        # review an operator started in the same quarter must survive.
+        reviews = AccessReview.objects.filter(
+            name__regex=ACCESS_REVIEW_PATTERN, created_by__username__in=DEMO_USERNAMES
+        )
+        packages = EvidencePackage.objects.filter(
+            name=DEMO_PACKAGE_NAME, created_by__username__in=DEMO_USERNAMES
+        )
 
         self.stdout.write(f"Demo users ({'delete' if delete else 'deactivate'}): "
                           f"{', '.join(u.username for u in demo_users) or 'none'}")
@@ -95,6 +106,8 @@ class Command(BaseCommand):
         self.stdout.write(f"Sample champion groups {verb} be deleted: {groups.count()}")
         self.stdout.write(f"Sample calendar events {verb} be deleted: {events.count()}")
         self.stdout.write(f"Seeded audit rows {verb} be deleted: {audit_rows.count()}")
+        self.stdout.write(f"Seeded access reviews {verb} be deleted: {reviews.count()}")
+        self.stdout.write(f"Seeded evidence packages {verb} be deleted: {packages.count()}")
         if dry:
             self.stdout.write(self.style.WARNING("Dry run — nothing changed."))
             return
@@ -113,6 +126,8 @@ class Command(BaseCommand):
         series.delete()
         groups.delete()
         events.delete()
+        reviews.delete()
+        packages.delete()
         audit_rows.delete()
 
         for user in demo_users:

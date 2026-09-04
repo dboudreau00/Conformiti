@@ -194,11 +194,12 @@ Everything in the badge row runs on every push:
 
 | Gate | What it proves |
 |---|---|
-| `tools/validate.py` — 16 static checks | app/route wiring, API contract between SPA and backend, shipped migrations, theme packs, tests + CI present |
-| `manage.py test` — **80 tests** | auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, audit trail, reminders, health, demo retirement, boot guard |
+| `tools/validate.py` — 17 static checks | app/route wiring, API contract between SPA and backend, shipped migrations, theme packs, tests + CI present |
+| `manage.py test` — **213 tests** | auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, audit trail, reminders, health, demo retirement, boot guard |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 on SQLite, plus PostgreSQL 16 |
 | Frontend | production build + `npm audit --audit-level=high` |
 | Docker | both images build; the API image boots and answers `/api/health/` |
+| [End-to-end](e2e/README.md) | Playwright drives the **built** SPA in a real browser through every screen — and fails on any console error |
 
 The review that produced this release — findings, severities, fixes and what
 was deliberately left alone — is in [REVIEW.md](REVIEW.md). Operator-facing
@@ -210,6 +211,38 @@ posture and residual risks: [SECURITY.md](SECURITY.md).
 > app if your organisation holds a licence for the source documents.
 
 ---
+
+## Handing evidence to an auditor
+
+Audit time usually means granting the external auditor read access to a folder
+tree and hoping somebody remembers to take it away afterwards. **Audit
+packages** replace that ritual.
+
+A compliance manager assembles the controls in scope, pins the evidence for
+each one, writes the management assertion and **seals** the package. Sealing
+snapshots every row — control text, status, owner, document name, version,
+size and SHA-256 — and produces a canonical manifest with a digest. The package
+is then **issued** to one named auditor for a fixed period.
+
+That auditor signs in and sees exactly that package: the controls, the pinned
+files, nothing else. They record a **design** and an **operating** conclusion
+per control, which nobody at the assessed organisation can edit, and the
+organisation can answer with a management response beside it. An exception can
+be raised into the risk register in one click.
+
+They leave with one self-verifying ZIP — the manifest, `SHA256SUMS`, the
+workpaper and evidence CSVs, an audit-trail extract, the files themselves, and
+a stdlib-only `verify.py` — which checks out with `sha256sum -c SHA256SUMS` and
+no vendor involvement. Access expires or is withdrawn in one click; the record
+of what was disclosed, to whom, and every file they opened, is permanent.
+
+> The bundle proves **integrity, not origin**: it carries no signature, so the
+> digest in the audit trail and the copy you publish out of band are what bind
+> it to a moment. And because the unit of evidence is a document, this is a
+> design-and-implementation package — populations, sampling and per-item test
+> results are the next release.
+
+![Audit packages](assets/screenshots/audit-packages.png)
 
 ## Project structure
 

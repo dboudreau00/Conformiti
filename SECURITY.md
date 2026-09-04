@@ -22,6 +22,18 @@ issues for vulnerabilities. You will get an acknowledgement within a week.
   authenticator app, enforced at login as a second step, with single-use backup
   codes and admin lockout-recovery. Implemented on the standard library and
   verified against the RFC 4226/6238 test vectors in the test suite.
+- **Secrets at rest:** the two columns that must be readable by the server —
+  the TOTP shared secret and the Jira API token — are encrypted with
+  AES-256-GCM under a rotatable key ring (`manage.py rotate_field_keys`). The
+  associated data binds each ciphertext to its own row and column, so a value
+  lifted from a database dump and written into another row is inert. Everything
+  else secret is hashed, not encrypted: passwords and MFA backup codes.
+- **Evidence is read through the API, never off the filesystem.** Uploaded
+  files are served by `GET /api/documents/<id>/download/`, which resolves folder
+  access first and writes an audit row; nginx marks the media volume `internal`,
+  so the bytes can only be entered through an `X-Accel-Redirect` from the API.
+  No serializer publishes a storage path. (Before 0.3.0 the volume was a plain
+  alias and upload paths were guessable.)
 - **Authorization:** role-capability permission classes on every endpoint, plus
   object-level, inheritance-aware folder access for folders and documents.
   Built-in role flags are immutable through the API. Deletion of evidence and
@@ -40,6 +52,14 @@ issues for vulnerabilities. You will get an acknowledgement within a week.
   the limit is shared across workers.
 - **Uploads:** size ceiling (`MAX_UPLOAD_MB`, default 32) enforced at nginx and
   in the application; empty files and active-content extensions refused.
+- **Optional malware scanning.** `docker compose --profile scanning up -d` plus
+  `CONFORMITI_SCANNING=true` sends every uploaded file to a ClamAV daemon before
+  it is stored — documents, new versions, meeting minutes and form templates.
+  Scanning happens *after* the folder permission check, so an unauthorised
+  caller can neither use it as a signature-set oracle nor tie the scanner up.
+  When it is enabled it fails **closed**: if the scanner cannot be reached the
+  upload is refused, because "is evidence scanned?" must not depend on whether
+  the daemon happened to answer. There is deliberately no fail-open switch.
 - **Supply chain:** pinned floors on current, supported majors (Django 5.2 LTS,
   React Router 7, Vite 7); `npm audit` clean; Dependabot; CI on every push.
 - **Containers:** unprivileged user, healthchecks, API bound to loopback and
@@ -113,20 +133,56 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
 
 ## Residual risks to weigh for production
 
-- **Tokens in `localStorage`.** The SPA stores JWTs in `localStorage`, the common
-  SPA pattern, so any XSS can read the access token (now short-lived) and the
-  refresh token (now single-use and revocable). The shipped CSP is the primary
-  mitigation. For the highest assurance, move to `HttpOnly` cookie auth with
-  CSRF protection — an architectural change, not a config flag.
-- **Jira token and TOTP secrets are stored in the application database** in
-  clear text (like most self-hosted integrations). Use a dedicated scoped Jira
-  token, restrict DB access, and consider field encryption or a secrets manager
-  if your threat model requires it.
+- **Tokens in `localStorage` — unless you switch the transport.** The default is
+  still the Authorization header with tokens in `localStorage`, because flipping
+  it silently would sign every existing deployment out. Set
+  `AUTH_TRANSPORT=cookie` and the same tokens travel as `HttpOnly`,
+  `SameSite=Lax` cookies that script cannot read, with Django's CSRF check on
+  unsafe methods. Be clear about the size of the win: XSS can still act as the
+  user while the page is open, because the browser attaches the cookie for it.
+  What it can no longer do is *exfiltrate* a credential that keeps working after
+  the tab closes. Same-origin deployments only, which is what the shipped nginx
+  serves; both modes still accept a Bearer header, so API clients are
+  unaffected. The end-to-end suite runs against both transports in CI.
+- **The field-encryption key is only as protected as where you put it.**
+  Encryption at rest defends against a stolen dump or backup, not against an
+  attacker who already has the application's key. If the key ring is derived
+  from `DJANGO_SECRET_KEY`, one secret protects both; keep them separate for a
+  stronger separation, and use a secrets manager if your threat model needs it.
+  It also does not stop an attacker who can *write* to the database — the read
+  path deliberately accepts legacy plaintext so an upgrade cannot lock you out.
+- **Back up the encryption key with the database.** Without it, enrolled
+  authenticators cannot be read. That degrades safely rather than dangerously:
+  the secret is never destroyed, MFA is still demanded at login, users can sign
+  in with their (deliberately unencrypted) single-use backup codes, and an
+  administrator can reset a user's enrollment. Restoring the key restores the
+  secrets. A saved Jira token would have to be re-entered.
+- **An evidence package is a deliberate, narrow disclosure — and the only
+  place folder permissions are bypassed.** An auditor holding a live grant on a
+  sealed package can read exactly the artefacts pinned into it, and nothing
+  else. That bypass lives in one module (`attestations/access.py`) so it can be
+  reviewed in one sitting. Packaging cannot launder access: a document can only
+  be pinned by someone who could already see its folder. Grants are per user
+  (never per role), time-boxed, revocable in one click, and re-evaluated on
+  every request, so deactivating or demoting the account closes it immediately.
+  Every file that leaves is recorded before it leaves.
+- **A sealed package proves integrity, not origin.** The manifest digest shows
+  the bundle is byte-for-byte what was sealed. It carries no cryptographic
+  signature, so anyone who could rewrite the bundle could rewrite the manifest
+  and its checksums consistently. The binding to a moment is the `seal` entry in
+  the audit trail, which records the digest, plus publishing that digest to the
+  auditor out of band. The product says so in the bundle's README and on the
+  package screen; do not describe a package as *signed* or *certified*.
 - **Passkeys (WebAuthn) and OAuth/SAML SSO are not implemented.** TOTP MFA
   covers the second-factor requirement today; SSO is on the roadmap.
-- **Uploaded file contents are not scanned.** Files are typed and size-capped
-  and served as attachments, but not virus-scanned. Add scanning if you accept
-  files from untrusted users.
+- **Malware scanning is off unless you turn it on.** Without the scanning
+  profile, files are typed, size-capped and served as attachments, but not
+  scanned. Turn it on if you accept files from people you do not control.
+- **The risk-register importer is not scanned.** `POST /api/risks/import/` reads
+  the uploaded spreadsheet with `upload.read()` and never writes it to storage,
+  so there is nothing to serve back; it is manager-only and already bounded by
+  a 2 MB cap, a zip-bomb guard and stdlib XML parsing. Stated here rather than
+  silently skipped.
 - **Usernames and emails are readable by every signed-in user** (`GET /users/`),
   because owner and assignee pickers need them. Acceptable for an internal
   tool; not for a multi-tenant one.

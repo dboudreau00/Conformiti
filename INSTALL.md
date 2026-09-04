@@ -113,7 +113,19 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--setup-only` / `-SetupOnly` | install and seed, don't start servers |
-| `--test` / `-Test` | run the validator, the 80 backend tests and a production frontend build |
+| `--test` / `-Test` | run the validator, the 213 backend tests and a production frontend build |
+
+### Optional: scan uploaded evidence for malware
+
+```bash
+docker compose --profile scanning up -d          # starts a ClamAV daemon
+CONFORMITI_SCANNING=true docker compose up -d    # and tells the API to use it
+```
+
+The first start downloads the signature database, which takes a few minutes;
+the container reports whether the scanner answered. **Scanning fails closed** —
+while it is on and the daemon is unreachable, uploads are refused rather than
+stored unscanned.
 | `--reset` / `-Reset` | wipe `db.sqlite3` and uploads, reseed |
 | `--no-demo` / `-NoDemo` | seed libraries only (then `createsuperuser`) |
 | `--open` / `-Open` | open the browser when ready |

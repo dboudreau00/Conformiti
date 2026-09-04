@@ -60,12 +60,37 @@ fi
 python manage.py generate_folder_tree >/dev/null 2>&1 || log "generate_folder_tree skipped (tree root not writable)"
 python manage.py collectstatic --noinput >/dev/null
 
+# Say at boot whether the scanner is reachable, rather than at the first upload.
+# Defaulted: `set -euo pipefail` above would kill the container on a bare
+# ${CLAMAV_ENABLED} for every default `docker compose up`.
+if [ "${CLAMAV_ENABLED:-false}" = "true" ]; then
+  if python -c "
+import os, sys
+sys.path.insert(0, '.')
+from documents.clamav import ping
+sys.exit(0 if ping(os.getenv('CLAMAV_HOST', 'clamav'), int(os.getenv('CLAMAV_PORT', '3310'))) else 1)
+" 2>/dev/null; then
+    log "Malware scanning ON - clamd answered at ${CLAMAV_HOST:-clamav}:${CLAMAV_PORT:-3310}"
+  else
+    log "!! Malware scanning is ON but clamd did not answer. Uploads will be REFUSED"
+    log "!! until it does (scanning fails closed on purpose). Start it with:"
+    log "!!   docker compose --profile scanning up -d clamav"
+  fi
+fi
+
 python - <<'PY'
 import os
 from config.version import __version__
 debug = os.getenv("DJANGO_DEBUG", "true").lower() in ("1", "true", "yes", "on")
 demo = os.getenv("SEED_DEMO_DATA", "true").lower() in ("1", "true", "yes", "on")
+# Read from the environment, not from django.conf: this heredoc runs with no
+# DJANGO_SETTINGS_MODULE, and `set -euo pipefail` above would kill the
+# container on the ImproperlyConfigured that importing settings would raise.
+key_src = ("environment" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY")
+           else "key file" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY_FILE")
+           else "derived from the signing key")
 print(f"Conformiti {__version__} — DEBUG={'ON' if debug else 'off'}, demo data={'ON' if demo else 'off'}")
+print(f"   field encryption: key ring from the {key_src}")
 if debug:
     print("!! DJANGO_DEBUG is on. Never expose this container to a network you don't trust.")
 if demo:

@@ -7,12 +7,35 @@ updates:
     groups:
       python:
         patterns: ["*"]
+    ignore:
+      # Conformiti tracks the Django LTS line on purpose: a compliance
+      # deployment is long-lived, and 5.2 LTS has security support until
+      # April 2028 while a feature release has roughly eight months. Moving
+      # to 6.x is a deliberate release decision, not a weekly bump — the next
+      # move is to 6.2 LTS. See PREREQUISITES.md.
+      - dependency-name: Django
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
     groups:
       javascript:
+        patterns: ["*"]
+    ignore:
+      # Tailwind 4 replaces the JavaScript config with a CSS-first `@theme`
+      # engine. The theme system in src/styles/index.css is the product's
+      # entire visual identity, so that migration gets its own release with a
+      # screenshot diff behind it — measured, it also produced 33% MORE CSS
+      # here, so there is no size argument for rushing it.
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+    groups:
+      e2e:
         patterns: ["*"]
   - package-ecosystem: docker
     directory: /backend

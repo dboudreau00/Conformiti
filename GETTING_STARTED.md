@@ -24,7 +24,7 @@ prints `App http://localhost:8080` with the demo credentials.
 **http://localhost:5173**.
 
 **Verify the build is wired (30 s):** `./install.sh --test` ✓ validator
-`PASS — 0 error(s)`, `Ran 80 tests … OK`, `✓ built`.
+`PASS — 0 error(s)`, `Ran 213 tests … OK`, `✓ built`.
 
 ## Part B — Sign in (1 min)
 

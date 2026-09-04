@@ -11,10 +11,10 @@ import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { useShell } from "../shell.js";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
-import { CONTROL_STATUS } from "../utils/tone.js";
+import { CONTROL_STATUS, READINESS_BAND } from "../utils/tone.js";
 
 const STATUS_KEYS = Object.keys(CONTROL_STATUS);
-const GRID = "grid-cols-[110px_minmax(0,1fr)_130px_140px_150px_90px]";
+const GRID = "grid-cols-[110px_minmax(0,1fr)_120px_130px_130px_120px_80px]";
 
 export default function Controls({ me }) {
   const { refreshCounts } = useShell();
@@ -239,7 +239,7 @@ export default function Controls({ me }) {
 
             <div className="overflow-x-auto">
               <div className={cn("grid min-w-[860px] items-center gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
-                {["Ref", "Control", "Framework", "Status", "Owner", "Evidence"].map((h) => (
+                {["Ref", "Control", "Framework", "Status", "Owner", "Readiness", "Evidence"].map((h) => (
                   <Label key={h} className={h === "Evidence" ? "text-right" : undefined}>
                     {h}
                   </Label>
@@ -327,6 +327,18 @@ function ControlRow({ control, expanded, onToggle, children }) {
         </span>
         <span className={cn("truncate text-xs", control.owner_name ? "text-muted" : "text-danger")}>
           {control.owner_name || "Unassigned"}
+        </span>
+        <span className="flex items-center gap-1.5">
+          {control.readiness_score === null ? (
+            <Badge tone="muted">Excluded</Badge>
+          ) : (
+            <>
+              <span className="tabular font-mono text-xs text-ink">{control.readiness_score}</span>
+              <Badge tone={(READINESS_BAND[control.readiness_band] || READINESS_BAND.not_started).tone}>
+                {(READINESS_BAND[control.readiness_band] || READINESS_BAND.not_started).label}
+              </Badge>
+            </>
+          )}
         </span>
         <span className="tabular flex items-center justify-end gap-1 font-mono text-xs text-muted">
           <PaperclipIcon className="h-3 w-3 text-faint" strokeWidth={2} aria-hidden="true" />

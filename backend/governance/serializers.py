@@ -76,15 +76,22 @@ class AccessReviewSerializer(serializers.ModelSerializer):
 # --------------------------------------------------------------------------- #
 class MeetingMinuteSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+    # Write-only for the same reason as DocumentSerializer.file: a serialized
+    # storage URL is an unauthenticated second route to the bytes.
+    file = serializers.FileField(required=False, allow_null=True, write_only=True)
+    download_url = serializers.SerializerMethodField()
 
     def validate_file(self, value):
         from documents.uploads import validate_upload
         return validate_upload(value)
 
+    def get_download_url(self, obj):
+        return f"/meeting-minutes/{obj.pk}/download/" if obj.file else None
+
     class Meta:
         model = MeetingMinute
         fields = [
-            "id", "series", "date", "title", "attendees", "notes", "file",
+            "id", "series", "date", "title", "attendees", "notes", "file", "download_url",
             "created_by", "created_by_name", "created_at",
         ]
         read_only_fields = ["created_by"]

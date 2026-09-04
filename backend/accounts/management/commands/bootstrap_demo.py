@@ -34,6 +34,13 @@ DEMO_USERS = [
     ("val", "Val", "Viewer", "Viewer", False),
 ]
 
+# The seeded access review is named for the quarter it was created in, so both
+# the seeder and remove_demo_data identify it by shape rather than by a literal.
+ACCESS_REVIEW_PATTERN = r"^Q[1-4] [0-9]{4} access review$"
+
+# The seeded evidence package, matched by name in both directions.
+DEMO_PACKAGE_NAME = "SOC 2 Type II fieldwork"
+
 # (control_id, doc name, cadence, review offset in days from today)
 SAMPLE_DOCS = [
     ("CC6.1", "Access Control Policy", "annual", 45),
@@ -58,6 +65,8 @@ class Command(BaseCommand):
         self._risks()
         self._events()
         self._governance()
+        self._access_review()
+        self._evidence_package()
         self._audit()
         self._history()
         self.stdout.write(self.style.SUCCESS(
@@ -305,6 +314,158 @@ class Command(BaseCommand):
             GroupMember.objects.get_or_create(
                 group=champs, user=val, defaults={"department": "Operations"},
             )
+
+    def _access_review(self):
+        """Seed one in-flight access review (idempotent).
+
+        Without this the User audit screen is empty on a fresh install, so the
+        feature looks unimplemented and the screenshot in the README shows
+        something the demo does not actually produce. Left part-decided on
+        purpose: an open review with work still to do is what the screen is
+        for.
+        """
+        from governance.models import AccessReview, AccessReviewItem
+        from governance.views import _snapshot_items
+
+        # Matched by pattern, not by exact name: the name carries the quarter it
+        # was seeded in, so a later run must recognise an earlier quarter's
+        # review as "already seeded" instead of stacking another one.
+        if AccessReview.objects.filter(name__regex=ACCESS_REVIEW_PATTERN).exists():
+            self.stdout.write("  Access review: already present, left alone")
+            return
+        today = timezone.localdate()
+        name = f"Q{(today.month - 1) // 3 + 1} {today.year} access review"
+        admin = User.objects.filter(username="admin").first()
+        review = AccessReview.objects.create(name=name, created_by=admin)
+        _snapshot_items(review)
+
+        # Decide every row but the last, so the progress meter reads 4/5 and
+        # the "1 decision left" prompt has something to point at.
+        decisions = {
+            "admin": (AccessReviewItem.Decision.KEEP, "Break-glass administrator; MFA enforced."),
+            "aria": (AccessReviewItem.Decision.KEEP, "External auditor, read-only for the audit window."),
+            "mia": (AccessReviewItem.Decision.KEEP, "Programme owner."),
+            "owen": (AccessReviewItem.Decision.MODIFY, "Drop edit on PCI folders after the migration."),
+        }
+        decided = 0
+        for item in review.items.all():
+            choice = decisions.get(item.username)
+            if not choice:
+                continue
+            item.decision, item.decision_notes = choice
+            item.decided_by = admin
+            item.decided_at = timezone.now()
+            item.save(update_fields=["decision", "decision_notes", "decided_by", "decided_at"])
+            decided += 1
+        self.stdout.write(
+            f"  Access review: '{name}' seeded ({decided}/{review.items.count()} decided)"
+        )
+
+    def _evidence_package(self):
+        """Seal one evidence package and issue it to the demo auditor.
+
+        Without this the auditor workspace is an empty screen on a fresh
+        install, and the feature that most distinguishes this product looks
+        unimplemented. Sealed and issued on purpose: a draft would not show
+        the manifest digest, and an unissued package would not show what an
+        external auditor actually sees.
+        """
+        from datetime import timedelta
+
+        from attestations.bundle import GENERATOR, assign_paths, build_manifest
+        from attestations.manifest import canonical_bytes, sha256_hex
+        from attestations.models import EvidencePackage, PackageControl, PackageGrant
+        from attestations.snapshot import pin_document, snapshot_control
+        from compliance.models import ControlEvidence
+
+        if EvidencePackage.objects.filter(name=DEMO_PACKAGE_NAME).exists():
+            self.stdout.write("  Evidence package: already present, left alone")
+            return
+
+        admin = User.objects.filter(username="admin").first()
+        mia = User.objects.filter(username="mia").first()
+        aria = User.objects.filter(username="aria").first()
+        links = list(
+            ControlEvidence.objects.select_related(
+                "control__category__framework", "document", "linked_by"
+            ).order_by("control__control_id")
+        )
+        if not links:
+            self.stdout.write("  Evidence package: no linked evidence yet, skipped")
+            return
+
+        today = timezone.localdate()
+        package = EvidencePackage.objects.create(
+            name=DEMO_PACKAGE_NAME,
+            engagement=f"FY{today.year} Type II",
+            audit_firm="Northgate Assurance LLP",
+            assurance_type=EvidencePackage.Assurance.TYPE_II,
+            period_start=today - timedelta(days=180),
+            period_end=today,
+            scope_note="Controls supporting the Security trust services criterion.",
+            created_by=mia or admin,
+            created_by_name=(mia or admin).get_full_name(),
+        )
+
+        seen = set()
+        for link in links:
+            control = link.control
+            if control.pk in seen:
+                continue
+            seen.add(control.pk)
+            row = snapshot_control(package, control, mia or admin)
+            for evidence_link in control.evidence_links.select_related("document", "linked_by"):
+                pin_document(row, evidence_link.document, mia or admin, link=evidence_link)
+
+        package.assertion = (
+            "Management asserts that the controls described in this package were "
+            "designed and implemented as described, and that the evidence attached "
+            "is complete and accurate as at the date of sealing."
+        )
+        now = timezone.now()
+        package.asserted_by = package.sealed_by = mia or admin
+        package.asserted_by_name = package.sealed_by_name = (mia or admin).get_full_name()
+        package.asserted_at = package.sealed_at = now
+        package.status = EvidencePackage.Status.SEALED
+        package.generator = GENERATOR
+        package.save()
+
+        assign_paths(package)
+        package.refresh_from_db()
+        raw = canonical_bytes(build_manifest(package))
+        package.manifest_json = raw.decode("utf-8")
+        package.manifest_sha256 = sha256_hex(raw)
+        package.manifest_version = 1
+        package.manifest_algorithm = "sha256"
+        package.save(update_fields=[
+            "manifest_json", "manifest_sha256", "manifest_version", "manifest_algorithm",
+        ])
+
+        # One row already concluded, so the workpaper is not uniformly blank.
+        first = package.controls.order_by("ordinal").first()
+        if first:
+            first.design_conclusion = PackageControl.Conclusion.NO_EXCEPTIONS
+            first.auditor_note = "Policy reviewed; approval evidence inspected."
+            first.concluded_by = aria
+            first.concluded_by_name = aria.get_full_name() if aria else ""
+            first.concluded_at = now
+            first.save()
+
+        if aria:
+            PackageGrant.objects.create(
+                package=package, user=aria,
+                username=aria.get_username(), full_name=aria.get_full_name(),
+                email=aria.email,
+                granted_by=mia or admin,
+                granted_by_name=(mia or admin).get_full_name(),
+                expires_at=now + timedelta(days=45),
+                note="Fieldwork access for the Type II engagement.",
+            )
+        self.stdout.write(
+            f"  Evidence package: '{DEMO_PACKAGE_NAME}' sealed "
+            f"({package.controls.count()} control(s), {package.evidence_count} item(s)) "
+            f"and issued to aria"
+        )
 
     def _control_program(self):
         """Give the control libraries a plausible programme state — a spread of

@@ -1,0 +1,20 @@
+{
+  "name": "conformiti-e2e",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end browser tests. Kept out of frontend/ so Playwright never enters the application's dependency tree or its npm audit.",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report",
+    "shots": "node shots.mjs",
+    "install-browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0"
+  }
+}

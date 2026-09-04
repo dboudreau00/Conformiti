@@ -1,6 +1,8 @@
 """Serializers for frameworks and controls."""
+from django.utils import timezone
 from rest_framework import serializers
 
+from . import scoring
 from .models import Control, ControlCategory, ControlEvidence, ControlMapping, Framework
 
 
@@ -10,15 +12,86 @@ class ControlSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True)
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
     evidence_count = serializers.SerializerMethodField()
+    readiness_score = serializers.SerializerMethodField()
+    readiness_band = serializers.SerializerMethodField()
+    readiness_band_label = serializers.SerializerMethodField()
+    last_tested_by_name = serializers.CharField(
+        source="last_tested_by.get_full_name", read_only=True, default="")
 
     class Meta:
         model = Control
         fields = [
             "id", "control_id", "title", "objective", "status", "owner",
             "owner_name", "category", "category_name", "framework", "framework_key",
-            "evidence_count",
+            "evidence_count", "last_tested_on", "test_interval_days",
+            "last_tested_by_name", "last_tested_recorded_at",
+            "readiness_score", "readiness_band", "readiness_band_label",
         ]
-        read_only_fields = ["control_id", "title", "objective", "category"]
+        read_only_fields = ["control_id", "title", "objective", "category",
+                            "last_tested_by_name", "last_tested_recorded_at"]
+
+    def _readiness(self, obj):
+        """Memoised: three fields would otherwise score the same row three times."""
+        cached = getattr(obj, "_readiness_cache", None)
+        if cached is None:
+            request = self.context.get("request")
+            cached = scoring.score_control(obj, request.user if request else None)
+            obj._readiness_cache = cached
+        return cached
+
+    def get_readiness_score(self, obj):
+        return self._readiness(obj)["score"]
+
+    def get_readiness_band(self, obj):
+        return self._readiness(obj)["band"]
+
+    def get_readiness_band_label(self, obj):
+        return self._readiness(obj)["band_label"]
+
+    def validate_last_tested_on(self, value):
+        if value and value > timezone.localdate():
+            raise serializers.ValidationError("A test date cannot be in the future.")
+        return value
+
+    def validate_test_interval_days(self, value):
+        if value is not None and not (1 <= value <= 3650):
+            raise serializers.ValidationError("Choose an interval between 1 and 3650 days.")
+        return value
+
+    def update(self, instance, validated_data):
+        """Stamp who recorded a test and when, and audit it explicitly.
+
+        audit.middleware records field NAMES only, so without this a backdated
+        test date is indistinguishable from any other edit."""
+        recording = ("last_tested_on" in validated_data
+                     and validated_data["last_tested_on"] != instance.last_tested_on)
+        previous = instance.last_tested_on
+        if recording:
+            request = self.context.get("request")
+            validated_data["last_tested_by"] = getattr(request, "user", None)
+            validated_data["last_tested_recorded_at"] = timezone.now()
+        control = super().update(instance, validated_data)
+        if recording:
+            self._audit_test(control, previous)
+        return control
+
+    def _audit_test(self, control, previous):
+        from audit.models import AuditLog
+        from audit.middleware import _client_ip
+
+        request = self.context.get("request")
+        if request is None:
+            return
+        try:
+            AuditLog.objects.create(
+                user=request.user if request.user.is_authenticated else None,
+                action="update", object_type="controls", object_id=str(control.pk),
+                detail=f"{control.control_id} last_tested_on {previous or 'never'} "
+                       f"-> {control.last_tested_on}"[:255],
+                ip_address=_client_ip(request),
+            )
+        except Exception:  # pragma: no cover - logging must not block the write
+            pass
 
     def get_evidence_count(self, obj):
         """Prefer the view's visibility-filtered annotation; otherwise compute a
@@ -33,6 +106,21 @@ class ControlSerializer(serializers.ModelSerializer):
             from documents.access import accessible_folder_ids
             qs = qs.filter(document__folder_id__in=accessible_folder_ids(request.user))
         return qs.count()
+
+
+class ControlRefSerializer(serializers.ModelSerializer):
+    """A control reference without the scored fields.
+
+    The crosswalk nests controls many-deep over every mapping; scoring there
+    would run three unannotated signal queries per row for a screen that does
+    not show a score.
+    """
+    framework_key = serializers.CharField(source="category.framework.key", read_only=True)
+    framework = serializers.CharField(source="category.framework.name", read_only=True)
+
+    class Meta:
+        model = Control
+        fields = ["id", "control_id", "title", "status", "framework", "framework_key"]
 
 
 class ControlEvidenceSerializer(serializers.ModelSerializer):
@@ -98,7 +186,10 @@ class FrameworkSerializer(serializers.ModelSerializer):
 
 
 class ControlMappingSerializer(serializers.ModelSerializer):
-    controls = ControlSerializer(many=True, read_only=True)
+    # ControlRefSerializer, not ControlSerializer: the crosswalk nests controls
+    # across every mapping and does not show a readiness score, so scoring here
+    # would cost three unannotated queries per row for nothing.
+    controls = ControlRefSerializer(many=True, read_only=True)
 
     class Meta:
         model = ControlMapping

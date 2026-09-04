@@ -88,6 +88,71 @@ if not DEBUG and (SECRET_KEY.strip().lower() in _PLACEHOLDER_KEYS or len(SECRET_
         "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(50))\""
     )
 
+# --- Field encryption (secrets at rest) -------------------------------------
+# Two columns hold secrets the application must be able to read back, so they
+# cannot be hashed: the TOTP secret and the Jira API token. They are encrypted
+# with AES-256-GCM instead (see config/fieldcrypto.py).
+#
+# Keys are a RING, newest first: the first key encrypts, every key decrypts, so
+# a key can be rotated without downtime (manage.py rotate_field_keys).
+_FIELD_KEY_FILE_DEFAULT = BASE_DIR / ".field-encryption-key"
+
+
+def _load_field_encryption_keys():
+    """Resolve the key ring, and say where it came from.
+
+    In order:
+      1. DJANGO_FIELD_ENCRYPTION_KEY  - comma-separated keys, newest first;
+      2. DJANGO_FIELD_ENCRYPTION_KEY_FILE - one key per line, generated at 0600
+         on first boot if absent (this is how the Docker stack gets a
+         persistent key with no configuration);
+      3. derived from SECRET_KEY - only when SECRET_KEY is a real value, so a
+         deployment that already keeps one secret does not have to keep two;
+      4. a generated key file beside the database.
+
+    Step 3 deliberately refuses a placeholder or short SECRET_KEY *regardless
+    of DEBUG*: `dev-insecure-change-me` is published in this repository, and a
+    ring derived from it would make "encrypted at rest" a false claim rather
+    than a weak one.
+    """
+    explicit = (os.getenv("DJANGO_FIELD_ENCRYPTION_KEY") or "").strip()
+    if explicit:
+        keys = [k.strip() for k in explicit.split(",") if k.strip()]
+        if keys:
+            return keys, "env"
+
+    key_file = (os.getenv("DJANGO_FIELD_ENCRYPTION_KEY_FILE") or "").strip()
+    derivable = (
+        SECRET_KEY.strip().lower() not in _PLACEHOLDER_KEYS
+        and len(SECRET_KEY.strip()) >= 32
+    )
+    if not key_file and not derivable:
+        key_file = str(_FIELD_KEY_FILE_DEFAULT)
+
+    if key_file:
+        path = Path(key_file)
+        try:
+            if path.exists():
+                stored = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+                if stored:
+                    return stored, "file"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            generated = secrets.token_urlsafe(32)
+            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(generated + "\n")
+            return [generated], "file"
+        except OSError as exc:
+            raise ImproperlyConfigured(
+                f"DJANGO_FIELD_ENCRYPTION_KEY_FILE={key_file!r} is not readable/writable: {exc}"
+            )
+
+    # Derived from a real SECRET_KEY. Domain-separated so the two never collide.
+    return ["derived:" + SECRET_KEY.strip()], "secret-key"
+
+
+FIELD_ENCRYPTION_KEYS, FIELD_ENCRYPTION_KEY_SOURCE = _load_field_encryption_keys()
+
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:5173").split(",") if o.strip()
@@ -115,6 +180,7 @@ INSTALLED_APPS = [
     "analytics",
     "governance",
     "integrations",
+    "attestations",
 ]
 
 MIDDLEWARE = [
@@ -160,10 +226,13 @@ if os.getenv("POSTGRES_DB"):
         }
     }
 else:
+    # SQLITE_PATH lets a second process (the end-to-end suite, a throwaway
+    # sandbox) run against its own file instead of a developer's working
+    # database.
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": Path(os.getenv("SQLITE_PATH") or (BASE_DIR / "db.sqlite3")),
         }
     }
 
@@ -232,10 +301,72 @@ COMPLIANCE_TREE_ROOT = os.getenv(
     "COMPLIANCE_TREE_ROOT", str(BASE_DIR.parent / "compliance-data")
 )
 
+# --- Malware scanning for uploaded evidence ---------------------------------
+# Off by default: it needs a ClamAV daemon. `docker compose --profile scanning
+# up` starts one, and install.sh --scan turns it on. When it IS on it fails
+# CLOSED -- an upload is refused if the scanner cannot be reached -- because
+# "is evidence scanned?" must not depend on whether the daemon happened to
+# answer. A scan occupies a gunicorn worker for its duration, which is why the
+# API runs threaded workers.
+CLAMAV_ENABLED = env_bool("CLAMAV_ENABLED", False)
+CLAMAV_HOST = os.getenv("CLAMAV_HOST", "clamav")
+CLAMAV_PORT = env_int("CLAMAV_PORT", 3310)
+CLAMAV_TIMEOUT = env_int("CLAMAV_TIMEOUT", 10)
+CLAMAV_CONNECT_TIMEOUT = env_int("CLAMAV_CONNECT_TIMEOUT", 3)
+# Must stay at or below clamd's StreamMaxLength (docker/clamd.conf).
+CLAMAV_MAX_BYTES = env_int("CLAMAV_MAX_MB", 40) * 1024 * 1024
+
+# --- Evidence packages (the auditor workspace) ------------------------------
+# How long a package may be issued to an external auditor for. The grant is
+# checked on every request, so shortening this affects live grants too.
+ATTESTATION_GRANT_DAYS = env_int("ATTESTATION_GRANT_DAYS", 45)
+ATTESTATION_GRANT_MAX_DAYS = env_int("ATTESTATION_GRANT_MAX_DAYS", 180)
+
+# --- Serving uploaded evidence ----------------------------------------------
+# Evidence is read through the API (GET /api/documents/<id>/download/), which
+# checks folder permissions and writes an audit row, rather than straight off
+# the media volume. With MEDIA_INTERNAL the view answers with an
+# X-Accel-Redirect and nginx sends the bytes from a location marked `internal`,
+# so the storage path is neither guessable nor directly fetchable. Turn it off
+# only where no accelerator sits in front of Django (the dev server does this
+# automatically, because it defaults to the inverse of DEBUG).
+MEDIA_INTERNAL = env_bool("MEDIA_INTERNAL", not DEBUG)
+MEDIA_ACCEL_PREFIX = os.getenv("MEDIA_ACCEL_PREFIX", "/protected-media/")
+
+# --- Control readiness scoring ----------------------------------------------
+# A control's readiness is a weighted 0-100 score over the signals an auditor
+# actually asks about, rather than a binary implemented/not. Weights and bands
+# are configurable because "ready" means different things to different
+# programmes; compliance/scoring.py reads these through settings at call time
+# so a test can override them.
+READINESS_WEIGHTS = {
+    "implementation": env_int("SCORE_W_IMPLEMENTATION", 35),
+    "owner": env_int("SCORE_W_OWNER", 10),
+    "evidence": env_int("SCORE_W_EVIDENCE", 20),
+    "freshness": env_int("SCORE_W_FRESHNESS", 20),
+    "testing": env_int("SCORE_W_TESTING", 15),
+    "risk_penalty": env_int("SCORE_W_RISK_PENALTY", 20),
+}
+# Ascending lower bounds for the at-risk / nearly / ready bands.
+READINESS_BANDS = [int(x) for x in os.getenv("READINESS_BANDS", "40,70,90").split(",") if x.strip()]
+if len(READINESS_BANDS) != 3 or sorted(READINESS_BANDS) != READINESS_BANDS         or len(set(READINESS_BANDS)) != 3 or not all(0 <= b <= 100 for b in READINESS_BANDS):
+    raise ImproperlyConfigured(
+        "READINESS_BANDS must be three strictly ascending integers in 0..100, "
+        f"e.g. '40,70,90' (got {os.getenv('READINESS_BANDS')!r}). A malformed value "
+        "would otherwise take the whole control register down on first read."
+    )
+# Evidence newer than this many days is fully fresh; past its review date by
+# more than this, it scores zero.
+READINESS_FRESH_DAYS = env_int("READINESS_FRESH_DAYS", 30)
+# Fallback retest interval when a control does not set its own.
+CONTROL_TEST_INTERVAL_DAYS = env_int("CONTROL_TEST_INTERVAL_DAYS", 365)
+
 # --- DRF / auth -------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Reads the access cookie when AUTH_TRANSPORT=cookie, and otherwise
+        # behaves exactly like JWTAuthentication. A Bearer header always wins.
+        "accounts.cookie_auth.CookieJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
@@ -254,6 +385,12 @@ REST_FRAMEWORK = {
         "anon": os.getenv("THROTTLE_ANON", "30/min"),
         "login": os.getenv("THROTTLE_LOGIN", "8/min"),
         "mfa": os.getenv("THROTTLE_MFA", "10/min"),
+        # Its own scope: in cookie mode every user's first request of the
+        # morning goes through refresh, and the 8/min login limit would
+        # start rejecting them behind a shared NAT.
+        "refresh": os.getenv("THROTTLE_REFRESH", "30/min"),
+        # Sealing and exporting hash every pinned file.
+        "package_work": os.getenv("THROTTLE_PACKAGE_WORK", "6/min"),
     },
     # Browsable API only while developing; JSON-only in production.
     "DEFAULT_RENDERER_CLASSES": (
@@ -383,6 +520,28 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 0)
     SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
     SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+
+# --- Authentication transport -----------------------------------------------
+# "header"  the SPA keeps the tokens in localStorage and sends Authorization
+#           (the 0.2.x behaviour, and still the default -- flipping it silently
+#           would sign every existing deployment out);
+# "cookie"  the same tokens travel as HttpOnly cookies, so script cannot read
+#           them, and unsafe methods must carry Django's CSRF token.
+# Both modes accept a Bearer header, so API clients are unaffected either way.
+AUTH_TRANSPORT = os.getenv("AUTH_TRANSPORT", "header").strip().lower()
+if AUTH_TRANSPORT not in ("header", "cookie"):
+    raise ImproperlyConfigured(
+        f"AUTH_TRANSPORT must be 'header' or 'cookie' (got {AUTH_TRANSPORT!r}). "
+        "A typo here would silently fall back to header auth and quietly undo "
+        "the hardening it was set for."
+    )
+AUTH_COOKIE_ACCESS = os.getenv("AUTH_COOKIE_ACCESS", "conformiti_access")
+AUTH_COOKIE_REFRESH = os.getenv("AUTH_COOKIE_REFRESH", "conformiti_refresh")
+# Scoped to the endpoint that consumes it, not to /api/auth/ -- that prefix
+# covers nine routes, including the ones that return the TOTP secret and the
+# backup codes.
+AUTH_COOKIE_REFRESH_PATH = "/api/auth/token/"
+AUTH_COOKIE_SECURE = env_bool("AUTH_COOKIE_SECURE", BEHIND_TLS)
 
 # --- Logging ------------------------------------------------------------------
 # Plain, single-line console logging that docker/systemd/journald can ingest.

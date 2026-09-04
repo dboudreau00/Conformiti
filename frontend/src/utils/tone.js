@@ -98,3 +98,14 @@ export function dueLabel(days) {
   if (days < 0) return `${-days}d over`;
   return `${days}d`;
 }
+
+/** Readiness bands. The labels deliberately avoid "Not started" and "Not
+ *  applicable": CONTROL_STATUS already uses those words, and both render as
+ *  buttons on the same row. */
+export const READINESS_BAND = {
+  not_started: { label: "Not ready", tone: "faint" },
+  at_risk: { label: "At risk", tone: "danger" },
+  nearly: { label: "Nearly there", tone: "warning" },
+  ready: { label: "Ready", tone: "success" },
+  not_applicable: { label: "Excluded", tone: "muted" },
+};

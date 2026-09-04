@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import CanManageDocuments
+from audit.events import record_evidence_read
 from .models import (
     Document,
     DocumentVersion,
@@ -15,6 +16,8 @@ from .models import (
     FormTemplate,
 )
 from .access import accessible_folder_ids
+from .downloads import serve_stored_file
+from .scanning import scan_or_raise
 from .permissions import DocumentAccessPermission, FolderAccessPermission
 from .serializers import (
     DocumentSerializer,
@@ -179,6 +182,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         folder = serializer.validated_data["folder"]
         self._require_folder_edit(folder)
+        # After the permission check, never in validate_file: is_valid() runs
+        # before this, so scanning there would hand an unauthorised caller a
+        # signature-set oracle and a way to saturate the scanner.
+        scan_or_raise(serializer.validated_data.get("file"), self.request)
         doc = serializer.save(
             created_by=self.request.user,
             owner=serializer.validated_data.get("owner") or self.request.user,
@@ -234,6 +241,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             validate_upload(new_file)
         except ValidationError as exc:
             raise ValidationError({"file": exc.detail})
+        scan_or_raise(new_file, request)
         if doc.file:
             DocumentVersion.objects.create(
                 document=doc, version=doc.version, file=doc.file,
@@ -245,6 +253,30 @@ class DocumentViewSet(viewsets.ModelViewSet):
         doc.reminders_sent = []
         doc.save()
         return Response(DocumentSerializer(doc, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """Stream the current file to a caller who may see its folder.
+
+        get_object() has already run get_queryset() (folder-filtered) and
+        DocumentAccessPermission, so reaching this line means the read is
+        authorised. Recorded in the audit trail: who read which evidence is
+        exactly the kind of question this product exists to answer.
+        """
+        doc = self.get_object()
+        record_evidence_read(request, doc)
+        return serve_stored_file(doc.file, doc.name)
+
+    @action(detail=True, methods=["get"], url_path=r"versions/(?P<version_pk>[^/.]+)/download")
+    def download_version(self, request, pk=None, version_pk=None):
+        """Stream an archived version. Same authorisation as the live file."""
+        doc = self.get_object()
+        try:
+            version = doc.versions.get(pk=version_pk)
+        except DocumentVersion.DoesNotExist:
+            raise ValidationError({"version": "Not found."})
+        record_evidence_read(request, doc, version=version.version)
+        return serve_stored_file(version.file, f"{doc.name} (v{version.version})")
 
     @action(detail=True, methods=["get"])
     def versions(self, request, pk=None):
@@ -286,3 +318,17 @@ class FormTemplateViewSet(viewsets.ModelViewSet):
     permission_classes = [CanManageDocuments]
     filterset_fields = ["category"]
     search_fields = ["name", "description"]
+
+    def perform_create(self, serializer):
+        scan_or_raise(serializer.validated_data.get("file"), self.request)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        scan_or_raise(serializer.validated_data.get("file"), self.request)
+        serializer.save()
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """Templates are blank forms, not evidence, so this is not audited --
+        but it still goes through the API so no storage path is published."""
+        return serve_stored_file(self.get_object().file, self.get_object().name)

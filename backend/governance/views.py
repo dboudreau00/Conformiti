@@ -184,7 +184,21 @@ class MeetingMinuteViewSet(viewsets.ModelViewSet):
     filterset_fields = ["series"]
 
     def perform_create(self, serializer):
+        from documents.scanning import scan_or_raise
+        scan_or_raise(serializer.validated_data.get("file"), self.request)
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        from documents.scanning import scan_or_raise
+        scan_or_raise(serializer.validated_data.get("file"), self.request)
+        serializer.save()
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """Minutes are read through the API so no storage path is published."""
+        from documents.downloads import serve_stored_file
+        minute = self.get_object()
+        return serve_stored_file(minute.file, f"{minute.title or 'minutes'}")
 
 
 # --------------------------------------------------------------------------- #

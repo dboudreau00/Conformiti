@@ -53,7 +53,8 @@ def check_python_syntax():
 # 2. Backend wiring: apps, urls, migrations lists
 # ===========================================================================
 LOCAL_APPS = ["accounts", "compliance", "documents", "calendar_app",
-              "notifications", "audit", "analytics", "governance", "integrations"]
+              "notifications", "audit", "analytics", "governance", "integrations",
+              "attestations"]
 
 
 def apps_with_models():
@@ -342,6 +343,8 @@ PIP_NAME = {
     "boto3": "boto3", "gunicorn": "gunicorn", "psycopg": "psycopg",
     "dateutil": "python-dateutil",
     "psycopg2": "psycopg2-binary",
+    "cryptography": "cryptography",
+    "storages": "django-storages",
 }
 
 
@@ -515,19 +518,86 @@ def check_compose_debug_isolation():
         err("compose", "docker-compose.yml missing")
         return
     dc = read(path)
-    for leaky in ("${DJANGO_DEBUG", "${DJANGO_SECRET_KEY:"):
+    # Every secret the stack accepts must go through a CONFORMITI_* name that a
+    # development .env never contains. Adding a secret here without adding it to
+    # this list is how the class of bug comes back.
+    for leaky in ("${DJANGO_DEBUG", "${DJANGO_SECRET_KEY:", "${DJANGO_FIELD_ENCRYPTION_KEY:"):
         if leaky in dc:
             err("compose", f"docker-compose.yml interpolates {leaky}...}} from .env — "
-                           "use CONFORMITI_DEBUG / CONFORMITI_SECRET_KEY instead")
+                           "use the matching CONFORMITI_* variable instead")
     if "DJANGO_DEBUG: ${CONFORMITI_DEBUG:-false}" not in dc:
         err("compose", "docker-compose.yml must set DJANGO_DEBUG from ${CONFORMITI_DEBUG:-false}")
-    if "DJANGO_SECRET_KEY_FILE:" not in dc:
-        err("compose", "docker-compose.yml must set DJANGO_SECRET_KEY_FILE so a key is generated")
+    for required in ("DJANGO_SECRET_KEY_FILE:", "DJANGO_FIELD_ENCRYPTION_KEY_FILE:"):
+        if required not in dc:
+            err("compose", f"docker-compose.yml must set {required} so a key is generated on first boot")
     envex = read(os.path.join(ROOT, ".env.example"))
-    for key in ("CONFORMITI_DEBUG", "CONFORMITI_SECRET_KEY"):
+    for key in ("CONFORMITI_DEBUG", "CONFORMITI_SECRET_KEY", "CONFORMITI_FIELD_ENCRYPTION_KEY"):
         if key not in envex:
             err("compose", f"{key} is not documented in .env.example")
-    print(" 16. compose isolation: DEBUG/secret key cannot leak from a local .env into a container")
+    print(" 16. compose isolation: no secret can leak from a local .env into a container")
+
+
+def check_malware_scanning():
+    """The scanning path, checked without a socket or a ClamAV install.
+
+    Three things can silently make "evidence is scanned" untrue: a clamd that
+    skips oversized content and answers OK, a compose file that reads the
+    enable flag from a shared .env, and a stream limit smaller than what nginx
+    will accept.
+    """
+    sys.path.insert(0, BACKEND)
+    try:
+        from documents.clamav import (  # noqa: E402
+            InfectedError, LimitsExceededError, ScanError, parse_response,
+        )
+        from documents.scanning import eicar_bytes  # noqa: E402
+    except Exception as exc:  # pragma: no cover - import failure is the finding
+        err("scanning", f"documents.clamav / documents.scanning did not import: {exc}")
+        print(" 17. malware scanning: FAILED to import")
+        return
+
+    # The four replies clamd can give.
+    cases = 0
+    if parse_response("stream: OK") is not None:
+        err("scanning", "a clean reply must map to None")
+    cases += 1
+    for reply, expected in [
+        ("stream: Win.Test.EICAR_HDB-1 FOUND", InfectedError),
+        ("stream: Heuristics.Limits.Exceeded.MaxFileSize FOUND", LimitsExceededError),
+        ("stream: something ERROR", ScanError),
+        ("", ScanError),
+    ]:
+        try:
+            parse_response(reply)
+            err("scanning", f"{reply!r} should have raised {expected.__name__}")
+        except expected:
+            pass
+        except Exception as exc:
+            err("scanning", f"{reply!r} raised {type(exc).__name__}, expected {expected.__name__}")
+        cases += 1
+
+    eicar = eicar_bytes()
+    if len(eicar) != 68 or not eicar.startswith(b"X5O!"):
+        err("scanning", "the EICAR test string is not the standard 68-byte file")
+
+    # The three numbers that have to agree with each other.
+    conf_path = os.path.join(ROOT, "docker", "clamd.conf")
+    if not os.path.exists(conf_path):
+        err("scanning", "docker/clamd.conf is missing; the scanning profile cannot start")
+    else:
+        conf = read(conf_path)
+        if "AlertExceedsMax yes" not in conf:
+            err("scanning", "docker/clamd.conf must set 'AlertExceedsMax yes', or content that "
+                            "trips a Max* limit is skipped and answered OK")
+        if "StreamMaxLength 40M" not in conf:
+            err("scanning", "docker/clamd.conf must set StreamMaxLength 40M to match CLAMAV_MAX_MB")
+
+    nginx = os.path.join(ROOT, "frontend", "nginx.conf")
+    if os.path.exists(nginx) and "client_max_body_size 32m" not in read(nginx):
+        err("scanning", "frontend/nginx.conf must cap bodies at 32m to match MAX_UPLOAD_MB")
+
+    print(f" 17. malware scanning: {cases} protocol cases, EICAR fixture and the "
+          "clamd/nginx limits agree")
 
 
 def check_tests_and_ci():
@@ -567,6 +637,7 @@ def main():
     check_notifications_wiring()
     check_tests_and_ci()
     check_compose_debug_isolation()
+    check_malware_scanning()
 
     print()
     for w in warnings:

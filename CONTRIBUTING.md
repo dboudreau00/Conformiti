@@ -32,7 +32,7 @@ which is shorthand for:
 ```bash
 python tools/validate.py                                   # static wiring/contract checks
 cd backend && python manage.py check && python manage.py makemigrations --check --dry-run
-cd backend && python manage.py test                        # 80 tests, ~90 s on SQLite
+cd backend && python manage.py test                        # 213 tests, ~2.5 min on SQLite
 cd frontend && npm run build && npm audit --audit-level=high
 ```
 
@@ -74,7 +74,7 @@ frontend/src/
   components/charts Donut, BarChart, TrendLine
   components/layout Sidebar, TopBar, PanelTransition
   pages/            one file per route
-tools/validate.py   dependency-free static validator (16 checks)
+tools/validate.py   dependency-free static validator (17 checks)
 ```
 
 ## Commit style

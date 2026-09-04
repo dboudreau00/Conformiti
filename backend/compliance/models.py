@@ -50,6 +50,23 @@ class Control(models.Model):
         on_delete=models.SET_NULL, related_name="owned_controls",
     )
 
+    # --- operating-effectiveness testing ---------------------------------
+    # "Implemented" says the control was built; these say somebody checked it
+    # still works, which is the question an auditor actually asks. Recorded
+    # with who and when, because the audit middleware logs field NAMES only --
+    # without provenance a single manager could backdate all 217 controls and
+    # the trail would read `fields=last_tested_on` 217 times.
+    last_tested_on = models.DateField(null=True, blank=True)
+    test_interval_days = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="How often this control should be retested. Blank uses the site default.",
+    )
+    last_tested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="controls_tested",
+    )
+    last_tested_recorded_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["category", "control_id"]
         unique_together = ("category", "control_id")

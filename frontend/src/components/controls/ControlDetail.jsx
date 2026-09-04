@@ -3,7 +3,7 @@ import { PaperclipIcon } from "lucide-react";
 import api, { fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
-import { CONTROL_STATUS, DOC_STATUS } from "../../utils/tone.js";
+import { CONTROL_STATUS, DOC_STATUS, READINESS_BAND } from "../../utils/tone.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
 import { Label, Loading } from "../ui/Panel.jsx";
@@ -62,6 +62,15 @@ export function ControlDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const [readiness, setReadiness] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get(`/controls/${id}/readiness/`)
+      .then(({ data }) => { if (alive) setReadiness(data); })
+      .catch(() => { if (alive) setReadiness(null); });
+    return () => { alive = false; };
+  }, [id]);
+
   const linkedIds = useMemo(() => new Set(links.map((l) => l.document)), [links]);
   const available = useMemo(
     () => (docChoices || []).filter((d) => !linkedIds.has(d.id)),
@@ -77,7 +86,12 @@ export function ControlDetail({
     setNotice(null);
     try {
       await onPatch(id, { [field]: value });
-      setNotice({ ok: field === "status" ? "Status updated." : "Owner updated." });
+      setNotice({ ok: {
+        status: "Status updated.",
+        owner: "Owner updated.",
+        last_tested_on: "Test date recorded.",
+        test_interval_days: "Test interval updated.",
+      }[field] || "Saved." });
     } catch (e) {
       setNotice({ err: errorText(e) });
     } finally {
@@ -135,8 +149,9 @@ export function ControlDetail({
 
   return (
     <div className="grid grid-cols-1 gap-6 px-5 py-4 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      {/* ---- Left: objective + assignment ---------------------------------- */}
+      {/* ---- Left: readiness + objective + assignment ----------------------- */}
       <div className="space-y-4">
+        {readiness ? <ReadinessBreakdown readiness={readiness} /> : null}
         <div>
           <Label className="mb-1.5 block">Objective</Label>
           <p className="text-[13px] leading-relaxed text-ink">{control.objective || "—"}</p>
@@ -303,6 +318,74 @@ export function ControlDetail({
           </form>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+
+/** Why a control scores what it scores.
+
+ * A bare number invites arguing with it; the breakdown turns "68" into a list
+ * of the specific things that would move it, which is the only version of this
+ * a control owner can act on.
+ */
+function ReadinessBreakdown({ readiness }) {
+  const band = READINESS_BAND[readiness.band] || READINESS_BAND.not_started;
+  if (readiness.score === null) {
+    return (
+      <div className="rounded-xl border border-line bg-surface p-3">
+        <Label as="p">Readiness</Label>
+        <p className="mt-1 text-xs text-muted">
+          Marked not applicable, so it is excluded from every readiness figure.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-line bg-surface p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <Label as="p">Readiness</Label>
+        <span className="flex items-baseline gap-2">
+          <span className="tabular font-mono text-[17px] font-semibold text-ink">
+            {readiness.score}
+          </span>
+          <Badge tone={band.tone}>{band.label}</Badge>
+        </span>
+      </div>
+      <ul className="mt-2 space-y-1">
+        {readiness.components.map((c) => (
+          <li key={c.key} className="flex items-baseline justify-between gap-3">
+            <span className={cn("text-xs", c.earned ? "text-muted" : "text-faint")}>
+              {c.label}
+              <span className="block text-2xs leading-snug text-faint">{c.detail}</span>
+            </span>
+            <span className={cn(
+              "tabular shrink-0 font-mono text-xs",
+              c.earned ? "text-success" : c.points ? "text-warning" : "text-faint"
+            )}>
+              {c.points}/{c.weight}
+            </span>
+          </li>
+        ))}
+        {readiness.penalty ? (
+          <li className="flex items-baseline justify-between gap-3 border-t border-line pt-1">
+            <span className="text-xs text-danger">
+              Open risks
+              <span className="block text-2xs leading-snug text-faint">
+                {readiness.open_risks} open or mitigating risk(s) against this control.
+              </span>
+            </span>
+            <span className="tabular shrink-0 font-mono text-xs text-danger">
+              −{readiness.penalty}
+            </span>
+          </li>
+        ) : null}
+      </ul>
+      {readiness.next_best_action ? (
+        <p className="mt-2 border-t border-line pt-2 text-xs text-muted">
+          <span className="text-faint">Next: </span>{readiness.next_best_action}
+        </p>
+      ) : null}
     </div>
   );
 }

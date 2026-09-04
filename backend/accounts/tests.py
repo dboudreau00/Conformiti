@@ -5,6 +5,7 @@ from accounts import mfa as mfa_lib
 from accounts.models import MfaDevice, Role
 from audit.models import AuditLog
 from testutils import PASSWORD, APITestBase, make_user
+from django.test import override_settings
 
 
 class LoginTests(APITestBase):
@@ -250,3 +251,276 @@ class UserAdminGuardTests(APITestBase):
         self.assertFalse(Role.objects.get(name="Risk Lead").is_system)
         self.assertEqual(c.delete(f"/api/roles/{viewer_role.pk}/").status_code, 403)
         self.assertEqual(c.delete(f"/api/roles/{r.data['id']}/").status_code, 204)
+
+
+class MfaSecretAtRestTests(APITestBase):
+    """The TOTP secret is encrypted in the database but transparent to the app.
+
+    The first test here is the one that matters: without a data descriptor on
+    the field, Model.__init__ writes the raw column straight into the
+    instance's __dict__ and wins the attribute lookup, so nothing ever
+    decrypts -- and mfa.verify() would be handed a ciphertext.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.device = MfaDevice.objects.create(user=self.owner, secret="JBSWY3DPEHPK3PXP")
+
+    def _raw(self):
+        return MfaDevice.objects.filter(pk=self.device.pk).values_list("secret", flat=True).first()
+
+    def test_plain_queryset_load_returns_plaintext(self):
+        self.assertEqual(MfaDevice.objects.get(pk=self.device.pk).secret, "JBSWY3DPEHPK3PXP")
+
+    def test_deferred_and_refreshed_loads_return_plaintext(self):
+        self.assertEqual(MfaDevice.objects.only("secret").get(pk=self.device.pk).secret,
+                         "JBSWY3DPEHPK3PXP")
+        self.assertEqual(MfaDevice.objects.defer("secret").get(pk=self.device.pk).secret,
+                         "JBSWY3DPEHPK3PXP")
+        fresh = MfaDevice.objects.get(pk=self.device.pk)
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.secret, "JBSWY3DPEHPK3PXP")
+
+    def test_the_stored_column_is_ciphertext(self):
+        raw = self._raw()
+        self.assertTrue(raw.startswith("fc1$"))
+        self.assertNotIn("JBSWY3DPEHPK3PXP", raw)
+
+    def test_a_full_save_does_not_re_encrypt(self):
+        device = MfaDevice.objects.get(pk=self.device.pk)
+        device.save()
+        self.assertEqual(self._raw().count("fc1$"), 1)
+        self.assertEqual(MfaDevice.objects.get(pk=self.device.pk).secret, "JBSWY3DPEHPK3PXP")
+
+    def test_ciphertext_moved_to_another_user_does_not_decrypt(self):
+        """The AAD binds the envelope to user_id, so a ciphertext lifted from a
+        database dump and written into someone else's row is inert."""
+        stolen = self._raw()
+        other = MfaDevice.objects.create(user=self.viewer, secret="AAAAAAAAAAAAAAAA")
+        MfaDevice.objects.filter(pk=other.pk).update(secret=stolen)
+        self.assertEqual(MfaDevice.objects.get(pk=other.pk).secret, "")
+
+    def test_an_unreadable_secret_survives_a_full_save(self):
+        """A mistyped key must degrade to read-only, never destroy the column:
+        restoring the right key has to recover the secret."""
+        before = self._raw()
+        with override_settings(FIELD_ENCRYPTION_KEYS=["a-totally-different-key-000000000000"]):
+            device = MfaDevice.objects.get(pk=self.device.pk)
+            self.assertEqual(device.secret, "")
+            device.save()
+            self.assertEqual(self._raw(), before)
+        self.assertEqual(MfaDevice.objects.get(pk=self.device.pk).secret, "JBSWY3DPEHPK3PXP")
+
+    def test_login_still_demands_a_second_factor_when_the_secret_is_unreadable(self):
+        """An unreadable secret must not become an authentication bypass."""
+        self.device.enabled = True
+        self.device.save()
+        with override_settings(FIELD_ENCRYPTION_KEYS=["a-totally-different-key-000000000000"]):
+            r = APIClient().post("/api/auth/token/",
+                                 {"username": self.owner.username, "password": PASSWORD},
+                                 format="json")
+            # The second factor is still demanded (400 + mfa_required, the same
+            # contract as a readable secret) and no tokens are issued.
+            self.assertEqual(r.status_code, 400)
+            self.assertTrue(r.data.get("mfa_required"))
+            self.assertNotIn("access", r.data)
+            # ...and a wrong code is still refused rather than waved through.
+            r = APIClient().post("/api/auth/token/",
+                                 {"username": self.owner.username, "password": PASSWORD,
+                                  "otp": "000000"},
+                                 format="json")
+            self.assertNotIn("access", r.data)
+
+    def test_backup_codes_still_work_when_the_secret_is_unreadable(self):
+        """This is the documented recovery path, and the reason backup codes
+        are deliberately left unencrypted."""
+        self.device.enabled = True
+        self.device.save()
+        self.device.set_backup_codes(["abcd-1234"])
+        with override_settings(FIELD_ENCRYPTION_KEYS=["a-totally-different-key-000000000000"]):
+            device = MfaDevice.objects.get(pk=self.device.pk)
+            self.assertTrue(device.verify("abcd-1234"))
+
+    def test_enrolment_and_verification_work_end_to_end(self):
+        """The whole point: encryption must be invisible to the feature."""
+        c = self.client_for(self.manager)
+        setup = c.post("/api/auth/mfa/setup/", {}, format="json")
+        self.assertEqual(setup.status_code, 200)
+        secret = setup.data["secret"]
+        stored = MfaDevice.objects.filter(user=self.manager).values_list("secret", flat=True).first()
+        self.assertTrue(stored.startswith("fc1$"))
+        self.assertNotIn(secret, stored)
+        r = c.post("/api/auth/mfa/verify/", {"code": mfa_lib.totp(secret)}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertTrue(MfaDevice.objects.get(user=self.manager).enabled)
+
+
+COOKIE = override_settings(AUTH_TRANSPORT="cookie", AUTH_COOKIE_SECURE=False)
+
+
+@COOKIE
+class CookieAuthTests(APITestBase):
+    """The same tokens, delivered where script cannot read them."""
+
+    def login(self, client=None, **extra):
+        client = client or APIClient(enforce_csrf_checks=True)
+        return client, client.post(
+            "/api/auth/token/",
+            {"username": "mia", "password": PASSWORD}, format="json", **extra)
+
+    def test_login_sets_httponly_cookies_and_returns_no_tokens(self):
+        client, r = self.login()
+        self.assertEqual(r.status_code, 200, r.data)
+        # The whole point: nothing usable in the body.
+        self.assertNotIn("access", r.data)
+        self.assertNotIn("refresh", r.data)
+        self.assertTrue(r.data["authenticated"])
+
+        access = r.cookies["conformiti_access"]
+        refresh = r.cookies["conformiti_refresh"]
+        for cookie in (access, refresh):
+            self.assertTrue(cookie["httponly"])
+            self.assertEqual(cookie["samesite"], "Lax")
+        self.assertEqual(access["path"], "/api/")
+        # NOT /api/auth/ -- that prefix covers the MFA routes that return the
+        # TOTP secret and the backup codes.
+        self.assertEqual(refresh["path"], "/api/auth/token/")
+
+    def test_the_cookie_alone_authenticates_a_read(self):
+        client, _ = self.login()
+        r = client.get("/api/users/me/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["username"], "mia")
+
+    def test_an_unsafe_method_needs_the_csrf_header(self):
+        client, login = self.login()
+        token = login.cookies["csrftoken"].value
+        r = client.patch("/api/users/me/", {"job_title": "No token"}, format="json")
+        self.assertEqual(r.status_code, 403, "a cookie-authenticated write needs CSRF")
+        r = client.patch("/api/users/me/", {"job_title": "With token"},
+                         format="json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(r.status_code, 200, r.data)
+
+    def test_a_bearer_header_still_works_and_needs_no_csrf(self):
+        """API clients are unaffected by the transport setting: a header is not
+        attached by the browser, so it cannot be forged cross-site."""
+        pair = APIClient().post("/api/auth/token/",
+                                {"username": "mia", "password": PASSWORD}, format="json")
+        # In cookie mode the body is empty, so read the token from the cookie
+        # the way a script never could -- this is a test, not the browser.
+        access = pair.cookies["conformiti_access"].value
+        client = APIClient(enforce_csrf_checks=True)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+        self.assertEqual(client.get("/api/users/me/").status_code, 200)
+        self.assertEqual(
+            client.patch("/api/users/me/", {"job_title": "Via header"}, format="json").status_code,
+            200)
+
+    def test_the_csrf_token_rotates_across_the_login_boundary(self):
+        client = APIClient(enforce_csrf_checks=True)
+        client.get("/api/auth/session/")           # seeds a pre-login token
+        before = client.cookies.get("csrftoken")
+        _, login = self.login(client)
+        self.assertEqual(login.status_code, 200)
+        after = login.cookies.get("csrftoken")
+        self.assertIsNotNone(after)
+        if before is not None:
+            self.assertNotEqual(before.value, after.value,
+                                "a pre-login token must not survive into the session")
+
+    def test_refresh_reads_the_cookie_rotates_and_reissues(self):
+        client, login = self.login()
+        first = login.cookies["conformiti_refresh"].value
+        r = client.post("/api/auth/token/refresh/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data, {"renewed": True}, "no tokens in the body")
+        self.assertNotEqual(r.cookies["conformiti_refresh"].value, first,
+                            "refresh tokens rotate")
+        # The old one is blacklisted, as in header mode.
+        self.assertEqual(
+            APIClient().post("/api/auth/token/refresh/",
+                             {"refresh": first}, format="json").status_code, 401)
+
+    def test_refresh_without_a_cookie_is_refused(self):
+        self.assertEqual(
+            APIClient().post("/api/auth/token/refresh/", {}, format="json").status_code, 400)
+
+    def test_the_session_probe_is_tolerant_and_reports_renewability(self):
+        client = APIClient(enforce_csrf_checks=True)
+        r = client.get("/api/auth/session/")
+        self.assertEqual(r.status_code, 200, "a cold probe must not 401")
+        self.assertFalse(r.data["authenticated"])
+        self.assertEqual(r.data["transport"], "cookie")
+
+        client, _ = self.login(client)
+        r = client.get("/api/auth/session/")
+        self.assertTrue(r.data["authenticated"])
+        self.assertEqual(r.data["username"], "mia")
+
+        # An expired access cookie with a live refresh cookie is renewable.
+        client.cookies.pop("conformiti_access")
+        r = client.get("/api/auth/session/")
+        self.assertFalse(r.data["authenticated"])
+        self.assertTrue(r.data["renewable"])
+
+    def test_signing_out_works_even_after_the_access_cookie_has_expired(self):
+        """The fail-open this closes: the SPA cannot clear an HttpOnly cookie,
+        so a sign-out that 401d would leave a live 7-day credential in the
+        browser while the interface said 'signed out'."""
+        client, login = self.login()
+        refresh = login.cookies["conformiti_refresh"].value
+        token = client.cookies["csrftoken"].value
+        client.cookies.pop("conformiti_access")
+
+        r = client.post("/api/auth/session/clear/", {}, format="json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.cookies["conformiti_access"].value, "")
+        self.assertEqual(r.cookies["conformiti_refresh"].value, "")
+        # ...and the refresh token really is dead.
+        self.assertEqual(
+            APIClient().post("/api/auth/token/refresh/",
+                             {"refresh": refresh}, format="json").status_code, 401)
+
+    def test_clearing_a_session_that_never_existed_still_succeeds(self):
+        r = APIClient().post("/api/auth/session/clear/", {}, format="json")
+        self.assertEqual(r.status_code, 200, "a client must always be able to finish signing out")
+
+    def test_an_mfa_challenge_sets_no_cookies(self):
+        device = MfaDevice.objects.create(user=self.manager, secret=mfa_lib.generate_secret())
+        device.enabled = True
+        device.save()
+        r = APIClient().post("/api/auth/token/",
+                             {"username": "mia", "password": PASSWORD}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertNotIn("conformiti_access", r.cookies)
+        self.assertNotIn("conformiti_refresh", r.cookies)
+
+    def test_the_config_endpoint_tells_the_spa_which_transport_is_live(self):
+        r = APIClient().get("/api/auth/config/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["transport"], "cookie")
+
+
+class HeaderModeRegressionTests(APITestBase):
+    """The default transport is unchanged, because flipping it silently would
+    sign every existing deployment out."""
+
+    def test_the_default_returns_tokens_and_sets_no_auth_cookies(self):
+        r = APIClient().post("/api/auth/token/",
+                             {"username": "mia", "password": PASSWORD}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("access", r.data)
+        self.assertIn("refresh", r.data)
+        self.assertNotIn("conformiti_access", r.cookies)
+
+    def test_a_leftover_cookie_does_not_authenticate_in_header_mode(self):
+        with override_settings(AUTH_TRANSPORT="cookie", AUTH_COOKIE_SECURE=False):
+            login = APIClient().post("/api/auth/token/",
+                                     {"username": "mia", "password": PASSWORD}, format="json")
+            access = login.cookies["conformiti_access"].value
+        client = APIClient()
+        client.cookies["conformiti_access"] = access
+        self.assertEqual(client.get("/api/users/me/").status_code, 401)
+
+    def test_the_config_endpoint_reports_the_header_transport(self):
+        self.assertEqual(APIClient().get("/api/auth/config/").data["transport"], "header")

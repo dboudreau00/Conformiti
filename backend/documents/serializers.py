@@ -78,10 +78,15 @@ class FolderSerializer(serializers.ModelSerializer):
 
 class DocumentVersionSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source="uploaded_by.get_full_name", read_only=True, default="")
+    download_url = serializers.SerializerMethodField()
 
     class Meta:
         model = DocumentVersion
-        fields = ["id", "version", "file", "note", "uploaded_by", "uploaded_by_name", "created_at"]
+        fields = ["id", "version", "note", "uploaded_by", "uploaded_by_name",
+                  "created_at", "download_url"]
+
+    def get_download_url(self, obj):
+        return f"/documents/{obj.document_id}/versions/{obj.pk}/download/"
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -91,17 +96,27 @@ class DocumentSerializer(serializers.ModelSerializer):
     is_overdue = serializers.BooleanField(read_only=True)
     days_until_review = serializers.IntegerField(read_only=True)
     satisfies = serializers.SerializerMethodField()
+    # Uploadable, never readable. Serializing the storage URL would publish a
+    # second route to the bytes that no permission check stands in front of --
+    # and upload paths are derived predictably from the folder tree, so the
+    # value is a working locator for anyone who sees it. Read through
+    # `download_url`, which the API authorises and records.
+    file = serializers.FileField(write_only=True)
+    download_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
         fields = [
-            "id", "name", "description", "file", "folder", "folder_path",
+            "id", "name", "description", "file", "download_url", "folder", "folder_path",
             "control", "control_id", "owner", "owner_name", "status",
             "review_cadence", "last_reviewed", "next_review_date",
             "is_overdue", "days_until_review", "version",
             "created_by", "created_at", "updated_at", "satisfies",
         ]
         read_only_fields = ["version", "created_by", "next_review_date"]
+
+    def get_download_url(self, obj):
+        return f"/documents/{obj.pk}/download/" if obj.file else None
 
     def validate_file(self, value):
         return validate_upload(value)
@@ -128,9 +143,16 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
 class FormTemplateSerializer(serializers.ModelSerializer):
+    # Same reasoning as DocumentSerializer.file.
+    file = serializers.FileField(write_only=True)
+    download_url = serializers.SerializerMethodField()
+
     class Meta:
         model = FormTemplate
-        fields = ["id", "name", "category", "description", "file", "created_at"]
+        fields = ["id", "name", "category", "description", "file", "download_url", "created_at"]
+
+    def get_download_url(self, obj):
+        return f"/form-templates/{obj.pk}/download/" if obj.file else None
 
     def validate_file(self, value):
         return validate_upload(value)

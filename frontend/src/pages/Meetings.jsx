@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PaperclipIcon, PlusIcon, UsersIcon, XIcon } from "lucide-react";
-import api, { fetchAll } from "../api/client.js";
+import api, { downloadFile, fetchAll } from "../api/client.js";
 import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
 import { Badge } from "../components/ui/Badge.jsx";
@@ -502,11 +502,15 @@ export default function Meetings({ me }) {
                               ) : null}
                               {m.created_by_name ? <Label className="mt-1.5 block">Recorded by {m.created_by_name}</Label> : null}
                             </div>
-                            {m.file ? (
-                              <a className="link shrink-0 md:mt-0.5" href={m.file} target="_blank" rel="noreferrer">
+                            {m.download_url ? (
+                              <button
+                                type="button"
+                                className="link shrink-0 md:mt-0.5"
+                                onClick={() => downloadFile(m.download_url, `${m.title || "minutes"}`)}
+                              >
                                 <PaperclipIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                                 Open file
-                              </a>
+                              </button>
                             ) : null}
                           </motion.li>
                         ))}

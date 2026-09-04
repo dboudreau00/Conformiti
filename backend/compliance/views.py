@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from accounts.permissions import CanManageFrameworks
 from documents.access import accessible_folder_ids
 from documents.models import Document
+from . import scoring
 from .models import Control, ControlEvidence, ControlMapping, Framework
 from .serializers import (
     ControlEvidenceSerializer,
@@ -25,13 +26,18 @@ def _controls_with_evidence_counts(user, qs=None):
     user may see, so the mapping never leaks documents past folder RBAC."""
     visible = accessible_folder_ids(user)
     base = qs if qs is not None else Control.objects.all()
-    return base.select_related("category", "category__framework", "owner").annotate(
+    annotated = base.select_related(
+        "category", "category__framework", "owner", "last_tested_by"
+    ).annotate(
         evidence_count=Count(
             "evidence_links",
             filter=Q(evidence_links__document__folder_id__in=visible),
             distinct=True,
         )
     )
+    # Readiness needs four more signals; adding them here keeps the whole
+    # register to one query instead of three per row.
+    return scoring.annotate(annotated, user)
 
 
 class FrameworkViewSet(viewsets.ModelViewSet):
@@ -70,6 +76,20 @@ class ControlViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return _controls_with_evidence_counts(self.request.user)
 
+    @action(detail=True, methods=["get"])
+    def readiness(self, request, pk=None):
+        """Why this control scores what it scores.
+
+        The register shows a number; this explains it, so "68" turns into a
+        list of the things that would move it.
+        """
+        control = self.get_object()
+        return Response({
+            "control": control.pk,
+            "control_id": control.control_id,
+            **scoring.score_control(control, request.user),
+        })
+
     @action(detail=False, methods=["get"])
     def export(self, request):
         """The control register as CSV (respects the same filters as the
@@ -83,12 +103,16 @@ class ControlViewSet(viewsets.ModelViewSet):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="controls.csv"'
         writer = csv.writer(response)
-        writer.writerow(["Framework", "Version", "Category", "Control ID", "Title", "Status", "Owner", "Evidence", "Objective"])
+        writer.writerow(["Framework", "Version", "Category", "Control ID", "Title", "Status",
+                         "Owner", "Evidence", "Readiness", "Band", "Last tested", "Objective"])
         for c in qs:
+            readiness = scoring.score_control(c, request.user)
             writer.writerow(csv_safe([
                 c.category.framework.name, c.category.framework.version, c.category.name,
                 c.control_id, c.title, c.get_status_display(),
-                c.owner.get_full_name() if c.owner else "", c.evidence_count, c.objective,
+                c.owner.get_full_name() if c.owner else "", c.evidence_count,
+                "" if readiness["score"] is None else readiness["score"],
+                readiness["band_label"], c.last_tested_on or "", c.objective,
             ]))
         return response
 

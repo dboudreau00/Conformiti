@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
-import api, { isAuthed, logout } from "./api/client.js";
+import api, { cookieMode, isAuthed, loadAuthConfig, logout, session } from "./api/client.js";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { MobileNav, Sidebar } from "./components/layout/Sidebar.jsx";
 import { TopBar } from "./components/layout/TopBar.jsx";
@@ -13,6 +13,7 @@ import Documents from "./pages/Documents.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import Account from "./pages/Account.jsx";
 import UserAudit from "./pages/UserAudit.jsx";
+import Packages from "./pages/Packages.jsx";
 import AuditLog from "./pages/AuditLog.jsx";
 import Meetings from "./pages/Meetings.jsx";
 import Groups from "./pages/Groups.jsx";
@@ -25,19 +26,49 @@ function Protected({ me, setMe }) {
   const location = useLocation();
   const [health, setHealth] = useState(null);
   const [counts, setCounts] = useState({});
+  // null while the answer is unknown. In header mode localStorage answers
+  // synchronously; in cookie mode the credential is invisible to script, so
+  // the server is the only authority and the answer is a round trip. Rendering
+  // the shell during that window would fire every page's queries as an
+  // anonymous user and fill the console with 401s.
+  const [signedIn, setSignedIn] = useState(() => (cookieMode() ? null : isAuthed()));
 
   useEffect(() => {
-    if (!isAuthed()) { nav("/login"); return; }
-    if (!me) api.get("/users/me/").then((r) => setMe(r.data)).catch(() => {});
-  }, [me]);
+    let alive = true;
+    (async () => {
+      if (cookieMode() && signedIn === null) {
+        const state = await session().catch(() => ({ authenticated: false }));
+        if (!alive) return;
+        setSignedIn(!!state.authenticated);
+        if (!state.authenticated) return;
+      } else if (!cookieMode() && !isAuthed()) {
+        setSignedIn(false);
+        return;
+      } else if (signedIn === false) {
+        // Already answered no. Falling through would fetch /users/me/ as an
+        // anonymous user on the way to the login screen.
+        return;
+      }
+      if (!me) {
+        const r = await api.get("/users/me/").catch(() => null);
+        if (alive && r) setMe(r.data);
+      }
+    })();
+    return () => { alive = false; };
+  }, [me, signedIn]);
 
+  // Everything below waits for `me`. Firing before the session is confirmed
+  // would put three 401s on the console for anyone opening a protected route
+  // signed out -- and in cookie mode the confirmation is a round trip, so
+  // there is a real window in which to do it.
   useEffect(() => {
+    if (!me) return;
     api.get("/health/").then((r) => setHealth(r.data)).catch(() => {});
-  }, []);
+  }, [me]);
 
   // Sidebar badges: controls in progress, live risks, open access reviews.
   const refreshCounts = useCallback(() => {
-    if (!isAuthed()) return;
+    if (!me) return;
     api.get("/analytics/summary/").then((r) => {
       const s = r.data;
       setCounts((c) => ({ ...c, controls: s.controls?.by_status?.in_progress || 0, risks: s.risks?.open || 0 }));
@@ -54,11 +85,15 @@ function Protected({ me, setMe }) {
 
   async function signOut() {
     await logout();
+    // Order matters: clearing `me` re-runs the session effect, so the shell
+    // has to already know the answer is no or it will fetch on the way out.
+    setSignedIn(false);
     setMe(null);
     nav("/login");
   }
 
-  if (!isAuthed()) return <Navigate to="/login" replace />;
+  if (signedIn === null) return null;   // still asking
+  if (!signedIn) return <Navigate to="/login" replace />;
 
   return (
     <ShellContext.Provider value={{ me, health, counts, refreshCounts }}>
@@ -77,6 +112,7 @@ function Protected({ me, setMe }) {
                   <Route path="/documents" element={<Documents me={me} />} />
                   <Route path="/users" element={<Users me={me} />} />
                   <Route path="/user-audit" element={<UserAudit me={me} />} />
+                  <Route path="/packages" element={<Packages me={me} />} />
                   <Route path="/audit-log" element={<AuditLog me={me} />} />
                   <Route path="/meetings" element={<Meetings me={me} />} />
                   <Route path="/groups" element={<Groups me={me} />} />
@@ -99,6 +135,15 @@ function Protected({ me, setMe }) {
 
 export default function App() {
   const [me, setMe] = useState(null);
+  const [booted, setBooted] = useState(false);
+
+  // Which transport is live decides how every later request is made, so it has
+  // to be known before the first one goes out.
+  useEffect(() => {
+    loadAuthConfig().finally(() => setBooted(true));
+  }, []);
+
+  if (!booted) return null;
   return (
     <Routes>
       <Route path="/login" element={<Login onDone={setMe} />} />

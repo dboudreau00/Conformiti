@@ -17,6 +17,7 @@ export const NAV_SECTIONS = [
     items: [
       { id: "users", label: "Users", path: "/users", icon: "Users" },
       { id: "user-audit", label: "User audit", path: "/user-audit", icon: "UserCheck", badge: "reviews" },
+      { id: "packages", label: "Audit packages", path: "/packages", icon: "PackageCheck" },
       { id: "audit-log", label: "Audit log", path: "/audit-log", icon: "ScrollText" },
       { id: "meetings", label: "Meetings", path: "/meetings", icon: "CalendarClock" },
       { id: "groups", label: "Groups", path: "/groups", icon: "Flag" },
@@ -38,6 +39,7 @@ export const NAV_LOOKUP = {
   "/documents": { title: "Documents", caption: "Policies, procedures and evidence in your folders" },
   "/users": { title: "Users", caption: "Workspace membership, roles and folder grants" },
   "/user-audit": { title: "User audit", caption: "Periodic access review and attestation" },
+  "/packages": { title: "Audit packages", caption: "Evidence sealed and issued to an external auditor" },
   "/audit-log": { title: "Audit log", caption: "Immutable record of every change and sign-in" },
   "/meetings": { title: "Meetings", caption: "Governance forum cadence and minutes" },
   "/groups": { title: "Champion groups", caption: "Inter-departmental compliance ownership" },

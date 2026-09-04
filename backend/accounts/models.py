@@ -3,6 +3,8 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from config.fieldcrypto import EncryptedCharField
+
 
 class Role(models.Model):
     """
@@ -83,7 +85,11 @@ class MfaDevice(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mfa_device"
     )
-    secret = models.CharField(max_length=64)  # base32 TOTP secret
+    # Base32 TOTP secret, encrypted at rest (config/fieldcrypto.py). The server
+    # needs the original to compute the expected code, so it cannot be hashed.
+    # Bound to user_id rather than to this row's own id because pre_save runs
+    # before the INSERT; max_length is the envelope width, not the secret's.
+    secret = EncryptedCharField(max_length=255, aad_from="user_id")
     enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
@@ -128,7 +134,14 @@ class MfaDevice(models.Model):
 
 
 class MfaBackupCode(models.Model):
-    """A single-use recovery code (stored only as a hash)."""
+    """A single-use recovery code (stored only as a hash).
+
+    Deliberately NOT encrypted like MfaDevice.secret. These are already salted
+    PBKDF2 hashes, so there is nothing to protect — and leaving them readable
+    is what makes a lost encryption key recoverable instead of terminal: a user
+    whose TOTP secret can no longer be decrypted can still sign in with a
+    backup code, and an administrator can reset their enrollment.
+    """
     device = models.ForeignKey(MfaDevice, on_delete=models.CASCADE, related_name="backup_codes")
     code_hash = models.CharField(max_length=256)
     used_at = models.DateTimeField(null=True, blank=True)

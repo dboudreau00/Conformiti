@@ -22,6 +22,21 @@ x-backend-env: &backend-env
   DJANGO_DEBUG: ${CONFORMITI_DEBUG:-false}
   DJANGO_SECRET_KEY: ${CONFORMITI_SECRET_KEY:-}
   DJANGO_SECRET_KEY_FILE: /app/secrets/django_secret_key
+  # Same indirection for the field-encryption ring that protects the TOTP
+  # secret and the Jira token at rest. Leave CONFORMITI_FIELD_ENCRYPTION_KEY
+  # unset (recommended) and the container generates one on first boot and
+  # persists it in the `secrets` volume. Back that volume up: losing the
+  # ring makes enrolled authenticators unreadable (backup codes still work).
+  DJANGO_FIELD_ENCRYPTION_KEY: ${CONFORMITI_FIELD_ENCRYPTION_KEY:-}
+  DJANGO_FIELD_ENCRYPTION_KEY_FILE: /app/secrets/django_field_encryption_key
+  # Malware scanning. CONFORMITI_SCANNING rather than CLAMAV_ENABLED for the
+  # same reason as DEBUG above: ./.env is shared with the LOCAL installer, and
+  # CLAMAV_ENABLED=true there would make every local upload 503 against a
+  # `clamav` hostname that does not resolve. Start the daemon with
+  #   docker compose --profile scanning up -d
+  CLAMAV_ENABLED: ${CONFORMITI_SCANNING:-false}
+  CLAMAV_HOST: clamav
+  CLAMAV_PORT: "3310"
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
@@ -134,7 +149,27 @@ services:
     ports:
       - "${CONFORMITI_PORT:-8080}:80"
 
+  # Malware scanning for uploaded evidence. Opt in with:
+  #   docker compose --profile scanning up -d
+  # and set CONFORMITI_SCANNING=true so the API actually calls it. The first
+  # start downloads the signature database, which takes a few minutes; freshclam
+  # keeps it current afterwards.
+  clamav:
+    image: clamav/clamav:1.4
+    profiles: ["scanning"]
+    restart: unless-stopped
+    volumes:
+      - clamdb:/var/lib/clamav
+      - ./docker/clamd.conf:/etc/clamav/clamd.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
 volumes:
+  clamdb:
   pgdata:
   media:
   static:

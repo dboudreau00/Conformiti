@@ -5,6 +5,14 @@ from django.test import override_settings
 
 from documents.models import EDIT, MANAGE, VIEW, Document, Folder, FolderPermission
 from testutils import APITestBase, grant, make_doc
+from audit.models import AuditLog
+import socketserver
+import struct
+import threading
+import time
+from unittest import mock
+from documents import clamav
+from documents.scanning import eicar_bytes
 
 
 class FolderVisibilityTests(APITestBase):
@@ -223,3 +231,318 @@ class DocumentLifecycleTests(APITestBase):
     def test_unauthenticated_requests_are_rejected(self):
         self.assertEqual(self.client_for().get("/api/documents/").status_code, 401)
         self.assertEqual(self.client_for().get("/api/folders/tree/").status_code, 401)
+
+
+class EvidenceDownloadTests(APITestBase):
+    """Reading a stored file is an authorised, audited act.
+
+    Before 0.3.0 nginx served the whole media volume as a plain alias, and
+    upload paths are derived from the folder tree and the file name -- so
+    anyone who could reach the site and guess a path could read any document,
+    with nothing recorded.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.doc = make_doc(self.tree.ctrl1, name="Access Control Policy",
+                            owner=self.owner, content=b"policy bytes")
+
+    def test_a_user_with_folder_access_gets_the_bytes(self):
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        r = self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/download/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(b"".join(r.streaming_content), b"policy bytes")
+
+    def test_a_user_without_folder_access_gets_nothing(self):
+        r = self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/download/")
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(
+            self.client.get(f"/api/documents/{self.doc.pk}/download/").status_code, 401)
+
+    def test_the_download_is_recorded_in_the_audit_trail(self):
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        before = AuditLog.objects.filter(action="read").count()
+        self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/download/")
+        entry = AuditLog.objects.filter(action="read").latest("timestamp")
+        self.assertEqual(AuditLog.objects.filter(action="read").count(), before + 1)
+        self.assertEqual(entry.user, self.viewer)
+        self.assertEqual(entry.object_type, "documents")
+        self.assertIn("Access Control Policy", entry.detail)
+
+    def test_the_response_is_always_an_attachment_and_never_inline(self):
+        """An uploaded .html or .svg served inline would be stored XSS in the
+        application's own origin."""
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        r = self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/download/")
+        self.assertTrue(r["Content-Disposition"].startswith("attachment"))
+        self.assertEqual(r["X-Content-Type-Options"], "nosniff")
+        self.assertIn("sandbox", r["Content-Security-Policy"])
+        self.assertIn("no-store", r["Cache-Control"])
+
+    def test_the_api_never_hands_out_a_storage_url(self):
+        """The serializer must not publish a path that bypasses this view."""
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        r = self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn("/media/", str(r.data.get("file") or ""))
+
+    @override_settings(MEDIA_INTERNAL=True, MEDIA_ACCEL_PREFIX="/protected-media/")
+    def test_behind_an_accelerator_the_bytes_are_delegated_to_nginx(self):
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        r = self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/download/")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r["X-Accel-Redirect"].startswith("/protected-media/"))
+        self.assertEqual(r.content, b"", "Django must not also send the body")
+        self.assertTrue(r["Content-Disposition"].startswith("attachment"))
+
+    def test_an_archived_version_is_downloadable_under_the_same_rule(self):
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        c = self.client_for(self.owner)
+        r = c.post(f"/api/documents/{self.doc.pk}/new_version/",
+                   {"file": SimpleUploadedFile("v2.txt", b"second version")})
+        self.assertEqual(r.status_code, 200, r.data)
+        version_id = self.doc.versions.get().pk
+        r = c.get(f"/api/documents/{self.doc.pk}/versions/{version_id}/download/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(b"".join(r.streaming_content), b"policy bytes")
+        # ...and someone with no access to the folder still gets nothing.
+        self.assertEqual(
+            self.client_for(self.viewer).get(
+                f"/api/documents/{self.doc.pk}/versions/{version_id}/download/").status_code,
+            404)
+
+
+# --------------------------------------------------------------------------- #
+# Malware scanning
+# --------------------------------------------------------------------------- #
+class FakeClamdHandler(socketserver.BaseRequestHandler):
+    """Speaks just enough of the clamd protocol to exercise the client."""
+
+    def handle(self):
+        buf = b""
+        while b"\0" not in buf:
+            data = self.request.recv(64)
+            if not data:
+                return
+            buf += data
+        if buf.startswith(b"zPING\0"):
+            self.request.sendall(b"PONG\0")
+            return
+        if not buf.startswith(b"zINSTREAM\0"):
+            self.request.sendall(b"UNKNOWN COMMAND\0")
+            return
+        body = buf[len(b"zINSTREAM\0"):]
+        received = b""
+        while True:
+            while len(body) < 4:
+                data = self.request.recv(65536)
+                if not data:
+                    return
+                body += data
+            (n,) = struct.unpack("!L", body[:4])
+            body = body[4:]
+            if n == 0:
+                break
+            while len(body) < n:
+                data = self.request.recv(65536)
+                if not data:
+                    return
+                body += data
+            received += body[:n]
+            body = body[n:]
+        self.server.received = received
+        if self.server.hang:
+            time.sleep(5)
+        self.request.sendall(self.server.reply_for(received))
+
+
+class FakeClamd(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self):
+        super().__init__(("127.0.0.1", 0), FakeClamdHandler)
+        self.received = b""
+        self.hang = False
+        self.forced = None
+
+    def reply_for(self, payload):
+        if self.forced:
+            return self.forced
+        if eicar_bytes() in payload:
+            return b"stream: Win.Test.EICAR_HDB-1 FOUND\0"
+        return b"stream: OK\0"
+
+
+class VirusScanTests(APITestBase):
+    """Scanning is off by default; when it is on it fails closed."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.clamd = FakeClamd()
+        cls.clamd_thread = threading.Thread(target=cls.clamd.serve_forever, daemon=True)
+        cls.clamd_thread.start()
+        cls.clamd_host, cls.clamd_port = cls.clamd.server_address
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.clamd.shutdown()
+        cls.clamd.server_close()
+        super().tearDownClass()
+
+    def setUp(self):
+        super().setUp()
+        self.clamd.received = b""
+        self.clamd.hang = False
+        self.clamd.forced = None
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+
+    def scanning(self, **overrides):
+        settings = dict(
+            CLAMAV_ENABLED=True, CLAMAV_HOST=self.clamd_host, CLAMAV_PORT=self.clamd_port,
+            CLAMAV_TIMEOUT=5, CLAMAV_CONNECT_TIMEOUT=2)
+        settings.update(overrides)
+        return override_settings(**settings)
+
+    def upload(self, content, name="evidence.txt"):
+        return self.client_for(self.owner).post("/api/documents/", {
+            "name": "Scanned evidence", "folder": self.tree.ctrl1.pk,
+            "file": SimpleUploadedFile(name, content),
+        })
+
+    # ---------------------------------------------------------------- default
+    def test_scanning_is_off_by_default(self):
+        """Benign bytes and a mock -- writing a real EICAR file into MEDIA_ROOT
+        would be quarantined by on-access AV on a developer machine."""
+        with mock.patch("documents.clamav.scan_stream") as scan:
+            r = self.upload(b"an ordinary policy")
+            self.assertEqual(r.status_code, 201, r.data)
+            scan.assert_not_called()
+
+    # ------------------------------------------------------------------- clean
+    def test_a_clean_upload_is_stored_byte_for_byte(self):
+        with self.scanning():
+            r = self.upload(b"an ordinary policy")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(self.clamd.received, b"an ordinary policy")
+        doc = Document.objects.get(pk=r.data["id"])
+        with doc.file.open("rb") as fh:
+            self.assertEqual(fh.read(), b"an ordinary policy",
+                             "the scan must not consume the upload")
+
+    # ---------------------------------------------------------------- infected
+    def test_an_infected_upload_is_refused_audited_and_not_stored(self):
+        before = Document.objects.count()
+        with self.scanning():
+            r = self.upload(eicar_bytes())
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Win.Test.EICAR_HDB-1", str(r.data))
+        self.assertEqual(Document.objects.count(), before, "nothing may be stored")
+        entry = AuditLog.objects.filter(detail__contains="refused infected upload").latest("timestamp")
+        self.assertEqual(entry.user, self.owner)
+        self.assertIn("Win.Test.EICAR_HDB-1", entry.detail)
+
+    def test_the_detection_row_survives_the_drf_exception_handler(self):
+        with self.scanning():
+            self.upload(eicar_bytes())
+        self.assertTrue(
+            AuditLog.objects.filter(detail__contains="refused infected upload").exists(),
+            "DRF's handler calls set_rollback(); the row must still be there")
+
+    # ------------------------------------------------------------ authorization
+    def test_scanning_runs_after_the_folder_permission_check(self):
+        """A caller who may not write to the folder must never reach the
+        scanner: that would be a signature-set oracle and a DoS lever."""
+        with self.scanning():
+            r = self.client_for(self.viewer).post("/api/documents/", {
+                "name": "Not allowed", "folder": self.tree.ctrl1.pk,
+                "file": SimpleUploadedFile("x.txt", eicar_bytes()),
+            })
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(self.clamd.received, b"", "the scanner must not have been called")
+
+    # ------------------------------------------------------------- fail closed
+    def test_an_unreachable_scanner_fails_closed(self):
+        before = Document.objects.count()
+        with override_settings(CLAMAV_ENABLED=True, CLAMAV_HOST="127.0.0.1",
+                               CLAMAV_PORT=1, CLAMAV_CONNECT_TIMEOUT=1):
+            r = self.upload(b"harmless")
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(Document.objects.count(), before)
+
+    def test_a_hanging_scanner_fails_closed(self):
+        self.clamd.hang = True
+        with self.scanning(CLAMAV_TIMEOUT=1):
+            r = self.upload(b"harmless")
+        self.assertEqual(r.status_code, 503)
+
+    # --------------------------------------------------------- limits exceeded
+    def test_content_the_scanner_could_not_inspect_is_refused_not_called_malware(self):
+        """ClamAV reports Heuristics.Limits.Exceeded as FOUND. Storing it would
+        mean keeping a file that carries the claim it was scanned; calling it
+        malware would be a lie in the other direction."""
+        self.clamd.forced = b"stream: Heuristics.Limits.Exceeded.MaxFileSize FOUND\0"
+        with self.scanning():
+            r = self.upload(b"a big archive")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("could not be fully inspected", str(r.data))
+        self.assertFalse(
+            AuditLog.objects.filter(detail__contains="refused infected upload").exists(),
+            "this is not a detection")
+
+    def test_a_file_over_the_stream_limit_is_refused_before_it_is_sent(self):
+        with self.scanning(CLAMAV_MAX_BYTES=8):
+            r = self.upload(b"considerably longer than eight bytes")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("could not be fully inspected", str(r.data))
+
+    # -------------------------------------------------------------- every path
+    def test_a_new_version_is_scanned(self):
+        doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Versioned")
+        with self.scanning():
+            r = self.client_for(self.owner).post(
+                f"/api/documents/{doc.pk}/new_version/",
+                {"file": SimpleUploadedFile("v2.txt", eicar_bytes())})
+        self.assertEqual(r.status_code, 400)
+        doc.refresh_from_db()
+        self.assertEqual(doc.version, 1, "the version must not have been bumped")
+
+    def test_meeting_minutes_are_scanned(self):
+        from governance.models import MeetingSeries
+
+        series = MeetingSeries.objects.create(name="Steering", required_per_year=4)
+        with self.scanning():
+            r = self.client_for(self.manager).post("/api/meeting-minutes/", {
+                "series": series.pk, "date": "2026-01-15", "title": "Q1",
+                "file": SimpleUploadedFile("m.txt", eicar_bytes()),
+            })
+        self.assertEqual(r.status_code, 400)
+
+    def test_form_templates_are_scanned(self):
+        with self.scanning():
+            r = self.client_for(self.manager).post("/api/form-templates/", {
+                "name": "Blank form", "category": "policy",
+                "file": SimpleUploadedFile("t.txt", eicar_bytes()),
+            })
+        self.assertEqual(r.status_code, 400)
+
+    # ---------------------------------------------------------------- protocol
+    def test_the_protocol_vectors(self):
+        self.assertIsNone(clamav.parse_response("stream: OK"))
+        with self.assertRaises(clamav.InfectedError) as cm:
+            clamav.parse_response("stream: Eicar-Signature FOUND")
+        self.assertEqual(cm.exception.signature, "Eicar-Signature")
+        with self.assertRaises(clamav.LimitsExceededError):
+            clamav.parse_response("stream: Heuristics.Limits.Exceeded.MaxRecursion FOUND")
+        for bad in ("stream: whatever ERROR", "", "nonsense"):
+            with self.assertRaises(clamav.ScanError):
+                clamav.parse_response(bad)
+
+    def test_the_boot_probe_answers(self):
+        self.assertTrue(clamav.ping(self.clamd_host, self.clamd_port, timeout=2))
+        self.assertFalse(clamav.ping("127.0.0.1", 1, timeout=1))
+
+    def test_the_eicar_fixture_is_the_standard_file(self):
+        self.assertEqual(len(eicar_bytes()), 68)
+        self.assertTrue(eicar_bytes().startswith(b"X5O!P%@AP[4"))

@@ -10,7 +10,7 @@ every push and can be run locally with one command:
 ## 1. Static validator — `python tools/validate.py`
 
 Dependency-free (stdlib only), so it runs on a bare checkout before anything
-is installed. Exits non-zero on any error. 16 checks:
+is installed. Exits non-zero on any error. 17 checks:
 
 | # | Check |
 |---|---|
@@ -33,7 +33,7 @@ is installed. Exits non-zero on any error. 16 checks:
 
 ## 2. Backend test suite — `python manage.py test`
 
-80 tests, ~90 s on SQLite (also run against PostgreSQL 16 in CI). Coverage by
+213 tests, ~3 min on SQLite (also run against PostgreSQL 16 in CI). Coverage by
 theme:
 
 - **Authentication:** token pair, bad password, inactive user, per-client

@@ -32,4 +32,7 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=5 \
     CMD curl -fsS http://127.0.0.1:8000/api/health/ >/dev/null || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "90", "--access-logfile", "-"]
+# Threaded workers, not the default sync ones: a malware scan occupies a
+# worker for its duration, so three concurrent scans against a slow clamd
+# would otherwise block 100% of the API, /api/health/ included.
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--worker-class", "gthread", "--threads", "4", "--timeout", "90", "--access-logfile", "-"]
