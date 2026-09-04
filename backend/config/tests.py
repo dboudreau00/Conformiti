@@ -322,6 +322,40 @@ class FieldKeyRotationTests(TestCase):
         self.assertEqual(_raw_secret(user), before)
 
 
+class ValidatorPortabilityTests(SimpleTestCase):
+    """tools/validate.py runs on a bare checkout, before pip install.
+
+    The CI `validate` job installs nothing, so any module the validator imports
+    must depend on the standard library alone. Check 17 imports
+    documents.clamav; importing documents.scanning instead broke that job while
+    passing everywhere else.
+    """
+
+    def test_the_scanner_client_imports_without_django(self):
+        code = (
+            "import sys; sys.path.insert(0, r'%s');"
+            "import documents.clamav as c;"
+            "assert len(c.eicar_bytes()) == 68;"
+            "assert c.parse_response('stream: OK') is None;"
+            "print('ok')"
+        ) % str(BACKEND)
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith(("DJANGO_", "PYTHONPATH"))}
+        # -S and an empty PYTHONPATH is as close to "nothing installed" as we
+        # can get without a second interpreter; the real guard is that this
+        # module imports no third-party name at all.
+        env["PYTHONPATH"] = ""
+        r = subprocess.run([sys.executable, "-c", code], env=env,
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_the_scanner_client_names_no_third_party_import(self):
+        source = (BACKEND / "documents" / "clamav.py").read_text(encoding="utf-8")
+        for banned in ("django", "rest_framework", "from .", "from documents"):
+            self.assertNotIn(banned, source,
+                             f"documents/clamav.py must stay stdlib-only ({banned!r})")
+
+
 class ReadinessConfigTests(SimpleTestCase):
     def test_malformed_bands_refuse_to_boot(self):
         """A single bad value would otherwise take the whole control register

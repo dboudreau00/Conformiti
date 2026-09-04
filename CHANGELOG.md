@@ -115,7 +115,7 @@ keep its credentials where script cannot reach them.
 | Gate | Result |
 |---|---|
 | `tools/validate.py` (17 checks) | PASS — 0 errors, 0 warnings |
-| Backend suite | 213 tests, 0 failures |
+| Backend suite | 215 tests, 0 failures |
 | End-to-end (both transports) | 67 + 66 tests, 0 console errors |
 | Frontend build + `npm audit` | clean, 0 vulnerabilities |
 

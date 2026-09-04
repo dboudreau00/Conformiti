@@ -113,7 +113,7 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--setup-only` / `-SetupOnly` | install and seed, don't start servers |
-| `--test` / `-Test` | run the validator, the 213 backend tests and a production frontend build |
+| `--test` / `-Test` | run the validator, the 215 backend tests and a production frontend build |
 
 ### Optional: scan uploaded evidence for malware
 

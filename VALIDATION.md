@@ -33,7 +33,7 @@ is installed. Exits non-zero on any error. 17 checks:
 
 ## 2. Backend test suite — `python manage.py test`
 
-213 tests, ~3 min on SQLite (also run against PostgreSQL 16 in CI). Coverage by
+215 tests, ~3 min on SQLite (also run against PostgreSQL 16 in CI). Coverage by
 theme:
 
 - **Authentication:** token pair, bad password, inactive user, per-client

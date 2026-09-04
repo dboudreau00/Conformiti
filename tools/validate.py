@@ -545,14 +545,16 @@ def check_malware_scanning():
     enable flag from a shared .env, and a stream limit smaller than what nginx
     will accept.
     """
+    # documents.clamav ONLY: this script runs on a bare checkout before
+    # anything is pip-installed, and documents.scanning imports Django.
     sys.path.insert(0, BACKEND)
     try:
         from documents.clamav import (  # noqa: E402
-            InfectedError, LimitsExceededError, ScanError, parse_response,
+            InfectedError, LimitsExceededError, ScanError, eicar_bytes, parse_response,
         )
-        from documents.scanning import eicar_bytes  # noqa: E402
     except Exception as exc:  # pragma: no cover - import failure is the finding
-        err("scanning", f"documents.clamav / documents.scanning did not import: {exc}")
+        err("scanning", f"documents.clamav did not import on a bare checkout: {exc}. "
+                        "Check 17 must depend on nothing but the standard library.")
         print(" 17. malware scanning: FAILED to import")
         return
 

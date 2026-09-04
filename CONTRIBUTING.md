@@ -32,7 +32,7 @@ which is shorthand for:
 ```bash
 python tools/validate.py                                   # static wiring/contract checks
 cd backend && python manage.py check && python manage.py makemigrations --check --dry-run
-cd backend && python manage.py test                        # 213 tests, ~2.5 min on SQLite
+cd backend && python manage.py test                        # 215 tests, ~2.5 min on SQLite
 cd frontend && npm run build && npm audit --audit-level=high
 ```
 

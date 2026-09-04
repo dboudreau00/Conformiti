@@ -26,6 +26,19 @@ CHUNK = 64 * 1024
 INSTREAM = b"zINSTREAM\0"
 
 
+# The EICAR test string, split so no contiguous copy of it exists in the
+# repository for an on-access scanner to quarantine. It lives in this module
+# rather than in scanning.py because tools/validate.py imports it on a bare
+# checkout, before anything is pip-installed -- and scanning.py needs Django.
+_EICAR_HEAD = rb"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-"
+_EICAR_TAIL = rb"ANTIVIRUS-TEST-FILE!$H+H*"
+
+
+def eicar_bytes():
+    """The 68-byte EICAR test file, assembled at call time."""
+    return _EICAR_HEAD + _EICAR_TAIL
+
+
 class ScanError(Exception):
     """The scanner could not be reached, timed out, or said something we do
     not understand. Always fail closed on this."""

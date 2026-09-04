@@ -22,15 +22,9 @@ from . import clamav
 
 logger = logging.getLogger(__name__)
 
-# The EICAR test string, split so no contiguous copy of it exists in the
-# repository for an on-access scanner to quarantine.
-_EICAR_HEAD = rb"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-"
-_EICAR_TAIL = rb"ANTIVIRUS-TEST-FILE!$H+H*"
-
-
-def eicar_bytes():
-    """The 68-byte EICAR test file, assembled at call time."""
-    return _EICAR_HEAD + _EICAR_TAIL
+# Re-exported from the stdlib-only module, where the validator can reach it
+# without Django installed.
+eicar_bytes = clamav.eicar_bytes
 
 
 class ScannerUnavailable(APIException):

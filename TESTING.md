@@ -10,7 +10,7 @@ walkthrough with exact expected values from the seeded demo data.
 ```
 
 Runs, in order: `tools/validate.py` (16 static checks), `manage.py check`,
-`makemigrations --check`, the backend suite (**213 tests**, ~2.5 min on SQLite),
+`makemigrations --check`, the backend suite (**215 tests**, ~2.5 min on SQLite),
 and a production frontend build. CI runs the same plus the PostgreSQL job,
 `npm audit` and the Docker boot check. Details: [VALIDATION.md](VALIDATION.md).
 
