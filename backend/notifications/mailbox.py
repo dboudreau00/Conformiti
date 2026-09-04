@@ -20,6 +20,7 @@ the platform will mail document owners using nothing but a normal inbox.
 Everything below uses imaplib / poplib / smtplib from the stdlib.
 """
 import imaplib
+import logging
 import poplib
 import smtplib
 import ssl
@@ -28,6 +29,8 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -110,27 +113,68 @@ def send_mailbox_email(subject, html_body, text_body, to_addresses, from_address
             append_to_sent(msg)
         except Exception:
             # Filing the sent copy is best-effort; delivery already succeeded.
-            pass
+            # Log it, though — a silently failing Sent folder looks identical to
+            # a working one, and operators rely on it as the audit copy.
+            logger.warning(
+                "Reminder delivered but could not be filed in the '%s' IMAP folder.",
+                settings.MAILBOX_SENT_FOLDER or "Sent", exc_info=True,
+            )
     return True
 
 
 # --------------------------------------------------------------------------- #
 # Mailbox connection (IMAP / POP3) -- verification and Sent-folder filing
 # --------------------------------------------------------------------------- #
+def _tls_context():
+    """A verifying TLS context.
+
+    imaplib/poplib default to ssl._create_stdlib_context(), which is an
+    *unverified* context (CERT_NONE, check_hostname=False) — the mailbox
+    password would be handed to anyone who can present any certificate.
+    """
+    return ssl.create_default_context()
+
+
 def _imap_connect():
+    timeout = settings.MAILBOX_TIMEOUT
     if settings.MAILBOX_USE_SSL:
-        conn = imaplib.IMAP4_SSL(settings.MAILBOX_HOST, settings.MAILBOX_PORT)
+        conn = imaplib.IMAP4_SSL(
+            settings.MAILBOX_HOST, settings.MAILBOX_PORT,
+            ssl_context=_tls_context(), timeout=timeout,
+        )
     else:
-        conn = imaplib.IMAP4(settings.MAILBOX_HOST, settings.MAILBOX_PORT)
+        # No implicit TLS: upgrade with STARTTLS rather than sending the
+        # password in the clear.
+        conn = imaplib.IMAP4(settings.MAILBOX_HOST, settings.MAILBOX_PORT, timeout=timeout)
+        try:
+            conn.starttls(ssl_context=_tls_context())
+        except Exception:
+            logger.warning(
+                "IMAP server %s does not support STARTTLS; credentials would be "
+                "sent unencrypted.", settings.MAILBOX_HOST,
+            )
+            raise
     conn.login(settings.MAILBOX_USERNAME, settings.MAILBOX_PASSWORD)
     return conn
 
 
 def _pop3_connect():
+    timeout = settings.MAILBOX_TIMEOUT
     if settings.MAILBOX_USE_SSL:
-        conn = poplib.POP3_SSL(settings.MAILBOX_HOST, settings.MAILBOX_PORT)
+        conn = poplib.POP3_SSL(
+            settings.MAILBOX_HOST, settings.MAILBOX_PORT,
+            context=_tls_context(), timeout=timeout,
+        )
     else:
-        conn = poplib.POP3(settings.MAILBOX_HOST, settings.MAILBOX_PORT)
+        conn = poplib.POP3(settings.MAILBOX_HOST, settings.MAILBOX_PORT, timeout=timeout)
+        try:
+            conn.stls(context=_tls_context())
+        except Exception:
+            logger.warning(
+                "POP3 server %s does not support STLS; credentials would be "
+                "sent unencrypted.", settings.MAILBOX_HOST,
+            )
+            raise
     conn.user(settings.MAILBOX_USERNAME)
     conn.pass_(settings.MAILBOX_PASSWORD)
     return conn
@@ -141,8 +185,11 @@ def append_to_sent(msg):
     conn = _imap_connect()
     try:
         folder = settings.MAILBOX_SENT_FOLDER or "Sent"
+        # imaplib does not quote the mailbox argument, so an unquoted folder
+        # containing a space ("Sent Items", "[Gmail]/Sent Mail") is parsed as
+        # extra tokens and the APPEND fails.
         conn.append(
-            folder,
+            f'"{folder}"' if not folder.startswith('"') else folder,
             r"(\Seen)",
             imaplib.Time2Internaldate(time.time()),
             msg.as_bytes(),

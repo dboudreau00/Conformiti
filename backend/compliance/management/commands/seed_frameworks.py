@@ -82,11 +82,24 @@ class Command(BaseCommand):
                 )
                 ncat += 1
                 for control in cat["controls"]:
-                    Control.objects.update_or_create(
-                        category=category, control_id=control["control_id"],
-                        defaults=dict(title=control["title"],
-                                      objective=control.get("objective", "")),
-                    )
+                    # Identify the control by (framework, control_id), not by
+                    # (category, control_id): a control that moves to another
+                    # category must be *updated*, not duplicated as a second row
+                    # that keeps the old owner, status and evidence links.
+                    existing = Control.objects.filter(
+                        category__framework=fw, control_id=control["control_id"]
+                    ).first()
+                    if existing:
+                        existing.category = category
+                        existing.title = control["title"]
+                        existing.objective = control.get("objective", "")
+                        existing.save(update_fields=["category", "title", "objective"])
+                    else:
+                        Control.objects.create(
+                            category=category, control_id=control["control_id"],
+                            title=control["title"],
+                            objective=control.get("objective", ""),
+                        )
                     nctrl += 1
             self.stdout.write(f"  {fw.name} {fw.version}: {ncat} categories, {nctrl} controls")
 
@@ -106,23 +119,90 @@ class Command(BaseCommand):
         self.stdout.write(f"  Crosswalk: {ControlMapping.objects.count()} themes")
 
     # ---------------------------------------------------------------- folders
+    # Windows' default MAX_PATH is 260 characters and uploads are stored under
+    # media/documents/<framework>/<category>/<control>/<filename>, so the control
+    # segment is capped to leave room for a real filename.
+    CONTROL_FOLDER_MAX = 70
+
+    @staticmethod
+    def _safe_segment(name, limit):
+        """A folder name that is safe as a single path segment: no separators or
+        other characters Windows rejects, no trailing dot/space, length-capped."""
+        cleaned = "".join("-" if ch in '/\\:*?"<>|' else ch for ch in name)
+        cleaned = cleaned.strip().rstrip(". ")
+        if len(cleaned) > limit:
+            cleaned = cleaned[:limit].rstrip(". ")
+        return cleaned or "unnamed"
+
+    def _sync_folder(self, folder, name, parent, **fields):
+        """Rename/re-parent an existing folder instead of creating a duplicate."""
+        changed = []
+        if folder.name != name:
+            folder.name = name
+            changed.append("name")
+        if folder.parent_id != (parent.id if parent else None):
+            folder.parent = parent
+            changed.append("parent")
+        for k, v in fields.items():
+            if getattr(folder, k) != v:
+                setattr(folder, k, v)
+                changed.append(k)
+        if changed:
+            folder.save(update_fields=changed)
+        return folder
+
     def _seed_folders(self):
         # Imported lazily so the command still loads if documents app changes.
         from documents.models import Folder
 
         created = 0
         for fw in Framework.objects.all():
-            fw_folder, made = Folder.objects.get_or_create(
-                name=str(fw), parent=None, defaults={"is_framework_root": True}
-            )
-            created += made
+            fw_name = self._safe_segment(str(fw), 80)
+            # Look the root up by its Framework FK. Fall back to the legacy
+            # name match once, so installs seeded before the FK existed adopt
+            # their existing tree instead of growing a second one.
+            fw_folder = Folder.objects.filter(framework=fw).first()
+            if fw_folder is None:
+                fw_folder = Folder.objects.filter(
+                    parent=None, is_framework_root=True, name=fw_name
+                ).first() or Folder.objects.filter(parent=None, name=str(fw)).first()
+            if fw_folder is None:
+                fw_folder = Folder.objects.create(
+                    name=fw_name, parent=None, is_framework_root=True, framework=fw
+                )
+                created += 1
+            else:
+                self._sync_folder(fw_folder, fw_name, None,
+                                  is_framework_root=True, framework=fw)
+
             for cat in fw.categories.all():
-                cat_folder, made = Folder.objects.get_or_create(name=cat.name, parent=fw_folder)
-                created += made
-                for control in cat.controls.all():
-                    _, made = Folder.objects.get_or_create(
-                        name=f"{control.control_id} - {control.title}",
-                        parent=cat_folder, defaults={"control": control},
+                cat_name = self._safe_segment(cat.name, 80)
+                cat_folder = Folder.objects.filter(category=cat).first()
+                if cat_folder is None:
+                    cat_folder = Folder.objects.filter(parent=fw_folder, name=cat_name).first() \
+                        or Folder.objects.filter(parent=fw_folder, name=cat.name).first()
+                if cat_folder is None:
+                    cat_folder = Folder.objects.create(
+                        name=cat_name, parent=fw_folder, category=cat
                     )
-                    created += made
+                    created += 1
+                else:
+                    self._sync_folder(cat_folder, cat_name, fw_folder, category=cat)
+
+                for control in cat.controls.all():
+                    ctl_name = self._safe_segment(
+                        f"{control.control_id} - {control.title}", self.CONTROL_FOLDER_MAX
+                    )
+                    ctl_folder = Folder.objects.filter(control=control).first()
+                    if ctl_folder is None:
+                        ctl_folder = Folder.objects.filter(
+                            parent=cat_folder, name=ctl_name
+                        ).first()
+                    if ctl_folder is None:
+                        Folder.objects.create(
+                            name=ctl_name, parent=cat_folder, control=control
+                        )
+                        created += 1
+                    else:
+                        self._sync_folder(ctl_folder, ctl_name, cat_folder, control=control)
         self.stdout.write(f"  App folders created: {created}")

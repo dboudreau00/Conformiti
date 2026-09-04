@@ -1,4 +1,5 @@
 """Serializers for the document-management API."""
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import (
@@ -7,16 +8,22 @@ from .models import (
     Folder,
     FolderPermission,
     FormTemplate,
+    validate_folder_name,
 )
+from .uploads import validate_upload
 
 
 class FolderPermissionSerializer(serializers.ModelSerializer):
     role_name = serializers.CharField(source="role.name", read_only=True, default=None)
     user_name = serializers.CharField(source="user.get_full_name", read_only=True, default=None)
+    username = serializers.CharField(source="user.username", read_only=True, default=None)
 
     class Meta:
         model = FolderPermission
-        fields = ["id", "folder", "role", "role_name", "user", "user_name", "access_level", "granted_at"]
+        fields = [
+            "id", "folder", "role", "role_name", "user", "user_name", "username",
+            "access_level", "granted_at",
+        ]
 
     def validate(self, attrs):
         # Fall back to the existing instance for fields absent from a partial
@@ -36,19 +43,37 @@ class FolderSerializer(serializers.ModelSerializer):
     child_count = serializers.IntegerField(source="children.count", read_only=True)
     document_count = serializers.IntegerField(source="documents.count", read_only=True)
     my_access = serializers.SerializerMethodField()
+    is_seeded = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Folder
         fields = [
             "id", "name", "parent", "path", "control", "control_id", "owner",
-            "owner_name", "is_framework_root", "child_count", "document_count",
+            "owner_name", "is_framework_root", "is_seeded", "child_count", "document_count",
             "my_access", "created_at", "updated_at",
         ]
-        read_only_fields = ["is_framework_root"]
+        read_only_fields = ["is_framework_root", "control"]
 
     def get_my_access(self, obj):
         request = self.context.get("request")
         return obj.effective_access(request.user) if request else None
+
+    def validate_name(self, value):
+        try:
+            validate_folder_name(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages)
+        return value
+
+    def validate_parent(self, parent):
+        # A folder can't be moved under itself or any of its descendants —
+        # that would corrupt the tree and hang every access check on it.
+        if self.instance is not None and parent is not None:
+            if parent.pk == self.instance.pk or self.instance.would_cycle(parent):
+                raise serializers.ValidationError(
+                    "A folder cannot be moved inside itself or one of its subfolders."
+                )
+        return parent
 
 
 class DocumentVersionSerializer(serializers.ModelSerializer):
@@ -78,6 +103,15 @@ class DocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["version", "created_by", "next_review_date"]
 
+    def validate_file(self, value):
+        return validate_upload(value)
+
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("A document name is required.")
+        return value
+
     def get_satisfies(self, obj):
         """Controls this document is linked to as evidence (reverse mapping).
         Relies on the view prefetching control_links to stay one query."""
@@ -97,3 +131,6 @@ class FormTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = FormTemplate
         fields = ["id", "name", "category", "description", "file", "created_at"]
+
+    def validate_file(self, value):
+        return validate_upload(value)

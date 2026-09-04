@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import api from "../api/client.js";
+import { AnimatePresence, motion } from "framer-motion";
+import { PlusIcon, XIcon } from "lucide-react";
+import api, { fetchAll } from "../api/client.js";
+import { Badge } from "../components/ui/Badge.jsx";
+import { Button } from "../components/ui/Button.jsx";
+import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { StatCard } from "../components/ui/StatCard.jsx";
+import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
+import { BLANK_USER_FORM, NewUserForm, PASSWORD_MIN } from "../components/users/NewUserForm.jsx";
+import { cn } from "../utils/cn.js";
+import { errorText } from "../utils/a11y.js";
 
 const CAP_LABELS = [
   ["can_manage_users", "users"],
@@ -10,32 +20,49 @@ const CAP_LABELS = [
   ["is_auditor", "auditor"],
 ];
 
+const USER_COLS = [
+  { id: "user", label: "User" },
+  { id: "job", label: "Job title", className: "w-[150px]" },
+  { id: "role", label: "Role", className: "w-[190px]" },
+  { id: "login", label: "Last login", className: "w-[115px]" },
+  { id: "status", label: "Status", className: "w-[95px]" },
+  { id: "mfa", label: "2FA", className: "w-[80px]" },
+  { id: "actions", label: "", className: "w-[340px]" },
+];
+
+const ROLE_COLS = [
+  { id: "role", label: "Role", className: "w-[220px]" },
+  { id: "desc", label: "Description" },
+  { id: "caps", label: "Capabilities", className: "w-[340px]" },
+];
+
+const cell = "px-5 py-3 align-middle";
+const headCell = "table-head px-5 py-2 text-left font-normal";
+
 export default function Users({ me }) {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [rolesErr, setRolesErr] = useState(null);
   const [showNew, setShowNew] = useState(false);
-  const [banner, setBanner] = useState(null);        // {kind:"ok"|"err", text}
-  const [pwFor, setPwFor] = useState(null);          // user id with password editor open
+  const [banner, setBanner] = useState(null); // {kind:"ok"|"err", text}
+  const [pwFor, setPwFor] = useState(null); // user id with password editor open
   const [pwValue, setPwValue] = useState("");
+  const [busyId, setBusyId] = useState(null); // user id with a request in flight
+  const [form, setForm] = useState(BLANK_USER_FORM);
   const [formErr, setFormErr] = useState(null);
+  const [creating, setCreating] = useState(false);
 
-  const isAdmin = me?.capabilities?.manage_users;
+  const isAdmin = !!me?.capabilities?.manage_users;
 
   async function loadUsers() {
     setLoading(true);
     try {
-      let page = 1, all = [];
-      for (;;) {
-        const r = await api.get(`/users/?page=${page}`);
-        all = all.concat(r.data.results || r.data);
-        if (!r.data.next || page >= 5) break;
-        page += 1;
-      }
-      setUsers(all);
+      setUsers(await fetchAll("/users/"));
     } catch (e) {
       if (e?.response?.status === 403) setDenied(true);
+      else setBanner({ kind: "err", text: errorText(e, "Couldn't load users.") });
     } finally {
       setLoading(false);
     }
@@ -43,43 +70,50 @@ export default function Users({ me }) {
 
   useEffect(() => {
     loadUsers();
-    api.get("/roles/").then((r) => setRoles(r.data.results || r.data)).catch(() => {});
+    api
+      .get("/roles/")
+      .then((r) => setRoles(r.data.results || r.data))
+      .catch((e) => {
+        if (e?.response?.status !== 403) setRolesErr(errorText(e, "Couldn't load roles."));
+      });
   }, []);
 
-  function fail(e, fallback) {
-    const d = e?.response?.data;
-    const text = d?.detail || (typeof d === "object" && d ? Object.values(d).flat().join(" ") : null);
-    setBanner({ kind: "err", text: text || fallback });
-  }
+  const ok = (text) => setBanner({ kind: "ok", text });
+  const fail = (e, fallback) => setBanner({ kind: "err", text: errorText(e, fallback) });
 
-  function ok(text) {
-    setBanner({ kind: "ok", text });
-  }
-
+  // Only a superuser may touch another superuser's account.
   const canTouch = (u) => !(u.is_superuser && !me?.is_superuser);
 
   async function patchUser(u, payload, doneMsg) {
+    setBusyId(u.id);
     try {
       await api.patch(`/users/${u.id}/`, payload);
       if (doneMsg) ok(doneMsg);
-      loadUsers();
+      await loadUsers();
     } catch (e) {
       fail(e, "Update failed.");
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function removeUser(u) {
     if (!window.confirm(`Delete ${u.username}? This cannot be undone. Deactivating is usually safer.`)) return;
+    setBusyId(u.id);
     try {
       await api.delete(`/users/${u.id}/`);
       ok(`Deleted ${u.username}.`);
-      loadUsers();
+      await loadUsers();
     } catch (e) {
       fail(e, "Delete failed.");
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function savePassword(u) {
+    if (pwValue.length < PASSWORD_MIN) return;
+    setBusyId(u.id);
     try {
       await api.patch(`/users/${u.id}/`, { password: pwValue });
       ok(`Password set for ${u.username}. Share it with them securely.`);
@@ -87,231 +121,386 @@ export default function Users({ me }) {
       setPwValue("");
     } catch (e) {
       fail(e, "Password rejected.");
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function resetMfa(u) {
     if (!window.confirm(`Reset two-factor for ${u.username}? They'll need to set it up again on next sign-in.`)) return;
+    setBusyId(u.id);
     try {
       await api.post(`/users/${u.id}/reset_mfa/`);
       ok(`MFA reset for ${u.username}.`);
-      loadUsers();
+      await loadUsers();
     } catch (e) {
       fail(e, "Couldn't reset MFA.");
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function createUser(e) {
     e.preventDefault();
     setFormErr(null);
-    const f = e.target;
     const payload = {
-      username: f.username.value.trim(),
-      first_name: f.first.value.trim(),
-      last_name: f.last.value.trim(),
-      email: f.email.value.trim(),
-      job_title: f.job.value.trim(),
-      role: f.role.value || null,
-      password: f.password.value,
+      username: form.username.trim(),
+      first_name: form.first.trim(),
+      last_name: form.last.trim(),
+      email: form.email.trim(),
+      job_title: form.job.trim(),
+      role: form.role || null,
+      password: form.password,
       is_active: true,
     };
+    setCreating(true);
     try {
       await api.post("/users/", payload);
       ok(`Created ${payload.username}.`);
       setShowNew(false);
-      f.reset();
-      loadUsers();
+      setForm(BLANK_USER_FORM);
+      await loadUsers();
     } catch (err) {
       const d = err?.response?.data;
       setFormErr(
         d && typeof d === "object"
-          ? Object.entries(d).map(([k, v]) => `${k}: ${[].concat(v).join(" ")}`).join(" · ")
-          : "Could not create the user."
+          ? Object.entries(d)
+              .map(([k, v]) => `${k}: ${[].concat(v).join(" ")}`)
+              .join(" · ")
+          : errorText(err, "Could not create the user.")
       );
+    } finally {
+      setCreating(false);
     }
+  }
+
+  function toggleNew() {
+    setShowNew((v) => !v);
+    setFormErr(null);
+  }
+
+  if (!me) {
+    return (
+      <PanelTransition>
+        <Loading />
+      </PanelTransition>
+    );
   }
 
   if (!isAdmin || denied) {
     return (
-      <div className="card">
-        <div className="card-body">
-          <div className="empty">
-            User management needs the <b>manage users</b> capability
-            (Administrator role). Ask an administrator for access.
-          </div>
-        </div>
-      </div>
+      <PanelTransition>
+        <Panel>
+          <Empty title="User management is restricted">
+            User management needs the <b className="font-medium text-ink">manage users</b> capability (Administrator role).
+            Ask an administrator for access.
+          </Empty>
+        </Panel>
+      </PanelTransition>
     );
   }
 
+  const total = users.length;
+  const active = users.filter((u) => u.is_active).length;
+  const superusers = users.filter((u) => u.is_superuser).length;
+  const mfaOn = users.filter((u) => u.mfa_enabled).length;
+
   return (
-    <>
-      <div className="pagehead">
-        <div className="sub">
-          Create accounts, assign roles, and control who can sign in. Folder-level
-          access is granted per folder on the Documents page.
-        </div>
-        <div className="toolbar">
-          <button className="btn primary small" onClick={() => { setShowNew((v) => !v); setFormErr(null); }}>
-            {showNew ? "Cancel" : "New user"}
-          </button>
-        </div>
-      </div>
+    <PanelTransition>
+      <Stack className="flex flex-col gap-4">
+        <StackItem className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            label="Members"
+            value={loading ? "—" : total}
+            detail={loading ? "Loading…" : `${active} active · ${total - active} inactive`}
+          />
+          <StatCard
+            label="Superusers"
+            value={loading ? "—" : superusers}
+            detail="Workspace-wide grants, managed only by superusers"
+          />
+          <StatCard
+            label="Two-factor"
+            value={loading ? "—" : mfaOn}
+            suffix={loading ? undefined : `/ ${total}`}
+            tone={!loading && total > 0 && mfaOn < total ? "warning" : undefined}
+            detail="Accounts with an authenticator enrolled"
+          />
+        </StackItem>
 
-      {banner && (
-        <div className="card" style={{ marginBottom: 14 }}>
-          <div className="card-body" style={{ display: "flex", justifyContent: "space-between", gap: 12,
-                color: banner.kind === "err" ? "var(--red)" : "var(--accent-2)", fontSize: 13.5 }}>
-            <span>{banner.text}</span>
-            <button className="btn small" onClick={() => setBanner(null)}>Dismiss</button>
-          </div>
-        </div>
-      )}
+        {banner ? (
+          <StackItem>
+            <div
+              role={banner.kind === "err" ? "alert" : "status"}
+              className={cn("notice flex items-center justify-between gap-3", banner.kind === "err" ? "notice-err" : "notice-ok")}
+            >
+              <span>{banner.text}</span>
+              <button type="button" className="link shrink-0" onClick={() => setBanner(null)}>
+                Dismiss
+              </button>
+            </div>
+          </StackItem>
+        ) : null}
 
-      {showNew && (
-        <div className="card" style={{ marginBottom: 18 }}>
-          <div className="card-head"><h2>New user</h2><span className="eyebrow">password is required — share it securely</span></div>
-          <div className="card-body">
-            <form onSubmit={createUser} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <input name="username" placeholder="Username *" required />
-              <input name="first" placeholder="First name" />
-              <input name="last" placeholder="Last name" />
-              <input name="email" type="email" placeholder="Email" />
-              <input name="job" placeholder="Job title" />
-              <select name="role" defaultValue="" required>
-                <option value="" disabled>Role *</option>
-                {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-              <input name="password" type="password" placeholder="Temporary password *" required minLength={8}
-                     style={{ gridColumn: "1 / span 2" }} />
-              <button className="btn primary">Create user</button>
-              {formErr && <div style={{ gridColumn: "1 / -1", color: "var(--red)", fontSize: 13 }}>{formErr}</div>}
-            </form>
-          </div>
-        </div>
-      )}
+        <StackItem>
+          <AnimatePresence initial={false}>
+            {showNew ? (
+              <Collapse open key="new-user">
+                <div className="pb-4">
+                  <NewUserForm
+                    id="new-user-panel"
+                    form={form}
+                    onChange={setForm}
+                    roles={roles}
+                    onSubmit={createUser}
+                    onCancel={toggleNew}
+                    busy={creating}
+                    error={formErr}
+                  />
+                </div>
+              </Collapse>
+            ) : null}
+          </AnimatePresence>
 
-      <div className="card">
-        <div className="card-head">
-          <h2>Users</h2>
-          <span className="eyebrow">{users.filter((u) => u.is_active).length} active · {users.length} total</span>
-        </div>
-        <div className="card-body" style={{ padding: 0, overflowX: "auto" }}>
-          {loading ? <div className="loading">Loading users…</div> : (
-            <table>
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th style={{ width: 150 }}>Job title</th>
-                  <th style={{ width: 190 }}>Role</th>
-                  <th style={{ width: 115 }}>Last login</th>
-                  <th style={{ width: 95 }}>Status</th>
-                  <th style={{ width: 80 }}>2FA</th>
-                  <th style={{ width: 320 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => {
-                  const self = u.id === me?.id;
-                  const touchable = canTouch(u);
-                  return (
-                    <tr key={u.id}>
-                      <td>
-                        <div style={{ fontWeight: 500 }}>
-                          <span className="mono">{u.username}</span>
-                          {u.is_superuser ? <span className="badge neutral" style={{ marginLeft: 8 }}>superuser</span> : null}
-                          {self ? <span className="badge ok" style={{ marginLeft: 8 }}><span className="dot" />you</span> : null}
-                        </div>
-                        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-                          {u.full_name || "—"}{u.email ? ` · ${u.email}` : ""}
-                        </div>
-                      </td>
-                      <td style={{ color: u.job_title ? "var(--ink)" : "var(--muted)", fontSize: 13 }}>{u.job_title || "—"}</td>
-                      <td>
-                        <select value={u.role || ""} disabled={self || !touchable}
-                                onChange={(e) => patchUser(u, { role: e.target.value || null }, `Role updated for ${u.username}.`)}>
-                          <option value="">No role</option>
-                          {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
-                      </td>
-                      <td className="mono" style={{ color: "var(--muted)" }}>
-                        {u.last_login ? u.last_login.slice(0, 10) : "never"}
-                      </td>
-                      <td>
-                        {u.is_active
-                          ? <span className="badge ok"><span className="dot" />active</span>
-                          : <span className="badge neutral"><span className="dot" />inactive</span>}
-                      </td>
-                      <td>
-                        {u.mfa_enabled
-                          ? <span className="badge ok"><span className="dot" />on</span>
-                          : <span className="badge neutral" style={{ color: "var(--muted)" }}>off</span>}
-                      </td>
-                      <td>
-                        {pwFor === u.id ? (
-                          <div className="row-actions">
-                            <input className="mini-input" type="password" placeholder="New password"
-                                   value={pwValue} onChange={(e) => setPwValue(e.target.value)} style={{ width: 150 }} />
-                            <button className="btn small" disabled={pwValue.length < 8} onClick={() => savePassword(u)}>Save</button>
-                            <button className="btn small" onClick={() => { setPwFor(null); setPwValue(""); }}>Cancel</button>
-                          </div>
-                        ) : (
-                          <div className="row-actions" style={{ justifyContent: "flex-end" }}>
-                            {touchable && <button className="btn small" onClick={() => { setPwFor(u.id); setPwValue(""); }}>Set password</button>}
-                            {touchable && !self && (
-                              <button className="btn small"
-                                      onClick={() => patchUser(u, { is_active: !u.is_active },
-                                        `${u.username} ${u.is_active ? "deactivated" : "activated"}.`)}>
-                                {u.is_active ? "Deactivate" : "Activate"}
-                              </button>
-                            )}
-                            {touchable && u.mfa_enabled && (
-                              <button className="btn small" onClick={() => resetMfa(u)}>Reset 2FA</button>
-                            )}
-                            {touchable && !self && !u.is_superuser && (
-                              <button className="btn small" onClick={() => removeUser(u)}>Delete</button>
-                            )}
-                          </div>
-                        )}
-                      </td>
+          <Panel className="overflow-hidden">
+            <PanelHeader title="Users">
+              <div className="flex items-center gap-3">
+                <Label className="hidden sm:inline">{loading ? "Loading…" : `${active} active · ${total} total`}</Label>
+                <Button
+                  size="sm"
+                  variant={showNew ? "secondary" : "primary"}
+                  aria-expanded={showNew}
+                  aria-controls={showNew ? "new-user-panel" : undefined}
+                  onClick={toggleNew}
+                  icon={
+                    showNew ? (
+                      <XIcon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />
+                    ) : (
+                      <PlusIcon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />
+                    )
+                  }
+                >
+                  {showNew ? "Cancel" : "New user"}
+                </Button>
+              </div>
+            </PanelHeader>
+            {loading ? (
+              <Loading>Loading users…</Loading>
+            ) : users.length === 0 ? (
+              <Empty title="No users yet">Create the first account with New user.</Empty>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1080px] border-collapse text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line bg-surface-2">
+                      {USER_COLS.map((c) => (
+                        <th key={c.id} scope="col" className={cn(headCell, c.className)}>
+                          {c.label || <span className="sr-only">Actions</span>}
+                        </th>
+                      ))}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      <div className="card" style={{ marginTop: 18 }}>
-        <div className="card-head"><h2>Roles &amp; permissions</h2><span className="eyebrow">what each role can do</span></div>
-        <div className="card-body" style={{ padding: 0 }}>
-          <table>
-            <thead>
-              <tr><th style={{ width: 190 }}>Role</th><th>Description</th><th style={{ width: 330 }}>Capabilities</th></tr>
-            </thead>
-            <tbody>
-              {roles.map((r) => (
-                <tr key={r.id}>
-                  <td style={{ fontWeight: 500 }}>
-                    {r.name}
-                    {r.is_system ? <span className="badge neutral" style={{ marginLeft: 8 }}>built-in</span> : null}
-                  </td>
-                  <td style={{ color: "var(--muted)", fontSize: 13 }}>{r.description || "—"}</td>
-                  <td>
-                    {CAP_LABELS.filter(([k]) => r[k]).map(([k, label]) => (
-                      <span key={k} className="evi-chip"><b>{label}</b></span>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {users.map((u, i) => (
+                      <UserRow
+                        key={u.id}
+                        index={i}
+                        u={u}
+                        me={me}
+                        roles={roles}
+                        touchable={canTouch(u)}
+                        busy={busyId === u.id}
+                        pwOpen={pwFor === u.id}
+                        pwValue={pwValue}
+                        onPwChange={setPwValue}
+                        onPwOpen={() => { setPwFor(u.id); setPwValue(""); }}
+                        onPwClose={() => { setPwFor(null); setPwValue(""); }}
+                        onPwSave={() => savePassword(u)}
+                        onRole={(role) => patchUser(u, { role }, `Role updated for ${u.username}.`)}
+                        onToggleActive={() =>
+                          patchUser(u, { is_active: !u.is_active }, `${u.username} ${u.is_active ? "deactivated" : "activated"}.`)
+                        }
+                        onResetMfa={() => resetMfa(u)}
+                        onDelete={() => removeUser(u)}
+                      />
                     ))}
-                    {CAP_LABELS.every(([k]) => !r[k]) && (
-                      <span style={{ color: "var(--muted)", fontSize: 12.5 }}>read-only (folder grants apply)</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </StackItem>
+
+        <StackItem>
+          <Panel className="overflow-hidden">
+            <PanelHeader title="Roles & permissions" meta="What each role can do" />
+            {rolesErr ? (
+              <div className="p-5">
+                <div className="notice notice-err" role="alert">{rolesErr}</div>
+              </div>
+            ) : roles.length === 0 ? (
+              <Empty title="No roles defined">Roles are seeded on first install.</Empty>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] border-collapse text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line bg-surface-2">
+                      {ROLE_COLS.map((c) => (
+                        <th key={c.id} scope="col" className={cn(headCell, c.className)}>{c.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {roles.map((r) => {
+                      const caps = CAP_LABELS.filter(([k]) => r[k]);
+                      return (
+                        <tr key={r.id} className="transition-colors duration-150 ease-out hover:bg-surface-2">
+                          <td className={cn(cell, "py-2.5")}>
+                            <span className="inline-flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-ink">{r.name}</span>
+                              {r.is_system ? <Badge tone="faint" mono>built-in</Badge> : null}
+                            </span>
+                          </td>
+                          <td className={cn(cell, "py-2.5 text-xs text-muted")}>{r.description || "—"}</td>
+                          <td className={cn(cell, "py-2.5")}>
+                            {caps.length ? (
+                              <span className="flex flex-wrap gap-1.5">
+                                {caps.map(([k, label]) => (
+                                  <Badge key={k} tone="accent" mono>{label}</Badge>
+                                ))}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-faint">read-only · folder grants apply</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="border-t border-line px-5 py-2.5 text-2xs text-faint">
+              Folder-level access is granted per folder on the Documents page.
+            </p>
+          </Panel>
+        </StackItem>
+      </Stack>
+    </PanelTransition>
+  );
+}
+
+function UserRow({
+  index, u, me, roles, touchable, busy,
+  pwOpen, pwValue, onPwChange, onPwOpen, onPwClose, onPwSave,
+  onRole, onToggleActive, onResetMfa, onDelete,
+}) {
+  const self = u.id === me?.id;
+  const initial = (u.full_name || u.username || "?").trim().charAt(0).toUpperCase();
+  const pwValid = pwValue.length >= PASSWORD_MIN;
+  const roleHint = self
+    ? "You cannot change your own role — ask another administrator."
+    : !touchable
+      ? "Only a superuser can modify a superuser account."
+      : undefined;
+
+  return (
+    <motion.tr
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, ease: EASE, delay: Math.min(index, 12) * 0.03 }}
+      className={cn("transition-colors duration-150 ease-out hover:bg-surface-2", busy && "opacity-70")}
+      aria-busy={busy || undefined}
+    >
+      <td className={cell}>
+        <div className="flex items-center gap-3">
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[13px] font-semibold text-accent"
+            aria-hidden="true"
+          >
+            {initial}
+          </span>
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-[13px] font-medium text-ink">{u.username}</span>
+              {u.is_superuser ? <Badge tone="faint" mono>superuser</Badge> : null}
+              {self ? <Badge tone="accent" dot>you</Badge> : null}
+            </span>
+            <span className="block truncate text-xs text-muted">
+              {u.full_name || "—"}
+              {u.email ? ` · ${u.email}` : ""}
+            </span>
+          </span>
         </div>
-      </div>
-    </>
+      </td>
+      <td className={cn(cell, "text-xs", u.job_title ? "text-ink" : "text-faint")}>{u.job_title || "—"}</td>
+      <td className={cell}>
+        <select
+          className="input input-sm"
+          aria-label={`Role for ${u.username}`}
+          value={u.role || ""}
+          disabled={self || !touchable || busy}
+          title={roleHint}
+          onChange={(e) => onRole(e.target.value || null)}
+        >
+          <option value="">No role</option>
+          {roles.map((r) => (
+            <option key={r.id} value={r.id}>{r.name}</option>
+          ))}
+        </select>
+      </td>
+      <td className={cn(cell, "tabular font-mono text-xs text-muted")}>{u.last_login ? u.last_login.slice(0, 10) : "never"}</td>
+      <td className={cell}>
+        <Badge tone={u.is_active ? "success" : "faint"} dot>{u.is_active ? "active" : "inactive"}</Badge>
+      </td>
+      <td className={cell}>
+        <Badge tone={u.mfa_enabled ? "success" : "faint"} dot={u.mfa_enabled}>{u.mfa_enabled ? "on" : "off"}</Badge>
+      </td>
+      <td className={cn(cell, "text-right")}>
+        {pwOpen ? (
+          <div className="flex items-center justify-end gap-2">
+            <input
+              type="password"
+              className="input input-sm w-[170px] font-mono"
+              aria-label={`New password for ${u.username}`}
+              placeholder={`New password (${PASSWORD_MIN}+ chars)`}
+              autoComplete="new-password"
+              autoFocus
+              minLength={PASSWORD_MIN}
+              value={pwValue}
+              onChange={(e) => onPwChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); if (pwValid && !busy) onPwSave(); }
+                if (e.key === "Escape") { e.preventDefault(); onPwClose(); }
+              }}
+            />
+            <Button size="sm" variant="primary" disabled={!pwValid || busy} onClick={onPwSave}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={onPwClose}>Cancel</Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            {touchable ? (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onPwOpen}>Set password</Button>
+            ) : null}
+            {touchable && !self ? (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onToggleActive}>
+                {u.is_active ? "Deactivate" : "Activate"}
+              </Button>
+            ) : null}
+            {touchable && u.mfa_enabled ? (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onResetMfa}>Reset 2FA</Button>
+            ) : null}
+            {touchable && !self && !u.is_superuser ? (
+              <Button size="sm" variant="ghost" className="text-danger hover:bg-danger/10 hover:text-danger" disabled={busy} onClick={onDelete}>
+                Delete
+              </Button>
+            ) : null}
+            {!touchable ? <span className="text-2xs text-faint">superuser only</span> : null}
+          </div>
+        )}
+      </td>
+    </motion.tr>
   );
 }

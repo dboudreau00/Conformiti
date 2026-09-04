@@ -1,0 +1,6 @@
+# Host node_modules are platform-specific and would shadow the ones installed
+# inside the image; dist is rebuilt by the build stage.
+node_modules/
+dist/
+.env
+*.log

@@ -121,14 +121,23 @@ def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
                     open(os.path.join(ctrl_dir, sub, ".gitkeep"), "a").close()
 
                 if write_readmes:
-                    with open(os.path.join(ctrl_dir, "_control.md"), "w", encoding="utf-8") as f:
-                        f.write(_control_readme(fw, category, control))
+                    # Create only. _control.md asks the operator to fill in the
+                    # owner and review cadence, so rewriting it on every run
+                    # (the normal way to pick up a new control) would silently
+                    # discard their edits.
+                    readme_path = os.path.join(ctrl_dir, "_control.md")
+                    if not os.path.exists(readme_path):
+                        with open(readme_path, "w", encoding="utf-8") as f:
+                            f.write(_control_readme(fw, category, control))
 
                 manifest.append({
                     "framework": fw["key"],
                     "category": category["key"],
                     "control_id": control["control_id"],
-                    "path": os.path.relpath(ctrl_dir, root),
+                    # Always forward slashes: os.path.relpath yields backslashes
+                    # on Windows, which would make the manifest — a portable,
+                    # machine-readable index — depend on the OS that built it.
+                    "path": os.path.relpath(ctrl_dir, root).replace(os.sep, "/"),
                 })
 
     # top-level index + machine-readable manifest

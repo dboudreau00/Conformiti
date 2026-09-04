@@ -1,264 +1,346 @@
-import { useEffect, useState } from "react";
-import api from "../api/client.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronRightIcon, DownloadIcon, PaperclipIcon, SearchIcon } from "lucide-react";
+import api, { downloadFile, fetchAll } from "../api/client.js";
+import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
+import { ControlDetail } from "../components/controls/ControlDetail.jsx";
+import { Badge } from "../components/ui/Badge.jsx";
+import { Button } from "../components/ui/Button.jsx";
+import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
+import { useShell } from "../shell.js";
+import { errorText } from "../utils/a11y.js";
+import { cn } from "../utils/cn.js";
+import { CONTROL_STATUS } from "../utils/tone.js";
 
-const STATUS = [
-  ["not_started", "Not started", "neutral"],
-  ["in_progress", "In progress", "soon"],
-  ["implemented", "Implemented", "ok"],
-  ["not_applicable", "N/A", "neutral"],
-];
-const cls = (s) => STATUS.find((x) => x[0] === s)?.[2] || "neutral";
+const STATUS_KEYS = Object.keys(CONTROL_STATUS);
+const GRID = "grid-cols-[110px_minmax(0,1fr)_130px_140px_150px_90px]";
 
 export default function Controls({ me }) {
-  const [frameworks, setFrameworks] = useState([]);
-  const [active, setActive] = useState(null);
+  const { refreshCounts } = useShell();
+
+  const [frameworks, setFrameworks] = useState(null); // null until loaded
+  const [framework, setFramework] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [query, setQuery] = useState("");
   const [controls, setControls] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
+  const [expanded, setExpanded] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
-  // Evidence drawer state
-  const [evControl, setEvControl] = useState(null);
-  const [links, setLinks] = useState([]);
-  const [linksLoading, setLinksLoading] = useState(false);
-  const [docChoices, setDocChoices] = useState([]);
-  const [selDocs, setSelDocs] = useState([]);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  // Pick-lists shared by every expanded row.
+  const [users, setUsers] = useState(null); // null = not loaded / unavailable
+  const [docChoices, setDocChoices] = useState(null);
+  const [choicesError, setChoicesError] = useState("");
+  const choicesRequested = useRef(false);
 
-  const canManage = me?.capabilities?.manage_frameworks;
-  const canLink = canManage || me?.capabilities?.manage_documents;
+  const canManage = !!me?.capabilities?.manage_frameworks;
+  const canLink = canManage || !!me?.capabilities?.manage_documents;
 
+  // ---- data ----------------------------------------------------------------
   useEffect(() => {
-    api.get("/frameworks/").then((r) => {
-      const list = r.data.results || r.data;
-      setFrameworks(list);
-      if (list.length) setActive(list[0].key);
-    });
+    let alive = true;
+    // Paginated at 50 — follow `next` so every framework reaches the filter
+    // (and the "all frameworks" fetch below covers the whole catalog).
+    fetchAll("/frameworks/")
+      .then((list) => {
+        if (alive) setFrameworks(list);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setFrameworks([]);
+        setLoading(false);
+        setPageError(errorText(e, "Couldn't load frameworks."));
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
-    if (!active) return;
+    if (!frameworks) return;
+    const keys = framework === "all" ? frameworks.map((f) => f.key) : [framework];
+    let alive = true;
     setLoading(true);
-    setEvControl(null);
-    api.get(`/frameworks/${active}/controls/`).then((r) => {
-      setControls(r.data);
-      setLoading(false);
-    });
-  }, [active]);
-
-  async function setStatus(id, status) {
-    setControls((cs) => cs.map((c) => (c.id === id ? { ...c, status } : c)));
-    await api.patch(`/controls/${id}/`, { status });
-  }
-
-  // --- evidence drawer ------------------------------------------------------
-  async function openEvidence(c) {
-    if (evControl?.id === c.id) { setEvControl(null); return; }
-    setEvControl(c);
-    setLinks([]);
-    setSelDocs([]);
-    setNote("");
-    setLinksLoading(true);
-    const r = await api.get(`/control-evidence/?control=${c.id}`);
-    setLinks(r.data.results || r.data);
-    setLinksLoading(false);
-    if (!docChoices.length) {
-      const ch = await api.get("/control-evidence/choices/");
-      setDocChoices(ch.data.documents);
-    }
-  }
-
-  function bumpCount(controlId, delta) {
-    setControls((cs) => cs.map((c) =>
-      c.id === controlId
-        ? { ...c, evidence_count: Math.max(0, (c.evidence_count || 0) + delta) }
-        : c
-    ));
-  }
-
-  async function attach(e) {
-    e.preventDefault();
-    if (!selDocs.length) return;
-    setBusy(true);
-    try {
-      const { data } = await api.post("/control-evidence/bulk/", {
-        control: evControl.id,
-        documents: selDocs.map(Number),
-        note,
+    setExpanded(null);
+    Promise.all(keys.map((k) => api.get(`/frameworks/${k}/controls/`)))
+      .then((rs) => {
+        if (alive) setControls(rs.flatMap((r) => r.data.results || r.data));
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setControls([]);
+        setPageError(errorText(e, "Couldn't load controls."));
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
       });
-      setLinks((ls) => [...ls, ...data.created]);
-      bumpCount(evControl.id, data.created.length);
-      setSelDocs([]);
-      setNote("");
+    return () => {
+      alive = false;
+    };
+  }, [framework, frameworks]);
+
+  // Owner pick-list: only needed by users who can reassign controls.
+  useEffect(() => {
+    if (!canManage) return;
+    let alive = true;
+    fetchAll("/users/")
+      .then((rows) => {
+        if (alive) setUsers(rows);
+      })
+      .catch((e) => {
+        if (alive) setPageError(errorText(e, "Couldn't load the user list; owners can't be reassigned right now."));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [canManage]);
+
+  const ensureChoices = useCallback(() => {
+    if (choicesRequested.current) return;
+    choicesRequested.current = true;
+    api
+      .get("/control-evidence/choices/")
+      .then((r) => setDocChoices(r.data.documents || []))
+      .catch((e) => {
+        choicesRequested.current = false;
+        setChoicesError(errorText(e, "Couldn't load the document list."));
+      });
+  }, []);
+
+  useEffect(() => {
+    if (expanded !== null && canLink) ensureChoices();
+  }, [expanded, canLink, ensureChoices]);
+
+  // ---- writes --------------------------------------------------------------
+  const patchControl = useCallback(
+    async (id, patch) => {
+      const { data } = await api.patch(`/controls/${id}/`, patch);
+      setControls((cs) => cs.map((c) => (c.id === id ? { ...c, ...data } : c)));
+      refreshCounts();
+    },
+    [refreshCounts]
+  );
+
+  const bumpEvidence = useCallback((id, delta) => {
+    setControls((cs) =>
+      cs.map((c) => (c.id === id ? { ...c, evidence_count: Math.max(0, (c.evidence_count || 0) + delta) } : c))
+    );
+  }, []);
+
+  async function exportCsv() {
+    setExporting(true);
+    setPageError("");
+    try {
+      const params = new URLSearchParams();
+      if (framework !== "all") params.set("category__framework__key", framework);
+      if (status !== "all") params.set("status", status);
+      const qs = params.toString();
+      await downloadFile(`/controls/export/${qs ? `?${qs}` : ""}`, "controls.csv");
+    } catch (e) {
+      setPageError(errorText(e, "Couldn't export the control register."));
     } finally {
-      setBusy(false);
+      setExporting(false);
     }
   }
 
-  async function unlink(link) {
-    await api.delete(`/control-evidence/${link.id}/`);
-    setLinks((ls) => ls.filter((l) => l.id !== link.id));
-    bumpCount(evControl.id, -1);
-  }
+  // ---- derived -------------------------------------------------------------
+  const statusCounts = useMemo(() => {
+    const counts = { all: controls.length };
+    for (const k of STATUS_KEYS) counts[k] = 0;
+    for (const c of controls) counts[c.status] = (counts[c.status] || 0) + 1;
+    return counts;
+  }, [controls]);
 
-  const current = frameworks.find((f) => f.key === active);
-  const linkedIds = new Set(links.map((l) => l.document));
-  const available = docChoices.filter((d) => !linkedIds.has(d.id));
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return controls.filter(
+      (c) =>
+        (status === "all" || c.status === status) &&
+        (q === "" || `${c.control_id} ${c.title}`.toLowerCase().includes(q))
+    );
+  }, [controls, status, query]);
+
+  const frameworkOptions = useMemo(() => {
+    const list = frameworks || [];
+    return [
+      { id: "all", label: "All frameworks", count: list.reduce((n, f) => n + (f.control_count || 0), 0) },
+      ...list.map((f) => ({ id: f.key, label: f.name, count: f.control_count })),
+    ];
+  }, [frameworks]);
+
+  const ready = frameworks !== null && !loading;
 
   return (
-    <>
-      <div className="pagehead">
-        <div>
-          <div className="chips">
-            {frameworks.map((f) => (
-              <div key={f.key} className={"chip" + (f.key === active ? " active" : "")}
-                   onClick={() => setActive(f.key)}>
-                {f.name} {f.version}
-              </div>
-            ))}
-          </div>
-          {current && (
-            <div className="sub" style={{ marginTop: 8 }}>
-              {current.implemented_count}/{current.control_count} controls implemented ·
-              {" "}{current.authority}
-            </div>
-          )}
-        </div>
-      </div>
+    <PanelTransition>
+      <Stack className="flex flex-col gap-4">
+        <StackItem className="flex flex-wrap items-center justify-between gap-3">
+          <SegmentedControl
+            layoutId="controls-framework"
+            ariaLabel="Filter by framework"
+            value={framework}
+            onChange={setFramework}
+            options={frameworkOptions}
+          />
 
-      <div className="card">
-        <div className="card-head">
-          <h2>{current ? `${current.name} controls` : "Controls"}</h2>
-          <span className="eyebrow">{controls.length} controls</span>
-        </div>
-        <div className="card-body" style={{ padding: 0 }}>
-          {loading ? <div className="loading">Loading controls…</div> : (
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ width: 90 }}>ID</th>
-                  <th>Control</th>
-                  <th style={{ width: 150 }}>Owner</th>
-                  <th style={{ width: 100 }}>Evidence</th>
-                  <th style={{ width: 150 }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {controls.map((c) => (
-                  <tr key={c.id}>
-                    <td className="cid">{c.control_id}</td>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{c.title}</div>
-                      <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>{c.objective}</div>
-                    </td>
-                    <td style={{ color: c.owner_name ? "var(--ink)" : "var(--muted)" }}>
-                      {c.owner_name || "Unassigned"}
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          "count-pill " + (c.evidence_count ? "has" : "none") +
-                          (evControl?.id === c.id ? " open" : "")
-                        }
-                        onClick={() => openEvidence(c)}
-                        title="Show linked evidence"
-                      >
-                        {c.evidence_count || 0} {c.evidence_count === 1 ? "doc" : "docs"}
-                      </span>
-                    </td>
-                    <td>
-                      {canManage ? (
-                        <select value={c.status} onChange={(e) => setStatus(c.id, e.target.value)}>
-                          {STATUS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                        </select>
-                      ) : (
-                        <span className={`badge ${cls(c.status)}`}><span className="dot" />
-                          {STATUS.find((x) => x[0] === c.status)?.[1]}</span>
-                      )}
-                    </td>
-                  </tr>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <SearchIcon
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
+                strokeWidth={2}
+                aria-hidden="true"
+              />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search reference or title"
+                aria-label="Search controls"
+                type="search"
+                className="h-8 w-[260px] max-w-full rounded-lg border border-line bg-surface pl-8 pr-3 text-[13px] text-ink placeholder:text-faint transition-colors duration-150 ease-out focus:border-accent focus:outline-none"
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={exportCsv}
+              disabled={exporting || !ready}
+              icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+            >
+              {exporting ? "Exporting…" : "Export CSV"}
+            </Button>
+          </div>
+        </StackItem>
+
+        <StackItem className="flex flex-wrap gap-2">
+          {["all", ...STATUS_KEYS].map((key) => (
+            <Chip
+              key={key}
+              active={status === key}
+              onClick={() => setStatus(key)}
+              tone={key === "all" ? undefined : CONTROL_STATUS[key].tone}
+              count={statusCounts[key] || 0}
+            >
+              {key === "all" ? "Every status" : CONTROL_STATUS[key].label}
+            </Chip>
+          ))}
+        </StackItem>
+
+        <StackItem>
+          {pageError ? (
+            <div className="notice notice-err mb-4" role="alert">{pageError}</div>
+          ) : null}
+
+          <Panel className="overflow-hidden">
+            <PanelHeader title="Control register">
+              <Label className="tabular">
+                {ready ? `Showing ${rows.length} of ${controls.length}` : "Loading"}
+              </Label>
+            </PanelHeader>
+
+            <div className="overflow-x-auto">
+              <div className={cn("grid min-w-[860px] items-center gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
+                {["Ref", "Control", "Framework", "Status", "Owner", "Evidence"].map((h) => (
+                  <Label key={h} className={h === "Evidence" ? "text-right" : undefined}>
+                    {h}
+                  </Label>
                 ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+              </div>
 
-      {evControl && (
-        <div className="card" style={{ marginTop: 18 }}>
-          <div className="card-head">
-            <div>
-              <h2><span className="mono">{evControl.control_id}</span> · evidence</h2>
-              <div className="eyebrow" style={{ marginTop: 3 }}>{evControl.title}</div>
-            </div>
-            <button className="btn small" onClick={() => setEvControl(null)}>Close</button>
-          </div>
-          <div className="card-body">
-            {linksLoading ? (
-              <div className="loading">Loading evidence…</div>
-            ) : links.length === 0 ? (
-              <div className="empty">No evidence linked to this control yet.</div>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Document</th>
-                    <th style={{ width: 220 }}>Folder</th>
-                    <th style={{ width: 110 }}>Status</th>
-                    <th>Note</th>
-                    <th style={{ width: 130 }}>Linked by</th>
-                    {canLink ? <th style={{ width: 80 }}></th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {links.map((l) => (
-                    <tr key={l.id}>
-                      <td style={{ fontWeight: 500 }}>{l.document_name}</td>
-                      <td style={{ color: "var(--muted)", fontSize: 12.5 }}>{l.folder_path}</td>
-                      <td>
-                        <span className={"badge " + (l.document_status === "approved" ? "ok" : "neutral")}>
-                          <span className="dot" />{l.document_status.replace("_", " ")}
-                        </span>
-                      </td>
-                      <td style={{ color: "var(--muted)", fontSize: 12.5 }}>{l.note || "—"}</td>
-                      <td style={{ color: "var(--muted)", fontSize: 12.5 }}>{l.linked_by_name || "—"}</td>
-                      {canLink ? (
-                        <td style={{ textAlign: "right" }}>
-                          <button className="btn small" onClick={() => unlink(l)}>Unlink</button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-
-            {canLink && (
-              <form onSubmit={attach}
-                    style={{ display: "flex", gap: 12, alignItems: "flex-start", marginTop: 16, flexWrap: "wrap" }}>
-                <div style={{ flex: "2 1 320px" }}>
-                  <div className="eyebrow" style={{ marginBottom: 6 }}>
-                    Attach evidence — select one or more documents
-                  </div>
-                  <select multiple className="doc-multi" style={{ width: "100%" }} value={selDocs}
-                          onChange={(e) => setSelDocs(Array.from(e.target.selectedOptions).map((o) => o.value))}>
-                    {available.map((d) => (
-                      <option key={d.id} value={d.id}>{d.path} / {d.name}</option>
+              {!ready ? (
+                <Loading>Loading controls…</Loading>
+              ) : frameworks.length === 0 ? (
+                <Empty title="No frameworks available">Seed a framework to populate the control register.</Empty>
+              ) : (
+                <ul className="min-w-[860px] divide-y divide-line">
+                  <AnimatePresence initial={false}>
+                    {rows.map((control) => (
+                      <ControlRow
+                        key={control.id}
+                        control={control}
+                        expanded={expanded === control.id}
+                        onToggle={() => setExpanded(expanded === control.id ? null : control.id)}
+                      >
+                        <ControlDetail
+                          control={control}
+                          canManage={canManage}
+                          canLink={canLink}
+                          users={users}
+                          docChoices={docChoices}
+                          choicesError={choicesError}
+                          onPatch={patchControl}
+                          onEvidenceDelta={bumpEvidence}
+                        />
+                      </ControlRow>
                     ))}
-                  </select>
-                </div>
-                <div style={{ flex: "1 1 220px", display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div className="eyebrow">Note (optional)</div>
-                  <input value={note} onChange={(e) => setNote(e.target.value)}
-                         placeholder="Why this document applies" />
-                  <button className="btn primary" disabled={busy || !selDocs.length}>
-                    {busy ? "Attaching…" : "Attach " + (selDocs.length || "") + (selDocs.length === 1 ? " document" : " documents")}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-    </>
+                  </AnimatePresence>
+                  {rows.length === 0 ? (
+                    <li>
+                      <Empty title="No controls match these filters">
+                        Clear the search or widen the status selection.
+                      </Empty>
+                    </li>
+                  ) : null}
+                </ul>
+              )}
+            </div>
+          </Panel>
+        </StackItem>
+      </Stack>
+    </PanelTransition>
+  );
+}
+
+function ControlRow({ control, expanded, onToggle, children }) {
+  const meta = CONTROL_STATUS[control.status] || { label: control.status, tone: "muted" };
+  const bodyId = `control-detail-${control.id}`;
+  return (
+    <motion.li
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18, ease: EASE }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        className={cn(
+          "grid w-full items-center gap-4 px-5 py-3 text-left",
+          "transition-colors duration-150 ease-out hover:bg-surface-2",
+          expanded && "bg-surface-2",
+          GRID
+        )}
+      >
+        <span className="flex items-center gap-1.5">
+          <ChevronRightIcon
+            className={cn("h-3.5 w-3.5 shrink-0 text-faint transition-transform duration-150 ease-out", expanded && "rotate-90")}
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+          <span className="truncate font-mono text-xs text-accent">{control.control_id}</span>
+        </span>
+        <span className="truncate text-[13px] text-ink" title={control.title}>{control.title}</span>
+        <span className="truncate text-xs text-muted" title={control.framework}>{control.framework}</span>
+        <span>
+          <Badge tone={meta.tone} dot>{meta.label}</Badge>
+        </span>
+        <span className={cn("truncate text-xs", control.owner_name ? "text-muted" : "text-danger")}>
+          {control.owner_name || "Unassigned"}
+        </span>
+        <span className="tabular flex items-center justify-end gap-1 font-mono text-xs text-muted">
+          <PaperclipIcon className="h-3 w-3 text-faint" strokeWidth={2} aria-hidden="true" />
+          {control.evidence_count || 0}
+        </span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {expanded ? (
+          <Collapse key="detail" open className="border-t border-line bg-surface-2">
+            <div id={bodyId}>{children}</div>
+          </Collapse>
+        ) : null}
+      </AnimatePresence>
+    </motion.li>
   );
 }

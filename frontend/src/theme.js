@@ -1,124 +1,122 @@
-// Theme engine — theme (family + light/dark) and a custom accent colour,
-// persisted in localStorage and applied by swapping CSS custom properties.
-// The early inline script in index.html applies the saved values before React
-// mounts (no flash); initTheme() re-applies on load.
+// Theme engine: a theme *pack* (surfaces, ink, status colours) plus an accent
+// *pack* (primary actions, active nav, highlights), persisted in localStorage
+// and applied by swapping data-theme / data-accent on <html>. The tokens live
+// in src/styles/index.css; /theme-init.js applies the saved values before the
+// first paint. `useTheme()` keeps React components in sync.
+import { useEffect, useState } from "react";
 
-export const THEMES = [
-  { id: "ledger", label: "Audit Ledger", mode: "light", swatch: "#0f766e", bg: "#eef1f4" },
-  { id: "ledger-dark", label: "Ledger Dark", mode: "dark", swatch: "#2dd4bf", bg: "#0e151c" },
-  { id: "blazor", label: "Blazor", mode: "light", swatch: "#1b6ec2", bg: "#f0f2f5" },
-  { id: "blazor-dark", label: "Blazor Dark", mode: "dark", swatch: "#3b82f6", bg: "#12161c" },
-];
-export const DEFAULT_THEME = "ledger";
-
-export const ACCENT_PRESETS = [
-  { name: "Teal", hex: "#0f766e" },
-  { name: "Blue", hex: "#1b6ec2" },
-  { name: "Indigo", hex: "#4f46e5" },
-  { name: "Violet", hex: "#7c3aed" },
-  { name: "Emerald", hex: "#059669" },
-  { name: "Rose", hex: "#e11d48" },
-  { name: "Amber", hex: "#d97706" },
+export const THEME_PACKS = [
+  { id: "ledger", name: "Audit Ledger", mode: "Light", blurb: "Warm paper neutrals. Reads well in printed evidence packs.", swatch: ["#f6f5f1", "#ffffff"] },
+  { id: "nimbus", name: "Nimbus", mode: "Light", blurb: "Cool slate. Highest legibility for long control reviews.", swatch: ["#f3f6fa", "#ffffff"] },
+  { id: "ledger-dark", name: "Ledger Dark", mode: "Dark", blurb: "Muted ink surfaces for low-light monitoring.", swatch: ["#0c0e12", "#151820"] },
+  { id: "obsidian", name: "Obsidian", mode: "Dark", blurb: "Near-black, maximum contrast for wall displays.", swatch: ["#060709", "#0d0f13"] },
 ];
 
+export const ACCENT_PACKS = [
+  { id: "pine", name: "Pine", hex: "#116e60" },
+  { id: "azure", name: "Azure", hex: "#2563d8" },
+  { id: "violet", name: "Violet", hex: "#764ae2" },
+  { id: "ember", name: "Ember", hex: "#c23d34" },
+];
+
+export const DEFAULT_THEME = "ledger-dark";
+export const DEFAULT_ACCENT = "azure";
+
+// Names used by the pre-0.2 pages; kept so every page keeps compiling while
+// it is ported to THEME_PACKS / ACCENT_PACKS.
+export const THEMES = THEME_PACKS.map((t) => ({ id: t.id, label: t.name, mode: t.mode.toLowerCase(), swatch: t.swatch[1], bg: t.swatch[0] }));
+export const ACCENT_PRESETS = ACCENT_PACKS.map((a) => ({ name: a.name, hex: a.hex }));
+
+const LEGACY_THEMES = { blazor: "nimbus", "blazor-dark": "obsidian" };
 const K_THEME = "theme";
 const K_ACCENT = "accent";
-const K_ACCENT_VARS = "accentVars";
+const EVENT = "conformiti:theme";
 
-const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const isHex = (v) => /^#[0-9a-f]{6}$/i.test(v || "");
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* ignore */ } },
+};
+
+export function getTheme() {
+  const raw = store.get(K_THEME) || "";
+  const mapped = LEGACY_THEMES[raw] || raw;
+  return THEME_PACKS.some((t) => t.id === mapped) ? mapped : DEFAULT_THEME;
+}
+
+/** Accent pack id, or a custom "#rrggbb". */
+export function getAccent() {
+  const raw = store.get(K_ACCENT) || "";
+  if (ACCENT_PACKS.some((a) => a.id === raw)) return raw;
+  if (isHex(raw)) return raw.toLowerCase();
+  return DEFAULT_ACCENT;
+}
+
+export const isDark = (id = getTheme()) => id === "ledger-dark" || id === "obsidian";
 
 function hexToRgb(hex) {
-  let h = String(hex).replace("#", "");
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  const n = parseInt(h, 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
-function rgbStr(hex) { const { r, g, b } = hexToRgb(hex); return `${r},${g},${b}`; }
-function rgbToHex(r, g, b) {
-  const s = (v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0");
-  return `#${s(r)}${s(g)}${s(b)}`;
+
+/** Resolve the accent's hex for swatches (custom or pack). */
+export function accentHex(id = getAccent()) {
+  if (isHex(id)) return id;
+  return (ACCENT_PACKS.find((a) => a.id === id) || ACCENT_PACKS[1]).hex;
 }
-function rgbToHsl({ r, g, b }) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0; const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h /= 6;
+
+function apply() {
+  const root = document.documentElement;
+  root.setAttribute("data-theme", getTheme());
+  const accent = getAccent();
+  if (isHex(accent)) {
+    const [r, g, b] = hexToRgb(accent);
+    root.setAttribute("data-accent", "custom");
+    root.style.setProperty("--accent", `${r} ${g} ${b}`);
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    root.style.setProperty("--accent-ink", lum > 0.6 ? "10 12 16" : "255 255 255");
+  } else {
+    root.setAttribute("data-accent", accent);
+    root.style.removeProperty("--accent");
+    root.style.removeProperty("--accent-ink");
   }
-  return { h: h * 360, s: s * 100, l: l * 100 };
+  window.dispatchEvent(new CustomEvent(EVENT));
 }
-function hslToHex(h, s, l) {
-  h /= 360; s /= 100; l /= 100;
-  const f = (p, q, t) => {
-    if (t < 0) t += 1; if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  let r, g, b;
-  if (s === 0) { r = g = b = l; }
-  else {
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    r = f(p, q, h + 1 / 3); g = f(p, q, h); b = f(p, q, h - 1 / 3);
-  }
-  return rgbToHex(r * 255, g * 255, b * 255);
-}
-
-// Derive the accent family (primary / darker / brighter / tint / text) from one
-// colour. Status colours (success, warning, overdue) are intentionally left to
-// the active theme so they stay meaningful.
-export function deriveAccent(hex, mode = "light") {
-  const { h, s, l } = rgbToHsl(hexToRgb(hex));
-  const accent = hslToHex(h, s, clamp(l, 22, 66));
-  return {
-    "--accent": accent,
-    "--accent-2": hslToHex(h, s, clamp(l - 10, 12, 58)),
-    "--accent-bright": hslToHex(h, clamp(s + 4, 0, 100), clamp(l + 14, 30, 82)),
-    "--accent-bg": mode === "dark" ? `rgba(${rgbStr(hex)},0.16)` : hslToHex(h, clamp(s - 12, 0, 100), 94),
-    "--on-accent": rgbToHsl(hexToRgb(accent)).l > 55 ? "#0a0f14" : "#ffffff",
-    "--focus-ring": `rgba(${rgbStr(accent)},0.28)`,
-  };
-}
-
-const rootStyle = () => document.documentElement.style;
-const applyVars = (vars) => Object.entries(vars).forEach(([k, v]) => rootStyle().setProperty(k, v));
-const ACCENT_KEYS = ["--accent", "--accent-2", "--accent-bright", "--accent-bg", "--on-accent", "--focus-ring"];
-
-export const getTheme = () => localStorage.getItem(K_THEME) || DEFAULT_THEME;
-export const getAccent = () => localStorage.getItem(K_ACCENT) || "";
-const themeMode = (id) => (THEMES.find((t) => t.id === id) || {}).mode || "light";
 
 export function setTheme(id) {
-  localStorage.setItem(K_THEME, id);
-  document.documentElement.setAttribute("data-theme", id);
-  const accent = getAccent();
-  if (accent) setAccent(accent);   // re-derive tint/contrast for the new mode
+  store.set(K_THEME, THEME_PACKS.some((t) => t.id === id) ? id : DEFAULT_THEME);
+  apply();
 }
 
-export function setAccent(hex) {
-  if (!hex) {
-    localStorage.removeItem(K_ACCENT);
-    localStorage.removeItem(K_ACCENT_VARS);
-    ACCENT_KEYS.forEach((k) => rootStyle().removeProperty(k));
-    return;
-  }
-  const vars = deriveAccent(hex, themeMode(getTheme()));
-  localStorage.setItem(K_ACCENT, hex);
-  localStorage.setItem(K_ACCENT_VARS, JSON.stringify(vars));
-  applyVars(vars);
+export function setAccent(idOrHex) {
+  if (!idOrHex) store.del(K_ACCENT);
+  else store.set(K_ACCENT, idOrHex);
+  apply();
+}
+
+/** Flip between the light/dark sibling of the current pack. */
+export function toggleMode() {
+  const cur = getTheme();
+  const next = { ledger: "ledger-dark", "ledger-dark": "ledger", nimbus: "obsidian", obsidian: "nimbus" }[cur] || DEFAULT_THEME;
+  setTheme(next);
 }
 
 export function initTheme() {
-  document.documentElement.setAttribute("data-theme", getTheme());
-  try {
-    const vars = JSON.parse(localStorage.getItem(K_ACCENT_VARS) || "null");
-    if (vars) applyVars(vars);
-  } catch { /* ignore malformed cache */ }
+  apply();
+}
+
+/** React hook: current theme/accent plus setters, re-rendering on change. */
+export function useTheme() {
+  const [state, setState] = useState(() => ({ theme: getTheme(), accent: getAccent() }));
+  useEffect(() => {
+    const sync = () => setState({ theme: getTheme(), accent: getAccent() });
+    window.addEventListener(EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+  return { ...state, isDark: isDark(state.theme), setTheme, setAccent, toggleMode };
 }

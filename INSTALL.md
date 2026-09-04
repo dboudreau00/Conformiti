@@ -1,198 +1,174 @@
-# Install & test
+# Install
 
-This guide gets the platform running locally so you can click through it, then
-shows how to exercise the review-reminder mailer.
+Three ways to run Conformiti, from "just show me" to production.
 
-The quickest path needs **no external services** — it runs on SQLite and prints
-emails to the console. You only need **Python 3.10+** and **Node.js 18+ (npm)**.
-
----
-
-## 1. One-command install
-
-### macOS / Linux / WSL
-
-```bash
-cd conformiti
-./install.sh
-```
-
-### Windows (PowerShell)
-
-```powershell
-cd conformiti
-.\install.ps1
-```
-
-The installer will:
-
-1. Create `.env` from `.env.example` and generate a Django secret key.
-2. Create a Python virtual environment in `.venv` and install backend deps.
-3. Run migrations and seed the control libraries, evidence folder tree, and demo data.
-4. Install frontend deps.
-5. Start the backend (`:8000`) and the Vite dev server (`:5173`).
-
-When it finishes, open **http://localhost:5173** and sign in:
-
-| Username | Password       |
-| -------- | -------------- |
-| `admin`  | `DemoPass123!` |
-
-Four role-based demo users also exist, all with the password `DemoPass123!`, so
-you can see how role-based access control and folder permissions behave:
-
-| Username | Role               |
-| -------- | ------------------ |
-| `mia`    | Compliance Manager |
-| `owen`   | Control Owner      |
-| `aria`   | Auditor            |
-| `val`    | Viewer             |
-
-> `./install.sh --setup-only` installs and seeds without starting the servers.
-> Re-running the installer is safe; it reuses `.venv` and leaves your `.env` alone.
+| Path | Best for | Needs | Command |
+|---|---|---|---|
+| **Docker** | evaluating, LAN pilots, production | Docker Engine 24+ / Docker Desktop with Compose v2 | `docker compose up -d --build` |
+| **Local dev** | hacking on the code | Python 3.11+, Node 20.19+ | `./install.sh` / `.\install.ps1` |
+| **Manual** | custom hosting, bare metal | as above + PostgreSQL, Redis, nginx | see §3 |
 
 ---
 
-## 2. Docker alternative
-
-If you'd rather use Postgres + Redis + the Celery scheduler (closer to a real
-deployment):
+## 1. Docker (recommended)
 
 ```bash
-cp .env.example .env        # then set the POSTGRES_* values
-docker compose up --build
+git clone https://github.com/dboudreau00/Conformiti.git
+cd Conformiti
+docker compose up -d --build
 ```
 
-Open **http://localhost:8080**. Or let the script do it: `./install.sh --docker`.
+Then open **http://localhost:8080** and sign in as `admin` / `DemoPass123!`.
+
+What happens on first boot:
+
+1. PostgreSQL 16 and Redis 7 start with healthchecks.
+2. The API container waits for the database, applies the shipped migrations,
+   seeds the three control libraries (217 controls, 1,117 folders) and the
+   built-in roles, seeds the demo dataset (unless `SEED_DEMO_DATA=false`),
+   collects static files and starts gunicorn as an unprivileged user.
+3. A strong `DJANGO_SECRET_KEY` is generated and persisted in the `secrets`
+   volume — no placeholder ever signs a token.
+4. The Celery worker starts once the API is *healthy* and runs the daily
+   review scan (06:00 by default), the readiness snapshot and blacklist pruning.
+5. nginx serves the built SPA, proxies `/api/` and `/admin/`, and serves
+   uploads and static files from shared volumes.
+
+The API is bound to `127.0.0.1:8000` on the host for debugging; the LAN only
+sees nginx on port 8080 (`CONFORMITI_PORT` to change it).
+
+### The scripted variant
+
+```bash
+./install.sh --docker            # macOS / Linux / WSL
+.\install.ps1 -Docker            # Windows PowerShell
+```
+
+The script checks Docker is running, writes a production-style `.env` if you
+don't have one (DEBUG off, a unique key, your hostname in `ALLOWED_HOSTS`),
+builds and starts the stack, **waits until `/api/health/` reports `ok`**, and
+prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
+`--open` / `-Open`, `--port N` / `-Port N`.
+
+### Going to production
+
+1. Set the real hostname in `.env`:
+   ```ini
+   DJANGO_ALLOWED_HOSTS=grc.example.com
+   CSRF_TRUSTED_ORIGINS=https://grc.example.com
+   CORS_ALLOWED_ORIGINS=https://grc.example.com
+   BEHIND_TLS=true            # once TLS is terminated in front of nginx
+   SECURE_HSTS_SECONDS=31536000
+   EMAIL_PROVIDER=smtp        # + EMAIL_HOST / EMAIL_HOST_USER / EMAIL_HOST_PASSWORD
+   POSTGRES_PASSWORD=<something long>
+   ```
+2. Terminate TLS (Caddy, Traefik, a load balancer) in front of port 8080.
+3. Create your own administrator and retire the demo data:
+   ```bash
+   docker compose exec backend python manage.py createsuperuser
+   docker compose exec backend python manage.py remove_demo_data
+   ```
+   or set `SEED_DEMO_DATA=false` and `DJANGO_SUPERUSER_USERNAME` /
+   `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first boot.
+4. Confirm: `curl -s https://grc.example.com/api/health/` →
+   `{"status":"ok","version":"0.2.0","database":"ok","demo_accounts":false}`.
+5. Back up the `pgdata` and `media` volumes nightly.
+
+Everyday operations:
+
+```bash
+docker compose logs -f backend worker      # logs
+docker compose pull && docker compose up -d --build   # update
+docker compose exec backend python manage.py send_review_reminders --dry-run
+docker compose down                        # stop (volumes are kept)
+```
 
 ---
 
-## 3. Manual steps
-
-If you prefer to run the steps yourself (or the script can't run in your shell):
+## 2. Local development (SQLite, console email)
 
 ```bash
-# from the repo root
-cp .env.example .env        # edit DJANGO_SECRET_KEY to any long random string
-python3 -m venv .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
-pip install -r backend/requirements.txt
+./install.sh                 # macOS / Linux / WSL
+.\install.ps1                # Windows PowerShell
+```
 
+The installer verifies Python 3.11+ and Node 20.19+, creates `.env` with a
+generated secret key, builds `.venv`, installs backend and frontend
+dependencies, applies migrations, seeds the libraries and demo data, and starts
+the API on **:8000** and the Vite dev server on **:5173**. Every step is
+exit-code checked; a failing step stops the installer.
+
+Open **http://localhost:5173**. Demo accounts (all `DemoPass123!`):
+
+| Username | Role |
+|---|---|
+| `admin` | Administrator (superuser) |
+| `mia` | Compliance Manager |
+| `owen` | Control Owner |
+| `aria` | Auditor |
+| `val` | Viewer |
+
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `--setup-only` / `-SetupOnly` | install and seed, don't start servers |
+| `--test` / `-Test` | run the validator, the 80 backend tests and a production frontend build |
+| `--reset` / `-Reset` | wipe `db.sqlite3` and uploads, reseed |
+| `--no-demo` / `-NoDemo` | seed libraries only (then `createsuperuser`) |
+| `--open` / `-Open` | open the browser when ready |
+
+Re-running the installer is safe: it reuses `.venv`, leaves `.env` alone, and
+every seeder is idempotent.
+
+Review reminders on this path run on demand:
+
+```bash
 cd backend
-python manage.py makemigrations accounts compliance documents calendar_app notifications audit governance integrations
+../.venv/bin/python manage.py send_review_reminders --dry-run    # Windows: ..\.venv\Scripts\python.exe
+```
+
+---
+
+## 3. Manual / bare metal
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
+cp .env.example .env            # set DJANGO_DEBUG=false, DJANGO_SECRET_KEY, POSTGRES_*, origins
+cd backend
 python manage.py migrate
 python manage.py seed_frameworks --with-folders
-python manage.py bootstrap_demo
-python manage.py generate_folder_tree
-python manage.py runserver 127.0.0.1:8000
+python manage.py createsuperuser
+python manage.py collectstatic --noinput
+gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
 ```
 
-In a second terminal:
+Run `celery -A config worker -B -l info` under a supervisor for the daily
+jobs, or schedule them with cron:
 
-```bash
-cd frontend
-npm install
-npm run dev
+```
+0 6 * * *  cd /srv/conformiti/backend && ../.venv/bin/python manage.py send_review_reminders
+5 6 * * *  cd /srv/conformiti/backend && ../.venv/bin/python manage.py record_readiness
+30 3 * * 0 cd /srv/conformiti/backend && ../.venv/bin/python manage.py flushexpiredtokens
 ```
 
-Open **http://localhost:5173**.
-
----
-
-## 4. A quick tour
-
-- **Dashboard** — program stats, the compliance calendar, and upcoming reviews.
-  Use **Mark reviewed** on a document to reset its review clock.
-- **Analytics** — framework readiness, control/document status donuts, a
-  six-month review timeline, ownership coverage, and the most overdue documents.
-- **Controls** — the SOC 2 / ISO 27001 / PCI DSS libraries; set a control's
-  implementation status inline.
-- **Documents** — the evidence folder tree. Upload a file, rename it, add a new
-  version, or set a review cadence. Setting a cadence is what schedules reminders.
-- **Governance** — **User audit** (snapshot every account into a decision grid and
-  export it as CSV), **Meetings** (track minutes against a required yearly cadence),
-  **Groups** (owned, inter-departmental security champions), and **Jira** (optional:
-  connect an Atlassian account and track specific boards).
-- **Settings** (bottom of the sidebar, or your name) — the account panel: edit
-  your profile, change your password, and review your role and capabilities.
-
----
-
-## 5. Test the review reminders
-
-Reminders are generated by scanning documents for their **next review date** and
-emailing the document's **owner** (plus the compliance team address). With the
-default `EMAIL_PROVIDER=console`, "sent" mail is printed to the backend terminal,
-so you can watch it work without configuring anything.
-
-**See what would be sent (no email, nothing saved):**
-
-```bash
-cd backend
-python manage.py send_review_reminders --dry-run
-```
-
-**Actually run the scan** (prints emails to the console with the default provider):
-
-```bash
-python manage.py send_review_reminders
-```
-
-The demo data seeds documents with a spread of review dates — some overdue, some
-upcoming — so the scan has something to report on the first run.
-
----
-
-## 6. Test the mailbox mailer (IMAP/POP3 + SMTP)
-
-To send real reminders through a standard inbox, switch the provider to
-`mailbox`. A normal mail account exposes two endpoints and this uses both:
-
-- **IMAP or POP3** connects to the mailbox — here it's used to verify the account
-  and, for IMAP, to file a copy of each reminder in the **Sent** folder.
-- **SMTP** actually sends the message. (IMAP/POP3 cannot send, so an SMTP
-  endpoint is always required.)
-
-Set these in `.env` (a Gmail account with an **app password** is a good test;
-the SMTP host/username default to the mailbox values):
-
-```ini
-EMAIL_PROVIDER=mailbox
-DEFAULT_FROM_EMAIL=you@example.com
-
-MAILBOX_PROTOCOL=imap
-MAILBOX_HOST=imap.gmail.com
-MAILBOX_PORT=993
-MAILBOX_USERNAME=you@example.com
-MAILBOX_PASSWORD=your-app-password
-MAILBOX_USE_SSL=true
-
-MAILBOX_SMTP_HOST=smtp.gmail.com
-MAILBOX_SMTP_PORT=587
-MAILBOX_SMTP_USE_TLS=true
-```
-
-Verify the connection and send yourself a test message:
-
-```bash
-cd backend
-python manage.py test_mailbox --to you@example.com
-```
-
-You should see the IMAP/POP3 verification succeed, then a test email arrive.
-Once that works, `send_review_reminders` will deliver real reminders the same way.
-
-> **Note on POP3:** POP3 only confirms the mailbox is reachable (it can't file a
-> Sent copy). Use `MAILBOX_PROTOCOL=imap` if you want reminders saved to Sent.
+Build the SPA once (`cd frontend && npm ci && npm run build`) and serve
+`frontend/dist` with the shipped `frontend/nginx.conf` as a template (it
+proxies `/api/` and `/admin/` to gunicorn and serves `/media/` and `/static/`
+from disk).
 
 ---
 
 ## Troubleshooting
 
-- **`command not found: python3`** — install Python 3.10+ and reopen the terminal.
-- **npm errors** — install Node.js 18+ (which includes npm).
-- **Port already in use** — stop whatever is on `5173`/`8000`, or run the backend
-  on another port: `python manage.py runserver 127.0.0.1:8001`.
-- **`test_mailbox` authentication fails** — most providers require an app-specific
-  password rather than your normal login, and that IMAP/SMTP access be enabled on
-  the account.
+| Symptom | Likely cause / fix |
+|---|---|
+| `docker compose up` prints `DJANGO_SECRET_KEY must be set…` | You set `DJANGO_DEBUG=false` in `.env` with the placeholder key and no `DJANGO_SECRET_KEY_FILE`. Delete the placeholder line (compose generates a key) or set a real one. |
+| The app loads but every request is `400 Bad Request` | The hostname you browse with isn't in `DJANGO_ALLOWED_HOSTS`. |
+| Admin login form reloads silently over plain HTTP | `BEHIND_TLS=true` (secure cookies) on an HTTP deployment. Set it to `false` until TLS is in front. |
+| `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up or credentials differ between the `db` and `backend` services. |
+| Login always fails on the local path | Seed didn't run: `cd backend && ../.venv/bin/python manage.py bootstrap_demo`. |
+| `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
+| Uploads rejected as too large | Raise `MAX_UPLOAD_MB` **and** `client_max_body_size` in `frontend/nginx.conf`. |
+| Port in use | `CONFORMITI_PORT=8081` (Docker) or `manage.py runserver 127.0.0.1:8001` + the proxy target in `frontend/vite.config.js`. |

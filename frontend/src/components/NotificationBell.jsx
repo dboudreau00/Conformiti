@@ -1,27 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { BellIcon, XIcon } from "lucide-react";
 import api from "../api/client.js";
+import { cn } from "../utils/cn.js";
+import { TONE_FILL } from "../utils/tone.js";
+import { Label } from "./ui/Panel.jsx";
 
-// Category → glyph (kept consistent with the sidebar's simple icon set).
-const ICON = {
-  risk: "△", doc_review: "🗎", event: "◷",
-  access_review: "▦", evidence: "❑", meeting: "▤",
+const SEV_TONE = { critical: "danger", high: "danger", medium: "warning", low: "info", info: "muted" };
+const POP = {
+  initial: { opacity: 0, y: -6, scale: 0.98 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, y: -4, scale: 0.98 },
+  transition: { duration: 0.16, ease: [0.23, 1, 0.32, 1] },
 };
-// Severity → dot colour, reusing the palette's tokens.
-const SEV_COLOR = {
-  critical: "var(--red)", high: "var(--red)",
-  medium: "var(--amber)", low: "var(--accent)", info: "var(--muted)",
-};
-
-function BellIcon() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-  );
-}
 
 export default function NotificationBell() {
   const nav = useNavigate();
@@ -47,13 +39,19 @@ export default function NotificationBell() {
     return () => clearInterval(t);
   }, []);
 
-  // Close when clicking outside the panel.
   useEffect(() => {
     function onDoc(e) {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     }
+    function onKey(e) {
+      if (e.key === "Escape") setOpen(false);
+    }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   async function toggle() {
@@ -79,37 +77,65 @@ export default function NotificationBell() {
   }
 
   return (
-    <div className="bell-wrap" ref={ref}>
-      <button className={"bell-btn" + (open ? " open" : "")} onClick={toggle} aria-label="Notifications">
-        <BellIcon />
-        {unread > 0 && <span className="bell-badge">{unread > 9 ? "9+" : unread}</span>}
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        aria-label={`Notifications, ${unread} unread`}
+        className={cn(
+          "relative flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-surface text-muted",
+          "transition-colors duration-150 ease-out hover:border-line-strong hover:text-ink",
+          open && "border-line-strong text-ink"
+        )}
+      >
+        <BellIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        {unread > 0 ? (
+          <span className="tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-danger px-1 font-mono text-[9px] font-medium text-white">
+            {unread > 9 ? "9+" : unread}
+          </span>
+        ) : null}
       </button>
 
-      {open && (
-        <div className="bell-panel">
-          <div className="bell-head">
-            <span>Notifications</span>
-            <span className="eyebrow">{items.length ? `${items.length} for you` : "nothing right now"}</span>
-          </div>
-          <div className="bell-list">
-            {items.length === 0 ? (
-              <div className="bell-empty">You're all caught up.</div>
-            ) : (
-              items.map((i) => (
-                <div key={i.key} className={"bell-item" + (i.read ? "" : " unread")} onClick={() => go(i)}>
-                  <span className="bell-dot" style={{ background: SEV_COLOR[i.severity] || "var(--muted)" }} />
-                  <span className="bell-cat" aria-hidden="true">{ICON[i.category] || "•"}</span>
-                  <div className="bell-meta">
-                    <div className="bell-title">{i.title}</div>
-                    <div className="bell-detail">{i.detail}</div>
-                  </div>
-                  <button className="bell-x" title="Dismiss" onClick={(e) => dismiss(e, i.key)}>×</button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {open ? (
+          <motion.div {...POP} className="absolute right-0 top-[calc(100%+8px)] z-40 w-[340px] origin-top-right overflow-hidden rounded-xl border border-line bg-surface shadow-pop">
+            <div className="flex items-center justify-between border-b border-line px-3 py-2">
+              <Label>Activity</Label>
+              <Label>{items.length ? `${items.length} for you` : "nothing right now"}</Label>
+            </div>
+            <ul className="max-h-[420px] divide-y divide-line overflow-y-auto">
+              {items.length === 0 ? (
+                <li className="px-3 py-8 text-center text-xs text-muted">You're all caught up.</li>
+              ) : (
+                items.map((i, idx) => (
+                  <motion.li
+                    key={i.key}
+                    initial={{ opacity: 0, x: 6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1], delay: 0.03 * idx }}
+                    className={cn("group flex items-start gap-2.5 px-3 py-2.5", !i.read && "bg-accent/[0.05]")}
+                  >
+                    <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", TONE_FILL[SEV_TONE[i.severity] || "muted"])} aria-hidden="true" />
+                    <button type="button" onClick={() => go(i)} className="min-w-0 flex-1 text-left">
+                      <span className={cn("block text-[13px] leading-snug", SEV_TONE[i.severity] === "danger" ? "text-danger" : "text-ink")}>{i.title}</span>
+                      <Label className="mt-1 block truncate">{i.detail}</Label>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => dismiss(e, i.key)}
+                      aria-label="Dismiss"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint opacity-0 transition-opacity hover:bg-surface-2 hover:text-ink group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <XIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                    </button>
+                  </motion.li>
+                ))
+              )}
+            </ul>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

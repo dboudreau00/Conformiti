@@ -1,14 +1,35 @@
 import { useEffect, useState } from "react";
-import api from "../api/client.js";
-import { THEMES, ACCENT_PRESETS, getTheme, getAccent, setTheme, setAccent } from "../theme.js";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  BellIcon,
+  CheckIcon,
+  ContrastIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  InfoIcon,
+  KeyRoundIcon,
+  MinusIcon,
+  RefreshCwIcon,
+  ShieldIcon,
+  UserIcon,
+} from "lucide-react";
+import api, { fetchAll } from "../api/client.js";
+import { ACCENT_PACKS, THEME_PACKS, accentHex, useTheme } from "../theme.js";
+import { useShell } from "../shell.js";
+import { cn } from "../utils/cn.js";
+import { errorText } from "../utils/a11y.js";
+import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
+import { Badge } from "../components/ui/Badge.jsx";
+import { Button } from "../components/ui/Button.jsx";
+import { Divider, Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 
 const SECTIONS = [
-  { key: "profile", label: "Profile", icon: "◉" },
-  { key: "security", label: "Security", icon: "⚿" },
-  { key: "notifications", label: "Notifications", icon: "✉" },
-  { key: "appearance", label: "Appearance", icon: "◑" },
-  { key: "access", label: "Role & access", icon: "▤" },
-  { key: "about", label: "About", icon: "ⓘ" },
+  { id: "profile", label: "Profile", icon: UserIcon },
+  { id: "appearance", label: "Appearance", icon: ContrastIcon },
+  { id: "security", label: "Security", icon: KeyRoundIcon },
+  { id: "notifications", label: "Notifications", icon: BellIcon },
+  { id: "access", label: "Role & access", icon: ShieldIcon },
+  { id: "about", label: "About", icon: InfoIcon },
 ];
 
 const CAP_LABELS = {
@@ -20,223 +41,280 @@ const CAP_LABELS = {
   auditor: "Auditor (read-only)",
 };
 
-function Profile({ me, onUpdate }) {
-  const [form, setForm] = useState({
-    first_name: me?.first_name || "",
-    last_name: me?.last_name || "",
-    email: me?.email || "",
-    job_title: me?.job_title || "",
-  });
+const DOCS_URL = "https://github.com/dboudreau00/Conformiti";
+const isHex = (v) => /^#[0-9a-f]{6}$/i.test(v || "");
+
+/* ---------- small page-private helpers ---------- */
+
+function SectionTitle({ title, badge, children }) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">{title}</h2>
+        {badge}
+      </div>
+      {children ? <p className="mt-1 max-w-[62ch] text-[13px] leading-snug text-muted">{children}</p> : null}
+    </>
+  );
+}
+
+function SubTitle({ title, children }) {
+  return (
+    <>
+      <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-ink">{title}</h3>
+      {children ? <p className="mt-1 max-w-[62ch] text-[13px] leading-snug text-muted">{children}</p> : null}
+    </>
+  );
+}
+
+function Field({ id, label, hint, error = false, className, children }) {
+  return (
+    <div className={className}>
+      <label htmlFor={id} className="field-label">
+        {label}
+      </label>
+      {children}
+      {hint ? <p className={cn("mt-1.5 text-xs", error ? "text-danger" : "text-muted")}>{hint}</p> : null}
+    </div>
+  );
+}
+
+function Notice({ msg, className }) {
+  if (!msg) return null;
+  return (
+    <div className={cn("notice", msg.ok ? "notice-ok" : "notice-err", className)} role={msg.ok ? "status" : "alert"}>
+      {msg.text}
+    </div>
+  );
+}
+
+/* ---------- Profile ---------- */
+
+const pickProfile = (u) => ({
+  first_name: u?.first_name || "",
+  last_name: u?.last_name || "",
+  email: u?.email || "",
+  job_title: u?.job_title || "",
+});
+
+function ProfileSection({ me, onUpdate }) {
+  const [form, setForm] = useState(() => pickProfile(me));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // `me` loads asynchronously; if the user lands directly on /account the form
+  // `me` loads asynchronously; if the user lands directly on /settings the form
   // mounts before the profile arrives, so sync the fields when it does.
   useEffect(() => {
-    setForm({
-      first_name: me?.first_name || "",
-      last_name: me?.last_name || "",
-      email: me?.email || "",
-      job_title: me?.job_title || "",
-    });
+    setForm(pickProfile(me));
   }, [me?.id]);
 
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  async function save() {
-    setSaving(true); setMsg(null);
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMsg(null);
     try {
       const { data } = await api.patch("/users/me/", form);
       onUpdate?.(data);
       setMsg({ ok: true, text: "Profile saved." });
-    } catch (e) {
-      setMsg({ ok: false, text: "Couldn't save. Check the fields and try again." });
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "Couldn't save. Check the fields and try again.") });
     } finally {
       setSaving(false);
     }
   }
 
+  if (!me) {
+    return (
+      <Panel>
+        <Loading />
+      </Panel>
+    );
+  }
+
   return (
-    <div className="acct-panel">
-      <h2>Profile</h2>
-      <p className="acct-sub">How you appear across the workspace and on documents you own.</p>
-      <div className="acct-grid2">
-        <div className="field"><label>First name</label><input value={form.first_name} onChange={set("first_name")} /></div>
-        <div className="field"><label>Last name</label><input value={form.last_name} onChange={set("last_name")} /></div>
-      </div>
-      <div className="field"><label>Email</label><input type="email" value={form.email} onChange={set("email")} /></div>
-      <div className="field"><label>Job title</label><input value={form.job_title} onChange={set("job_title")} placeholder="e.g. Security Analyst" /></div>
-      <div className="field"><label>Username</label><input value={me?.username || ""} disabled /><div className="hint">Usernames are managed by an administrator.</div></div>
-      {msg && <div className={msg.ok ? "notice ok" : "error"}>{msg.text}</div>}
-      <button className="btn primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</button>
-    </div>
+    <Panel className="p-5">
+      <SectionTitle title="Profile">How you appear across the workspace and on documents you own.</SectionTitle>
+      <form onSubmit={save} noValidate className="mt-5 grid max-w-[640px] grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field id="acct-first" label="First name">
+          <input id="acct-first" className="input" autoComplete="given-name" value={form.first_name} onChange={set("first_name")} />
+        </Field>
+        <Field id="acct-last" label="Last name">
+          <input id="acct-last" className="input" autoComplete="family-name" value={form.last_name} onChange={set("last_name")} />
+        </Field>
+        <Field id="acct-email" label="Email" className="sm:col-span-2">
+          <input id="acct-email" type="email" className="input" autoComplete="email" value={form.email} onChange={set("email")} />
+        </Field>
+        <Field id="acct-title" label="Job title" className="sm:col-span-2">
+          <input id="acct-title" className="input" autoComplete="organization-title" placeholder="e.g. Security Analyst" value={form.job_title} onChange={set("job_title")} />
+        </Field>
+        <Field id="acct-username" label="Username" className="sm:col-span-2" hint="Usernames are managed by an administrator.">
+          <input id="acct-username" className="input font-mono" value={me.username || ""} disabled />
+        </Field>
+        <div className="flex flex-col items-start gap-3 sm:col-span-2">
+          <Notice msg={msg} className="w-full" />
+          <Button type="submit" variant="primary" disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </form>
+    </Panel>
   );
 }
 
-function BackupCodes({ codes }) {
-  function download() {
-    const text =
-      "Conformiti — backup codes\n" +
-      "Each code works once. Keep them somewhere safe.\n\n" + codes.join("\n") + "\n";
-    const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = "compliance-backup-codes.txt"; a.click();
-    URL.revokeObjectURL(url);
-  }
+/* ---------- Appearance ---------- */
+
+function AppearanceSection() {
+  const { theme, accent, setTheme, setAccent } = useTheme();
+  const custom = isHex(accent);
+  const [hex, setHex] = useState(() => accentHex(accent));
+
+  // Keep the picker in step when the accent changes elsewhere (top bar, another tab).
+  useEffect(() => {
+    setHex(accentHex(accent));
+  }, [accent]);
+
+  const canApply = isHex(hex) && hex.toLowerCase() !== (custom ? accent : "");
+
   return (
-    <div className="notice ok" style={{ marginTop: 12 }}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>Save your backup codes</div>
-      <div style={{ fontSize: 12.5, marginBottom: 10 }}>
-        Each code can be used once if you lose your authenticator. They won't be shown again.
+    <Panel className="p-5">
+      <SectionTitle title="Appearance">
+        Theme packs recolour every surface and chart at once; the accent recolours primary buttons, active navigation and
+        highlights. Status colours — success, warning, overdue — stay fixed so they remain meaningful in evidence exports.
+        Changes apply instantly and are remembered on this device.
+      </SectionTitle>
+
+      <Label as="p" className="mb-2.5 mt-5">Theme pack</Label>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="Theme pack">
+        {THEME_PACKS.map((pack) => {
+          const on = pack.id === theme;
+          return (
+            <button
+              key={pack.id}
+              type="button"
+              onClick={() => setTheme(pack.id)}
+              aria-pressed={on}
+              className={cn(
+                "relative flex items-center gap-3 rounded-xl border p-3 text-left",
+                "transition-[border-color,background-color] duration-150 ease-out",
+                on ? "border-accent bg-accent/[0.06]" : "border-line hover:border-line-strong"
+              )}
+            >
+              <span className="flex h-11 w-11 shrink-0 overflow-hidden rounded-lg ring-1 ring-line-strong" aria-hidden="true">
+                <span className="h-full w-1/2" style={{ background: pack.swatch[0] }} />
+                <span className="h-full w-1/2" style={{ background: pack.swatch[1] }} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="text-[13px] font-semibold text-ink">{pack.name}</span>
+                  <Badge tone="muted" mono>
+                    {pack.mode}
+                  </Badge>
+                </span>
+                <span className="mt-0.5 block text-xs leading-snug text-muted">{pack.blurb}</span>
+              </span>
+              {on ? (
+                <motion.span
+                  layoutId="theme-check"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent"
+                  transition={{ type: "spring", stiffness: 520, damping: 36 }}
+                  aria-hidden="true"
+                >
+                  <CheckIcon className="h-3 w-3 text-accent-ink" strokeWidth={3} />
+                </motion.span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
-      <div className="backup-grid">
-        {codes.map((c) => <span key={c} className="mono">{c}</span>)}
+
+      <Label as="p" className="mb-2.5 mt-6">Accent pack</Label>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Accent pack">
+        {ACCENT_PACKS.map((a) => {
+          const on = a.id === accent;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setAccent(a.id)}
+              aria-pressed={on}
+              className={cn(
+                "flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium",
+                "transition-[border-color,background-color] duration-150 ease-out",
+                on ? "border-accent bg-accent/[0.06] text-ink" : "border-line text-muted hover:border-line-strong"
+              )}
+            >
+              <span className="h-4 w-4 rounded-full ring-1 ring-line-strong" style={{ background: a.hex }} aria-hidden="true" />
+              {a.name}
+            </button>
+          );
+        })}
       </div>
-      <button className="btn small" style={{ marginTop: 10 }} onClick={download}>Download .txt</button>
-    </div>
+
+      <div className={cn("mt-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2", custom ? "border-accent bg-accent/[0.06]" : "border-line")}>
+        <label htmlFor="acct-accent-custom" className="flex items-center gap-2 text-[13px] font-medium text-ink">
+          <input
+            id="acct-accent-custom"
+            type="color"
+            value={hex}
+            onChange={(e) => setHex(e.target.value)}
+            className="h-7 w-9 cursor-pointer rounded-md border border-line bg-surface p-0.5"
+          />
+          Custom
+          {custom ? (
+            <Badge tone="accent" mono>
+              active
+            </Badge>
+          ) : null}
+        </label>
+        <span className="font-mono text-2xs uppercase tracking-label text-faint">{hex}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" onClick={() => setAccent(hex.toLowerCase())} disabled={!canApply}>
+            Use custom colour
+          </Button>
+          {custom ? (
+            <Button size="sm" variant="ghost" onClick={() => setAccent("")}>
+              Reset accent
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-xl border border-line bg-surface-2 p-4">
+        <Label as="p" className="mb-2">Live preview</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="primary" size="sm">
+            Primary action
+          </Button>
+          <Button size="sm">Secondary</Button>
+          <Badge tone="success" dot>
+            Implemented
+          </Badge>
+          <Badge tone="warning" dot>
+            In progress
+          </Badge>
+          <Badge tone="danger" dot>
+            3d overdue
+          </Badge>
+          <span className="font-mono text-2xs uppercase tracking-label text-faint">SOC 2 / CC6.1</span>
+        </div>
+      </div>
+    </Panel>
   );
 }
 
-function Mfa() {
-  const [status, setStatus] = useState(null);      // {enabled, pending, backup_codes_remaining}
-  const [setup, setSetup] = useState(null);        // {secret, otpauth_uri}
-  const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
-  const [codes, setCodes] = useState(null);        // freshly issued backup codes
-  const [msg, setMsg] = useState(null);
-  const [busy, setBusy] = useState(false);
+/* ---------- Security ---------- */
 
-  function loadStatus() {
-    api.get("/auth/mfa/status/").then((r) => setStatus(r.data)).catch(() => setStatus({ enabled: false }));
-  }
-  useEffect(() => { loadStatus(); }, []);
-
-  async function begin() {
-    setMsg(null); setCodes(null); setBusy(true);
-    try {
-      const { data } = await api.post("/auth/mfa/setup/");
-      setSetup(data);
-    } catch (e) {
-      setMsg({ ok: false, text: e?.response?.data?.detail || "Couldn't start setup." });
-    } finally { setBusy(false); }
-  }
-
-  async function confirm() {
-    setMsg(null); setBusy(true);
-    try {
-      const { data } = await api.post("/auth/mfa/verify/", { code });
-      setCodes(data.backup_codes);
-      setSetup(null); setCode("");
-      loadStatus();
-      setMsg({ ok: true, text: "Two-factor authentication is on." });
-    } catch (e) {
-      setMsg({ ok: false, text: e?.response?.data?.detail || "That code isn't valid." });
-    } finally { setBusy(false); }
-  }
-
-  async function disable() {
-    setMsg(null); setBusy(true);
-    try {
-      await api.post("/auth/mfa/disable/", { password });
-      setPassword(""); setCodes(null);
-      loadStatus();
-      setMsg({ ok: true, text: "Two-factor authentication is off." });
-    } catch (e) {
-      setMsg({ ok: false, text: e?.response?.data?.detail || "Couldn't disable MFA." });
-    } finally { setBusy(false); }
-  }
-
-  async function regen() {
-    setMsg(null); setBusy(true);
-    try {
-      const { data } = await api.post("/auth/mfa/backup-codes/", { password });
-      setCodes(data.backup_codes); setPassword("");
-      loadStatus();
-    } catch (e) {
-      setMsg({ ok: false, text: e?.response?.data?.detail || "Couldn't regenerate codes." });
-    } finally { setBusy(false); }
-  }
-
-  const secretGrouped = setup?.secret ? setup.secret.replace(/(.{4})/g, "$1 ").trim() : "";
-
-  return (
-    <div className="acct-panel" style={{ marginTop: 26 }}>
-      <h2>Two-factor authentication</h2>
-      <p className="acct-sub">
-        Add a one-time code from an authenticator app (Google Authenticator, Authy,
-        1Password, Microsoft Authenticator) to your sign-in.
-      </p>
-
-      {status && (
-        <div className="info-row">
-          <span className="info-k">Status</span>
-          <span className="info-v">
-            {status.enabled
-              ? <span className="badge ok"><span className="dot" />on · {status.backup_codes_remaining} backup codes left</span>
-              : <span className="badge neutral"><span className="dot" />off</span>}
-          </span>
-        </div>
-      )}
-
-      {msg && <div className={msg.ok ? "notice ok" : "error"} style={{ marginTop: 12 }}>{msg.text}</div>}
-      {codes && <BackupCodes codes={codes} />}
-
-      {/* Disabled → offer enable */}
-      {status && !status.enabled && !setup && (
-        <button className="btn primary" style={{ marginTop: 14 }} onClick={begin} disabled={busy}>
-          {busy ? "Starting…" : "Enable two-factor"}
-        </button>
-      )}
-
-      {/* Enrollment in progress */}
-      {setup && (
-        <div style={{ marginTop: 16 }}>
-          <div className="cov-note" style={{ marginBottom: 12 }}>
-            In your authenticator app, add an account and enter this setup key
-            (or scan the URI below). Then type the 6-digit code it shows to confirm.
-          </div>
-          <div className="field">
-            <label>Setup key</label>
-            <div className="mfa-secret mono">{secretGrouped}</div>
-          </div>
-          <div className="field">
-            <label>otpauth URI</label>
-            <input className="mono" readOnly value={setup.otpauth_uri} onFocus={(e) => e.target.select()} />
-          </div>
-          <div className="field">
-            <label>6-digit code</label>
-            <input value={code} onChange={(e) => setCode(e.target.value)}
-                   inputMode="numeric" autoComplete="one-time-code" placeholder="123456" />
-          </div>
-          <button className="btn primary" onClick={confirm} disabled={busy || code.length < 6}>
-            {busy ? "Verifying…" : "Verify & turn on"}
-          </button>
-          <button className="btn" style={{ marginLeft: 8 }} onClick={() => { setSetup(null); setCode(""); }}>Cancel</button>
-        </div>
-      )}
-
-      {/* Enabled → manage */}
-      {status && status.enabled && !codes && (
-        <div style={{ marginTop: 16 }}>
-          <div className="field">
-            <label>Confirm your password to make changes</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
-          <button className="btn" onClick={regen} disabled={busy || !password}>Regenerate backup codes</button>
-          <button className="btn" style={{ marginLeft: 8 }} onClick={disable} disabled={busy || !password}>Turn off</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Security() {
+function PasswordBlock() {
   const [form, setForm] = useState({ current_password: "", new_password: "", confirm: "" });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const mismatch = form.confirm.length > 0 && form.new_password !== form.confirm;
 
-  async function submit() {
+  async function submit(e) {
+    e.preventDefault();
     setMsg(null);
     if (form.new_password !== form.confirm) {
       setMsg({ ok: false, text: "New password and confirmation don't match." });
@@ -250,12 +328,9 @@ function Security() {
       });
       setForm({ current_password: "", new_password: "", confirm: "" });
       setMsg({ ok: true, text: "Password updated." });
-    } catch (e) {
-      const detail = e?.response?.data;
-      const text =
-        detail?.new_password?.[0] ||
-        detail?.current_password?.[0] ||
-        "Couldn't update password.";
+    } catch (err) {
+      const detail = err?.response?.data;
+      const text = detail?.new_password?.[0] || detail?.current_password?.[0] || errorText(err, "Couldn't update password.");
       setMsg({ ok: false, text });
     } finally {
       setSaving(false);
@@ -264,178 +339,582 @@ function Security() {
 
   return (
     <>
-      <div className="acct-panel">
-        <h2>Password</h2>
-        <p className="acct-sub">Change your password. Requires your current password.</p>
-        <div className="field"><label>Current password</label><input type="password" value={form.current_password} onChange={set("current_password")} /></div>
-        <div className="field"><label>New password</label><input type="password" value={form.new_password} onChange={set("new_password")} /></div>
-        <div className="field"><label>Confirm new password</label><input type="password" value={form.confirm} onChange={set("confirm")} /></div>
-        {msg && <div className={msg.ok ? "notice ok" : "error"}>{msg.text}</div>}
-        <button className="btn primary" onClick={submit} disabled={saving}>{saving ? "Updating…" : "Update password"}</button>
-      </div>
-      <Mfa />
+      <SubTitle title="Password">Change your password. Requires your current password.</SubTitle>
+      <form onSubmit={submit} noValidate className="mt-4 grid max-w-[640px] grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field id="pw-current" label="Current password" className="sm:col-span-2">
+          <input id="pw-current" type="password" autoComplete="current-password" className="input sm:max-w-[312px]" value={form.current_password} onChange={set("current_password")} />
+        </Field>
+        <Field id="pw-new" label="New password">
+          <input id="pw-new" type="password" autoComplete="new-password" className="input" value={form.new_password} onChange={set("new_password")} />
+        </Field>
+        <Field id="pw-confirm" label="Confirm new password" hint={mismatch ? "Doesn't match the new password." : undefined} error={mismatch}>
+          <input
+            id="pw-confirm"
+            type="password"
+            autoComplete="new-password"
+            aria-invalid={mismatch || undefined}
+            className={cn("input", mismatch && "border-danger focus:border-danger")}
+            value={form.confirm}
+            onChange={set("confirm")}
+          />
+        </Field>
+        <div className="flex flex-col items-start gap-3 sm:col-span-2">
+          <Notice msg={msg} className="w-full" />
+          <Button type="submit" variant="primary" disabled={saving || !form.current_password || !form.new_password || !form.confirm}>
+            {saving ? "Updating…" : "Update password"}
+          </Button>
+        </div>
+      </form>
     </>
   );
 }
 
-function Notifications({ me }) {
+function BackupCodes({ codes }) {
+  function download() {
+    const text = "Conformiti — backup codes\n" + "Each code works once. Keep them somewhere safe.\n\n" + codes.join("\n") + "\n";
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "compliance-backup-codes.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
   return (
-    <div className="acct-panel">
-      <h2>Notifications</h2>
-      <p className="acct-sub">How review reminders reach you and your team.</p>
-      <div className="info-list">
-        <div className="info-row">
-          <span className="info-k">Reminder address</span>
-          <span className="info-v mono">{me?.email || "— add an email on the Profile tab —"}</span>
-        </div>
-        <div className="info-row">
-          <span className="info-k">Documents you own</span>
-          <span className="info-v">Email you before each document's review date, and again if it goes overdue.</span>
-        </div>
-        <div className="info-row">
-          <span className="info-k">Delivery</span>
-          <span className="info-v">Sent from the workspace mailbox (IMAP/POP3 + SMTP) or Amazon SES, per deployment.</span>
-        </div>
-      </div>
-      <div className="cov-note">
-        Review reminders are scheduled automatically from each document's review cadence.
-        An administrator configures the lead times (e.g. 30, 14, 7, and 1 days before due).
-      </div>
-    </div>
-  );
-}
-
-function Access({ me }) {
-  const caps = me?.capabilities || {};
-  return (
-    <div className="acct-panel">
-      <h2>Role &amp; access</h2>
-      <p className="acct-sub">Your role determines what you can manage and which folders you can open.</p>
-      <div className="info-row">
-        <span className="info-k">Role</span>
-        <span className="info-v"><span className="badge neutral">{me?.role_detail?.name || "No role"}</span></span>
-      </div>
-      {me?.role_detail?.description && <div className="cov-note">{me.role_detail.description}</div>}
-      <div className="cap-title">Capabilities</div>
-      <div className="cap-grid">
-        {Object.keys(CAP_LABELS).map((k) => (
-          <div className={"cap-item" + (caps[k] ? " on" : "")} key={k}>
-            <span className="cap-mark">{caps[k] ? "✓" : "—"}</span>
-            <span>{CAP_LABELS[k]}</span>
-          </div>
+    <div className="mt-4 max-w-[640px] rounded-xl border border-success/25 bg-success/10 p-4" role="status">
+      <p className="text-[13px] font-semibold text-success">Save your backup codes</p>
+      <p className="mt-1 text-xs leading-snug text-muted">Each code can be used once if you lose your authenticator. They won't be shown again.</p>
+      <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 font-mono text-[13px] tracking-wide text-ink sm:grid-cols-3">
+        {codes.map((c) => (
+          <li key={c} className="tabular select-all">
+            {c}
+          </li>
         ))}
-      </div>
-      <div className="cov-note">
-        Folder access is granted separately, per role or per user, and inherits down the folder tree.
-        Contact an administrator to change your role or folder permissions.
-      </div>
+      </ul>
+      <Button size="sm" className="mt-3" onClick={download} icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+        Download .txt
+      </Button>
     </div>
   );
 }
 
-function About() {
-  return (
-    <div className="acct-panel">
-      <h2>About</h2>
-      <p className="acct-sub">Compliance management workspace.</p>
-      <div className="info-list">
-        <div className="info-row"><span className="info-k">Frameworks</span><span className="info-v">SOC 2 · ISO/IEC 27001:2022 · PCI DSS v4.0.1</span></div>
-        <div className="info-row"><span className="info-k">Capabilities</span><span className="info-v">Control library, evidence folders, document reviews, review reminders, analytics.</span></div>
-        <div className="info-row"><span className="info-k">Access model</span><span className="info-v">Role-based, with folder-level permissions inherited down the tree.</span></div>
-      </div>
-    </div>
-  );
-}
+function MfaBlock() {
+  const [status, setStatus] = useState(null); // {enabled, pending, backup_codes_remaining}
+  const [statusErr, setStatusErr] = useState(null);
+  const [setup, setSetup] = useState(null); // {secret, otpauth_uri}
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [codes, setCodes] = useState(null); // freshly issued backup codes
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-function Appearance() {
-  const [theme, setThemeState] = useState(getTheme());
-  const [accent, setAccentState] = useState(getAccent());
-
-  function chooseTheme(id) {
-    setTheme(id);
-    setThemeState(id);
-    setAccentState(getAccent());
+  function loadStatus() {
+    setStatusErr(null);
+    api
+      .get("/auth/mfa/status/")
+      .then((r) => setStatus(r.data))
+      .catch((e) => {
+        setStatus(null);
+        setStatusErr(errorText(e, "Couldn't load two-factor status."));
+      });
   }
-  function chooseAccent(hex) {
-    setAccent(hex);
-    setAccentState(hex || "");
+  useEffect(() => {
+    loadStatus();
+  }, []);
+
+  async function begin() {
+    setMsg(null);
+    setCodes(null);
+    setBusy(true);
+    try {
+      const { data } = await api.post("/auth/mfa/setup/");
+      setSetup(data);
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't start setup.") });
+    } finally {
+      setBusy(false);
+    }
   }
 
-  return (
-    <div className="acct-panel">
-      <h2>Appearance</h2>
-      <p className="acct-sub">
-        Choose a theme and accent colour. Changes apply instantly and are
-        remembered on this device.
-      </p>
+  async function confirm(e) {
+    e.preventDefault();
+    setMsg(null);
+    setBusy(true);
+    try {
+      const { data } = await api.post("/auth/mfa/verify/", { code: code.trim() });
+      setCodes(data.backup_codes);
+      setSetup(null);
+      setCode("");
+      loadStatus();
+      setMsg({ ok: true, text: "Two-factor authentication is on." });
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "That code isn't valid.") });
+    } finally {
+      setBusy(false);
+    }
+  }
 
-      <div className="cap-title">Theme</div>
-      <div className="theme-grid">
-        {THEMES.map((t) => (
-          <div key={t.id} className={"theme-card" + (theme === t.id ? " active" : "")}
-               onClick={() => chooseTheme(t.id)}>
-            <div className="theme-chip" style={{ background: t.bg }}>
-              <span className="bar" style={{ background: t.swatch }} />
-            </div>
+  async function disable() {
+    setMsg(null);
+    setBusy(true);
+    try {
+      await api.post("/auth/mfa/disable/", { password });
+      setPassword("");
+      setCodes(null);
+      loadStatus();
+      setMsg({ ok: true, text: "Two-factor authentication is off." });
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't disable MFA.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regen() {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const { data } = await api.post("/auth/mfa/backup-codes/", { password });
+      setCodes(data.backup_codes);
+      setPassword("");
+      loadStatus();
+      setMsg({ ok: true, text: "New backup codes issued. The old ones no longer work." });
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't regenerate codes.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cancelSetup() {
+    setSetup(null);
+    setCode("");
+    setMsg(null);
+  }
+
+  const secretGrouped = setup?.secret ? setup.secret.replace(/(.{4})/g, "$1 ").trim() : "";
+  const remaining = status?.backup_codes_remaining ?? 0;
+
+  return (
+    <>
+      <SubTitle title="Two-factor authentication">
+        Add a one-time code from an authenticator app (Google Authenticator, Authy, 1Password, Microsoft Authenticator) to your sign-in.
+      </SubTitle>
+
+      {statusErr ? (
+        <div className="mt-4 flex max-w-[640px] flex-wrap items-center gap-3">
+          <div className="notice notice-err flex-1" role="alert">
+            {statusErr}
+          </div>
+          <Button size="sm" onClick={loadStatus}>
+            Retry
+          </Button>
+        </div>
+      ) : !status ? (
+        <Loading className="py-6 text-left" />
+      ) : (
+        <ul className="mt-4 max-w-[640px] divide-y divide-line rounded-xl border border-line">
+          <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-ink">Authenticator app</span>
+              <span className="block text-xs text-muted">
+                {status.enabled ? "Enrolled · TOTP" : setup || status.pending ? "Enrolment started, not yet verified" : "Not enrolled"}
+              </span>
+            </span>
+            <Badge tone={status.enabled ? "success" : "muted"} dot>
+              {status.enabled ? `On · ${remaining} backup ${remaining === 1 ? "code" : "codes"} left` : "Off"}
+            </Badge>
+            {!status.enabled && !setup ? (
+              <Button size="sm" variant="primary" onClick={begin} disabled={busy}>
+                {busy ? "Starting…" : "Enable"}
+              </Button>
+            ) : null}
+          </li>
+        </ul>
+      )}
+
+      <Notice msg={msg} className="mt-4 max-w-[640px]" />
+      {codes ? <BackupCodes codes={codes} /> : null}
+
+      {/* Enrolment in progress */}
+      {setup ? (
+        <form onSubmit={confirm} noValidate className="mt-4 max-w-[640px] rounded-xl border border-line bg-surface-2 p-4">
+          <p className="text-[13px] leading-snug text-muted">
+            In your authenticator app, add an account and enter this setup key (or paste the URI below). Then type the 6-digit code it shows to confirm.
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-4">
             <div>
-              <div className="theme-name">{t.label}</div>
-              <div className="theme-mode">{t.mode === "dark" ? "Dark" : "Light"}</div>
+              <Label as="p" className="mb-1.5">Setup key</Label>
+              <p className="select-all rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[13px] tracking-[0.14em] text-ink">{secretGrouped}</p>
             </div>
+            <Field id="mfa-uri" label="otpauth URI">
+              <input id="mfa-uri" className="input font-mono text-xs" readOnly value={setup.otpauth_uri} onFocus={(e) => e.target.select()} />
+            </Field>
+            <Field id="mfa-code" label="6-digit code">
+              <input
+                id="mfa-code"
+                className="input font-mono sm:max-w-[200px]"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                maxLength={8}
+                autoFocus
+              />
+            </Field>
           </div>
-        ))}
-      </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button type="submit" variant="primary" disabled={busy || code.trim().length < 6}>
+              {busy ? "Verifying…" : "Verify & turn on"}
+            </Button>
+            <Button variant="ghost" onClick={cancelSetup} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : null}
 
-      <div className="cap-title">Accent colour</div>
-      <div className="swatches">
-        {ACCENT_PRESETS.map((p) => (
-          <span key={p.hex}
-                className={"swatch" + (accent.toLowerCase() === p.hex.toLowerCase() ? " active" : "")}
-                style={{ background: p.hex }} title={p.name}
-                onClick={() => chooseAccent(p.hex)} />
-        ))}
-        <input className="swatch-custom" type="color" value={accent || "#0f766e"}
-               onChange={(e) => chooseAccent(e.target.value)} title="Custom colour" />
-        {accent && <button className="btn small" onClick={() => chooseAccent("")}>Reset accent</button>}
-      </div>
-      <p className="hint">
-        The accent recolours primary buttons, active navigation, links and
-        highlights. Status colours (success, warning, overdue) stay fixed so
-        they remain meaningful.
-      </p>
-    </div>
+      {/* Enabled → manage */}
+      {status?.enabled && !codes ? (
+        <div className="mt-4 max-w-[640px]">
+          <Field id="mfa-password" label="Confirm your password to make changes">
+            <input
+              id="mfa-password"
+              type="password"
+              autoComplete="current-password"
+              className="input sm:max-w-[312px]"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button onClick={regen} disabled={busy || !password} icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+              Regenerate backup codes
+            </Button>
+            <Button variant="danger" onClick={disable} disabled={busy || !password}>
+              Turn off
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
+
+function SecuritySection() {
+  return (
+    <Panel className="p-5">
+      <SectionTitle title="Security">Authentication factors on this account: your password and an optional authenticator app.</SectionTitle>
+      <div className="mt-5">
+        <PasswordBlock />
+      </div>
+      <Divider className="my-6" />
+      <MfaBlock />
+    </Panel>
+  );
+}
+
+/* ---------- Notifications ---------- */
+
+function NotificationsSection({ me, onGoProfile }) {
+  if (!me) {
+    return (
+      <Panel>
+        <Loading />
+      </Panel>
+    );
+  }
+  const rows = [
+    {
+      k: "Reminder address",
+      v: me.email ? (
+        <span className="font-mono text-xs text-ink">{me.email}</span>
+      ) : (
+        <span>
+          No email on file —{" "}
+          <button type="button" className="link" onClick={onGoProfile}>
+            add one on the Profile tab
+          </button>
+        </span>
+      ),
+    },
+    { k: "Documents you own", v: "Email before each document's review date, and again if it goes overdue." },
+    {
+      k: "When reminders fire",
+      v: "Scheduled automatically from each document's review cadence. An administrator sets the lead times (e.g. 30, 14, 7 and 1 days before due).",
+    },
+    { k: "Delivery channel", v: "Email, sent from the workspace mailbox (IMAP/POP3 + SMTP) or Amazon SES, per deployment." },
+  ];
+  return (
+    <Panel className="overflow-hidden">
+      <PanelHeader title="Notifications" meta="Review reminders" />
+      <ul className="divide-y divide-line">
+        {rows.map((r, i) => (
+          <motion.li
+            key={r.k}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: EASE, delay: i * 0.03 }}
+            className="grid grid-cols-1 gap-1 px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4"
+          >
+            <span className="text-[13px] font-medium text-ink">{r.k}</span>
+            <span className="text-[13px] leading-snug text-muted">{r.v}</span>
+          </motion.li>
+        ))}
+      </ul>
+      <p className="border-t border-line px-5 py-3 text-xs text-muted">
+        Reminders are configured per deployment by an administrator; there are no per-user toggles yet.
+      </p>
+    </Panel>
+  );
+}
+
+/* ---------- Role & access ---------- */
+
+function AccessSection({ me }) {
+  if (!me) {
+    return (
+      <Panel>
+        <Loading />
+      </Panel>
+    );
+  }
+  const caps = me.capabilities || {};
+  const role = me.role_detail;
+  return (
+    <Panel className="p-5">
+      <SectionTitle title="Role & access">Your role determines what you can manage and which folders you can open.</SectionTitle>
+      <dl className="mt-5 grid max-w-[720px] grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-xl border border-line bg-surface-2 p-4">
+          <dt>
+            <Label>Role</Label>
+          </dt>
+          <dd className="mt-1.5">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <Badge tone={role ? "accent" : "muted"}>{role?.name || "No role"}</Badge>
+              {me.is_superuser ? (
+                <Badge tone="warning" mono>
+                  superuser
+                </Badge>
+              ) : null}
+            </span>
+            {role?.description ? <p className="mt-2 text-[13px] leading-snug text-muted">{role.description}</p> : null}
+          </dd>
+        </div>
+        <div className="rounded-xl border border-line bg-surface-2 p-4">
+          <dt>
+            <Label>Signs in as</Label>
+          </dt>
+          <dd className="mt-1.5 font-mono text-[13px] text-ink">{me.username}</dd>
+          <p className="mt-2 text-xs leading-snug text-muted">Usernames and roles are assigned by an administrator.</p>
+        </div>
+      </dl>
+
+      <Label as="p" className="mb-2.5 mt-6">Capabilities</Label>
+      <ul className="grid max-w-[720px] grid-cols-1 gap-2 sm:grid-cols-2">
+        {Object.entries(CAP_LABELS).map(([k, label]) => {
+          const on = !!caps[k];
+          return (
+            <li
+              key={k}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-[13px]",
+                on ? "border-line bg-surface text-ink" : "border-line/60 text-muted"
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                  on ? "bg-success/[0.14] text-success" : "bg-surface-2 text-faint"
+                )}
+                aria-hidden="true"
+              >
+                {on ? <CheckIcon className="h-3 w-3" strokeWidth={3} /> : <MinusIcon className="h-3 w-3" strokeWidth={2.5} />}
+              </span>
+              <span>{label}</span>
+              <span className="sr-only">{on ? "granted" : "not granted"}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-5 max-w-[62ch] text-xs leading-snug text-muted">
+        Folder access is granted separately, per role or per user, and inherits down the folder tree. Contact an administrator to change your
+        role or folder permissions.
+      </p>
+    </Panel>
+  );
+}
+
+/* ---------- About ---------- */
+
+function AboutSection() {
+  const { health } = useShell();
+  const [frameworks, setFrameworks] = useState(null);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchAll("/frameworks/")
+      .then((list) => {
+        if (alive) setFrameworks(list);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setErr(errorText(e, "Couldn't load frameworks."));
+        setFrameworks([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const rows = [
+    ["Version", health?.version ? `v${health.version}` : "—"],
+    ["Frameworks", frameworks ? `${frameworks.length} loaded` : "…"],
+    ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
+    ["Licence", "MIT"],
+  ];
+
+  return (
+    <Panel className="p-5">
+      <SectionTitle
+        title="About"
+        badge={
+          health?.demo_accounts ? (
+            <Badge tone="warning" mono>
+              Demo data
+            </Badge>
+          ) : null
+        }
+      >
+        Conformiti tracks control implementation, document lifecycle and risk treatment against the frameworks loaded in this workspace.
+        Self-hosted, with role-based access and folder-level permissions inherited down the tree.
+      </SectionTitle>
+
+      <dl className="mt-5 grid max-w-[560px] grid-cols-1 gap-3 sm:grid-cols-2">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-4 border-b border-line pb-2">
+            <dt className="text-xs text-muted">{k}</dt>
+            <dd className="tabular font-mono text-xs text-ink">{v}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <Label as="p" className="mb-2.5 mt-6">Frameworks</Label>
+      {err ? (
+        <div className="notice notice-err max-w-[640px]" role="alert">
+          {err}
+        </div>
+      ) : frameworks === null ? (
+        <Loading className="py-6 text-left" />
+      ) : frameworks.length === 0 ? (
+        <Empty title="No frameworks loaded">An administrator can load a framework to start tracking controls.</Empty>
+      ) : (
+        <ul className="max-w-[640px] divide-y divide-line rounded-xl border border-line">
+          {frameworks.map((f) => (
+            <li key={f.key || f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5">
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-ink">{f.name}</span>
+                {f.authority ? <span className="block text-xs text-muted">{f.authority}</span> : null}
+              </span>
+              {f.version ? (
+                <Badge tone="muted" mono>
+                  {f.version}
+                </Badge>
+              ) : null}
+              {typeof f.control_count === "number" ? (
+                <span className="tabular font-mono text-2xs text-faint">{f.control_count} controls</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <a href={DOCS_URL} target="_blank" rel="noreferrer" className="link">
+          Documentation &amp; source
+          <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+        </a>
+        <span className="text-xs text-muted">Released under the MIT licence.</span>
+      </div>
+    </Panel>
+  );
+}
+
+/* ---------- Page ---------- */
 
 export default function Account({ me, onUpdate }) {
-  const [tab, setTab] = useState("profile");
+  const [section, setSection] = useState("profile");
+  const initial = (me?.full_name || me?.username || "?").trim().slice(0, 1).toUpperCase() || "?";
+
   return (
-    <div className="acct">
-      <aside className="acct-nav">
-        <div className="acct-id">
-          <div className="acct-avatar">{(me?.full_name || me?.username || "?").slice(0, 1).toUpperCase()}</div>
-          <div>
-            <div className="acct-name">{me?.full_name || me?.username || "…"}</div>
-            <div className="acct-role">{me?.role_detail?.name || "No role"}</div>
-          </div>
-        </div>
-        {SECTIONS.map((s) => (
-          <div
-            key={s.key}
-            className={"acct-tab" + (tab === s.key ? " active" : "")}
-            onClick={() => setTab(s.key)}
-          >
-            <span className="acct-ic">{s.icon}</span> {s.label}
-          </div>
-        ))}
-      </aside>
-      <div className="acct-main">
-        {tab === "profile" && <Profile me={me} onUpdate={onUpdate} />}
-        {tab === "security" && <Security />}
-        {tab === "notifications" && <Notifications me={me} />}
-        {tab === "appearance" && <Appearance />}
-        {tab === "access" && <Access me={me} />}
-        {tab === "about" && <About />}
-      </div>
-    </div>
+    <PanelTransition>
+      <Stack className="grid grid-cols-12 gap-4">
+        <StackItem className="col-span-12 lg:col-span-3">
+          <Panel as="aside" className="overflow-hidden">
+            <div className="flex items-center gap-3 border-b border-line px-4 py-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-[15px] font-semibold text-accent-ink" aria-hidden="true">
+                {initial}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-semibold text-ink">{me?.full_name || me?.username || "…"}</span>
+                <span className="block truncate text-xs text-muted">{me?.role_detail?.name || "No role"}</span>
+              </span>
+            </div>
+            <nav aria-label="Settings sections">
+              <ul className="p-2">
+                {SECTIONS.map((s) => {
+                  const on = s.id === section;
+                  const Icon = s.icon;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSection(s.id)}
+                        aria-current={on || undefined}
+                        className={cn(
+                          "relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 ease-out",
+                          on ? "text-accent" : "text-muted hover:bg-surface-2 hover:text-ink"
+                        )}
+                      >
+                        {on ? (
+                          <motion.span
+                            layoutId="settings-active"
+                            className="absolute inset-0 rounded-lg bg-accent/10"
+                            transition={{ type: "spring", stiffness: 520, damping: 38 }}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        <Icon className="relative h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span className="relative text-[13px] font-medium">{s.label}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          </Panel>
+        </StackItem>
+
+        <StackItem className="col-span-12 lg:col-span-9">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={section}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.22, ease: EASE }}
+            >
+              {section === "profile" ? <ProfileSection me={me} onUpdate={onUpdate} /> : null}
+              {section === "appearance" ? <AppearanceSection /> : null}
+              {section === "security" ? <SecuritySection /> : null}
+              {section === "notifications" ? <NotificationsSection me={me} onGoProfile={() => setSection("profile")} /> : null}
+              {section === "access" ? <AccessSection me={me} /> : null}
+              {section === "about" ? <AboutSection /> : null}
+            </motion.div>
+          </AnimatePresence>
+        </StackItem>
+      </Stack>
+    </PanelTransition>
   );
 }

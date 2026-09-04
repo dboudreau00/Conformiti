@@ -1,0 +1,1312 @@
+{
+  "counts": {
+    "frameworks": 3,
+    "categories": 29,
+    "controls": 217,
+    "folders": 1117
+  },
+  "controls": [
+    {
+      "framework": "soc2",
+      "category": "CC1",
+      "control_id": "CC1.1",
+      "path": "SOC2/CC1 - Control Environment/CC1.1 - Integrity and ethical values"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC1",
+      "control_id": "CC1.2",
+      "path": "SOC2/CC1 - Control Environment/CC1.2 - Board oversight"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC1",
+      "control_id": "CC1.3",
+      "path": "SOC2/CC1 - Control Environment/CC1.3 - Organisational structure"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC1",
+      "control_id": "CC1.4",
+      "path": "SOC2/CC1 - Control Environment/CC1.4 - Commitment to competence"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC1",
+      "control_id": "CC1.5",
+      "path": "SOC2/CC1 - Control Environment/CC1.5 - Accountability"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC2",
+      "control_id": "CC2.1",
+      "path": "SOC2/CC2 - Communication and Information/CC2.1 - Relevant information"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC2",
+      "control_id": "CC2.2",
+      "path": "SOC2/CC2 - Communication and Information/CC2.2 - Internal communication"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC2",
+      "control_id": "CC2.3",
+      "path": "SOC2/CC2 - Communication and Information/CC2.3 - External communication"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC3",
+      "control_id": "CC3.1",
+      "path": "SOC2/CC3 - Risk Assessment/CC3.1 - Objectives"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC3",
+      "control_id": "CC3.2",
+      "path": "SOC2/CC3 - Risk Assessment/CC3.2 - Risk identification"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC3",
+      "control_id": "CC3.3",
+      "path": "SOC2/CC3 - Risk Assessment/CC3.3 - Fraud risk"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC3",
+      "control_id": "CC3.4",
+      "path": "SOC2/CC3 - Risk Assessment/CC3.4 - Change risk"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC4",
+      "control_id": "CC4.1",
+      "path": "SOC2/CC4 - Monitoring Activities/CC4.1 - Ongoing evaluations"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC4",
+      "control_id": "CC4.2",
+      "path": "SOC2/CC4 - Monitoring Activities/CC4.2 - Deficiency communication"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC5",
+      "control_id": "CC5.1",
+      "path": "SOC2/CC5 - Control Activities/CC5.1 - Control selection"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC5",
+      "control_id": "CC5.2",
+      "path": "SOC2/CC5 - Control Activities/CC5.2 - Technology controls"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC5",
+      "control_id": "CC5.3",
+      "path": "SOC2/CC5 - Control Activities/CC5.3 - Policy deployment"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.1",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.1 - Access security"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.2",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.2 - User provisioning"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.3",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.3 - Least privilege"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.4",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.4 - Physical access"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.5",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.5 - Asset disposal"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.6",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.6 - Boundary protection"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.7",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.7 - Transmission security"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC6",
+      "control_id": "CC6.8",
+      "path": "SOC2/CC6 - Logical and Physical Access Controls/CC6.8 - Unauthorised software"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC7",
+      "control_id": "CC7.1",
+      "path": "SOC2/CC7 - System Operations/CC7.1 - Vulnerability management"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC7",
+      "control_id": "CC7.2",
+      "path": "SOC2/CC7 - System Operations/CC7.2 - Anomaly monitoring"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC7",
+      "control_id": "CC7.3",
+      "path": "SOC2/CC7 - System Operations/CC7.3 - Event evaluation"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC7",
+      "control_id": "CC7.4",
+      "path": "SOC2/CC7 - System Operations/CC7.4 - Incident response"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC7",
+      "control_id": "CC7.5",
+      "path": "SOC2/CC7 - System Operations/CC7.5 - Recovery"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC8",
+      "control_id": "CC8.1",
+      "path": "SOC2/CC8 - Change Management/CC8.1 - Change management"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC9",
+      "control_id": "CC9.1",
+      "path": "SOC2/CC9 - Risk Mitigation/CC9.1 - Business disruption"
+    },
+    {
+      "framework": "soc2",
+      "category": "CC9",
+      "control_id": "CC9.2",
+      "path": "SOC2/CC9 - Risk Mitigation/CC9.2 - Vendor risk"
+    },
+    {
+      "framework": "soc2",
+      "category": "A1",
+      "control_id": "A1.1",
+      "path": "SOC2/A1 - Availability/A1.1 - Capacity"
+    },
+    {
+      "framework": "soc2",
+      "category": "A1",
+      "control_id": "A1.2",
+      "path": "SOC2/A1 - Availability/A1.2 - Environmental protection"
+    },
+    {
+      "framework": "soc2",
+      "category": "A1",
+      "control_id": "A1.3",
+      "path": "SOC2/A1 - Availability/A1.3 - Recovery testing"
+    },
+    {
+      "framework": "soc2",
+      "category": "C1",
+      "control_id": "C1.1",
+      "path": "SOC2/C1 - Confidentiality/C1.1 - Confidential info identification"
+    },
+    {
+      "framework": "soc2",
+      "category": "C1",
+      "control_id": "C1.2",
+      "path": "SOC2/C1 - Confidentiality/C1.2 - Confidential info disposal"
+    },
+    {
+      "framework": "soc2",
+      "category": "PI1",
+      "control_id": "PI1.1",
+      "path": "SOC2/PI1 - Processing Integrity/PI1.1 - Processing objectives"
+    },
+    {
+      "framework": "soc2",
+      "category": "PI1",
+      "control_id": "PI1.2",
+      "path": "SOC2/PI1 - Processing Integrity/PI1.2 - Input integrity"
+    },
+    {
+      "framework": "soc2",
+      "category": "PI1",
+      "control_id": "PI1.3",
+      "path": "SOC2/PI1 - Processing Integrity/PI1.3 - Processing integrity"
+    },
+    {
+      "framework": "soc2",
+      "category": "PI1",
+      "control_id": "PI1.4",
+      "path": "SOC2/PI1 - Processing Integrity/PI1.4 - Output integrity"
+    },
+    {
+      "framework": "soc2",
+      "category": "PI1",
+      "control_id": "PI1.5",
+      "path": "SOC2/PI1 - Processing Integrity/PI1.5 - Storage integrity"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P1.1",
+      "path": "SOC2/P - Privacy/P1.1 - Privacy notice"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P2.1",
+      "path": "SOC2/P - Privacy/P2.1 - Choice and consent"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P3.1",
+      "path": "SOC2/P - Privacy/P3.1 - Collection"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P3.2",
+      "path": "SOC2/P - Privacy/P3.2 - Explicit consent"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P4.1",
+      "path": "SOC2/P - Privacy/P4.1 - Use"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P4.2",
+      "path": "SOC2/P - Privacy/P4.2 - Retention"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P4.3",
+      "path": "SOC2/P - Privacy/P4.3 - Disposal"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P5.1",
+      "path": "SOC2/P - Privacy/P5.1 - Access"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P5.2",
+      "path": "SOC2/P - Privacy/P5.2 - Correction"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P6.1",
+      "path": "SOC2/P - Privacy/P6.1 - Disclosure"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P6.2",
+      "path": "SOC2/P - Privacy/P6.2 - Authorised disclosure"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P6.3",
+      "path": "SOC2/P - Privacy/P6.3 - Disclosure tracking"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P6.4",
+      "path": "SOC2/P - Privacy/P6.4 - Third-party agreements"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P6.5",
+      "path": "SOC2/P - Privacy/P6.5 - Third-party breaches"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P6.6",
+      "path": "SOC2/P - Privacy/P6.6 - Breach notification"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P6.7",
+      "path": "SOC2/P - Privacy/P6.7 - Accounting of disclosures"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P7.1",
+      "path": "SOC2/P - Privacy/P7.1 - Data quality"
+    },
+    {
+      "framework": "soc2",
+      "category": "P",
+      "control_id": "P8.1",
+      "path": "SOC2/P - Privacy/P8.1 - Complaint handling"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.1",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.1 - Policies for information security"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.2",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.2 - Information security roles and responsibilities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.3",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.3 - Segregation of duties"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.4",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.4 - Management responsibilities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.5",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.5 - Contact with authorities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.6",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.6 - Contact with special interest groups"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.7",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.7 - Threat intelligence"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.8",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.8 - Information security in project management"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.9",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.9 - Inventory of information and other associated assets"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.10",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.10 - Acceptable use of information and other associated assets"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.11",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.11 - Return of assets"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.12",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.12 - Classification of information"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.13",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.13 - Labelling of information"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.14",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.14 - Information transfer"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.15",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.15 - Access control"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.16",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.16 - Identity management"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.17",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.17 - Authentication information"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.18",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.18 - Access rights"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.19",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.19 - Information security in supplier relationships"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.20",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.20 - Addressing information security within supplier agreements"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.21",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.21 - Managing information security in the ICT supply chain"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.22",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.22 - Monitoring, review and change management of supplier services"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.23",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.23 - Information security for use of cloud services"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.24",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.24 - Incident management planning and preparation"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.25",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.25 - Assessment and decision on information security events"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.26",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.26 - Response to information security incidents"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.27",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.27 - Learning from information security incidents"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.28",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.28 - Collection of evidence"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.29",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.29 - Information security during disruption"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.30",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.30 - ICT readiness for business continuity"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.31",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.31 - Legal, statutory, regulatory and contractual requirements"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.32",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.32 - Intellectual property rights"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.33",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.33 - Protection of records"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.34",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.34 - Privacy and protection of PII"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.35",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.35 - Independent review of information security"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.36",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.36 - Compliance with policies, rules and standards"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A5",
+      "control_id": "A.5.37",
+      "path": "ISO27001/A.5 - Organisational controls/A.5.37 - Documented operating procedures"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.1",
+      "path": "ISO27001/A.6 - People controls/A.6.1 - Screening"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.2",
+      "path": "ISO27001/A.6 - People controls/A.6.2 - Terms and conditions of employment"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.3",
+      "path": "ISO27001/A.6 - People controls/A.6.3 - Information security awareness, education and training"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.4",
+      "path": "ISO27001/A.6 - People controls/A.6.4 - Disciplinary process"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.5",
+      "path": "ISO27001/A.6 - People controls/A.6.5 - Responsibilities after termination or change of employment"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.6",
+      "path": "ISO27001/A.6 - People controls/A.6.6 - Confidentiality or non-disclosure agreements"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.7",
+      "path": "ISO27001/A.6 - People controls/A.6.7 - Remote working"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A6",
+      "control_id": "A.6.8",
+      "path": "ISO27001/A.6 - People controls/A.6.8 - Information security event reporting"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.1",
+      "path": "ISO27001/A.7 - Physical controls/A.7.1 - Physical security perimeters"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.2",
+      "path": "ISO27001/A.7 - Physical controls/A.7.2 - Physical entry"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.3",
+      "path": "ISO27001/A.7 - Physical controls/A.7.3 - Securing offices, rooms and facilities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.4",
+      "path": "ISO27001/A.7 - Physical controls/A.7.4 - Physical security monitoring"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.5",
+      "path": "ISO27001/A.7 - Physical controls/A.7.5 - Protecting against physical and environmental threats"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.6",
+      "path": "ISO27001/A.7 - Physical controls/A.7.6 - Working in secure areas"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.7",
+      "path": "ISO27001/A.7 - Physical controls/A.7.7 - Clear desk and clear screen"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.8",
+      "path": "ISO27001/A.7 - Physical controls/A.7.8 - Equipment siting and protection"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.9",
+      "path": "ISO27001/A.7 - Physical controls/A.7.9 - Security of assets off-premises"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.10",
+      "path": "ISO27001/A.7 - Physical controls/A.7.10 - Storage media"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.11",
+      "path": "ISO27001/A.7 - Physical controls/A.7.11 - Supporting utilities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.12",
+      "path": "ISO27001/A.7 - Physical controls/A.7.12 - Cabling security"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.13",
+      "path": "ISO27001/A.7 - Physical controls/A.7.13 - Equipment maintenance"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A7",
+      "control_id": "A.7.14",
+      "path": "ISO27001/A.7 - Physical controls/A.7.14 - Secure disposal or re-use of equipment"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.1",
+      "path": "ISO27001/A.8 - Technological controls/A.8.1 - User endpoint devices"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.2",
+      "path": "ISO27001/A.8 - Technological controls/A.8.2 - Privileged access rights"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.3",
+      "path": "ISO27001/A.8 - Technological controls/A.8.3 - Information access restriction"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.4",
+      "path": "ISO27001/A.8 - Technological controls/A.8.4 - Access to source code"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.5",
+      "path": "ISO27001/A.8 - Technological controls/A.8.5 - Secure authentication"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.6",
+      "path": "ISO27001/A.8 - Technological controls/A.8.6 - Capacity management"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.7",
+      "path": "ISO27001/A.8 - Technological controls/A.8.7 - Protection against malware"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.8",
+      "path": "ISO27001/A.8 - Technological controls/A.8.8 - Management of technical vulnerabilities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.9",
+      "path": "ISO27001/A.8 - Technological controls/A.8.9 - Configuration management"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.10",
+      "path": "ISO27001/A.8 - Technological controls/A.8.10 - Information deletion"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.11",
+      "path": "ISO27001/A.8 - Technological controls/A.8.11 - Data masking"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.12",
+      "path": "ISO27001/A.8 - Technological controls/A.8.12 - Data leakage prevention"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.13",
+      "path": "ISO27001/A.8 - Technological controls/A.8.13 - Information backup"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.14",
+      "path": "ISO27001/A.8 - Technological controls/A.8.14 - Redundancy of information processing facilities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.15",
+      "path": "ISO27001/A.8 - Technological controls/A.8.15 - Logging"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.16",
+      "path": "ISO27001/A.8 - Technological controls/A.8.16 - Monitoring activities"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.17",
+      "path": "ISO27001/A.8 - Technological controls/A.8.17 - Clock synchronisation"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.18",
+      "path": "ISO27001/A.8 - Technological controls/A.8.18 - Use of privileged utility programs"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.19",
+      "path": "ISO27001/A.8 - Technological controls/A.8.19 - Installation of software on operational systems"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.20",
+      "path": "ISO27001/A.8 - Technological controls/A.8.20 - Networks security"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.21",
+      "path": "ISO27001/A.8 - Technological controls/A.8.21 - Security of network services"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.22",
+      "path": "ISO27001/A.8 - Technological controls/A.8.22 - Segregation of networks"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.23",
+      "path": "ISO27001/A.8 - Technological controls/A.8.23 - Web filtering"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.24",
+      "path": "ISO27001/A.8 - Technological controls/A.8.24 - Use of cryptography"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.25",
+      "path": "ISO27001/A.8 - Technological controls/A.8.25 - Secure development life cycle"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.26",
+      "path": "ISO27001/A.8 - Technological controls/A.8.26 - Application security requirements"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.27",
+      "path": "ISO27001/A.8 - Technological controls/A.8.27 - Secure system architecture and engineering principles"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.28",
+      "path": "ISO27001/A.8 - Technological controls/A.8.28 - Secure coding"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.29",
+      "path": "ISO27001/A.8 - Technological controls/A.8.29 - Security testing in development and acceptance"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.30",
+      "path": "ISO27001/A.8 - Technological controls/A.8.30 - Outsourced development"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.31",
+      "path": "ISO27001/A.8 - Technological controls/A.8.31 - Separation of development, test and production environments"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.32",
+      "path": "ISO27001/A.8 - Technological controls/A.8.32 - Change management"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.33",
+      "path": "ISO27001/A.8 - Technological controls/A.8.33 - Test information"
+    },
+    {
+      "framework": "iso27001",
+      "category": "A8",
+      "control_id": "A.8.34",
+      "path": "ISO27001/A.8 - Technological controls/A.8.34 - Protection of information systems during audit testing"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req1",
+      "control_id": "1.1",
+      "path": "PCI-DSS-v4.0.1/Req 1 - Network Security Controls/1.1 - Processes for NSCs"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req1",
+      "control_id": "1.2",
+      "path": "PCI-DSS-v4.0.1/Req 1 - Network Security Controls/1.2 - NSC configuration"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req1",
+      "control_id": "1.3",
+      "path": "PCI-DSS-v4.0.1/Req 1 - Network Security Controls/1.3 - CDE network access"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req1",
+      "control_id": "1.4",
+      "path": "PCI-DSS-v4.0.1/Req 1 - Network Security Controls/1.4 - Trusted-untrusted connections"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req1",
+      "control_id": "1.5",
+      "path": "PCI-DSS-v4.0.1/Req 1 - Network Security Controls/1.5 - Dual-connected devices"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req2",
+      "control_id": "2.1",
+      "path": "PCI-DSS-v4.0.1/Req 2 - Secure Configurations/2.1 - Config processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req2",
+      "control_id": "2.2",
+      "path": "PCI-DSS-v4.0.1/Req 2 - Secure Configurations/2.2 - System configuration"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req2",
+      "control_id": "2.3",
+      "path": "PCI-DSS-v4.0.1/Req 2 - Secure Configurations/2.3 - Wireless configuration"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req3",
+      "control_id": "3.1",
+      "path": "PCI-DSS-v4.0.1/Req 3 - Protect Stored Account Data/3.1 - Storage processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req3",
+      "control_id": "3.2",
+      "path": "PCI-DSS-v4.0.1/Req 3 - Protect Stored Account Data/3.2 - Minimise storage"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req3",
+      "control_id": "3.3",
+      "path": "PCI-DSS-v4.0.1/Req 3 - Protect Stored Account Data/3.3 - No SAD after auth"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req3",
+      "control_id": "3.4",
+      "path": "PCI-DSS-v4.0.1/Req 3 - Protect Stored Account Data/3.4 - PAN display"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req3",
+      "control_id": "3.5",
+      "path": "PCI-DSS-v4.0.1/Req 3 - Protect Stored Account Data/3.5 - PAN protection"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req3",
+      "control_id": "3.6",
+      "path": "PCI-DSS-v4.0.1/Req 3 - Protect Stored Account Data/3.6 - Key protection"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req3",
+      "control_id": "3.7",
+      "path": "PCI-DSS-v4.0.1/Req 3 - Protect Stored Account Data/3.7 - Key management"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req4",
+      "control_id": "4.1",
+      "path": "PCI-DSS-v4.0.1/Req 4 - Protect Data in Transit/4.1 - Transmission processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req4",
+      "control_id": "4.2",
+      "path": "PCI-DSS-v4.0.1/Req 4 - Protect Data in Transit/4.2 - Strong cryptography"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req5",
+      "control_id": "5.1",
+      "path": "PCI-DSS-v4.0.1/Req 5 - Protect Against Malware/5.1 - Malware processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req5",
+      "control_id": "5.2",
+      "path": "PCI-DSS-v4.0.1/Req 5 - Protect Against Malware/5.2 - Malware prevention"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req5",
+      "control_id": "5.3",
+      "path": "PCI-DSS-v4.0.1/Req 5 - Protect Against Malware/5.3 - Anti-malware upkeep"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req5",
+      "control_id": "5.4",
+      "path": "PCI-DSS-v4.0.1/Req 5 - Protect Against Malware/5.4 - Anti-phishing"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req6",
+      "control_id": "6.1",
+      "path": "PCI-DSS-v4.0.1/Req 6 - Secure Systems and Software/6.1 - Development processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req6",
+      "control_id": "6.2",
+      "path": "PCI-DSS-v4.0.1/Req 6 - Secure Systems and Software/6.2 - Secure development"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req6",
+      "control_id": "6.3",
+      "path": "PCI-DSS-v4.0.1/Req 6 - Secure Systems and Software/6.3 - Vulnerability management"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req6",
+      "control_id": "6.4",
+      "path": "PCI-DSS-v4.0.1/Req 6 - Secure Systems and Software/6.4 - Web app protection"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req6",
+      "control_id": "6.5",
+      "path": "PCI-DSS-v4.0.1/Req 6 - Secure Systems and Software/6.5 - Change management"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req7",
+      "control_id": "7.1",
+      "path": "PCI-DSS-v4.0.1/Req 7 - Restrict Access by Need to Know/7.1 - Access processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req7",
+      "control_id": "7.2",
+      "path": "PCI-DSS-v4.0.1/Req 7 - Restrict Access by Need to Know/7.2 - Access assignment"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req7",
+      "control_id": "7.3",
+      "path": "PCI-DSS-v4.0.1/Req 7 - Restrict Access by Need to Know/7.3 - Access control system"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req8",
+      "control_id": "8.1",
+      "path": "PCI-DSS-v4.0.1/Req 8 - Identify and Authenticate/8.1 - Auth processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req8",
+      "control_id": "8.2",
+      "path": "PCI-DSS-v4.0.1/Req 8 - Identify and Authenticate/8.2 - User identification"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req8",
+      "control_id": "8.3",
+      "path": "PCI-DSS-v4.0.1/Req 8 - Identify and Authenticate/8.3 - Strong authentication"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req8",
+      "control_id": "8.4",
+      "path": "PCI-DSS-v4.0.1/Req 8 - Identify and Authenticate/8.4 - MFA for CDE"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req8",
+      "control_id": "8.5",
+      "path": "PCI-DSS-v4.0.1/Req 8 - Identify and Authenticate/8.5 - MFA configuration"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req8",
+      "control_id": "8.6",
+      "path": "PCI-DSS-v4.0.1/Req 8 - Identify and Authenticate/8.6 - Application-system accounts"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req9",
+      "control_id": "9.1",
+      "path": "PCI-DSS-v4.0.1/Req 9 - Restrict Physical Access/9.1 - Physical processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req9",
+      "control_id": "9.2",
+      "path": "PCI-DSS-v4.0.1/Req 9 - Restrict Physical Access/9.2 - Facility access"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req9",
+      "control_id": "9.3",
+      "path": "PCI-DSS-v4.0.1/Req 9 - Restrict Physical Access/9.3 - Personnel-visitor access"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req9",
+      "control_id": "9.4",
+      "path": "PCI-DSS-v4.0.1/Req 9 - Restrict Physical Access/9.4 - Media handling"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req9",
+      "control_id": "9.5",
+      "path": "PCI-DSS-v4.0.1/Req 9 - Restrict Physical Access/9.5 - POI device protection"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req10",
+      "control_id": "10.1",
+      "path": "PCI-DSS-v4.0.1/Req 10 - Log and Monitor Access/10.1 - Logging processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req10",
+      "control_id": "10.2",
+      "path": "PCI-DSS-v4.0.1/Req 10 - Log and Monitor Access/10.2 - Audit logs"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req10",
+      "control_id": "10.3",
+      "path": "PCI-DSS-v4.0.1/Req 10 - Log and Monitor Access/10.3 - Log protection"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req10",
+      "control_id": "10.4",
+      "path": "PCI-DSS-v4.0.1/Req 10 - Log and Monitor Access/10.4 - Log review"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req10",
+      "control_id": "10.5",
+      "path": "PCI-DSS-v4.0.1/Req 10 - Log and Monitor Access/10.5 - Log retention"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req10",
+      "control_id": "10.6",
+      "path": "PCI-DSS-v4.0.1/Req 10 - Log and Monitor Access/10.6 - Time synchronisation"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req10",
+      "control_id": "10.7",
+      "path": "PCI-DSS-v4.0.1/Req 10 - Log and Monitor Access/10.7 - Control failure response"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req11",
+      "control_id": "11.1",
+      "path": "PCI-DSS-v4.0.1/Req 11 - Test Security Regularly/11.1 - Testing processes"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req11",
+      "control_id": "11.2",
+      "path": "PCI-DSS-v4.0.1/Req 11 - Test Security Regularly/11.2 - Wireless monitoring"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req11",
+      "control_id": "11.3",
+      "path": "PCI-DSS-v4.0.1/Req 11 - Test Security Regularly/11.3 - Vulnerability scanning"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req11",
+      "control_id": "11.4",
+      "path": "PCI-DSS-v4.0.1/Req 11 - Test Security Regularly/11.4 - Penetration testing"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req11",
+      "control_id": "11.5",
+      "path": "PCI-DSS-v4.0.1/Req 11 - Test Security Regularly/11.5 - Intrusion detection"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req11",
+      "control_id": "11.6",
+      "path": "PCI-DSS-v4.0.1/Req 11 - Test Security Regularly/11.6 - Payment page monitoring"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.1",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.1 - Security policy"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.2",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.2 - Acceptable use"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.3",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.3 - Risk management"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.4",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.4 - Compliance management"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.5",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.5 - Scope validation"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.6",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.6 - Security awareness"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.7",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.7 - Personnel screening"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.8",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.8 - Third-party management"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.9",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.9 - TPSP support"
+    },
+    {
+      "framework": "pci_dss_v4",
+      "category": "Req12",
+      "control_id": "12.10",
+      "path": "PCI-DSS-v4.0.1/Req 12 - Organisational Policies/12.10 - Incident response"
+    }
+  ]
+}

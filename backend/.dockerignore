@@ -1,0 +1,16 @@
+# Keep the build context clean. Without this, `COPY . .` bakes the developer's
+# local database (real user rows and password hashes) and a host-platform
+# virtualenv into the image.
+.venv/
+venv/
+db.sqlite3
+*.sqlite3
+media/
+staticfiles/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+.env

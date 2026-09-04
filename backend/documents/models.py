@@ -11,6 +11,7 @@ except ImportError:  # pragma: no cover
     relativedelta = None
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -18,6 +19,28 @@ from django.utils import timezone
 VIEW, EDIT, MANAGE = "view", "edit", "manage"
 ACCESS_CHOICES = [(VIEW, "View"), (EDIT, "Edit"), (MANAGE, "Manage")]
 ACCESS_RANK = {None: 0, VIEW: 1, EDIT: 2, MANAGE: 3}
+
+# Hard ceiling on tree depth. Real trees are 3-5 levels; the bound turns an
+# accidental (or malicious) parent cycle into a clean error instead of an
+# infinite loop in every access check.
+MAX_FOLDER_DEPTH = 32
+
+_FORBIDDEN_NAME_CHARS = set('/\\:*?"<>|\x00')
+
+
+def validate_folder_name(value):
+    """A folder name is a single path segment: it becomes a directory under
+    MEDIA_ROOT, so separators, traversal and Windows-reserved characters are
+    rejected here rather than discovered as a storage error on upload."""
+    name = (value or "").strip()
+    if not name:
+        raise ValidationError("Folder name cannot be blank.")
+    if name in (".", ".."):
+        raise ValidationError("Folder name cannot be '.' or '..'.")
+    if any(ch in _FORBIDDEN_NAME_CHARS for ch in name) or any(ord(ch) < 32 for ch in name):
+        raise ValidationError('Folder name cannot contain / \\ : * ? " < > | or control characters.')
+    if name.endswith(".") or name != value:
+        raise ValidationError("Folder name cannot start or end with whitespace or end with a dot.")
 
 
 def _add_months(d, months):
@@ -30,12 +53,24 @@ def _add_months(d, months):
 
 class Folder(models.Model):
     """A node in the document tree. Access is granted per folder and inherited."""
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, validators=[validate_folder_name])
     parent = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
     )
     control = models.ForeignKey(
         "compliance.Control", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="folders",
+    )
+    # Stable identity for the seeded tree. Without these, seed_frameworks has to
+    # match folders by their display name, so a framework version bump or a
+    # reworded control title creates a second tree and orphans every document
+    # filed under the old one.
+    framework = models.ForeignKey(
+        "compliance.Framework", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="folders",
+    )
+    category = models.ForeignKey(
+        "compliance.ControlCategory", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="folders",
     )
     owner = models.ForeignKey(
@@ -54,12 +89,34 @@ class Folder(models.Model):
         return self.name
 
     # -- hierarchy helpers --------------------------------------------------
+    @property
+    def is_seeded(self):
+        """Part of the generated framework tree (root / category / control)."""
+        return bool(self.is_framework_root or self.framework_id or self.category_id or self.control_id)
+
     def ancestors(self):
-        node, chain = self.parent, []
+        """Parent chain, nearest first. Bounded and cycle-safe: a corrupted
+        parent link raises instead of spinning forever."""
+        node, chain, seen = self.parent, [], {self.id}
         while node is not None:
+            if node.id in seen or len(chain) >= MAX_FOLDER_DEPTH:
+                raise ValidationError(f"Folder {self.id} has a cyclic or over-deep parent chain.")
+            seen.add(node.id)
             chain.append(node)
             node = node.parent
         return chain
+
+    def would_cycle(self, new_parent):
+        """True if setting ``new_parent`` would make this folder its own ancestor."""
+        node, hops = new_parent, 0
+        while node is not None:
+            if node.id == self.id:
+                return True
+            hops += 1
+            if hops > MAX_FOLDER_DEPTH:
+                return True
+            node = node.parent
+        return False
 
     @property
     def path(self):
@@ -127,7 +184,6 @@ class FolderPermission(models.Model):
         unique_together = [("folder", "role", "user", "access_level")]
 
     def clean(self):
-        from django.core.exceptions import ValidationError
         if bool(self.role) == bool(self.user):
             raise ValidationError("Set exactly one of role or user.")
 

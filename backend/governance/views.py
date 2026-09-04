@@ -71,19 +71,9 @@ CAP_FLAGS = [
     ("is_auditor", "auditor"),
 ]
 
-# Characters a spreadsheet may interpret as the start of a formula. Snapshot
-# fields (names, job titles, notes) are user-controlled, so any value beginning
-# with one of these is prefixed with a quote to neutralise CSV/formula injection.
-_CSV_DANGEROUS = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _csv_safe(row):
-    out = []
-    for value in row:
-        if isinstance(value, str) and value and value[0] in _CSV_DANGEROUS:
-            value = "'" + value
-        out.append(value)
-    return out
+# Snapshot fields (names, job titles, notes) are user-controlled: every export
+# row goes through csv_safe so a value like "=1+1" can't execute as a formula.
+from config.csvsafe import csv_safe as _csv_safe  # noqa: E402
 
 
 def _snapshot_items(review):
@@ -112,6 +102,7 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
     queryset = AccessReview.objects.all()
     serializer_class = AccessReviewSerializer
     permission_classes = [AccessAuditPermission]
+    filterset_fields = ["status"]
 
     def perform_create(self, serializer):
         review = serializer.save(created_by=self.request.user)

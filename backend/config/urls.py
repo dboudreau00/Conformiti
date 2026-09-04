@@ -3,10 +3,15 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from rest_framework.exceptions import APIException
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from accounts.serializers import MFATokenObtainPairSerializer
+from accounts.views import LogoutView
+from audit.events import record_login_attempt
+
+from .health import HealthView
 
 
 class LoginRateThrottle(SimpleRateThrottle):
@@ -24,9 +29,20 @@ class LoginRateThrottle(SimpleRateThrottle):
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     """Login endpoint: tight per-IP rate limit (THROTTLE_LOGIN) + optional
-    TOTP second factor for accounts that have MFA enabled."""
+    TOTP second factor for accounts that have MFA enabled. Every attempt —
+    success, bad password, bad/missing OTP — is written to the audit trail."""
     throttle_classes = [LoginRateThrottle]
     serializer_class = MFATokenObtainPairSerializer
+
+    def post(self, request, *args, **kwargs):
+        try:
+            response = super().post(request, *args, **kwargs)
+        except APIException as exc:
+            # A rejected password / OTP surfaces as an exception, not a
+            # response; render it here so the failure is still audited.
+            response = self.handle_exception(exc)
+        record_login_attempt(request, response)
+        return response
 
 
 class ThrottledTokenRefreshView(TokenRefreshView):
@@ -35,9 +51,12 @@ class ThrottledTokenRefreshView(TokenRefreshView):
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # ops
+    path("api/health/", HealthView.as_view(), name="health"),
     # auth
     path("api/auth/token/", ThrottledTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/token/refresh/", ThrottledTokenRefreshView.as_view(), name="token_refresh"),
+    path("api/auth/logout/", LogoutView.as_view(), name="logout"),
     # apps
     path("api/", include("accounts.urls")),
     path("api/", include("audit.urls")),

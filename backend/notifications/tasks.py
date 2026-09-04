@@ -4,10 +4,10 @@ Runs daily via Celery beat (see CELERY_BEAT_SCHEDULE) or on demand via
 `python manage.py send_review_reminders` for cron-based deployments.
 """
 import logging
-from datetime import date
 
 from celery import shared_task
 from django.conf import settings
+from django.utils import timezone
 
 from documents.models import Document
 from .email_service import send_templated_email
@@ -48,7 +48,7 @@ def run_review_scan(dry_run=False):
     With ``dry_run=True`` nothing is emailed or saved; the return value is the
     number of documents that *would* be notified. Returns the notified count.
     """
-    today = date.today()
+    today = timezone.localdate()
     leads = settings.REVIEW_ALERT_LEAD_DAYS
     notified = 0
 

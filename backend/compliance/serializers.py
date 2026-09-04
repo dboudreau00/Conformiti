@@ -46,6 +46,9 @@ class ControlEvidenceSerializer(serializers.ModelSerializer):
     framework_key = serializers.CharField(source="control.category.framework.key", read_only=True)
     framework_name = serializers.CharField(source="control.category.framework.name", read_only=True)
     linked_by_name = serializers.CharField(source="linked_by.get_full_name", read_only=True, default="")
+    # Whether the *requesting* user may remove this link — the UI uses it to
+    # show the Unlink control only where the API would accept the call.
+    can_unlink = serializers.SerializerMethodField()
 
     class Meta:
         model = ControlEvidence
@@ -53,9 +56,16 @@ class ControlEvidenceSerializer(serializers.ModelSerializer):
             "id", "control", "document", "note", "created_at",
             "document_name", "document_status", "folder_path",
             "control_label", "control_title", "framework_key", "framework_name",
-            "linked_by_name",
+            "linked_by_name", "can_unlink",
         ]
         read_only_fields = ["created_at"]
+
+    def get_can_unlink(self, obj):
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return False
+        user = request.user
+        return bool(user.can_manage_frameworks or obj.document.folder.can_edit(user))
 
 
 class ControlCategorySerializer(serializers.ModelSerializer):

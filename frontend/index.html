@@ -1,28 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="ledger-dark" data-accent="azure">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f766e" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Ctext x='16' y='22.5' font-family='Arial,Helvetica,sans-serif' font-size='18' font-weight='700' text-anchor='middle' fill='%23eafffb'%3EC%3C/text%3E%3C/svg%3E" />
+    <meta name="theme-color" content="#0c0e12" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235c96fa'/%3E%3Ctext x='16' y='22.5' font-family='Inter,Arial,Helvetica,sans-serif' font-size='18' font-weight='700' text-anchor='middle' fill='%23060e1e'%3EC%3C/text%3E%3C/svg%3E" />
     <title>Conformiti</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <script>
-      // Apply the saved theme + custom accent before first paint (no flash).
-      (function () {
-        try {
-          var t = localStorage.getItem("theme");
-          if (t) document.documentElement.setAttribute("data-theme", t);
-          var v = localStorage.getItem("accentVars");
-          if (v) { var m = JSON.parse(v); for (var k in m) document.documentElement.style.setProperty(k, m[k]); }
-        } catch (e) {}
-      })();
-    </script>
+    <!-- Applies the saved theme/accent before first paint (kept external for CSP). -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

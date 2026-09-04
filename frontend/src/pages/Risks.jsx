@@ -1,103 +1,131 @@
-import { useEffect, useRef, useState } from "react";
-import api from "../api/client.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { DownloadIcon, FileSpreadsheetIcon, PlusIcon, UploadIcon } from "lucide-react";
+import api, { downloadFile, fetchAll } from "../api/client.js";
+import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
+import { Field } from "../components/risks/Field.jsx";
+import { RiskDetail } from "../components/risks/RiskDetail.jsx";
+import { RiskHeatmap } from "../components/risks/RiskHeatmap.jsx";
+import { RiskTable } from "../components/risks/RiskTable.jsx";
+import { FILTERS, IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, TEMPLATE_CSV, TYPES, deriveSummary, filterRisks } from "../components/risks/vocab.js";
+import { Button } from "../components/ui/Button.jsx";
+import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Chip } from "../components/ui/SegmentedControl.jsx";
+import { useShell } from "../shell.js";
+import { cn } from "../utils/cn.js";
+import { errorText } from "../utils/a11y.js";
 
-const STATUS = [
-  ["open", "Open", "overdue"],
-  ["mitigating", "Mitigating", "soon"],
-  ["accepted", "Accepted", "neutral"],
-  ["closed", "Closed", "ok"],
-];
-const TYPES = [
-  ["control_gap", "Control gap"], ["audit_finding", "Audit finding"],
-  ["pentest", "Pen test"], ["vendor", "Vendor"],
-  ["incident", "Incident"], ["other", "Other"],
-];
-const TREATMENTS = [
-  ["mitigate", "Mitigate"], ["accept", "Accept"],
-  ["transfer", "Transfer"], ["avoid", "Avoid"],
-];
-const RATING_CLS = { low: "neutral", moderate: "soon", high: "high", critical: "overdue" };
-const SCALE = [1, 2, 3, 4, 5];
-
-const TEMPLATE_CSV =
-  "Title,Description,Status,Type,Likelihood,Impact,Owner,Control,Due date,Jira,Mitigation plan,Note\n" +
-  "Example: laptops missing encryption,12 laptops without disk encryption,Open,Control gap,High,High,owen,CC6.1,2026-09-15,SEC-101,Enforce via MDM,First note\n";
-
-function statusBadge(s) {
-  const m = STATUS.find((x) => x[0] === s);
-  return <span className={`badge ${m?.[2] || "neutral"}`}><span className="dot" />{m?.[1] || s}</span>;
-}
+const displayName = (u) => u.full_name || u.username || `User ${u.id}`;
 
 export default function Risks({ me }) {
+  const { refreshCounts } = useShell();
   const [risks, setRisks] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [filter, setFilter] = useState("live");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
+  const [usersErr, setUsersErr] = useState("");
   const [controls, setControls] = useState([]);
-  const [showNew, setShowNew] = useState(false);
-  const [importResult, setImportResult] = useState(null);
-  const [sel, setSel] = useState(null);          // selected risk object
+  const [filter, setFilter] = useState("live");
+  const [selectedId, setSelectedId] = useState(null);
   const [notes, setNotes] = useState([]);
-  const [noteText, setNoteText] = useState("");
-  const [planDraft, setPlanDraft] = useState("");
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesErr, setNotesErr] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [banner, setBanner] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const fileRef = useRef(null);
 
-  const canManage = me?.capabilities?.manage_frameworks;
-  const canEditRisk = (r) => canManage || (r.owner && r.owner === me?.id);
+  const canManage = !!me?.capabilities?.manage_frameworks;
+  const canEditRisk = (r) => canManage || (r?.owner != null && r.owner === me?.id);
+  const selected = risks.find((r) => r.id === selectedId) || null;
 
-  async function loadRisks() {
-    setLoading(true);
-    let page = 1, all = [];
-    for (;;) {
-      const r = await api.get(`/risks/?page=${page}`);
-      const data = r.data.results || r.data;
-      all = all.concat(data);
-      if (!r.data.next || page >= 5) break;
-      page += 1;
+  const loadSummary = useCallback(async (fallbackRisks) => {
+    try {
+      const { data } = await api.get("/risks/summary/");
+      setSummary(data);
+    } catch {
+      setSummary(deriveSummary(fallbackRisks || []));
     }
-    setRisks(all);
-    setLoading(false);
-  }
+  }, []);
 
-  function loadSummary() {
-    api.get("/risks/summary/").then((r) => setSummary(r.data));
-  }
+  const loadRisks = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const all = await fetchAll("/risks/");
+      setRisks(all);
+      await loadSummary(all);
+    } catch (e) {
+      setError(errorText(e, "Couldn't load the risk register."));
+    } finally {
+      setLoading(false);
+    }
+  }, [loadSummary]);
 
   useEffect(() => {
     loadRisks();
-    loadSummary();
-    api.get("/users/").then((r) => setUsers(r.data.results || r.data)).catch(() => {});
-    api.get("/control-evidence/choices/").then((r) => setControls(r.data.controls)).catch(() => {});
-  }, []);
+    fetchAll("/users/").then(setUsers).catch((e) => setUsersErr(errorText(e, "Owner directory unavailable.")));
+    api.get("/control-evidence/choices/").then((r) => setControls(r.data.controls || [])).catch(() => setControls([]));
+  }, [loadRisks]);
+
+  // Notes for the selected risk.
+  useEffect(() => {
+    if (!selectedId) return;
+    let alive = true;
+    setNotes([]);
+    setNotesErr("");
+    setNotesLoading(true);
+    setNotice(null);
+    api
+      .get(`/risk-notes/?risk=${selectedId}`)
+      .then((r) => alive && setNotes(r.data.results || r.data))
+      .catch((e) => alive && setNotesErr(errorText(e, "Couldn't load the notes.")))
+      .finally(() => alive && setNotesLoading(false));
+    return () => { alive = false; };
+  }, [selectedId]);
 
   function applyUpdate(updated) {
     setRisks((rs) => rs.map((r) => (r.id === updated.id ? updated : r)));
-    if (sel?.id === updated.id) setSel(updated);
-    loadSummary();
   }
 
-  async function patch(risk, payload) {
-    const { data } = await api.patch(`/risks/${risk.id}/`, payload);
-    applyUpdate(data);
+  async function patch(payload) {
+    if (!selected) return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      const { data } = await api.patch(`/risks/${selected.id}/`, payload);
+      applyUpdate(data);
+      await loadSummary();
+      refreshCounts();
+      setNotice({ ok: true, text: "Saved." });
+    } catch (e) {
+      setNotice({ ok: false, text: errorText(e, "Couldn't save that change.") });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function openRisk(r) {
-    if (sel?.id === r.id) { setSel(null); return; }
-    setSel(r);
-    setPlanDraft(r.mitigation_plan || "");
-    setNoteText("");
-    const res = await api.get(`/risk-notes/?risk=${r.id}`);
-    setNotes(res.data.results || res.data);
-  }
-
-  async function addNote(e) {
-    e.preventDefault();
-    if (!noteText.trim()) return;
-    const { data } = await api.post("/risk-notes/", { risk: sel.id, text: noteText.trim() });
-    setNotes((ns) => [...ns, data]);
-    setNoteText("");
-    setRisks((rs) => rs.map((r) => (r.id === sel.id ? { ...r, note_count: (r.note_count || 0) + 1 } : r)));
+  async function addNote(text) {
+    if (!selected) return false;
+    setAddingNote(true);
+    setNotesErr("");
+    try {
+      const { data } = await api.post("/risk-notes/", { risk: selected.id, text });
+      setNotes((ns) => [...ns, data]);
+      setRisks((rs) => rs.map((r) => (r.id === selected.id ? { ...r, note_count: (r.note_count || 0) + 1 } : r)));
+      return true;
+    } catch (e) {
+      setNotesErr(errorText(e, "Couldn't add the note."));
+      return false;
+    } finally {
+      setAddingNote(false);
+    }
   }
 
   async function createRisk(e) {
@@ -108,18 +136,29 @@ export default function Risks({ me }) {
       risk_type: f.rtype.value,
       likelihood: Number(f.likelihood.value),
       impact: Number(f.impact.value),
-      owner: f.owner.value || null,
-      control: f.control.value || null,
+      owner: f.owner.value ? Number(f.owner.value) : null,
+      control: f.control.value ? Number(f.control.value) : null,
       due_date: f.due.value || null,
       description: f.description.value,
       mitigation_plan: f.plan.value,
     };
     if (!payload.title) return;
-    const { data } = await api.post("/risks/", payload);
-    setRisks((rs) => [data, ...rs]);
-    loadSummary();
-    setShowNew(false);
-    f.reset();
+    setCreating(true);
+    setBanner(null);
+    try {
+      const { data } = await api.post("/risks/", payload);
+      setRisks((rs) => [data, ...rs]);
+      await loadSummary();
+      refreshCounts();
+      setShowNew(false);
+      f.reset();
+      setSelectedId(data.id);
+      setBanner({ ok: true, text: `Risk #${data.id} created.` });
+    } catch (err) {
+      setBanner({ ok: false, text: errorText(err, "Couldn't create the risk.") });
+    } finally {
+      setCreating(false);
+    }
   }
 
   async function doImport(e) {
@@ -128,273 +167,237 @@ export default function Risks({ me }) {
     if (!file) return;
     const fd = new FormData();
     fd.append("file", file);
+    setImporting(true);
+    setImportResult(null);
+    setBanner(null);
     try {
       const { data } = await api.post("/risks/import/", fd);
       setImportResult(data);
-      loadRisks();
-      loadSummary();
+      await loadRisks();
+      refreshCounts();
     } catch (err) {
-      const detail = err.response?.data?.file || err.response?.data?.detail || "Import failed.";
-      setImportResult({ error: Array.isArray(detail) ? detail.join(" ") : String(detail) });
+      setImportResult({ error: errorText(err, "Import failed.") });
+    } finally {
+      setImporting(false);
     }
   }
 
-  function download(name, text) {
-    const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  function downloadTemplate() {
+    const url = URL.createObjectURL(new Blob([TEMPLATE_CSV], { type: "text/csv" }));
     const a = document.createElement("a");
-    a.href = url; a.download = name; a.click();
+    a.href = url;
+    a.download = "risk-import-template.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     URL.revokeObjectURL(url);
   }
 
   async function exportCsv() {
-    const r = await api.get("/risks/export/", { responseType: "blob" });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url; a.download = "risk-register.csv"; a.click();
-    URL.revokeObjectURL(url);
+    setBanner(null);
+    try {
+      await downloadFile("/risks/export/", "risk-register.csv");
+    } catch (err) {
+      setBanner({ ok: false, text: errorText(err, "Couldn't export the register.") });
+    }
   }
 
-  const shown = risks.filter((r) =>
-    filter === "all" ? true :
-    filter === "live" ? (r.status === "open" || r.status === "mitigating") :
-    r.status === filter
-  );
+  const stats = summary || deriveSummary(risks);
+  const shown = filterRisks(risks, filter);
+  const chipMeta = {
+    live: { label: "live", count: stats.open + stats.mitigating },
+    overdue: { label: "overdue", count: stats.overdue, tone: stats.overdue ? "danger" : undefined },
+    severe: { label: "high / critical", count: (stats.by_rating?.high || 0) + (stats.by_rating?.critical || 0), tone: "warning" },
+    closed: { label: "closed", count: stats.closed, tone: "success" },
+    all: { label: "all", count: risks.length },
+  };
 
   return (
-    <>
-      <div className="pagehead">
-        <div>
-          {summary && (
-            <div className="chips">
-              <div className={"chip" + (filter === "live" ? " active" : "")} onClick={() => setFilter("live")}>
-                {summary.open + summary.mitigating} live
-              </div>
-              <div className="chip" style={{ cursor: "default", color: summary.overdue ? "var(--red)" : undefined }}>
-                {summary.overdue} overdue
-              </div>
-              <div className="chip" style={{ cursor: "default" }}>
-                {summary.by_rating.critical + summary.by_rating.high} high / critical
-              </div>
-              <div className={"chip" + (filter === "closed" ? " active" : "")} onClick={() => setFilter("closed")}>
-                {summary.closed} closed
-              </div>
-              <div className={"chip" + (filter === "all" ? " active" : "")} onClick={() => setFilter("all")}>
-                all
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="toolbar">
-          <button className="btn small" onClick={() => download("risk-import-template.csv", TEMPLATE_CSV)}>Template</button>
-          {canManage && (
-            <>
-              <input ref={fileRef} type="file" accept=".csv,.xlsx" style={{ display: "none" }} onChange={doImport} />
-              <button className="btn small" onClick={() => fileRef.current.click()}>Import CSV/XLSX</button>
-            </>
-          )}
-          <button className="btn small" onClick={exportCsv}>Export</button>
-          {canManage && (
-            <button className="btn primary small" onClick={() => setShowNew((v) => !v)}>
-              {showNew ? "Cancel" : "New risk"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {importResult && (
-        <div className="card" style={{ marginBottom: 18 }}>
-          <div className="card-head">
-            <h2>Import result</h2>
-            <button className="btn small" onClick={() => setImportResult(null)}>Dismiss</button>
+    <PanelTransition>
+      <Stack className="flex flex-col gap-4">
+        <StackItem className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter the register">
+            {FILTERS.map((key) => (
+              <Chip key={key} active={filter === key} onClick={() => setFilter(key)} tone={chipMeta[key].tone} count={chipMeta[key].count}>
+                {chipMeta[key].label}
+              </Chip>
+            ))}
           </div>
-          <div className="card-body" style={{ fontSize: 13.5 }}>
-            {importResult.error ? (
-              <span style={{ color: "var(--red)" }}>{importResult.error}</span>
-            ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={downloadTemplate} icon={<FileSpreadsheetIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+              Template
+            </Button>
+            {canManage ? (
               <>
-                <div><b>{importResult.created}</b> risk{importResult.created === 1 ? "" : "s"} created
-                  {importResult.skipped.length > 0 && <> · {importResult.skipped.length} skipped</>}
-                  {importResult.warnings.length > 0 && <> · {importResult.warnings.length} warning{importResult.warnings.length === 1 ? "" : "s"}</>}
+                <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={doImport} aria-label="Import risks from CSV or XLSX" />
+                <Button size="sm" onClick={() => fileRef.current?.click()} disabled={importing} icon={<UploadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                  {importing ? "Importing…" : "Import CSV/XLSX"}
+                </Button>
+              </>
+            ) : null}
+            <Button size="sm" onClick={exportCsv} icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+              Export
+            </Button>
+            {canManage ? (
+              <Button size="sm" variant="primary" onClick={() => setShowNew((v) => !v)} aria-expanded={showNew} icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />}>
+                {showNew ? "Cancel" : "New risk"}
+              </Button>
+            ) : null}
+          </div>
+        </StackItem>
+
+        {banner ? (
+          <StackItem>
+            <div className={cn("notice", banner.ok ? "notice-ok" : "notice-err")} role={banner.ok ? "status" : "alert"}>
+              {banner.text}
+            </div>
+          </StackItem>
+        ) : null}
+
+        <AnimatePresence initial={false}>
+          {importResult ? (
+            <motion.div key="import" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2, ease: EASE }}>
+              <Panel>
+                <PanelHeader title="Import result">
+                  <Button size="sm" variant="ghost" onClick={() => setImportResult(null)}>Dismiss</Button>
+                </PanelHeader>
+                <div className="p-5 text-[13px]">
+                  {importResult.error ? (
+                    <div className="notice notice-err" role="alert">{importResult.error}</div>
+                  ) : (
+                    <>
+                      <p className="text-ink">
+                        <span className="tabular font-semibold">{importResult.created}</span> risk{importResult.created === 1 ? "" : "s"} created
+                        {importResult.skipped?.length ? <> · {importResult.skipped.length} skipped</> : null}
+                        {importResult.warnings?.length ? <> · {importResult.warnings.length} warning{importResult.warnings.length === 1 ? "" : "s"}</> : null}
+                      </p>
+                      {importResult.skipped?.slice(0, 8).map((s, i) => (
+                        <p key={`s${i}`} className="mt-1.5 text-xs text-muted">Row {s.row}: {s.title} — {s.reason}</p>
+                      ))}
+                      {importResult.warnings?.length ? (
+                        <div className="notice notice-warn mt-3">
+                          {importResult.warnings.slice(0, 10).map((w, i) => (
+                            <p key={`w${i}`} className="text-xs">Row {w.row}: {w.message}</p>
+                          ))}
+                          {importResult.warnings.length > 10 ? <p className="mt-1 text-2xs">+{importResult.warnings.length - 10} more</p> : null}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
-                {importResult.skipped.slice(0, 5).map((s, i) => (
-                  <div key={i} style={{ color: "var(--muted)", marginTop: 4 }}>Row {s.row}: {s.title} — {s.reason}</div>
-                ))}
-                {importResult.warnings.slice(0, 8).map((w, i) => (
-                  <div key={i} style={{ color: "var(--amber)", marginTop: 4 }}>Row {w.row}: {w.message}</div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+              </Panel>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
-      {showNew && canManage && (
-        <div className="card" style={{ marginBottom: 18 }}>
-          <div className="card-head"><h2>New risk</h2></div>
-          <div className="card-body">
-            <form onSubmit={createRisk} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10 }}>
-              <input name="title" placeholder="Risk title" required />
-              <select name="rtype" defaultValue="control_gap">
-                {TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-              <select name="likelihood" defaultValue="3">
-                {SCALE.map((n) => <option key={n} value={n}>Likelihood {n}</option>)}
-              </select>
-              <select name="impact" defaultValue="3">
-                {SCALE.map((n) => <option key={n} value={n}>Impact {n}</option>)}
-              </select>
-              <select name="owner" defaultValue="">
-                <option value="">Owner…</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
-              </select>
-              <select name="control" defaultValue="">
-                <option value="">Related control…</option>
-                {controls.map((c) => <option key={c.id} value={c.id}>{c.framework_name} · {c.label}</option>)}
-              </select>
-              <input name="due" type="date" />
-              <div />
-              <textarea name="description" rows={2} placeholder="Description" style={{ gridColumn: "1 / -1" }} />
-              <textarea name="plan" rows={2} placeholder="Mitigation plan" style={{ gridColumn: "1 / -1" }} />
-              <button className="btn primary" style={{ gridColumn: "1 / -1" }}>Create risk</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <div className="card">
-        <div className="card-head">
-          <h2>Risk register</h2>
-          <span className="eyebrow">{shown.length} shown</span>
-        </div>
-        <div className="card-body" style={{ padding: 0 }}>
-          {loading ? <div className="loading">Loading risks…</div> :
-           shown.length === 0 ? <div className="empty">No risks in this view.</div> : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Risk</th>
-                  <th style={{ width: 100 }}>Rating</th>
-                  <th style={{ width: 140 }}>Owner</th>
-                  <th style={{ width: 110 }}>Due</th>
-                  <th style={{ width: 130 }}>Status</th>
-                  <th style={{ width: 70 }}>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((r) => (
-                  <tr key={r.id} onClick={() => openRisk(r)}
-                      style={{ cursor: "pointer", background: sel?.id === r.id ? "#f7f9fb" : undefined }}>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{r.title}</div>
-                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                        {TYPES.find((t) => t[0] === r.risk_type)?.[1]}
-                        {r.control_label ? <span className="evi-chip" style={{ marginLeft: 8 }}><b>{r.control_label}</b></span> : null}
-                        {r.jira_key ? <span className="mono" style={{ marginLeft: 8 }}>{r.jira_key}</span> : null}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${RATING_CLS[r.rating]}`}>
-                        <span className="dot" />{r.rating} · {r.score}
-                      </span>
-                    </td>
-                    <td style={{ color: r.owner_name ? "var(--ink)" : "var(--muted)" }}>{r.owner_name || "Unassigned"}</td>
-                    <td className="mono" style={{ color: r.is_overdue ? "var(--red)" : undefined }}>
-                      {r.due_date || "—"}
-                    </td>
-                    <td>{statusBadge(r.status)}</td>
-                    <td className="mono" style={{ color: "var(--muted)" }}>{r.note_count || 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      {sel && (
-        <div className="card" style={{ marginTop: 18 }}>
-          <div className="card-head">
-            <div>
-              <h2>{sel.title}</h2>
-              <div className="eyebrow" style={{ marginTop: 3 }}>
-                identified {sel.identified_on} · by {sel.created_by_name || "—"}
-                {sel.closed_at ? ` · closed ${sel.closed_at.slice(0, 10)}` : ""}
-              </div>
-            </div>
-            <button className="btn small" onClick={() => setSel(null)}>Close</button>
-          </div>
-          <div className="card-body">
-            {sel.description && <p style={{ marginTop: 0, fontSize: 13.5 }}>{sel.description}</p>}
-
-            {canEditRisk(sel) ? (
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-                <select value={sel.status} onChange={(e) => patch(sel, { status: e.target.value })}>
-                  {STATUS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-                <select value={sel.treatment} onChange={(e) => patch(sel, { treatment: e.target.value })}>
-                  {TREATMENTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-                <select value={sel.likelihood} onChange={(e) => patch(sel, { likelihood: Number(e.target.value) })}>
-                  {SCALE.map((n) => <option key={n} value={n}>Likelihood {n}</option>)}
-                </select>
-                <select value={sel.impact} onChange={(e) => patch(sel, { impact: Number(e.target.value) })}>
-                  {SCALE.map((n) => <option key={n} value={n}>Impact {n}</option>)}
-                </select>
-                <select value={sel.owner || ""} onChange={(e) => patch(sel, { owner: e.target.value || null })}>
-                  <option value="">Owner…</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
-                </select>
-                <input type="date" value={sel.due_date || ""} onChange={(e) => patch(sel, { due_date: e.target.value || null })} />
-                <input className="mini-input" placeholder="Jira key" defaultValue={sel.jira_key}
-                       onBlur={(e) => e.target.value !== sel.jira_key && patch(sel, { jira_key: e.target.value.trim() })} />
-              </div>
-            ) : (
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14, fontSize: 13 }}>
-                <span>{statusBadge(sel.status)}</span>
-                <span className="mono">L{sel.likelihood} × I{sel.impact} = {sel.score}</span>
-                <span>{TREATMENTS.find((t) => t[0] === sel.treatment)?.[1]}</span>
-              </div>
-            )}
-
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Mitigation plan</div>
-            {canEditRisk(sel) ? (
-              <>
-                <textarea rows={3} style={{ width: "100%" }} value={planDraft}
-                          onChange={(e) => setPlanDraft(e.target.value)} />
-                {planDraft !== (sel.mitigation_plan || "") && (
-                  <button className="btn small" style={{ marginTop: 6 }}
-                          onClick={() => patch(sel, { mitigation_plan: planDraft })}>
-                    Save plan
-                  </button>
-                )}
-              </>
-            ) : (
-              <p style={{ marginTop: 0, fontSize: 13.5, color: sel.mitigation_plan ? "var(--ink)" : "var(--muted)" }}>
-                {sel.mitigation_plan || "No plan recorded yet."}
-              </p>
-            )}
-
-            <div className="eyebrow" style={{ margin: "16px 0 6px" }}>Notes</div>
-            {notes.length === 0 ? (
-              <div style={{ color: "var(--muted)", fontSize: 13 }}>No notes yet.</div>
-            ) : (
-              notes.map((n) => (
-                <div key={n.id} style={{ borderTop: "1px solid var(--line)", padding: "8px 0" }}>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }} className="mono">
-                    {n.author_name || "—"} · {n.created_at.slice(0, 10)}
+        <AnimatePresence initial={false}>
+          {showNew && canManage ? (
+            <Collapse key="new" open>
+              <Panel>
+                <PanelHeader title="New risk" meta="Register entry" />
+                <form onSubmit={createRisk} className="grid grid-cols-1 gap-3 p-5 md:grid-cols-4" aria-busy={creating}>
+                  <Field id="new-title" label="Title" className="md:col-span-2">
+                    <input id="new-title" name="title" className="input" required maxLength={255} placeholder="e.g. Laptops without disk encryption" />
+                  </Field>
+                  <Field id="new-type" label="Type">
+                    <select id="new-type" name="rtype" className="input" defaultValue="control_gap">
+                      {TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </Field>
+                  <Field id="new-due" label="Due date">
+                    <input id="new-due" name="due" type="date" className="input" />
+                  </Field>
+                  <Field id="new-likelihood" label="Likelihood">
+                    <select id="new-likelihood" name="likelihood" className="input" defaultValue="3">
+                      {SCALE.map((n) => <option key={n} value={n}>{n} · {LIKELIHOOD_WORDS[n - 1]}</option>)}
+                    </select>
+                  </Field>
+                  <Field id="new-impact" label="Impact">
+                    <select id="new-impact" name="impact" className="input" defaultValue="3">
+                      {SCALE.map((n) => <option key={n} value={n}>{n} · {IMPACT_WORDS[n - 1]}</option>)}
+                    </select>
+                  </Field>
+                  <Field id="new-owner" label="Owner">
+                    <select id="new-owner" name="owner" className="input" defaultValue="">
+                      <option value="">Unassigned</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{displayName(u)}</option>)}
+                    </select>
+                  </Field>
+                  <Field id="new-control" label="Related control">
+                    <select id="new-control" name="control" className="input" defaultValue="">
+                      <option value="">None</option>
+                      {controls.map((c) => <option key={c.id} value={c.id}>{c.framework_name} · {c.label}</option>)}
+                    </select>
+                  </Field>
+                  <Field id="new-description" label="Description" className="md:col-span-4">
+                    <textarea id="new-description" name="description" className="input" rows={2} placeholder="What is exposed, and how" />
+                  </Field>
+                  <Field id="new-plan" label="Mitigation plan" className="md:col-span-4">
+                    <textarea id="new-plan" name="plan" className="input" rows={2} placeholder="How it will be reduced, transferred or avoided" />
+                  </Field>
+                  <div className="flex gap-2 md:col-span-4">
+                    <Button type="submit" variant="primary" disabled={creating}>{creating ? "Creating…" : "Create risk"}</Button>
+                    <Button type="button" variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
                   </div>
-                  <div style={{ fontSize: 13.5, marginTop: 3 }}>{n.text}</div>
+                </form>
+              </Panel>
+            </Collapse>
+          ) : null}
+        </AnimatePresence>
+
+        <StackItem className="grid grid-cols-12 gap-4">
+          <div className="col-span-12 xl:col-span-7">
+            <Panel className="overflow-hidden">
+              <PanelHeader title="Risk register" meta={loading ? "Loading" : `${shown.length} shown · ${risks.length} total`} />
+              {loading ? (
+                <Loading>Loading risks…</Loading>
+              ) : error ? (
+                <div className="p-5">
+                  <div className="notice notice-err" role="alert">{error}</div>
+                  <Button size="sm" className="mt-3" onClick={loadRisks}>Try again</Button>
                 </div>
-              ))
-            )}
-            <form onSubmit={addNote} style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <input style={{ flex: 1 }} placeholder="Add a progress note…"
-                     value={noteText} onChange={(e) => setNoteText(e.target.value)} />
-              <button className="btn small" disabled={!noteText.trim()}>Add note</button>
-            </form>
+              ) : shown.length === 0 ? (
+                <Empty title="No risks in this view">{risks.length ? "Widen the filter above." : canManage ? "Create the first entry or import a register." : "Nothing has been logged yet."}</Empty>
+              ) : (
+                <RiskTable risks={shown} selectedId={selectedId} onSelect={(r) => setSelectedId((cur) => (cur === r.id ? null : r.id))} />
+              )}
+            </Panel>
           </div>
-        </div>
-      )}
-    </>
+          <div className="col-span-12 xl:col-span-5">
+            <RiskHeatmap risks={risks} stats={stats} loading={loading} selectedId={selectedId} onSelect={(r) => setSelectedId(r.id)} />
+          </div>
+        </StackItem>
+
+        <AnimatePresence initial={false}>
+          {selected ? (
+            <motion.div key={`detail-${selected.id}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease: EASE }}>
+              <RiskDetail
+                risk={selected}
+                canEdit={canEditRisk(selected)}
+                users={users}
+                usersErr={usersErr}
+                saving={saving}
+                notice={notice}
+                onPatch={patch}
+                onClose={() => setSelectedId(null)}
+                notes={notes}
+                notesLoading={notesLoading}
+                notesErr={notesErr}
+                addingNote={addingNote}
+                onAddNote={addNote}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {!loading && !error ? (
+          <StackItem>
+            <Label className="block px-1">
+              Ratings use the 5×5 banding: 1–4 low · 5–9 moderate · 10–15 high · 16–25 critical. Owners may edit their own risks; framework managers may edit, create, import and delete.
+            </Label>
+          </StackItem>
+        ) : null}
+      </Stack>
+    </PanelTransition>
   );
 }

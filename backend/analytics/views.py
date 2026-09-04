@@ -2,10 +2,11 @@
 Analytics aggregation.
 
 A single read-only endpoint, ``GET /api/analytics/summary/``, returns the numbers
-the analytics dashboard needs in one round trip:
+the dashboards need in one round trip:
 
   * per-framework control implementation and status breakdown
-  * organisation-wide control status + ownership coverage
+  * organisation-wide control status, ownership and evidence coverage
+  * readiness history (monthly trend + month-over-month delta)
   * document status + ownership (restricted to folders the caller may see)
   * review posture: overdue / due-soon buckets and a six-month timeline
   * a small sample of the most overdue documents
@@ -14,10 +15,9 @@ Framework/control figures are organisation-wide (matching the dashboard, where
 every user sees overall program progress). Document figures are filtered to the
 caller's visible folders so nothing leaks past folder-level RBAC.
 """
-from datetime import date
-
 from dateutil.relativedelta import relativedelta
 from django.db.models import Count
+from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,6 +26,8 @@ from compliance.models import Control, ControlEvidence, Framework
 from governance.models import Risk
 from documents.access import accessible_folder_ids
 from documents.models import Document
+
+from .snapshots import record_today, trend
 
 CONTROL_STATUSES = ["not_started", "in_progress", "implemented", "not_applicable"]
 DOC_STATUSES = ["draft", "in_review", "approved", "expired"]
@@ -43,12 +45,13 @@ class AnalyticsSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        today = date.today()
+        today = timezone.localdate()
 
         # --- Controls (organisation-wide) -----------------------------------
         control_status = _counts_by(Control.objects.all(), "status", CONTROL_STATUSES)
         total_controls = sum(control_status.values())
         owned_controls = Control.objects.filter(owner__isnull=False).count()
+        applicable_all = total_controls - control_status["not_applicable"]
 
         # Evidence coverage (organisation-wide aggregates only — counts, no titles,
         # consistent with the org-wide control figures above).
@@ -64,6 +67,8 @@ class AnalyticsSummaryView(APIView):
         risks_block = {
             "open": live_risks.count(),
             "overdue": live_risks.filter(due_date__lt=today).count(),
+            "mitigating": live_risks.filter(status=Risk.Status.MITIGATING).count(),
+            "accepted": Risk.objects.filter(status=Risk.Status.ACCEPTED).count(),
         }
 
         frameworks = []
@@ -85,6 +90,17 @@ class AnalyticsSummaryView(APIView):
                 "pct": pct,
                 "by_status": by_status,
             })
+
+        # --- Readiness history -----------------------------------------------
+        record_today()  # idempotent: first hit of the day records a point
+        history = trend()
+        readiness = {
+            "pct": round(control_status["implemented"] / applicable_all * 100) if applicable_all else 0,
+            "implemented": control_status["implemented"],
+            "applicable": applicable_all,
+            "delta_pts": history["delta_pts"],
+            "trend": history["points"],
+        }
 
         # --- Documents (visible to the caller) ------------------------------
         visible_ids = accessible_folder_ids(request.user)
@@ -114,7 +130,7 @@ class AnalyticsSummaryView(APIView):
             end = start + relativedelta(months=1)
             count = dated.filter(next_review_date__gte=start,
                                  next_review_date__lt=end).count()
-            timeline.append({"month": start.strftime("%b %Y"), "count": count})
+            timeline.append({"month": start.strftime("%b %Y"), "label": start.strftime("%b"), "count": count})
 
         # Most overdue documents (small sample for the dashboard list).
         overdue_sample = []
@@ -129,11 +145,17 @@ class AnalyticsSummaryView(APIView):
                 "days_overdue": (today - d.next_review_date).days,
             })
 
+        # Risks with an owner (ownership coverage card).
+        risk_total = Risk.objects.exclude(status=Risk.Status.CLOSED).count()
+        risk_owned = Risk.objects.exclude(status=Risk.Status.CLOSED).filter(owner__isnull=False).count()
+
         return Response({
             "generated_at": today.isoformat(),
             "frameworks": frameworks,
+            "readiness": readiness,
             "controls": {
                 "total": total_controls,
+                "applicable": applicable_all,
                 "by_status": control_status,
                 "owned": owned_controls,
                 "unowned": total_controls - owned_controls,
@@ -146,7 +168,7 @@ class AnalyticsSummaryView(APIView):
                 "owned": owned_docs,
                 "unowned": total_docs - owned_docs,
             },
-            "risks": risks_block,
+            "risks": {**risks_block, "total_live": risk_total, "owned": risk_owned},
             "reviews": reviews,
             "review_timeline": timeline,
             "overdue_sample": overdue_sample,

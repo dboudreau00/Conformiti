@@ -75,22 +75,21 @@ def check_backend_wiring():
         if has_urls and f"{app}.urls" not in config_urls:
             err("wiring", f"{app}/urls.py exists but is not included in config/urls.py")
 
+    # Migrations ship with the release: every app that declares models must
+    # carry an initial migration, and no install path may run makemigrations
+    # (that would generate un-reviewed schema changes on the target machine).
     model_apps = apps_with_models()
-    for f in ["backend/entrypoint.sh", "install.sh", "install.ps1", "README.md", "INSTALL.md"]:
+    for app in model_apps:
+        if not os.path.exists(os.path.join(BACKEND, app, "migrations", "0001_initial.py")):
+            err("wiring", f"{app} declares models but ships no migrations/0001_initial.py")
+    for f in ["backend/entrypoint.sh", "install.sh", "install.ps1", "docker-compose.yml"]:
         path = os.path.join(ROOT, f)
         if not os.path.exists(path):
-            warn("wiring", f"{f} not found")
+            err("wiring", f"{f} not found")
             continue
-        text = read(path)
-        m = re.search(r"makemigrations([^\n&|;]*)", text)
-        if not m:
-            warn("wiring", f"{f}: no makemigrations line found")
-            continue
-        listed = m.group(1).split()
-        missing = [a for a in model_apps if a not in listed]
-        if missing:
-            err("wiring", f"{f}: makemigrations is missing app(s): {', '.join(missing)}")
-    print(f"  2. app wiring: {len(LOCAL_APPS)} apps, migrations lists checked in 5 files")
+        if re.search(r"^[^#\n]*\bmakemigrations\b(?!\s+--check)", read(path), re.M):
+            err("wiring", f"{f} runs makemigrations at install time — migrations must ship with the release")
+    print(f"  2. app wiring: {len(LOCAL_APPS)} apps, {len(model_apps)} migration sets, install paths never makemigrations")
 
 
 # ===========================================================================
@@ -224,6 +223,7 @@ def check_frontend_syntax():
 # ===========================================================================
 def check_app_wiring():
     app = read(os.path.join(FRONTEND, "App.jsx"))
+    nav = read(os.path.join(FRONTEND, "nav.js"))
     pages = {os.path.basename(p)[:-4] for p in glob.glob(os.path.join(FRONTEND, "pages", "*.jsx"))}
     imported = set(re.findall(r'import (\w+) from "\./pages/(?:\w+)\.jsx"', app))
     routed = set(re.findall(r"element=\{<(\w+)[\s/>]", app))
@@ -232,16 +232,21 @@ def check_app_wiring():
             err("app", f"pages/{page}.jsx exists but is not imported in App.jsx")
         elif page not in routed:
             err("app", f"{page} is imported but has no <Route> in App.jsx")
-    nav_tos = set(re.findall(r'to:\s*"(/[^"]*)"', app))
+    nav_paths = set(re.findall(r'path:\s*"(/[^"]*)"', nav))
     route_paths = set(re.findall(r'path="(/[^"]*)"', app))
-    titles_block = re.search(r"const TITLES = \{(.*?)\};", app, re.S)
-    title_keys = set(re.findall(r'"(/[^"]*)":', titles_block.group(1))) if titles_block else set()
-    for to in nav_tos:
+    lookup_block = re.search(r"const NAV_LOOKUP = \{(.*?)\};", nav, re.S)
+    lookup_keys = set(re.findall(r'"(/[^"]*)":', lookup_block.group(1))) if lookup_block else set()
+    for to in nav_paths:
         if to not in route_paths:
-            err("app", f"nav links to {to} but no Route defines it")
-        if to not in title_keys:
-            err("app", f"nav links to {to} but TITLES has no entry (topbar would fall back)")
-    print(f"  5. App.jsx wiring: {len(pages)} pages, {len(nav_tos)} nav links checked")
+            err("app", f"nav.js links to {to} but App.jsx defines no Route for it")
+        if to not in lookup_keys:
+            err("app", f"nav.js links to {to} but NAV_LOOKUP has no title/caption for it")
+    # every routed page is a PanelTransition page (shell animation contract)
+    for page in pages - {"Login"}:
+        src = read(os.path.join(FRONTEND, "pages", f"{page}.jsx"))
+        if "PanelTransition" not in src:
+            err("app", f"pages/{page}.jsx does not use <PanelTransition> as its root")
+    print(f"  5. App.jsx wiring: {len(pages)} pages, {len(nav_paths)} nav links checked")
 
 
 # ===========================================================================
@@ -265,7 +270,7 @@ def check_api_calls(files):
     prefixes = backend_prefixes()
     n = 0
     for f in files:
-        for m in re.finditer(r'api\.(?:get|post|patch|put|delete)\(\s*[`"]/([^/`"?]+)', read(f)):
+        for m in re.finditer(r'(?:api\.(?:get|post|patch|put|delete)|fetchAll|downloadFile)\(\s*[`"]/([^/`"?]+)', read(f)):
             n += 1
             seg = m.group(1)
             if seg not in prefixes:
@@ -291,17 +296,39 @@ def check_frontend_imports(files):
 # 8. CSS classes used in JSX exist in app.css
 # ===========================================================================
 def check_css(files):
-    css = read(os.path.join(FRONTEND, "styles", "app.css"))
-    defined = set(re.findall(r"\.([a-z][a-z0-9-]*)", css))
-    missing = {}
+    """The design system is token-driven (styles/index.css + Tailwind). Every
+    theme pack and accent pack must be defined, nothing may import the
+    retired app.css, and pages must not hard-code colours that would break
+    the light/dark packs."""
+    css_path = os.path.join(FRONTEND, "styles", "index.css")
+    if not os.path.exists(css_path):
+        err("css", "frontend/src/styles/index.css missing")
+        return
+    css = read(css_path)
+    for pack in ("ledger", "nimbus", "ledger-dark", "obsidian"):
+        if f'[data-theme="{pack}"]' not in css:
+            err("css", f"theme pack '{pack}' is not defined in styles/index.css")
+    for accent in ("pine", "azure", "violet", "ember"):
+        if f'[data-accent="{accent}"]' not in css:
+            err("css", f"accent pack '{accent}' is not defined in styles/index.css")
+    for token in ("--bg", "--surface", "--surface-2", "--line", "--ink", "--muted", "--faint", "--accent", "--accent-ink", "--success", "--warning", "--danger", "--info", "--grid"):
+        if f"{token}:" not in css:
+            err("css", f"token {token} is not defined in styles/index.css")
+    if os.path.exists(os.path.join(FRONTEND, "styles", "app.css")):
+        err("css", "retired styles/app.css is still present")
+    hard = {}
     for f in files:
-        for m in re.finditer(r'className=\{?["`]([^"`]+)', read(f)):
-            for cls in m.group(1).split():
-                if re.fullmatch(r"[a-z][a-z0-9-]+", cls) and cls not in defined:
-                    missing.setdefault(cls, os.path.basename(f))
-    for cls, where in sorted(missing.items()):
-        warn("css", f"class '{cls}' used in {where} but not defined in app.css")
-    print(f"  8. css usage: {len(defined)} classes defined, {len(missing)} unknown (warnings)")
+        src = read(f)
+        if "app.css" in src:
+            err("css", f"{os.path.relpath(f, ROOT)} still imports app.css")
+        if os.path.basename(f) in ("theme.js",):
+            continue  # swatch data, not styling
+        for m in re.finditer(r"#[0-9a-fA-F]{6}\b", src):
+            hard.setdefault(os.path.relpath(f, ROOT), 0)
+            hard[os.path.relpath(f, ROOT)] += 1
+    for where, n in sorted(hard.items()):
+        warn("css", f"{where} hard-codes {n} hex colour(s) — use theme tokens")
+    print(f"  8. theme system: 4 theme packs + 4 accent packs defined, {len(hard)} file(s) with hard-coded colours (warnings)")
 
 
 # ===========================================================================
@@ -335,7 +362,7 @@ def check_requirements():
             elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
                 mods = [node.module.split(".")[0]]
             for m in mods:
-                if m in std or m in LOCAL_APPS or m in ("config",):
+                if m in std or m in LOCAL_APPS or m in ("config", "testutils"):
                     continue
                 seen.add(m)
     for mod in sorted(seen):
@@ -365,7 +392,7 @@ def check_deploy():
         err("deploy", "backend/entrypoint.sh missing")
     settings = read(os.path.join(BACKEND, "config", "settings.py"))
     envex = read(os.path.join(ROOT, ".env.example"))
-    used = set(re.findall(r'os\.getenv\(\s*"([A-Z0-9_]+)"', settings))
+    used = set(re.findall(r'(?:os\.getenv|env_bool|env_int)\(\s*"([A-Z0-9_]+)"', settings))
     documented = set(re.findall(r"^#?\s*([A-Z0-9_]+)=", envex, re.M))
     for key in sorted(used - documented):
         warn("deploy", f"settings reads env '{key}' but .env.example doesn't mention it")
@@ -477,6 +504,24 @@ def check_notifications_wiring():
 
 
 
+def check_tests_and_ci():
+    """A shippable project carries its own proof: a test module per app and
+    a CI workflow that runs them."""
+    missing = [app for app in LOCAL_APPS
+               if not (os.path.exists(os.path.join(BACKEND, app, "tests.py"))
+                       or os.path.isdir(os.path.join(BACKEND, app, "tests")))]
+    for app in missing:
+        err("tests", f"{app} has no tests.py / tests/ package")
+    n_tests = 0
+    for path in glob.glob(os.path.join(BACKEND, "**", "tests.py"), recursive=True):
+        n_tests += len(re.findall(r"^\s+def test_", read(path), re.M))
+    if not os.path.exists(os.path.join(ROOT, ".github", "workflows", "ci.yml")):
+        err("tests", ".github/workflows/ci.yml missing")
+    if not os.path.exists(os.path.join(ROOT, "LICENSE")):
+        err("tests", "LICENSE file missing")
+    print(f" 15. tests + ci: {n_tests} test functions across {len(LOCAL_APPS) - len(missing)}/{len(LOCAL_APPS)} apps, workflow + LICENSE present")
+
+
 # ===========================================================================
 def main():
     print(f"Validating {ROOT}\n")
@@ -494,6 +539,7 @@ def main():
     check_importer()
     check_mfa()
     check_notifications_wiring()
+    check_tests_and_ci()
 
     print()
     for w in warnings:

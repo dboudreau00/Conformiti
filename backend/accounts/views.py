@@ -1,4 +1,4 @@
-"""User and role API views."""
+"""User and role API views, self-service MFA, and sign-out."""
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from rest_framework import viewsets
@@ -6,8 +6,13 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Role
+from .models import MfaDevice, Role
+from . import mfa as mfa_lib
 from .permissions import CanManageUsers
 from .serializers import (
     PasswordChangeSerializer,
@@ -24,6 +29,22 @@ class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
     permission_classes = [CanManageUsers]
+
+    def perform_update(self, serializer):
+        # Built-in roles are the documented baseline the demo, docs and access
+        # reviews refer to; their capability flags can't be silently rewritten
+        # through the API (create a custom role instead).
+        if serializer.instance.is_system:
+            changed = {
+                k for k, v in serializer.validated_data.items()
+                if k.startswith(("can_", "is_")) and getattr(serializer.instance, k) != v
+            }
+            if changed:
+                raise PermissionDenied(
+                    "Capability flags on built-in roles are fixed. Create a custom role "
+                    "with the flags you need and assign it instead."
+                )
+        serializer.save()
 
     def perform_destroy(self, instance):
         if instance.is_system:
@@ -93,6 +114,8 @@ class UserViewSet(viewsets.ModelViewSet):
         """Admin lockout recovery: remove a user's MFA enrollment so they can
         re-enroll (e.g. lost device with no backup codes left)."""
         target = self.get_object()
+        if target.is_superuser and not request.user.is_superuser:
+            raise PermissionDenied("Only a superuser can reset a superuser's MFA.")
         device = getattr(target, "mfa_device", None)
         if device:
             device.delete()
@@ -131,15 +154,33 @@ class UserViewSet(viewsets.ModelViewSet):
 
 
 # ==========================================================================
+# Sign-out: revoke the refresh token server-side
+# ==========================================================================
+class LogoutView(APIView):
+    """Blacklist the caller's refresh token so it cannot mint further access
+    tokens. The (short-lived) access token expires on its own. Idempotent: an
+    already-revoked or malformed token still returns 200 so the client can
+    always finish clearing its local state."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from audit.events import record_logout
+
+        refresh = request.data.get("refresh")
+        revoked = False
+        if refresh:
+            try:
+                RefreshToken(refresh).blacklist()
+                revoked = True
+            except TokenError:
+                revoked = False
+        record_logout(request)
+        return Response({"detail": "Signed out.", "refresh_revoked": revoked})
+
+
+# ==========================================================================
 # Multi-factor authentication (TOTP) — self-service enable/disable + admin reset
 # ==========================================================================
-from rest_framework.throttling import SimpleRateThrottle
-from rest_framework.views import APIView
-
-from .models import MfaDevice
-from . import mfa as mfa_lib
-
-
 class _MfaThrottle(SimpleRateThrottle):
     """Per-identity limit on the MFA setup/verify/disable endpoints.
 

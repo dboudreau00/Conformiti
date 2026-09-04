@@ -1,132 +1,244 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowUpRightIcon } from "lucide-react";
 import api from "../api/client.js";
-import Calendar from "../components/Calendar.jsx";
+import { TrendLine } from "../components/charts/TrendLine.jsx";
+import { ComplianceCalendar } from "../components/dashboard/ComplianceCalendar.jsx";
+import { ReviewQueue } from "../components/dashboard/ReviewQueue.jsx";
+import { PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
+import { Badge } from "../components/ui/Badge.jsx";
+import { Legend, Meter, SegmentBar } from "../components/ui/Meter.jsx";
+import { Empty, Label, Loading, Panel } from "../components/ui/Panel.jsx";
+import { StatCard } from "../components/ui/StatCard.jsx";
+import { cn } from "../utils/cn.js";
+import { CONTROL_STATUS } from "../utils/tone.js";
 
-function reviewBadge(days) {
-  if (days < 0) return <span className="badge overdue"><span className="dot" />overdue</span>;
-  if (days <= 14) return <span className="badge soon"><span className="dot" />{days}d</span>;
-  return <span className="badge ok"><span className="dot" />{days}d</span>;
+/** Everything the page loads up front. The calendar fetches its own feed for
+ * the visible month; mark-reviewed lives in the review queue. */
+const SOURCES = [
+  { key: "summary", label: "the analytics summary", url: "/analytics/summary/" },
+  { key: "frameworks", label: "frameworks", url: "/frameworks/" },
+  { key: "reviews", label: "upcoming reviews", url: "/documents/reviews/?days=120" },
+  { key: "documents", label: "the document count", url: "/documents/?page_size=1" },
+];
+
+const rows = (data) => (Array.isArray(data) ? data : data?.results || []);
+
+function joinNames(names) {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-export default function Dashboard() {
+function ArrowLink({ to, children, className }) {
+  return (
+    <Link to={to} className={cn("link mt-3", className)}>
+      {children}
+      <ArrowUpRightIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+    </Link>
+  );
+}
+
+const BIG = "tabular text-[30px] font-semibold leading-none tracking-[-0.03em] text-ink";
+
+export default function Dashboard({ me }) {
+  const [summary, setSummary] = useState(null);
   const [frameworks, setFrameworks] = useState([]);
   const [reviews, setReviews] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [docCount, setDocCount] = useState(0);
-  const [summary, setSummary] = useState(null);
+  const [docCount, setDocCount] = useState(null);
+  const [failed, setFailed] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [version, setVersion] = useState(0);
 
-  async function load() {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 10);
-    const end = new Date(today.getFullYear(), today.getMonth() + 4, 0).toISOString().slice(0, 10);
-    const [fw, rev, feed, docs, sum] = await Promise.all([
-      api.get("/frameworks/"),
-      api.get("/documents/reviews/?days=120"),
-      api.get(`/calendar/feed/?start=${start}&end=${end}`),
-      api.get("/documents/?page_size=1"),
-      api.get("/analytics/summary/").catch(() => null),
-    ]);
-    setFrameworks(fw.data.results || fw.data);
-    setReviews(rev.data);
-    setEvents(feed.data);
-    setDocCount(docs.data.count ?? (docs.data.results || docs.data).length);
-    setSummary(sum?.data || null);
+  // allSettled, not all: one failing panel must not blank the whole dashboard.
+  const load = useCallback(async () => {
+    const results = await Promise.allSettled(SOURCES.map((s) => api.get(s.url)));
+    const got = {};
+    const broken = [];
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") got[SOURCES[i].key] = r.value.data;
+      else broken.push(SOURCES[i].label);
+    });
+    if (got.summary !== undefined) setSummary(got.summary);
+    if (got.frameworks !== undefined) setFrameworks(rows(got.frameworks));
+    if (got.reviews !== undefined) setReviews(rows(got.reviews));
+    if (got.documents !== undefined) setDocCount(got.documents?.count ?? rows(got.documents).length);
+    setFailed(broken);
     setLoading(false);
-  }
-  useEffect(() => { load().catch(() => setLoading(false)); }, []);
+    setVersion((v) => v + 1);
+  }, []);
 
-  async function markReviewed(id) {
-    await api.post(`/documents/${id}/mark_reviewed/`);
+  useEffect(() => {
     load();
-  }
+  }, [load]);
 
-  const totalControls = frameworks.reduce((s, f) => s + (f.control_count || 0), 0);
-  const implemented = frameworks.reduce((s, f) => s + (f.implemented_count || 0), 0);
-  const overdue = reviews.filter((r) => r.days_until_review < 0).length;
-  const pct = totalControls ? Math.round((implemented / totalControls) * 100) : 0;
-
+  const readiness = summary?.readiness;
+  const controls = summary?.controls;
+  const docs = summary?.documents;
+  const revs = summary?.reviews;
   const risks = summary?.risks;
-  const cov = summary?.controls;
-  const covPct = cov && cov.total ? Math.round((cov.with_evidence / cov.total) * 100) : 0;
 
-  if (loading) return <div className="loading">Loading dashboard…</div>;
+  const fwList = frameworks.length ? frameworks : summary?.frameworks || [];
+  const fwNames = fwList.map((f) => f.name);
+
+  const statusSegments = useMemo(() => {
+    const by = controls?.by_status || {};
+    return Object.entries(CONTROL_STATUS).map(([key, meta]) => ({ label: meta.label, value: by[key] || 0, tone: meta.tone }));
+  }, [controls]);
+  const trendPoints = useMemo(() => (readiness?.trend || []).map((p) => ({ label: p.label, value: p.pct })), [readiness]);
+  const delta = readiness?.delta_pts;
+
+  const overdue = revs?.overdue ?? reviews.filter((r) => r.days_until_review < 0).length;
+  const due30 = revs?.due_30 ?? reviews.filter((r) => r.days_until_review >= 0 && r.days_until_review <= 30).length;
+  const docTotal = docs?.total ?? docCount ?? 0;
+  const docBy = docs?.by_status || {};
+
+  const controlTotal = controls?.total || 0;
+  const withEvidence = controls?.with_evidence || 0;
+  const evidencePct = controlTotal ? Math.round((withEvidence / controlTotal) * 100) : 0;
+
+  if (loading) {
+    return (
+      <PanelTransition>
+        <Loading>Loading dashboard…</Loading>
+      </PanelTransition>
+    );
+  }
 
   return (
-    <>
-      <div className="stat-row">
-        <div className="stat">
-          <div className="k">Frameworks</div>
-          <div className="v">{frameworks.length}</div>
-          <div className="sub">{frameworks.map((f) => f.name).join(" · ")}</div>
-        </div>
-        <div className="stat">
-          <div className="k">Controls implemented</div>
-          <div className="v">{implemented}<span style={{ fontSize: 16, color: "var(--muted)" }}>/{totalControls}</span></div>
-          <div className="progress" style={{ marginTop: 8 }}><span style={{ width: `${pct}%` }} /></div>
-        </div>
-        <div className="stat">
-          <div className="k">Documents</div>
-          <div className="v">{docCount}</div>
-          <div className="sub">Policies, procedures & evidence</div>
-        </div>
-        <div className="stat">
-          <div className="k">Reviews overdue</div>
-          <div className={"v" + (overdue ? " alert" : "")}>{overdue}</div>
-          <div className="sub">{reviews.length} due within 120 days</div>
-        </div>
-      </div>
-
-      {summary && (
-        <div className="stat-row" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <div className="stat">
-            <div className="k">Risk posture</div>
-            <div className="v">
-              {(risks?.open ?? 0)}
-              <span style={{ fontSize: 14, color: "var(--muted)", marginLeft: 6 }}>open</span>
-              {risks?.overdue > 0 && (
-                <span style={{ fontSize: 14, color: "var(--red)", marginLeft: 12 }}>{risks.overdue} overdue</span>
-              )}
+    <PanelTransition>
+      <Stack className="grid grid-cols-12 gap-4">
+        {failed.length ? (
+          <StackItem className="col-span-12">
+            <div className="notice notice-warn" role="status">
+              Couldn't load {joinNames(failed)} — showing what's available.
             </div>
-            <div className="sub">Open and mitigating risks in the register</div>
-          </div>
-          <div className="stat">
-            <div className="k">Evidence coverage</div>
-            <div className="v">
-              {covPct}%
-              <span style={{ fontSize: 14, color: "var(--muted)", marginLeft: 8 }}>
-                {cov?.with_evidence ?? 0}/{cov?.total ?? 0} controls
-              </span>
-            </div>
-            <div className="progress" style={{ marginTop: 8 }}><span style={{ width: `${covPct}%` }} /></div>
-            <div className="sub">{cov?.evidence_links ?? 0} control–document links</div>
-          </div>
-        </div>
-      )}
+          </StackItem>
+        ) : null}
 
-      <div className="grid-2">
-        <div className="card">
-          <div className="card-head"><h2>Compliance calendar</h2><span className="eyebrow">reviews · audits · tasks</span></div>
-          <div className="card-body"><Calendar events={events} /></div>
-        </div>
-
-        <div className="card">
-          <div className="card-head"><h2>Reviews coming up</h2><span className="eyebrow">next 120 days</span></div>
-          <div className="card-body">
-            {reviews.length === 0 && <div className="empty">Nothing due. You're all caught up.</div>}
-            {reviews.slice(0, 8).map((r) => (
-              <div className="review-item" key={r.id}>
-                {reviewBadge(r.days_until_review)}
-                <div className="meta">
-                  <div className="name">{r.name}</div>
-                  <div className="path">{r.folder_path}</div>
+        {/* Hero: the one number the workspace is judged on */}
+        <StackItem className="col-span-12 xl:col-span-5">
+          <Panel className="flex h-full flex-col justify-between p-5">
+            {readiness ? (
+              <>
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <Label>Overall readiness</Label>
+                    {delta != null ? (
+                      <Badge tone={delta > 0 ? "success" : delta < 0 ? "danger" : "muted"} mono>
+                        {delta > 0 ? `+${delta} pts this month` : delta < 0 ? `${delta} pts this month` : "No change this month"}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex items-end gap-2">
+                    <span className="tabular text-[64px] font-semibold leading-[0.85] tracking-[-0.045em] text-ink">{readiness.pct}</span>
+                    <span className="tabular pb-1 text-2xl font-medium text-faint">%</span>
+                  </div>
+                  <p className="mt-2 max-w-[34ch] text-[13px] leading-snug text-muted">
+                    {readiness.implemented} of {readiness.applicable} applicable controls implemented
+                    {fwNames.length ? ` across ${joinNames(fwNames)}` : ""}.
+                  </p>
                 </div>
-                <button className="btn small" onClick={() => markReviewed(r.id)}>Mark reviewed</button>
-              </div>
-            ))}
+
+                <div className="mt-5">
+                  {trendPoints.length >= 2 ? (
+                    <TrendLine points={trendPoints} ariaLabel={`Readiness trend over the last ${trendPoints.length} months`} />
+                  ) : (
+                    <div className="flex h-[96px] items-center justify-center rounded-lg border border-dashed border-line">
+                      <Label>History builds from daily snapshots</Label>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-5">
+                  <SegmentBar segments={statusSegments} total={controlTotal} height={10} ariaLabel={`Control status distribution across ${controlTotal} controls`} />
+                  <Legend items={statusSegments} className="mt-3" />
+                </div>
+              </>
+            ) : (
+              <Empty title="Readiness unavailable">The analytics summary could not be loaded.</Empty>
+            )}
+          </Panel>
+        </StackItem>
+
+        {/* Supporting metrics */}
+        <StackItem className="col-span-12 xl:col-span-7">
+          <div className="grid h-full grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatCard label="Frameworks" value={fwList.length} detail={fwNames.length ? fwNames.join(" · ") : "No frameworks loaded"}>
+              {fwList.length ? (
+                <ul className="mt-3 space-y-1.5">
+                  {fwList.map((f) => (
+                    <li key={f.key || f.name} className="flex items-center justify-between gap-2">
+                      <span className="truncate text-xs text-muted">{f.name}</span>
+                      <span className="tabular font-mono text-2xs text-faint">active</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </StatCard>
+
+            <StatCard
+              label="Documents"
+              value={docTotal}
+              detail={docs ? `${docBy.approved || 0} approved · ${docBy.in_review || 0} in review · ${docBy.expired || 0} expired` : "Policies, procedures and evidence"}
+            >
+              <ArrowLink to="/documents">Open folders</ArrowLink>
+            </StatCard>
+
+            <StatCard label="Reviews overdue" value={overdue} detail={`${due30} due in the next 30 days`} tone={overdue > 0 ? "danger" : undefined}>
+              <ArrowLink to="/documents">Resolve now</ArrowLink>
+            </StatCard>
+
+            <Panel className="p-4 sm:col-span-2">
+              <Label>Evidence coverage</Label>
+              {controls ? (
+                <>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className={BIG}>{evidencePct}%</span>
+                    <span className="tabular text-xs text-muted">
+                      {withEvidence}/{controlTotal} controls
+                    </span>
+                  </div>
+                  <Meter value={withEvidence} total={controlTotal} className="mt-3" delay={0.1} ariaLabel="Evidence coverage" />
+                  <p className="mt-2 text-xs text-muted">{controls.evidence_links || 0} control–document links.</p>
+                </>
+              ) : (
+                <p className="mt-2 text-xs text-muted">Unavailable until the analytics summary loads.</p>
+              )}
+            </Panel>
+
+            <Panel className="p-4">
+              <Label>Risk posture</Label>
+              {risks ? (
+                <>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className={BIG}>{risks.open || 0}</span>
+                    <span className="text-xs text-muted">open</span>
+                    {risks.overdue > 0 ? (
+                      <Badge tone="danger" className="ml-auto">
+                        {risks.overdue} overdue
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-xs leading-snug text-muted">
+                    {risks.mitigating || 0} mitigating · {risks.accepted || 0} accepted
+                  </p>
+                  <ArrowLink to="/risks">Risk register</ArrowLink>
+                </>
+              ) : (
+                <p className="mt-2 text-xs text-muted">Unavailable until the analytics summary loads.</p>
+              )}
+            </Panel>
           </div>
-        </div>
-      </div>
-    </>
+        </StackItem>
+
+        <StackItem className="col-span-12 2xl:col-span-8">
+          <ComplianceCalendar refreshKey={version} />
+        </StackItem>
+
+        <StackItem className="col-span-12 2xl:col-span-4">
+          <ReviewQueue me={me} reviews={reviews} onChanged={load} />
+        </StackItem>
+      </Stack>
+    </PanelTransition>
   );
 }

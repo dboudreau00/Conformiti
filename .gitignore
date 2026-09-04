@@ -6,13 +6,22 @@ venv/
 db.sqlite3
 backend/media/
 backend/staticfiles/
+backend/secrets/
+.pytest_cache/
+.coverage
+htmlcov/
 # Node
 node_modules/
 frontend/dist/
 # Env / secrets
 .env
+.env.*
+!.env.example
+secrets/
 # Local editor/tooling config
 .claude/
+.idea/
+.vscode/
 # OS
 .DS_Store
 Thumbs.db

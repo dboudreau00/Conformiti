@@ -1,6 +1,42 @@
+# Conformiti — full stack: PostgreSQL · Redis · API · Celery worker/beat · nginx.
+#
+#   docker compose up -d --build        # then open http://localhost:8080
+#
+# No .env is required: the defaults below are production-safe (DEBUG off, a
+# strong secret key generated on first boot and persisted in the `secrets`
+# volume, Redis-backed rate limits, API/admin reachable only through nginx).
+# Anything in .env overrides these defaults — see .env.example. The demo
+# dataset (login admin / DemoPass123!) is seeded unless SEED_DEMO_DATA=false.
+
+x-backend-env: &backend-env
+  DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+  DJANGO_SECRET_KEY_FILE: /app/secrets/django_secret_key
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+  # Plain HTTP on the LAN by default. Set BEHIND_TLS=true once a TLS-terminating
+  # proxy sits in front of nginx (secure cookies, HTTPS redirect).
+  BEHIND_TLS: ${BEHIND_TLS:-false}
+  # These must be set here, not left to .env: settings.py only selects
+  # PostgreSQL when POSTGRES_DB is non-empty, so relying on the (commented
+  # out) .env lines silently drops the whole stack back to a container-local
+  # SQLite file that is destroyed on every rebuild.
+  POSTGRES_DB: ${POSTGRES_DB:-compliance}
+  POSTGRES_USER: ${POSTGRES_USER:-compliance}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-compliance}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: 5432
+  CACHE_URL: redis://redis:6379/2
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  COMPLIANCE_TREE_ROOT: /data/compliance-data
+  SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-compliance}
       POSTGRES_USER: ${POSTGRES_USER:-compliance}
@@ -8,54 +44,88 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-compliance}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-compliance} -d ${POSTGRES_DB:-compliance}"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   backend:
     build: ./backend
-    env_file: .env
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
+      <<: *backend-env
     volumes:
       - media:/app/media
-      - tree:/app/../compliance-data
+      - static:/app/staticfiles
+      - secrets:/app/secrets
+      - tree:/data/compliance-data
     depends_on:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+    # Bound to the loopback interface: the API and admin are reachable from
+    # the host for debugging, but the LAN only sees nginx on :8080.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   worker:
     build: ./backend
+    restart: unless-stopped
     # Run Celery directly (bypass the seeding entrypoint the backend uses) so
-    # migrations/seeding happen once, in the backend container only.
-    entrypoint: ["celery", "-A", "config", "worker", "-B", "-l", "info"]
-    env_file: .env
+    # migrations/seeding happen once, in the backend container only. Waiting
+    # for the backend to be *healthy* guarantees the tables exist first.
+    entrypoint: ["celery", "-A", "config", "worker", "-B", "-l", "info", "--concurrency", "2"]
+    env_file:
+      - path: .env
+        required: false
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
+      <<: *backend-env
     volumes:
       - media:/app/media
+      - secrets:/app/secrets:ro
     depends_on:
-      - backend
-      - redis
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME --timeout 10 >/dev/null 2>&1 || exit 1"]
+      interval: 60s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    # nginx serves uploaded evidence and Django's collected static files
+    # directly from the shared volumes (see frontend/nginx.conf).
+    volumes:
+      - media:/usr/share/nginx/media:ro
+      - static:/usr/share/nginx/static:ro
     ports:
-      - "8080:80"
+      - "${CONFORMITI_PORT:-8080}:80"
 
 volumes:
   pgdata:
   media:
+  static:
+  secrets:
   tree:

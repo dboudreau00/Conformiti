@@ -1,285 +1,241 @@
+<div align="center">
 
 # Conformiti
 
+**Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, documents, risks and access reviews in one audit-ready workspace.**
 
-<img width="966" height="297" alt="827b2be6-ec29-41a2-ad11-de0a6ab2ed75" src="https://github.com/user-attachments/assets/e9352e41-8969-41ad-9f6a-159f0a84d360" />
+[![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/release-v0.2.0-2563d8.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)
+![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![Docker](https://img.shields.io/badge/Docker-one%20command-2496ED?logo=docker&logoColor=white)
 
+<img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard — readiness, evidence coverage, risk posture, compliance calendar" width="900">
 
-
-
-<img width="2216" height="1025" alt="Screenshot 2026-07-23 102705" src="https://github.com/user-attachments/assets/51db74b2-eaf6-4189-b3f8-880c3688cff5" />
-
-
-
-
-<details>
-<summary><b>📸 Click to expand Screenshots Gallery (15 screens)</b></summary>
-<br>
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/0b882dbb-945d-4d3b-aa93-0ab20401cbec" width="250" alt="App Icon / Logo" />
-</p>
-
-| View | View |
-| :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/24189986-e29b-4cb2-9e2e-0346e7964bbb" width="100%" alt="Screenshot 1"> | <img src="https://github.com/user-attachments/assets/1baa8882-5eb8-4be0-91a5-047ce9ce2709" width="100%" alt="Screenshot 2"> |
-| <img src="https://github.com/user-attachments/assets/4927ea81-03f3-4ec3-b5eb-474a190392a1" width="100%" alt="Screenshot 3"> | <img src="https://github.com/user-attachments/assets/449e4924-aea6-4199-a42e-9c174d8d00b2" width="100%" alt="Screenshot 4"> |
-| <img src="https://github.com/user-attachments/assets/b5f48291-75ca-42c2-b216-489375e7d5a2" width="100%" alt="Screenshot 5"> | <img src="https://github.com/user-attachments/assets/f98614dd-c126-4611-b22a-0e794b1bfd8d" width="100%" alt="Screenshot 6"> |
-| <img src="https://github.com/user-attachments/assets/030f6d62-b918-46f8-960b-b9614d59a0ea" width="100%" alt="Screenshot 7"> | <img src="https://github.com/user-attachments/assets/efd43619-62eb-4ab1-9db1-60d3348d03e6" width="100%" alt="Screenshot 8"> |
-| <img src="https://github.com/user-attachments/assets/791ba0df-fc13-4071-b7a4-78d4a4e315f8" width="100%" alt="Screenshot 9"> | <img src="https://github.com/user-attachments/assets/2fd24bfa-0210-4172-bd7d-a3eb87afa92d" width="100%" alt="Screenshot 10"> |
-| <img src="https://github.com/user-attachments/assets/07144dc7-a2c7-4d56-a007-0aa5197f8c58" width="100%" alt="Screenshot 11"> | <img src="https://github.com/user-attachments/assets/d2601e7f-eee3-4922-84be-a37500222227" width="100%" alt="Screenshot 12"> |
-| <img src="https://github.com/user-attachments/assets/b662f589-2840-4711-854c-0b4b7491cc09" width="100%" alt="Screenshot 13"> | <img src="https://github.com/user-attachments/assets/47c1a091-b72b-4912-867c-b2ff3da94abb" width="100%" alt="Screenshot 14"> |
-
-</details>
-
-
-
-A Vanta-style compliance management application for **SOC 2**, **ISO/IEC 27001:2022**
-and **PCI DSS v4.0.1**. It ships with the full control libraries for all three
-frameworks, an evidence folder tree segregated by control, role-based access to
-folders, document lifecycle management with review scheduling, automated review
-reminders over a **standard IMAP/POP3 + SMTP mailbox** or **Amazon SES**, an
-analytics dashboard, an account settings area, and a dashboard calendar.
-
-
-**For preloaded compliance data you must unzip compliance-data.zip in the root directory before building.**
-
-
-
-
-**Want a look before installing?** Open **[app-preview.html](app-preview.html)**
-in a browser — a clickable static preview of all 12 screens with the live
-theme switcher (no install needed).
-
-**For the full manual — installation paths, configuration reference, and
-every workflow in depth — see [USER_GUIDE.md](USER_GUIDE.md).**
-
-**New to the project? Start with [GETTING_STARTED.md](GETTING_STARTED.md)** —
-one walkthrough that installs, verifies, and tests every function (including
-the document-review email reminders). [INSTALL.md](INSTALL.md) has the
-one-command installer details.
-Security posture, the audit findings, and the production checklist are in
-**[SECURITY.md](SECURITY.md)**. Setup requirements live in
-**[PREREQUISITES.md](PREREQUISITES.md)**, and the automated readiness report is
-**[VALIDATION.md](VALIDATION.md)** — re-run it any time with
-`python3 tools/validate.py`. A design spec for the planned SharePoint
-integration (OAuth email login, session retention, email-scoped viewer
-links) is in **[docs/SHAREPOINT_INTEGRATION.md](docs/SHAREPOINT_INTEGRATION.md)**.
+</div>
 
 ---
 
-## What's inside
+## Sixty-second install
 
-| Requirement | Where it lives |
-|---|---|
-| SOC 2 / ISO 27001 / PCI DSS v4.0.1 control libraries | `backend/compliance/data/*.json` (217 controls) generated by `tools/build_seed_data.py` |
-| Neat folder tree segregated by control | `backend/compliance/folder_tree.py` + `manage.py generate_folder_tree` → `compliance-data/` |
-| SMTP alerts for documents coming up for review | `backend/notifications/tasks.py` (+ `send_review_reminders` command / Celery beat) |
-| Mail owners from a standard mailbox (IMAP/POP3 + SMTP) | `backend/notifications/mailbox.py`, toggled by `EMAIL_PROVIDER=mailbox` (+ `manage.py test_mailbox`) |
-| Amazon SES for mailing | `backend/notifications/ses.py`, toggled by `EMAIL_PROVIDER=ses` |
-| Analytics dashboard (readiness, status mix, review timeline, ownership) | `backend/analytics/` (`/api/analytics/summary`) + `frontend/src/pages/Analytics.jsx` |
-| Account settings sidebar (profile, password, role & access) | `frontend/src/pages/Account.jsx` + `/api/users/me` (PATCH) & `/api/users/change_password` |
-| User access audits (grid + CSV export) | `backend/governance/` (`/api/access-reviews`) + `frontend/src/pages/UserAudit.jsx` |
-| Meeting minutes with required yearly cadence | `governance.MeetingSeries` / `MeetingMinute` + `frontend/src/pages/Meetings.jsx` |
-| Champion groups (owned, inter-departmental) | `governance.ChampionGroup` / `GroupMember` + `frontend/src/pages/Groups.jsx` |
-| Optional Jira board tracking | `backend/integrations/` (stdlib REST client) + `frontend/src/pages/Jira.jsx` |
-| Immutable audit trail with in-app viewer — every create/update/delete captured server-side (actor, record, detail, IP); filterable, searchable, read-only, gated to admins/auditors/view-all | `audit.AuditLogMiddleware` + `/api/audit-log/`, `frontend/src/pages/AuditLog.jsx` |
-| Theming — Audit Ledger + Blazor themes, each with light & dark, plus a custom accent-colour picker (Account → Appearance), persisted per browser | `frontend/src/theme.js` engine + CSS token themes in `styles/app.css` |
-| Per-account notification bell — feed derived from each user's ownership, assignments, and role (documents, risks, events, meetings, manager digests, access reviews) | `backend/notifications/notifications.py` engine + `NotificationReceipt`, `/api/notifications/*`, `frontend/src/components/NotificationBell.jsx` |
-| Two-factor auth (TOTP, RFC 6238) with backup codes + admin reset | `accounts/mfa.py` (stdlib), `MfaDevice`/`MfaBackupCode`, `/api/auth/mfa/*`, Security tab in `Account.jsx`, two-step `Login.jsx` |
-| User management admin panel (create users, assign roles, activate/deactivate, reset passwords) with lockout guards | `accounts.UserViewSet` guards + `frontend/src/pages/Users.jsx` |
-| Risk register with remediation notes, CSV/XLSX import, CSV export | `governance.Risk`/`RiskNote` (`/api/risks`), stdlib importer `governance/risk_import.py`, `frontend/src/pages/Risks.jsx`, sample file `docs/sample-risk-import.csv` |
-| Evidence ↔ control mapping (cross-framework, with bulk attach) | `compliance.ControlEvidence` (`/api/control-evidence`) + evidence drawer in `Controls.jsx`, "satisfies" chips in `Documents.jsx` |
-| Calendar on the main dashboard | `frontend/src/components/Calendar.jsx` + `calendar_app` (`/api/calendar/feed`) |
-| Storage of common document forms | `documents.FormTemplate` + `/api/form-templates` |
-| Document renaming & managing | `documents.Document` + rename / move / new-version / mark-reviewed actions |
-| Assign owners | `owner` on controls, folders and documents |
-| Role-based access to specific folders | `accounts.Role` + `documents.FolderPermission` (inherited down the tree) |
+```bash
+git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
+docker compose up -d --build
+```
+
+Open **http://localhost:8080** and sign in as `admin` / `DemoPass123!`.
+That is the whole install: PostgreSQL, Redis, the API, the reminder worker and
+nginx come up with production-safe defaults (DEBUG off, a unique secret key
+generated on first boot, rate limits in Redis, the API reachable only through
+nginx). No `.env` is required.
+
+Prefer a script that also waits for the stack to report healthy and prints the
+URLs?
+
+```bash
+./install.sh --docker          # macOS / Linux / WSL
+.\install.ps1 -Docker          # Windows PowerShell
+```
+
+Before real use, retire the demo accounts:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+docker compose exec backend python manage.py remove_demo_data
+```
+
+Local development without Docker (SQLite, console email) is one command too:
+`./install.sh` or `.\install.ps1` — see [INSTALL.md](INSTALL.md).
+
+---
+
+## What you get
+
+<table>
+  <tr>
+    <td><img src="assets/screenshots/controls.png" alt="Control register" width="440"></td>
+    <td><img src="assets/screenshots/analytics.png" alt="Analytics" width="440"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>217 controls with inline status, owners and linked evidence</sub></td>
+    <td align="center"><sub>Framework readiness, status mix, review load and ownership coverage</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/documents.png" alt="Documents" width="440"></td>
+    <td><img src="assets/screenshots/risks.png" alt="Risk register" width="440"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Evidence tree segregated by control, review cadences, versions, grants</sub></td>
+    <td align="center"><sub>5×5 risk register with treatment, owners, notes and CSV/XLSX import</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/access-reviews.png" alt="Access reviews" width="440"></td>
+    <td><img src="assets/screenshots/audit-log.png" alt="Audit log" width="440"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Periodic user access reviews exported as audit evidence</sub></td>
+    <td align="center"><sub>Immutable trail of every change and sign-in</sub></td>
+  </tr>
+</table>
+
+### Frameworks and controls
+- **Three complete control libraries** — SOC 2 (61), ISO/IEC 27001:2022 (93),
+  PCI DSS v4.0.1 (63) — with a cross-framework crosswalk, per-control status
+  and owner, and a CSV export of the register.
+- **Evidence ↔ control mapping** in both directions: one policy can satisfy
+  `CC6.1`, `A.5.15` and `7.1` at once; bulk-attach during audit prep.
+- **Readiness that is measured, not drawn.** Daily snapshots feed the
+  dashboard trend and month-over-month delta.
+
+### Documents and evidence
+- **Folder tree segregated by control**, generated on disk and mirrored in the
+  app; per-folder grants (by role or user) inherited down the tree.
+- **Document lifecycle** — versions, rename, move, mark-reviewed; review
+  cadences from monthly to biennial.
+- **Review reminders** emailed to owners and the compliance team at
+  configurable lead times and once when overdue, deduplicated per window.
+
+### Governance
+- **Risk register** — likelihood × impact, treatment, due dates, Jira keys, a
+  note trail, CSV/XLSX import and CSV export.
+- **User access reviews** — snapshot every account into a decision grid, record
+  keep/modify/revoke, export the evidence.
+- **Meeting cadences** with required-per-year tracking, **champion groups**,
+  optional **Jira** board visibility.
+- **Immutable audit trail** — every change, sign-in, failed sign-in and
+  sign-out, with actor, record, changed fields and IP.
+
+### Security and access
+- **TOTP two-factor auth** with backup codes and admin reset; **rotating,
+  revocable refresh tokens**; per-client login throttles shared across workers.
+- **Five built-in roles** plus custom roles, folder-level grants, and an API
+  that enforces every rule the UI shows.
+- Security headers and CSP on by default; uploads size-capped, typed and
+  served as sandboxed attachments; SSRF-hardened Jira client.
+
+### Interface
+- Four theme packs (Audit Ledger, Nimbus, Ledger Dark, Obsidian), four accent
+  packs and a custom accent colour; keyboard-accessible throughout; a per-user
+  notification tray.
 
 ---
 
 ## Tech stack
 
-- **Backend:** Django 5 + Django REST Framework, JWT auth
-- **Async / scheduling:** Celery + Redis (review-reminder scan runs daily)
-- **Storage:** local filesystem by default, Amazon S3 optional (`django-storages`)
-- **Email:** a standard IMAP/POP3 + SMTP mailbox, Amazon SES (boto3), plain SMTP, or console
-- **Frontend:** React 18 + Vite
-- **Database:** SQLite locally, PostgreSQL in Docker/production
+| Layer | Technology |
+|---|---|
+| **Backend** | Python 3.11–3.13 · Django 5.2 LTS · Django REST Framework · SimpleJWT |
+| **Async** | Celery 5 + Redis (daily reminder scan, readiness snapshot, token pruning) |
+| **Frontend** | React 18 · React Router 7 · Vite 7 · Tailwind CSS · framer-motion · lucide |
+| **Database** | SQLite (local) · PostgreSQL 16 (Docker / production) |
+| **Storage** | Local filesystem · Amazon S3 optional |
+| **Email** | Console · SMTP · IMAP/POP3 mailbox account · Amazon SES |
+
+```mermaid
+flowchart LR
+    U[Browser · React SPA] -->|/api, /admin, /media| N[nginx]
+    N --> A[Django REST API]
+    A --> P[(PostgreSQL)]
+    A --> R[(Redis · cache + broker)]
+    W[Celery worker + beat] --> R
+    W -->|review reminders| M[Email]
+    A -->|optional| S[(S3)]
+    A -->|optional| J[Jira Cloud]
+```
 
 ---
 
-## Quickstart — Docker (everything at once)
+## Configuration
+
+Everything is environment-driven. The compose file carries production-safe
+defaults; `.env` overrides them. Every key is documented in
+[`.env.example`](.env.example). The ones that matter most:
+
+| Setting | Purpose |
+|---|---|
+| `DJANGO_DEBUG` | `false` in Docker by default; `true` for the local dev path |
+| `DJANGO_SECRET_KEY` / `DJANGO_SECRET_KEY_FILE` | A strong key, or a path where one is generated and persisted (compose does this) |
+| `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS` | Your real hostname(s) once you leave localhost |
+| `BEHIND_TLS` | `true` once a TLS-terminating proxy sits in front of nginx (secure cookies, HTTPS redirect) |
+| `EMAIL_PROVIDER` | `console` · `smtp` · `mailbox` · `ses` |
+| `SEED_DEMO_DATA` | `false` to boot without the demo dataset |
+| `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` | Create your first account on first boot |
+| `MAX_UPLOAD_MB`, `PASSWORD_MIN_LENGTH`, `THROTTLE_LOGIN`, `REVIEW_SCAN_HOUR` | Tuning knobs |
+
+Full reference: [PREREQUISITES.md](PREREQUISITES.md), [INSTALL.md](INSTALL.md), [USER_GUIDE.md](USER_GUIDE.md).
+
+---
+
+## Roles
+
+| Role | Manage users | Manage frameworks | Manage documents | Manage folders | View all | Auditor |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Administrator | ✓ | ✓ | ✓ | ✓ | ✓ | – |
+| Compliance Manager | – | ✓ | ✓ | ✓ | ✓ | – |
+| Control Owner | – | – | ✓ (granted folders) | – | – | – |
+| Auditor | – | – | – | – | – (granted folders, read-only) | ✓ |
+| Viewer | – | – | – | – | – | – |
+
+Folder grants (`view` / `edit` / `manage`, by role or user) are inherited by
+every subfolder. Effective access is resolved in `Folder.effective_access()`.
+Demo accounts: `admin`, `mia`, `owen`, `aria`, `val` — all `DemoPass123!`.
+
+---
+
+## Quality gates
+
+Everything in the badge row runs on every push:
 
 ```bash
-cp .env.example .env            # edit if you like; defaults work
-# point the DB at Postgres for the compose stack:
-echo "POSTGRES_DB=compliance"   >> .env
-echo "POSTGRES_USER=compliance" >> .env
-echo "POSTGRES_PASSWORD=compliance" >> .env
-
-docker compose up --build
+./install.sh --test        # or: .\install.ps1 -Test
 ```
 
-Then open:
+| Gate | What it proves |
+|---|---|
+| `tools/validate.py` — 15 static checks | app/route wiring, API contract between SPA and backend, shipped migrations, theme packs, tests + CI present |
+| `manage.py test` — **80 tests** | auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, audit trail, reminders, health, demo retirement, boot guard |
+| Backend matrix | Python 3.11 / 3.12 / 3.13 on SQLite, plus PostgreSQL 16 |
+| Frontend | production build + `npm audit --audit-level=high` |
+| Docker | both images build; the API image boots and answers `/api/health/` |
 
-- **App:** http://localhost:8080  (log in as `admin` / `DemoPass123!`)
-- **API:** http://localhost:8000/api/
-- **Django admin:** http://localhost:8000/admin/
+The review that produced this release — findings, severities, fixes and what
+was deliberately left alone — is in [REVIEW.md](REVIEW.md). Operator-facing
+posture and residual risks: [SECURITY.md](SECURITY.md).
 
-The backend container automatically migrates, seeds all three frameworks, builds
-the folder tree, and loads demo data on first boot.
-
-## Quickstart — manual (no Docker)
-
-**Backend**
-```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp ../.env.example ../.env                             # console email + SQLite
-
-python manage.py makemigrations accounts compliance documents calendar_app notifications audit governance integrations
-python manage.py migrate
-python manage.py seed_frameworks --with-folders        # controls + app folders + roles
-python manage.py bootstrap_demo                        # demo users, docs, events
-python manage.py generate_folder_tree                  # physical evidence tree on disk
-python manage.py runserver
-```
-
-**Frontend** (second terminal)
-```bash
-cd frontend
-npm install
-npm run dev            # http://localhost:5173  (proxies /api to :8000)
-```
-
-Log in as `admin` / `DemoPass123!`.
+> **Control text and copyright:** control IDs and short titles are functional
+> identifiers; the `objective` fields are brief original paraphrases, not the
+> normative text of the standards. Only paste official control text into the
+> app if your organisation holds a licence for the source documents.
 
 ---
 
-## Role-based access control
-
-Two layers work together:
-
-1. **Role capabilities** (`accounts.Role`) — platform-wide flags: manage users,
-   manage frameworks, manage documents, manage folders, view-all, auditor.
-   Five roles are seeded: **Administrator, Compliance Manager, Control Owner,
-   Auditor, Viewer**.
-2. **Folder permissions** (`documents.FolderPermission`) — grant a *role* or a
-   *specific user* `view` / `edit` / `manage` on a folder. Grants are inherited
-   by every subfolder, so giving "Control Owner → edit" on `CC6` cascades to all
-   CC6 controls. Document access is derived from its folder; owners can always
-   edit their own documents; auditors are capped at read-only.
-
-Effective access is computed in `Folder.effective_access(user)`.
-
-## Email & review reminders
-
-Set the provider in `.env`:
+## Project structure
 
 ```
-EMAIL_PROVIDER=console   # dev: prints emails to the log
-EMAIL_PROVIDER=smtp      # any SMTP server (set EMAIL_HOST etc.)
-EMAIL_PROVIDER=mailbox   # a standard inbox: IMAP/POP3 connects, SMTP sends
-EMAIL_PROVIDER=ses       # Amazon SES (set AWS_SES_REGION + credentials)
-REVIEW_ALERT_LEAD_DAYS=30,14,7,1
-```
-
-With `EMAIL_PROVIDER=mailbox`, reminders go out through an ordinary mail account
-(`backend/notifications/mailbox.py`). IMAP or POP3 is used to connect to the
-mailbox — verifying the credentials and, for IMAP, filing a copy of each reminder
-in the **Sent** folder — while **SMTP** performs the actual send (IMAP/POP3 cannot
-send mail). The SMTP host/username default to the mailbox values, so a single
-provider often needs only the four `MAILBOX_*` lines in `.env.example`. Verify a
-mailbox and send yourself a test with `python manage.py test_mailbox --to you@x.com`.
-
-Each document has a review cadence (monthly … biennial). `next_review_date` is
-computed from `last_reviewed + cadence`. A daily scan
-(`notifications.tasks.run_review_scan`, wrapped by the Celery task
-`scan_document_reviews`) emails the document owner and the compliance team when
-a lead threshold is first crossed, and again once when a document goes overdue —
-never duplicating a reminder.
-
-Run the scan on a schedule two ways:
-
-- **Celery beat** (Docker `worker` service runs this automatically), or
-- **cron:** `python manage.py send_review_reminders` (add `--dry-run` to preview).
-
-## The folder tree
-
-`manage.py generate_folder_tree` writes a filesystem tree to `compliance-data/`:
-
-```
-compliance-data/
-  SOC2/CC6 - Logical and Physical Access Controls/CC6.1 - Access security/
-    _control.md   policies/   procedures/   evidence/   forms/
-  ISO27001/...
-  PCI-DSS-v4.0.1/...
-```
-
-Point it anywhere with `--root`, or set `COMPLIANCE_TREE_ROOT` (e.g. an
-S3-synced directory) to keep a browsable on-disk mirror alongside the app.
-
----
-
-## API surface (selected)
-
-```
-POST /api/auth/token/                 # obtain JWT
-GET  /api/users/me/                   # current user + capabilities
-PATCH /api/users/me/                  # update own profile (name/email/job title)
-POST /api/users/change_password/      # change own password
-GET  /api/analytics/summary/          # dashboard metrics (readiness, status, reviews)
-GET  /api/frameworks/                 # frameworks with control counts
-GET  /api/frameworks/{key}/controls/  # controls for a framework
-GET  /api/controls/  PATCH /api/controls/{id}/   # status / owner
-GET  /api/crosswalk/                  # cross-framework control mappings
-GET  /api/control-evidence/?control=  # evidence linked to a control (folder-scoped)
-POST /api/control-evidence/bulk/      # attach several documents to one control
-GET  /api/control-evidence/choices/   # pick-lists: visible documents + control catalog
-GET  /api/folders/tree/               # access-filtered folder tree
-GET  /api/folders/{id}/permissions/   # folder access grants
-POST /api/folder-permissions/         # grant role/user access to a folder
-GET  /api/documents/                  # documents (folder-scoped by access)
-POST /api/documents/{id}/rename/      # rename
-POST /api/documents/{id}/move/        # move to another folder
-POST /api/documents/{id}/new_version/ # upload a new version (archives the old)
-POST /api/documents/{id}/mark_reviewed/
-GET  /api/documents/reviews/?days=90  # upcoming / overdue reviews
-GET  /api/calendar/feed/?start=&end=  # events + synthesized review deadlines
-GET  /api/form-templates/             # shared blank forms library
-POST /api/access-reviews/             # snapshot all users into an audit grid
-PATCH /api/access-review-items/{id}/  # record keep / modify / revoke decisions
-GET  /api/access-reviews/{id}/export/ # download the audit grid as CSV
-GET  /api/meeting-series/             # meeting cadences w/ held-vs-required status
-POST /api/meeting-minutes/            # record minutes (optional file attachment)
-GET  /api/champion-groups/            # owned inter-departmental champion groups
-GET  /api/risks/  PATCH /api/risks/{id}/         # risk register (status/owner/plan)
-GET  /api/risks/summary/              # open / overdue / rating counts
-POST /api/risks/import/               # ingest a register from .csv or .xlsx
-GET  /api/risks/export/               # download the register as CSV
-POST /api/risk-notes/                 # add a remediation progress note
-GET  /api/integrations/jira/config/   # Jira connection (managers; token write-only)
-GET  /api/integrations/jira/boards/{id}/issues/  # issues from a tracked board
+conformiti/
+├── backend/            Django project (config/) + apps: accounts, compliance,
+│                       documents, governance, notifications, audit, analytics,
+│                       calendar_app, integrations · testutils.py · Dockerfile
+├── frontend/           React SPA (src/pages, src/components, src/styles) · Dockerfile · nginx.conf
+├── compliance-data/    generated evidence folder tree (segregated by control)
+├── docs/               architecture notes, sample risk import
+├── tools/validate.py   dependency-free static validator
+├── .github/workflows   CI
+├── docker-compose.yml  db · redis · backend · worker · frontend
+└── install.sh / install.ps1
 ```
 
 ---
 
-## A note on control text & copyright
+## Roadmap
 
-Control IDs and short titles are functional identifiers. The `objective` fields
-are brief, original-wording paraphrases — **not** the normative text of the
-standards. ISO/IEC 27001 and PCI DSS are copyrighted; only paste official control
-text into the app if your organisation holds a licence for the source documents.
+Highlights from [ROADMAP.md](ROADMAP.md): cookie-based sessions, SSO
+(OIDC/SAML) and WebAuthn, automated evidence collection from cloud/SaaS
+integrations, per-control readiness scoring, evidence virus scanning,
+Slack/Teams notifications, and end-to-end browser tests in CI.
 
-## Roadmap (what a production premium rollout adds next)
+## License
 
-- Automated evidence collection via cloud/SaaS integrations (AWS, GitHub, Okta, …)
-- Auditor workspace with read-only evidence export and a Type II audit window
-- Per-control readiness scoring (evidence mapping shipped — see `/api/control-evidence`)
-- Notifications beyond email (Slack/Teams), digests, and escalation
-- SSO/SAML, granular field-level audit history, and data-retention policies
-- Full test suite and CI, background-job monitoring, and S3 lifecycle rules
-
-https://dboudreau.dev
+[MIT](LICENSE) © 2026 elemosecurity

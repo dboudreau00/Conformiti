@@ -48,13 +48,18 @@ class NotificationMarkReadView(APIView):
 
 
 class NotificationDismissView(APIView):
-    """Dismiss a single notification by key so it stops appearing."""
+    """Dismiss a single notification by key so it stops appearing. The key
+    must belong to the caller's *current* feed — otherwise a client could
+    grow the receipt table without bound with made-up keys."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        key = (request.data.get("key") or "").strip()
+        key = str(request.data.get("key") or "").strip()
         if not key:
             return Response({"detail": "A notification key is required."}, status=400)
+        live = {i["key"] for i in build(request.user)}
+        if key not in live:
+            return Response({"detail": "That notification is not in your feed."}, status=404)
         NotificationReceipt.objects.update_or_create(
             user=request.user, key=key, defaults={"dismissed_at": timezone.now()},
         )

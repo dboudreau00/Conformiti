@@ -1,6 +1,5 @@
 """Serializers for access reviews, meeting cadence, and champion groups."""
 import math
-from datetime import date
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -78,6 +77,10 @@ class AccessReviewSerializer(serializers.ModelSerializer):
 class MeetingMinuteSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
 
+    def validate_file(self, value):
+        from documents.uploads import validate_upload
+        return validate_upload(value)
+
     class Meta:
         model = MeetingMinute
         fields = [
@@ -101,14 +104,14 @@ class MeetingSeriesSerializer(serializers.ModelSerializer):
         ]
 
     def _held(self, obj):
-        return obj.minutes.filter(date__year=date.today().year).count()
+        return obj.minutes.filter(date__year=timezone.localdate().year).count()
 
     def get_held_this_year(self, obj):
         return self._held(obj)
 
     def get_expected_to_date(self, obj):
         """How many occurrences should have happened by now, pro-rated by month."""
-        today = date.today()
+        today = timezone.localdate()
         return min(obj.required_per_year, math.ceil(obj.required_per_year * today.month / 12))
 
     def get_cadence_status(self, obj):

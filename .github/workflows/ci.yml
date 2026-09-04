@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Static validator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/validate.py
+
+  backend:
+    name: Backend tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    env:
+      DJANGO_DEBUG: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - name: Django system check
+        run: python manage.py check
+        working-directory: backend
+      - name: Shipped migrations are complete
+        run: python manage.py makemigrations --check --dry-run
+        working-directory: backend
+      - name: Test suite
+        run: python manage.py test --noinput -v 2
+        working-directory: backend
+
+  backend-postgres:
+    name: Backend tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: compliance
+          POSTGRES_USER: compliance
+          POSTGRES_PASSWORD: compliance
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U compliance"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DJANGO_DEBUG: "true"
+      POSTGRES_DB: compliance
+      POSTGRES_USER: compliance
+      POSTGRES_PASSWORD: compliance
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - run: python manage.py test --noinput
+        working-directory: backend
+
+  frontend:
+    name: Frontend build + audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-fund --no-audit
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm audit --audit-level=high
+        working-directory: frontend
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config -q
+      - run: docker build -t conformiti-backend:ci ./backend
+      - run: docker build -t conformiti-frontend:ci ./frontend
+      - name: Backend image boots and answers /api/health/ (SQLite, no services)
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e DJANGO_DEBUG=false -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
+            -e BEHIND_TLS=false -e SEED_DEMO_DATA=true -e EMAIL_PROVIDER=console \
+            conformiti-backend:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/api/health/; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs api
+          exit 1

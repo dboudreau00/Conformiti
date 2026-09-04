@@ -12,4 +12,16 @@ export default defineConfig({
       "/media": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
+  build: {
+    // Keep the long-lived vendor code in its own cacheable chunk.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          motion: ["framer-motion"],
+          icons: ["lucide-react"],
+        },
+      },
+    },
+  },
 });

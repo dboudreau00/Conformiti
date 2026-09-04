@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   CONFORMITI THEME SYSTEM
+   Every colour in the product resolves to one of these tokens, expressed as
+   raw RGB triples so Tailwind can apply opacity (e.g. bg-accent/12).
+   Theme pack  -> data-theme  on <html>   (ledger · nimbus · ledger-dark · obsidian)
+   Accent pack -> data-accent on <html>   (pine · azure · violet · ember · custom)
+   Both are applied before first paint by /theme-init.js and managed at
+   runtime by src/theme.js.
+   ========================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --shadow-panel: 0 1px 2px rgb(15 18 22 / 0.04), 0 8px 24px -12px rgb(15 18 22 / 0.12);
+  --shadow-pop: 0 12px 40px -12px rgb(15 18 22 / 0.28);
+  color-scheme: dark;
+  /* Fallback tokens (Ledger Dark + Azure) so the first paint is never unstyled */
+  --bg: 12 14 18;
+  --surface: 21 24 30;
+  --surface-2: 26 30 37;
+  --line: 39 44 53;
+  --line-strong: 55 62 74;
+  --ink: 237 239 243;
+  --muted: 154 161 174;
+  --faint: 111 119 133;
+  --success: 71 190 132;
+  --warning: 226 165 62;
+  --danger: 240 108 105;
+  --info: 108 160 245;
+  --grid: 32 36 44;
+  --accent: 92 150 250;
+  --accent-ink: 6 14 30;
+}
+/* ---------- Pack: Ledger (light, warm paper) ---------- */
+[data-theme="ledger"] {
+  color-scheme: light;
+  --bg: 246 245 241;
+  --surface: 255 255 255;
+  --surface-2: 250 249 246;
+  --line: 227 224 216;
+  --line-strong: 209 205 194;
+  --ink: 26 27 29;
+  --muted: 105 106 110;
+  --faint: 150 150 154;
+  --success: 21 128 61;
+  --warning: 180 108 12;
+  --danger: 190 46 46;
+  --info: 29 105 189;
+  --grid: 233 230 223;
+  --shadow-panel: 0 1px 2px rgb(35 30 22 / 0.05), 0 10px 26px -16px rgb(35 30 22 / 0.16);
+}
+/* ---------- Pack: Nimbus (light, cool slate) ---------- */
+[data-theme="nimbus"] {
+  color-scheme: light;
+  --bg: 243 246 250;
+  --surface: 255 255 255;
+  --surface-2: 248 250 253;
+  --line: 224 231 240;
+  --line-strong: 202 212 226;
+  --ink: 15 23 36;
+  --muted: 92 105 125;
+  --faint: 141 152 170;
+  --success: 15 122 88;
+  --warning: 176 104 10;
+  --danger: 198 44 58;
+  --info: 30 100 200;
+  --grid: 231 237 245;
+  --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.05), 0 12px 28px -18px rgb(15 23 42 / 0.22);
+}
+/* ---------- Pack: Ledger Dark (deep ink, muted) ---------- */
+[data-theme="ledger-dark"] {
+  color-scheme: dark;
+  --bg: 12 14 18;
+  --surface: 21 24 30;
+  --surface-2: 26 30 37;
+  --line: 39 44 53;
+  --line-strong: 55 62 74;
+  --ink: 237 239 243;
+  --muted: 154 161 174;
+  --faint: 111 119 133;
+  --success: 71 190 132;
+  --warning: 226 165 62;
+  --danger: 240 108 105;
+  --info: 108 160 245;
+  --grid: 32 36 44;
+  --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 16px 34px -22px rgb(0 0 0 / 0.9);
+}
+/* ---------- Pack: Obsidian (near-black, high contrast) ---------- */
+[data-theme="obsidian"] {
+  color-scheme: dark;
+  --bg: 6 7 9;
+  --surface: 13 15 19;
+  --surface-2: 17 20 25;
+  --line: 31 36 44;
+  --line-strong: 48 55 66;
+  --ink: 244 246 249;
+  --muted: 149 158 172;
+  --faint: 103 112 127;
+  --success: 62 197 133;
+  --warning: 235 172 58;
+  --danger: 251 113 105;
+  --info: 96 156 250;
+  --grid: 24 28 35;
+  --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 20px 44px -26px rgb(0 0 0 / 1);
+}
+/* ---------- Accent packs ---------- */
+[data-accent="pine"] { --accent: 17 110 96; --accent-ink: 255 255 255; }
+[data-accent="azure"] { --accent: 37 99 216; --accent-ink: 255 255 255; }
+[data-accent="violet"] { --accent: 118 74 226; --accent-ink: 255 255 255; }
+[data-accent="ember"] { --accent: 194 61 52; --accent-ink: 255 255 255; }
+/* Dark packs get brighter accents so they stay legible on near-black */
+[data-theme="ledger-dark"][data-accent="pine"],
+[data-theme="obsidian"][data-accent="pine"] { --accent: 45 176 148; --accent-ink: 6 22 19; }
+[data-theme="ledger-dark"][data-accent="azure"],
+[data-theme="obsidian"][data-accent="azure"] { --accent: 92 150 250; --accent-ink: 6 14 30; }
+[data-theme="ledger-dark"][data-accent="violet"],
+[data-theme="obsidian"][data-accent="violet"] { --accent: 155 124 250; --accent-ink: 14 8 32; }
+[data-theme="ledger-dark"][data-accent="ember"],
+[data-theme="obsidian"][data-accent="ember"] { --accent: 244 112 96; --accent-ink: 32 9 6; }
+/* data-accent="custom": --accent / --accent-ink are set inline by theme.js */
+
+html, body, #root { height: 100%; }
+body {
+  background-color: rgb(var(--bg));
+  color: rgb(var(--ink));
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 240ms var(--ease-out), color 240ms var(--ease-out);
+}
+/* Token-aware focus ring for every interactive element */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Slim, theme-aware scrollbars */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--line-strong)) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--line-strong));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.font-mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+/* Numeric columns should never jitter as values animate */
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Native form controls, themed once so every page's inputs match. */
+@layer components {
+  .input {
+    @apply h-9 w-full rounded-lg border border-line bg-surface px-3 text-[13px] text-ink placeholder:text-faint;
+    @apply transition-colors duration-150 ease-out focus:border-accent focus:outline-none disabled:opacity-60;
+  }
+  .input-sm { @apply h-8 text-xs px-2.5; }
+  select.input { @apply pr-8 appearance-none bg-no-repeat; background-position: right 0.6rem center; background-size: 12px 12px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa1ae' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+  textarea.input { @apply h-auto py-2 leading-snug; }
+  .field-label { @apply mb-1.5 block font-mono text-2xs uppercase tracking-label text-faint; }
+  .table-head { @apply font-mono text-2xs uppercase tracking-label text-faint; }
+  /* Feedback banners */
+  .notice { @apply rounded-lg border px-3 py-2 text-[13px]; }
+  .notice-ok { @apply border-success/25 bg-success/10 text-success; }
+  .notice-err { @apply border-danger/25 bg-danger/10 text-danger; }
+  .notice-warn { @apply border-warning/30 bg-warning/[0.12] text-warning; }
+  .link { @apply inline-flex items-center gap-1 text-xs font-medium text-accent transition-opacity duration-150 ease-out hover:opacity-80; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

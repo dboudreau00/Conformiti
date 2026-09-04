@@ -52,12 +52,14 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         self._users()
         self._permissions()
+        self._control_program()
         self._documents()
         self._evidence()
         self._risks()
         self._events()
         self._governance()
         self._audit()
+        self._history()
         self.stdout.write(self.style.SUCCESS(
             "Demo data ready. Log in as admin / DemoPass123!"
         ))
@@ -233,9 +235,10 @@ class Command(BaseCommand):
             ("ISO 27001 surveillance audit", 120, CalendarEvent.Type.AUDIT),
             ("Quarterly access review", 14, CalendarEvent.Type.TASK),
         ]:
+            # Keyed by title only: keying on the (moving) date created a new
+            # copy every time the seeder ran on a later day.
             CalendarEvent.objects.get_or_create(
-                title=title, date=today + timedelta(days=offset),
-                defaults=dict(event_type=etype),
+                title=title, defaults=dict(event_type=etype, date=today + timedelta(days=offset)),
             )
         self.stdout.write(f"  Calendar events: {CalendarEvent.objects.count()}")
 
@@ -302,6 +305,66 @@ class Command(BaseCommand):
             GroupMember.objects.get_or_create(
                 group=champs, user=val, defaults={"department": "Operations"},
             )
+
+    def _control_program(self):
+        """Give the control libraries a plausible programme state — a spread of
+        statuses and owners — so readiness, coverage and the sidebar badges
+        have something to show. Applied only while every control is still
+        untouched, so it never overwrites an operator's real statuses."""
+        if Control.objects.exclude(status=Control.Status.NOT_STARTED).exists() \
+                or Control.objects.filter(owner__isnull=False).exists():
+            self.stdout.write("  Control programme: already set, left alone")
+            return
+        owners = {
+            0: User.objects.filter(username="owen").first(),
+            2: User.objects.filter(username="mia").first(),
+            4: User.objects.filter(username="aria").first(),
+        }
+        implemented, in_progress, na = {0, 3, 6, 9, 12, 15, 18}, {1, 5, 10, 14, 20}, {24}
+        touched = 0
+        for i, control in enumerate(Control.objects.order_by("category__framework__key", "category__order", "control_id")):
+            r = i % 25
+            if r in implemented:
+                control.status = Control.Status.IMPLEMENTED
+            elif r in in_progress:
+                control.status = Control.Status.IN_PROGRESS
+            elif r in na:
+                control.status = Control.Status.NOT_APPLICABLE
+            control.owner = owners.get(i % 5) if (i % 5) in owners and i % 3 != 1 else None
+            control.save(update_fields=["status", "owner"])
+            touched += 1
+        self.stdout.write(f"  Control programme: statuses/owners set on {touched} controls")
+
+    def _history(self):
+        """Back-fill five monthly readiness points so the dashboard trend has a
+        shape on day one, then record today. Demo-only: remove_demo_data drops
+        every snapshot dated before the day it runs."""
+        from dateutil.relativedelta import relativedelta
+
+        from analytics.models import ReadinessSnapshot
+        from analytics.snapshots import record_today
+
+        today = timezone.localdate()
+        if ReadinessSnapshot.objects.filter(date__lt=today).exists():
+            record_today(force=True)
+            return
+        now = record_today(force=True)
+        if now is None:
+            return
+        made = 0
+        for k in range(5, 0, -1):
+            day = (today.replace(day=1) - relativedelta(months=k)).replace(day=15)
+            factor = 0.55 + 0.09 * (5 - k)
+            ReadinessSnapshot.objects.get_or_create(date=day, defaults=dict(
+                total_controls=now.total_controls, applicable=now.applicable,
+                implemented=int(round(now.implemented * factor)),
+                in_progress=int(round(now.in_progress * (1.25 - 0.05 * (5 - k)))),
+                with_evidence=int(round(now.with_evidence * factor)),
+                evidence_links=int(round(now.evidence_links * factor)),
+                documents_overdue=0, risks_open=now.risks_open,
+            ))
+            made += 1
+        self.stdout.write(f"  Readiness history: {made} monthly points + today ({now.pct}%)")
 
     def _audit(self):
         """A short, plausible audit history so the viewer isn't empty on first

@@ -1,0 +1,108 @@
+CONFORMITI — MARKET POSITION
+=====================================
+
+## The platform we've built
+
+A self-hosted compliance management system with:
+  • 217 controls (SOC 2, ISO 27001, PCI DSS v4)
+  • Evidence folder hierarchy with granular access control
+  • Document review scheduling + reminders (email or SES)
+  • Access audit snapshots (who has what access)
+  • Meeting cadence tracking + sign-off
+  • Jira board integration
+  • Analytics dashboard (control + document status)
+  • Comprehensive audit log
+
+Target: Companies 50–500 people that need compliance for customer contracts,
+but don't want to pay Vanta's $5K+/month pricing or don't want to share their
+infrastructure data with a SaaS.
+
+## Where we compete with Vanta
+
+✓ Cleaner, simpler UI (no clutter)
+✓ Better access control (folder-level, not just roles)
+✓ Review scheduling (unique feature, auditors love it)
+✓ Meeting minutes (unique feature, auditors love it)
+✓ Lower cost (self-hosted, open source)
+✓ Faster to customize (full source code access)
+
+## Where Vanta wins (and we can't fully close)
+
+✗ Automated evidence collection from AWS, GitHub, Okta, Slack, Datadog
+  → This is their moat. Requires 4–8 weeks per integration.
+  → Worth $50K+/yr in labor time saved per customer.
+  → We'll never match this without significant investment.
+
+## What we're missing that we SHOULD build (6 weeks, $50–100K value)
+
+Top 3, ranked by ROI:
+
+1. RISK REGISTER + REMEDIATION TRACKING (2–3 weeks)
+   Problem: Compliance teams spend 30–40% of time managing remediation plans.
+   Solution: Track identified risks, assign owners, link to Jira tickets,
+   auto-flag overdue remediations.
+   Impact: Saves 10+ hours/week per team; auditors require this.
+
+2. EVIDENCE-TO-CONTROL REVERSE MAPPING (1–2 weeks)
+   Problem: "Which documents prove control CC6.1?" requires manual search.
+   Solution: Click control → see all linked evidence; click doc → see which
+   controls it satisfies. Bulk-link during audit prep.
+   Impact: Cuts audit prep time by ~50%.
+
+3. PER-CONTROL READINESS SCORING (1–2 weeks)
+   Problem: Controls are binary (done/not done), so execs don't see real progress.
+   Solution: Score each control 0–100% based on evidence count, attestation,
+   tests, recency. Heatmap dashboard.
+   Impact: Moves compliance culture from "is it done?" to "how ready is it?"
+
+Total: 6 weeks, one engineer, unlocks immediate competitive advantage vs.
+Vanta *for the 99% of the market that doesn't have AWS/GitHub/Okta integrations yet*.
+
+## What we should NOT build yet
+
+  ✗ Automated integrations (AWS, GitHub, Okta, Slack)
+    → Highest effort (4–8 weeks per), lowest near-term ROI
+    → Build if a customer explicitly demands it
+    → Better to prove the risk/readiness/evidence-mapping loop first
+
+  ✗ Custom frameworks
+    → Only needed for enterprise SaaS play
+    → 90% of customers use SOC 2/ISO/PCI off-the-shelf
+
+  ✗ Multi-org support / SaaS
+    → 6–8 weeks, only if pivoting the business model
+
+  ✗ SSO/SAML
+    → Nice-to-have for enterprise sales
+    → Defer until you have a $100K deal pending on it
+
+## Recommended positioning
+
+"Vanta for companies that don't want to share their infrastructure with a SaaS,
+or don't need automated integrations yet. Cleaner, cheaper, faster to customize."
+
+Target: 50–500 person startups, mid-market, regulated agencies.
+
+## If you build the top 3, what's the ask from a customer?
+
+"I don't have AWS/Okta integrations, but I need to track my remediation plan,
+show my auditor evidence per control, and have a honest readiness score to
+report to the board."
+
+→ All three features above solve exactly that.
+
+## Competitive timeline
+
+If you start today:
+  Week 1–6:   Evidence-to-control + risk register + readiness scoring
+  Week 7–10:  Attestations + automated alerts (optional v2)
+  Week 11+:   If you get a customer request for integrations, start with
+              their #1 (usually AWS)
+
+By week 10, you have a product that's meaningfully different from (and in some
+ways better than) Vanta for the non-integration market.
+
+===
+
+See FEATURE_COMPARISON.md and ROADMAP.md for detailed specs and implementation
+plans.

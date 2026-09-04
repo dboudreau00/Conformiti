@@ -49,10 +49,15 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False)
     def facets(self, request):
-        """Distinct values for the viewer's filter dropdowns."""
-        base = AuditLog.objects.all()
-        actions = sorted(base.values_list("action", flat=True).distinct())
-        types = sorted(t for t in base.values_list("object_type", flat=True).distinct() if t)
+        """Distinct values for the viewer's filter dropdowns.
+
+        ``.order_by()`` with no arguments is essential: the model's Meta
+        ordering (-timestamp) is otherwise added to the SELECT behind DISTINCT,
+        which makes every row distinct and returns the same action once per
+        entry — duplicating every option in the filter dropdowns."""
+        base = AuditLog.objects.order_by()
+        actions = sorted(set(base.values_list("action", flat=True).distinct()))
+        types = sorted({t for t in base.values_list("object_type", flat=True).distinct() if t})
         users = (
             base.exclude(user__isnull=True)
             .values("user__id", "user__username").distinct().order_by("user__username")[:200]

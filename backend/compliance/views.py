@@ -1,5 +1,8 @@
 """Framework / control API views."""
+import csv
+
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -66,6 +69,28 @@ class ControlViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return _controls_with_evidence_counts(self.request.user)
+
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        """The control register as CSV (respects the same filters as the
+        list: framework, status, owner, search). Evidence counts are the
+        caller's visible counts, like the list."""
+        from config.csvsafe import csv_safe
+
+        qs = self.filter_queryset(self.get_queryset()).order_by(
+            "category__framework__name", "category__order", "control_id"
+        )
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="controls.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Framework", "Version", "Category", "Control ID", "Title", "Status", "Owner", "Evidence", "Objective"])
+        for c in qs:
+            writer.writerow(csv_safe([
+                c.category.framework.name, c.category.framework.version, c.category.name,
+                c.control_id, c.title, c.get_status_display(),
+                c.owner.get_full_name() if c.owner else "", c.evidence_count, c.objective,
+            ]))
+        return response
 
 
 class ControlMappingViewSet(viewsets.ReadOnlyModelViewSet):
