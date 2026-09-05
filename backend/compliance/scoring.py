@@ -105,6 +105,13 @@ def annotate(queryset, user):
             filter=Q(risks__status__in=("open", "mitigating")),
             distinct=True,
         ),
+        # An explicit Accountable row in the responsibility matrix satisfies
+        # the owner signal just as Control.owner does.
+        accountable_rows=Count(
+            "responsibilities",
+            filter=Q(responsibilities__role="accountable"),
+            distinct=True,
+        ),
     )
 
 
@@ -120,6 +127,11 @@ def _implementation(control, weight):
 def _owner(control, weight):
     if control.owner_id:
         return 1.0, "Has an accountable owner."
+    accountable = getattr(control, "accountable_rows", None)
+    if accountable is None:
+        accountable = control.responsibilities.filter(role="accountable").count()
+    if accountable:
+        return 1.0, "Accountable party named in the responsibility matrix."
     return 0.0, "No owner assigned."
 
 

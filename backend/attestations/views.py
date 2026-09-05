@@ -411,6 +411,25 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         instance.delete()
 
     @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        """Preview a pinned artefact under the same grant rule as /file/."""
+        from documents.views import preview_response
+
+        row = self.get_object()
+        if row.document is None or not row.document.file:
+            raise ValidationError({"detail": "This evidence file is no longer available."})
+        package = row.package_control.package
+        grant = access.live_grant(request.user, package)
+        if grant is not None:
+            PackageGrant.objects.filter(pk=grant.pk).update(
+                last_accessed_at=timezone.now(), access_count=grant.access_count + 1)
+        record_package_event(
+            request, package, "read",
+            f"previewed evidence '{row.document_name}' from package {package.pk}",
+        )
+        return preview_response(request, row.document.file, row.document_name, row.document)
+
+    @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         """The pinned bytes.
 

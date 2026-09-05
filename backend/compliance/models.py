@@ -123,3 +123,53 @@ class ControlEvidence(models.Model):
 
     def __str__(self):
         return f"{self.control.control_id} <- {self.document.name}"
+
+
+class Responsibility(models.Model):
+    """One RACI assignment on a control. The party is a user OR a vendor.
+
+    ``Control.owner`` stays as the fast path for "who is accountable"; the
+    matrix view treats it as an implicit Accountable when no explicit row
+    exists. A vendor as Responsible is how shared responsibility (a cloud
+    provider owning physical security) is recorded and reported.
+    """
+
+    class Role(models.TextChoices):
+        RESPONSIBLE = "responsible", "Responsible"
+        ACCOUNTABLE = "accountable", "Accountable"
+        CONSULTED = "consulted", "Consulted"
+        INFORMED = "informed", "Informed"
+
+    control = models.ForeignKey(Control, on_delete=models.CASCADE, related_name="responsibilities")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.CASCADE, related_name="responsibilities",
+    )
+    vendor = models.ForeignKey(
+        "vendors.Vendor", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="responsibilities",
+    )
+    role = models.CharField(max_length=12, choices=Role.choices)
+    note = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="responsibilities_assigned",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["control", "role"]
+        constraints = [
+            models.UniqueConstraint(fields=["control", "user", "role"], name="uniq_resp_user_role"),
+            models.UniqueConstraint(fields=["control", "vendor", "role"], name="uniq_resp_vendor_role"),
+            models.CheckConstraint(
+                condition=(models.Q(user__isnull=False, vendor__isnull=True)
+                           | models.Q(user__isnull=True, vendor__isnull=False)),
+                name="resp_exactly_one_party",
+            ),
+        ]
+        verbose_name_plural = "responsibilities"
+
+    def __str__(self):
+        who = self.vendor or self.user
+        return f"{self.control.control_id}: {who} is {self.get_role_display()}"

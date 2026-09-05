@@ -2,9 +2,26 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import axios from "axios";
-import { login } from "../api/client.js";
+import { login, oidcConfig, redeemSso } from "../api/client.js";
 import { Button } from "../components/ui/Button.jsx";
 import { Label, Panel } from "../components/ui/Panel.jsx";
+
+// What the server's sso_error codes mean to a person. Anything unlisted is a
+// plain refusal; the audit log has the specifics.
+const SSO_ERRORS = {
+  disabled: "Single sign-on is not configured on this server.",
+  state: "That sign-in link expired or was already used. Start again.",
+  provider: "The identity provider could not be reached. Try again in a moment.",
+  token: "The identity provider's response could not be verified.",
+  no_email: "The identity provider did not share an email address.",
+  unverified_email: "The identity provider has not verified that email address.",
+  domain: "That email domain is not allowed to sign in here.",
+  privileged: "Administrator accounts sign in with their password.",
+  ambiguous_email: "More than one account uses that email address. Ask an administrator to link your identity.",
+  unknown_user: "No account is linked to that identity. Ask an administrator to link it.",
+  inactive: "That account is deactivated.",
+  role: "The server's default single sign-on role is misconfigured.",
+};
 
 export default function Login({ onDone }) {
   const nav = useNavigate();
@@ -15,10 +32,33 @@ export default function Login({ onDone }) {
   const [mfaStep, setMfaStep] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const sso = oidcConfig();
 
   // The demo hint is only shown while the seeded demo accounts still exist.
   useEffect(() => {
     axios.get("/api/health/").then((r) => setHealth(r.data)).catch(() => setHealth(null));
+  }, []);
+
+  // Back from the identity provider: the callback left a one-time ticket (or
+  // a reason) in the query string.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ticket = params.get("sso");
+    const code = params.get("sso_error");
+    if (code) {
+      setErr(SSO_ERRORS[code] || "The identity provider declined the sign-in.");
+      window.history.replaceState(null, "", "/login");
+      return;
+    }
+    if (!ticket) return;
+    const next = params.get("next") || "/";
+    window.history.replaceState(null, "", "/login");
+    setBusy(true);
+    redeemSso(ticket)
+      .then(() => { onDone?.(null); nav(next.startsWith("/") && !next.startsWith("//") ? next : "/"); })
+      .catch((ex) => setErr(ex?.response?.data?.detail || SSO_ERRORS.state))
+      .finally(() => setBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Enter in any field submits, independent of implicit-submission quirks.
@@ -102,6 +142,19 @@ export default function Login({ onDone }) {
             <Button type="submit" variant="primary" className="mt-5 w-full" disabled={busy || !username || !password}>
               {busy ? "Signing in…" : mfaStep ? "Verify" : "Sign in"}
             </Button>
+            {sso.enabled && !mfaStep ? (
+              <>
+                <div className="my-4 flex items-center gap-3" aria-hidden="true">
+                  <span className="h-px flex-1 bg-line" />
+                  <Label>or</Label>
+                  <span className="h-px flex-1 bg-line" />
+                </div>
+                <Button type="button" variant="secondary" className="w-full" disabled={busy}
+                        onClick={() => window.location.assign("/api/auth/oidc/start/")}>
+                  {sso.label}
+                </Button>
+              </>
+            ) : null}
             {mfaStep ? (
               <button type="button" className="link mt-4" onClick={() => { setMfaStep(false); setOtp(""); setErr(""); }}>
                 ← Back to password

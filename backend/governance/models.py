@@ -207,6 +207,11 @@ class Risk(models.Model):
         "compliance.Control", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="risks",
     )
+    # A vendor risk names the vendor, so the register can roll up per party.
+    vendor = models.ForeignKey(
+        "vendors.Vendor", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="risks",
+    )
     due_date = models.DateField(null=True, blank=True)
     identified_on = models.DateField(default=timezone.localdate)
     jira_key = models.CharField(max_length=40, blank=True)

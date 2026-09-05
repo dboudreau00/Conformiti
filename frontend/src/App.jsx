@@ -20,6 +20,8 @@ import Groups from "./pages/Groups.jsx";
 import Jira from "./pages/Jira.jsx";
 import Risks from "./pages/Risks.jsx";
 import Users from "./pages/Users.jsx";
+import Vendors from "./pages/Vendors.jsx";
+import Responsibilities from "./pages/Responsibilities.jsx";
 
 function Protected({ me, setMe }) {
   const nav = useNavigate();
@@ -118,6 +120,8 @@ function Protected({ me, setMe }) {
                   <Route path="/groups" element={<Groups me={me} />} />
                   <Route path="/risks" element={<Risks me={me} />} />
                   <Route path="/jira" element={<Jira me={me} />} />
+                  <Route path="/vendors" element={<Vendors me={me} />} />
+                  <Route path="/responsibilities" element={<Responsibilities me={me} />} />
                   <Route path="/settings" element={<Account me={me} onUpdate={setMe} />} />
                   {/* Routes from earlier releases */}
                   <Route path="/account" element={<Navigate to="/settings" replace />} />

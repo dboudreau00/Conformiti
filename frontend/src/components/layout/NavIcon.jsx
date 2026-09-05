@@ -1,10 +1,13 @@
 import {
+  Building2Icon,
   CalendarClockIcon,
   ChartPieIcon,
   DiamondIcon,
   FileTextIcon,
   FlagIcon,
   LayoutDashboardIcon,
+  LayoutGridIcon,
+  PackageCheckIcon,
   ScrollTextIcon,
   SettingsIcon,
   ShieldCheckIcon,
@@ -20,11 +23,14 @@ const ICONS = {
   FileText: FileTextIcon,
   Users: UsersIcon,
   UserCheck: UserCheckIcon,
+  PackageCheck: PackageCheckIcon,
   ScrollText: ScrollTextIcon,
   CalendarClock: CalendarClockIcon,
   Flag: FlagIcon,
   TriangleAlert: TriangleAlertIcon,
   Diamond: DiamondIcon,
+  Building2: Building2Icon,
+  LayoutGrid: LayoutGridIcon,
   Settings: SettingsIcon,
 };
 

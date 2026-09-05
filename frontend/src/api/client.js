@@ -10,6 +10,7 @@ import axios from "axios";
 // withCredentials is on in both modes: harmless for header auth, required for
 // cookie auth, and one less thing to get wrong when the server flips.
 let transport = "header";
+let oidc = { enabled: false, label: "" };
 
 export function authTransport() {
   return transport;
@@ -19,15 +20,36 @@ export function cookieMode() {
   return transport === "cookie";
 }
 
+/** Whether the server offers single sign-on, and what to call the button. */
+export function oidcConfig() {
+  return oidc;
+}
+
 /** Ask the server which transport is live. Safe to call before signing in. */
 export async function loadAuthConfig() {
   try {
     const { data } = await axios.get("/api/auth/config/");
     transport = data.transport === "cookie" ? "cookie" : "header";
+    oidc = { enabled: !!data.oidc?.enabled, label: data.oidc?.label || "Single sign-on" };
   } catch {
     transport = "header";
+    oidc = { enabled: false, label: "" };
   }
   return transport;
+}
+
+/** Finish a single sign-on: swap the one-time ticket from the callback
+ *  redirect for tokens, delivered the same way a password login delivers them. */
+export async function redeemSso(ticket) {
+  const { data } = await axios.post("/api/auth/oidc/redeem/", { ticket }, {
+    withCredentials: true,
+    headers: cookieMode() ? { "X-CSRFToken": readCookie("csrftoken") || "" } : {},
+  });
+  if (!cookieMode()) {
+    localStorage.setItem("access", data.access);
+    localStorage.setItem("refresh", data.refresh);
+  }
+  return data;
 }
 
 function readCookie(name) {

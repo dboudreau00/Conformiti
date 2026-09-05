@@ -71,8 +71,43 @@ prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
    or set `SEED_DEMO_DATA=false` and `DJANGO_SUPERUSER_USERNAME` /
    `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first boot.
 4. Confirm: `curl -s https://grc.example.com/api/health/` →
-   `{"status":"ok","version":"0.2.0","database":"ok","demo_accounts":false}`.
+   `{"status":"ok","version":"0.4.0","database":"ok","demo_accounts":false}`.
 5. Back up the `pgdata` and `media` volumes nightly.
+
+### Single sign-on (OpenID Connect)
+
+Optional. Nothing changes until all three of the first keys are set.
+
+1. Register Conformiti at your identity provider as a **confidential web
+   application** using the authorization-code flow, with the redirect URI
+   `https://grc.example.com/api/auth/oidc/callback/` and the scopes
+   `openid email profile`. Okta, Entra ID, Google Workspace, Keycloak and
+   Authentik all work; anything that publishes
+   `/.well-known/openid-configuration` should.
+2. Add to `.env` and restart:
+   ```ini
+   OIDC_ISSUER=https://login.example.com      # exactly the issuer the provider publishes
+   OIDC_CLIENT_ID=...
+   OIDC_CLIENT_SECRET=...
+   OIDC_LABEL=Sign in with Okta               # the button text
+   OIDC_ALLOWED_DOMAINS=example.com           # who may sign in through it
+   ```
+3. On a person's first SSO sign-in, a verified email that matches exactly one
+   local account links it. Administrator accounts — superuser, staff, or any
+   role that can manage users — are never linked this way, and a linked user
+   who is later promoted loses SSO until an operator re-affirms it. Link
+   them deliberately:
+   ```bash
+   docker compose exec backend python manage.py link_oidc_identity admin <subject> --allow-privileged
+   ```
+   Pre-link anyone else the same way (without the flag) to skip the email match.
+4. To create accounts for people the provider vouches for but who have no
+   local account yet, set `OIDC_AUTO_PROVISION=true` and `OIDC_DEFAULT_ROLE`
+   (default `Viewer`; a role that can manage users is refused).
+
+Entra ID often omits `email_verified`; set `OIDC_REQUIRE_VERIFIED_EMAIL=false`
+only when the tenant is your own. SSO sign-ins skip local TOTP — enforce MFA
+at the provider.
 
 Everyday operations:
 
@@ -113,7 +148,7 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--setup-only` / `-SetupOnly` | install and seed, don't start servers |
-| `--test` / `-Test` | run the validator, the 215 backend tests and a production frontend build |
+| `--test` / `-Test` | run the validator, the backend test suite and a production frontend build |
 
 ### Optional: scan uploaded evidence for malware
 

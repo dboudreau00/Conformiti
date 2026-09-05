@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FileUpIcon, FolderPlusIcon, KeyRoundIcon, Link2Icon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
+import { DownloadIcon, FileUpIcon, FolderPlusIcon, KeyRoundIcon, Link2Icon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
+import DocumentViewer, { documentViewerProps } from "../components/documents/DocumentViewer.jsx";
 import { Badge, Dot } from "../components/ui/Badge.jsx";
-import { Button } from "../components/ui/Button.jsx";
+import { Button, IconButton } from "../components/ui/Button.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
@@ -188,6 +189,7 @@ export default function Documents({ me }) {
   const [editor, setEditor] = useState(null); // { id, mode: "map" | "rename" }
   const [renameValue, setRenameValue] = useState("");
   const [newFolder, setNewFolder] = useState("");
+  const [viewing, setViewing] = useState(null); // props for the in-browser viewer
 
   const fileRef = useRef(null);
   const versionRef = useRef(null);
@@ -673,13 +675,19 @@ export default function Documents({ me }) {
                                   style={{ gridTemplateColumns: cols }}
                                 >
                                   <span className="min-w-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => downloadFile(`/documents/${d.id}/download/`, d.name)}
-                                      className="block max-w-full truncate text-left text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:text-accent"
-                                    >
-                                      {d.name}
-                                    </button>
+                                    <span className="flex min-w-0 items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setViewing(documentViewerProps(d))}
+                                        title="Open in browser"
+                                        className="block min-w-0 max-w-full truncate text-left text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:text-accent"
+                                      >
+                                        {d.name}
+                                      </button>
+                                      <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.name)}>
+                                        <DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                                      </IconButton>
+                                    </span>
                                     <span className="block truncate font-mono text-2xs uppercase tracking-label text-faint">
                                       {d.folder_path}{d.control_id ? ` · ${d.control_id}` : ""}
                                     </span>
@@ -769,6 +777,8 @@ export default function Documents({ me }) {
           </Panel>
         </StackItem>
       </Stack>
+
+      <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
 
       {/* Single hidden picker for "Version": the row button records which document, then opens it. */}
       <input

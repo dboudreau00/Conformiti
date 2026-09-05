@@ -41,6 +41,9 @@ ACCESS_REVIEW_PATTERN = r"^Q[1-4] [0-9]{4} access review$"
 # The seeded evidence package, matched by name in both directions.
 DEMO_PACKAGE_NAME = "SOC 2 Type II fieldwork"
 
+# The seeded vendors, matched by name in both directions.
+DEMO_VENDOR_NAMES = ["Amazon Web Services", "Okta", "Stripe", "Brightline Security Ltd"]
+
 # (control_id, doc name, cadence, review offset in days from today)
 SAMPLE_DOCS = [
     ("CC6.1", "Access Control Policy", "annual", 45),
@@ -50,7 +53,71 @@ SAMPLE_DOCS = [
     ("A.8.13", "Backup and Restore Procedure", "quarterly", 12),
     ("1.3", "Network Segmentation Standard", "annual", 90),
     ("12.1", "PCI Information Security Policy", "annual", 1),          # due tomorrow
+    ("A.8.8", "Penetration Test Report", "annual", 120),               # a real PDF
+    ("A.7.2", "Data Centre Badge Reader Photo", "annual", 200),         # a real PNG
 ]
+
+
+def _demo_pdf(title, subtitle):
+    """A small, valid single-page PDF built by hand -- so the demo has one
+    file the in-browser viewer renders natively, not just text."""
+    def esc(s):
+        return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    content = (
+        f"BT /F1 22 Tf 72 720 Td ({esc(title)}) Tj "
+        f"0 -30 Td /F1 12 Tf ({esc(subtitle)}) Tj "
+        f"0 -40 Td /F1 11 Tf (Scope: external perimeter, customer portal and API.) Tj "
+        f"0 -16 Td (Findings: 0 critical, 0 high, 2 medium, 3 low.) Tj "
+        f"0 -16 Td (Medium findings remediated and retested within SLA.) Tj ET"
+    ).encode("latin-1")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = []
+    for n, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{n} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    for off in offsets:
+        out += f"{off:010d} 00000 n \n".encode()
+    out += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").encode()
+    return bytes(out)
+
+
+def _demo_png(width=480, height=300):
+    """A small RGB gradient PNG (stdlib only) standing in for a photo."""
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)   # filter: none
+        for x in range(width):
+            band = 40 if (x // 24 + y // 24) % 2 else 0
+            rows += bytes((60 + band + x * 150 // width, 90 + band + y * 120 // height, 140 + band))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+            + chunk(b"IEND", b""))
+
+
+def sample_bytes(name, control_id):
+    """(extension, bytes) for a seeded document: two real binaries, text otherwise."""
+    if name == "Penetration Test Report":
+        return ".pdf", _demo_pdf(name, "Brightline Security Ltd - external test, annual")
+    if name == "Data Centre Badge Reader Photo":
+        return ".png", _demo_png()
+    return ".txt", f"{name}\nControl: {control_id}\n(demo file)\n".encode("utf-8")
 
 
 class Command(BaseCommand):
@@ -63,6 +130,7 @@ class Command(BaseCommand):
         self._documents()
         self._evidence()
         self._risks()
+        self._vendors()
         self._events()
         self._governance()
         self._access_review()
@@ -130,9 +198,8 @@ class Command(BaseCommand):
                 status=Document.Status.APPROVED,
                 description=f"Sample {name} for {control_id}.",
             )
-            doc.file.save(f"{name}.txt",
-                          ContentFile(f"{name}\nControl: {control_id}\n(demo file)\n"),
-                          save=False)
+            ext, payload = sample_bytes(name, control_id)
+            doc.file.save(f"{name}{ext}", ContentFile(payload), save=False)
             doc.next_review_date = review_date
             doc.save()
             made += 1
@@ -153,6 +220,8 @@ class Command(BaseCommand):
             "Backup and Restore Procedure": [("soc2", "A1.2")],
             "Network Segmentation Standard": [("soc2", "CC6.6")],
             "PCI Information Security Policy": [("iso27001", "A.5.1")],
+            "Penetration Test Report": [("pci_dss_v4", "11.4"), ("soc2", "CC7.1")],
+            "Data Centre Badge Reader Photo": [("pci_dss_v4", "9.2")],
         }
         made = 0
         for doc_name, targets in LINKS.items():
@@ -236,6 +305,135 @@ class Command(BaseCommand):
                     author = User.objects.filter(username=note[0]).first()
                     RiskNote.objects.create(risk=risk, author=author, text=note[1])
         self.stdout.write(f"  Risks created: {made}")
+
+    def _vendors(self):
+        """Four third parties in the states the register is built to show:
+        a critical cloud provider with a full shared responsibility matrix, an
+        identity provider whose SOC 2 report is about to lapse, a payment
+        processor whose report already has (the seeded vendor risk points at
+        it), and a freshly onboarded pen-test firm with no matrix yet -- which
+        is what raises the onboarding prompt in the notification tray."""
+        from compliance.models import Responsibility
+        from governance.models import Risk
+        from vendors.models import SharedResponsibility, Vendor, VendorAssessment
+
+        mia = User.objects.filter(username="mia").first()
+        owen = User.objects.filter(username="owen").first()
+        val = User.objects.filter(username="val").first()
+        today = timezone.localdate()
+
+        def ctrl(fw, cid):
+            return Control.objects.filter(category__framework__key=fw, control_id=cid).first()
+
+        VENDORS = [
+            dict(name="Amazon Web Services", category="Cloud hosting", website="https://aws.amazon.com",
+                 tier="critical", data_handled="customer PII, cardholder data (tokenised)",
+                 services="EC2, RDS, S3 and KMS in eu-west-1", owner=mia, review_cadence="annual",
+                 last_reviewed=today - timedelta(days=200),
+                 assessments=[
+                     ("soc2_type2", "SOC 2 Type II (Spring report)", -120, 245, "satisfactory"),
+                     ("pci_aoc", "PCI DSS 4.0 AOC — service provider", -90, 275, "satisfactory"),
+                 ],
+                 matrix=[
+                     ("pci_dss_v4", "1.3", "shared",
+                      "Edge network controls, DDoS protection and the physical boundary of every AWS region.",
+                      "Security groups, network ACLs and VPC segmentation between the CDE and everything else."),
+                     ("soc2", "CC6.6", "shared",
+                      "Protection of the AWS global network and its perimeter.",
+                      "Perimeter rules for our own workloads: WAF policy, ingress allow-lists, bastion access."),
+                     ("soc2", "A1.2", "provider",
+                      "Multi-AZ infrastructure redundancy and durability of managed services.", ""),
+                     ("iso27001", "A.8.13", "shared",
+                      "Snapshot and replication capability for RDS and S3.",
+                      "Backup schedules, retention and quarterly restore tests of our data."),
+                     ("pci_dss_v4", "12.1", "customer", "",
+                      "Our information security policy governs how we use the platform; AWS has no part in it."),
+                 ]),
+            dict(name="Okta", category="Identity provider", website="https://www.okta.com",
+                 tier="high", data_handled="workforce identities, authentication events",
+                 services="Workforce Identity Cloud (SSO, MFA, lifecycle)", owner=owen, review_cadence="annual",
+                 last_reviewed=today - timedelta(days=300),
+                 assessments=[("soc2_type2", "SOC 2 Type II", -340, 25, "satisfactory")],   # expiring
+                 matrix=[
+                     ("soc2", "CC6.1", "shared",
+                      "Authentication service, MFA factors and session management.",
+                      "Which factors are required, who is enrolled, and the access policy per application."),
+                     ("soc2", "CC6.2", "shared",
+                      "Lifecycle APIs and SCIM provisioning.",
+                      "Joiner/mover/leaver process and the approvals that drive it."),
+                     ("iso27001", "A.5.15", "provider",
+                      "Role-based access within the Okta tenant itself.", ""),
+                     ("iso27001", "A.5.18", "shared",
+                      "Provisioning and deprovisioning connectors.",
+                      "Timely removal of leavers and periodic access reviews."),
+                 ]),
+            dict(name="Stripe", category="Payment processing", website="https://stripe.com",
+                 tier="critical", data_handled="cardholder data (never touches our systems)",
+                 services="Payments, Radar, Billing", owner=mia, review_cadence="annual",
+                 last_reviewed=today - timedelta(days=380),
+                 assessments=[
+                     ("soc2_type2", "SOC 2 Type II", -420, -40, "satisfactory"),           # expired
+                     ("pci_aoc", "PCI DSS Level 1 AOC", -60, 305, "satisfactory"),
+                 ],
+                 matrix=[
+                     ("pci_dss_v4", "12.10", "shared",
+                      "Incident response for the Stripe platform, including notification to merchants.",
+                      "Our own IR plan for integration and account compromise."),
+                     ("pci_dss_v4", "7.1", "customer", "",
+                      "Who in our organisation may access the Stripe dashboard and API keys."),
+                 ]),
+            dict(name="Brightline Security Ltd", category="Penetration testing", website="https://brightline.example",
+                 tier="low", data_handled="test findings only", services="Annual external penetration test",
+                 owner=owen, review_cadence="annual", last_reviewed=None,
+                 assessments=[("pentest", "External penetration test", -14, 351, "exceptions")],
+                 matrix=[]),   # freshly onboarded: no matrix -> onboarding prompt
+        ]
+        made = 0
+        for spec in VENDORS:
+            assessments = spec.pop("assessments")
+            matrix = spec.pop("matrix")
+            vendor, created = Vendor.objects.get_or_create(
+                name=spec["name"], defaults=dict(spec, created_by=mia))
+            if not created:
+                continue
+            made += 1
+            vendor.compute_next_review()
+            vendor.save(update_fields=["next_review_date"])
+            for kind, title, issued, expires, result in assessments:
+                VendorAssessment.objects.create(
+                    vendor=vendor, kind=kind, title=title, result=result, reviewed_by=mia,
+                    issued_at=today + timedelta(days=issued),
+                    expires_at=today + timedelta(days=expires),
+                    findings="Two medium findings, both remediated within SLA." if result == "exceptions" else "",
+                )
+            for fw, cid, resp, provider, customer in matrix:
+                control = ctrl(fw, cid)
+                if control:
+                    SharedResponsibility.objects.get_or_create(
+                        vendor=vendor, control=control,
+                        defaults=dict(responsibility=resp, provider_statement=provider,
+                                      customer_statement=customer, updated_by=mia))
+
+        stripe = Vendor.objects.filter(name="Stripe").first()
+        if stripe:
+            Risk.objects.filter(title="Payment processor SOC 2 report expired", vendor__isnull=True).update(vendor=stripe)
+
+        # A few explicit RACI rows on top of what the register implies.
+        okta = Vendor.objects.filter(name="Okta").first()
+        for control, party, role, note in [
+            (ctrl("soc2", "CC6.1"), mia, "accountable", "Programme owner for logical access"),
+            (ctrl("soc2", "CC6.1"), owen, "responsible", "Runs the quarterly access review"),
+            (ctrl("soc2", "CC6.1"), val, "informed", "Operations lead"),
+            (ctrl("iso27001", "A.5.1"), mia, "accountable", ""),
+            (ctrl("pci_dss_v4", "12.10"), owen, "responsible", "Incident commander"),
+            (ctrl("pci_dss_v4", "12.10"), okta, "consulted", "Identity events feed the IR timeline"),
+        ]:
+            if control is None or party is None:
+                continue
+            key = {"vendor": party} if isinstance(party, Vendor) else {"user": party}
+            Responsibility.objects.get_or_create(control=control, role=role, **key,
+                                                 defaults={"note": note, "created_by": mia})
+        self.stdout.write(f"  Vendors created: {made} (register now {Vendor.objects.count()})")
 
     def _events(self):
         today = timezone.now().date()

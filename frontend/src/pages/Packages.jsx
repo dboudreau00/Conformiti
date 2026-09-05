@@ -8,6 +8,7 @@ import {
   XIcon,
 } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
+import DocumentViewer from "../components/documents/DocumentViewer.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -61,6 +62,21 @@ export default function Packages({ me }) {
   const [msg, setMsg] = useState(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState({ name: "", engagement: "", audit_firm: "", assurance_type: "type_ii" });
+  const [viewing, setViewing] = useState(null);
+
+  // Pinned evidence opens through the package's own preview route, so the
+  // auditor's grant — not folder permissions — is what admits them.
+  const openEvidence = (e) => setViewing({
+    title: e.document_name,
+    subtitle: `Pinned v${e.pinned_version} in ${selected?.name || "this package"}`,
+    previewUrl: `/package-evidence/${e.id}/preview/`,
+    downloadUrl: e.download_url,
+    filename: e.document_name,
+    facts: [
+      { label: "Pinned version", value: `v${e.pinned_version}` },
+      { label: "Digest recorded at sealing (SHA-256)", value: e.content_sha256, mono: true },
+    ],
+  });
 
   const canAssemble = !!(me?.is_superuser || me?.capabilities?.includes?.("frameworks")
     || me?.role_detail?.can_manage_frameworks);
@@ -445,9 +461,9 @@ export default function Packages({ me }) {
                               <li key={e.id}>
                                 <button
                                   type="button"
-                                  onClick={() => downloadFile(e.download_url, e.document_name)}
+                                  onClick={() => openEvidence(e)}
                                   className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2 py-1 text-2xs text-muted transition-colors duration-150 ease-out hover:border-line-strong hover:text-ink"
-                                  title={`v${e.pinned_version} · ${e.content_sha256.slice(0, 16)}…`}
+                                  title={`Open · v${e.pinned_version} · ${e.content_sha256.slice(0, 16)}…`}
                                 >
                                   <FileTextIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
                                   {e.document_name}
@@ -507,6 +523,7 @@ export default function Packages({ me }) {
         )}
       </div>
     </div>
+    <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
     </PanelTransition>
   );
 }

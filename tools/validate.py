@@ -54,7 +54,7 @@ def check_python_syntax():
 # ===========================================================================
 LOCAL_APPS = ["accounts", "compliance", "documents", "calendar_app",
               "notifications", "audit", "analytics", "governance", "integrations",
-              "attestations"]
+              "attestations", "vendors"]
 
 
 def apps_with_models():
@@ -336,6 +336,7 @@ def check_css(files):
 # 9. requirements.txt covers third-party imports
 # ===========================================================================
 PIP_NAME = {
+    "jwt": "PyJWT",
     "django": "django", "rest_framework": "djangorestframework",
     "rest_framework_simplejwt": "djangorestframework-simplejwt",
     "corsheaders": "django-cors-headers", "django_filters": "django-filter",

@@ -33,6 +33,38 @@ class Role(models.Model):
         return self.name
 
 
+class OidcIdentity(models.Model):
+    """A single sign-on identity (issuer + subject) bound to a local account.
+
+    Created by a verified-email match on first SSO login, by auto-provisioning,
+    or by hand with ``manage.py link_oidc_identity``. Superuser and staff
+    accounts are only ever linked by hand -- see accounts/oidc.py.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="oidc_identities"
+    )
+    issuer = models.CharField(max_length=255)
+    subject = models.CharField(max_length=255)
+    email = models.EmailField(blank=True)
+    # Set only by `link_oidc_identity --allow-privileged`. A privileged
+    # account (superuser, staff, or a role that manages users) signs in
+    # through this identity only while this is true -- so promoting a linked
+    # user to administrator later closes their SSO path until an operator
+    # re-affirms it.
+    privileged_ok = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["issuer", "subject"], name="uniq_oidc_identity"),
+        ]
+        verbose_name_plural = "OIDC identities"
+
+    def __str__(self):
+        return f"{self.issuer} / {self.subject} -> {self.user_id}"
+
+
 class User(AbstractUser):
     """Application user. Every user has an optional single role."""
     role = models.ForeignKey(

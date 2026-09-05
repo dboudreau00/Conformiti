@@ -13,6 +13,9 @@ import time
 from unittest import mock
 from documents import clamav
 from documents.scanning import eicar_bytes
+import io
+import zipfile
+from django.utils import timezone
 
 
 class FolderVisibilityTests(APITestBase):
@@ -546,3 +549,170 @@ class VirusScanTests(APITestBase):
     def test_the_eicar_fixture_is_the_standard_file(self):
         self.assertEqual(len(eicar_bytes()), 68)
         self.assertTrue(eicar_bytes().startswith(b"X5O!P%@AP[4"))
+
+
+# --------------------------------------------------------------------------- #
+# In-browser preview
+# --------------------------------------------------------------------------- #
+def _docx(paragraphs):
+    """A minimal .docx: (style, text) pairs. style in {"Heading1", "ListParagraph", ""}."""
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    body = ""
+    for style, text in paragraphs:
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        ppr = ""
+        if style.startswith("Heading"):
+            ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>'
+        elif style == "list":
+            ppr = '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>'
+        body += f'<w:p>{ppr}<w:r><w:rPr><w:b/></w:rPr><w:t>{text}</w:t></w:r></w:p>'
+    body += ('<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell A</w:t></w:r></w:p></w:tc>'
+             '<w:tc><w:p><w:r><w:t>Cell B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    doc = f'<?xml version="1.0"?><w:document xmlns:w="{W}"><w:body>{body}</w:body></w:document>'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("word/document.xml", doc)
+    return buf.getvalue()
+
+
+def _xlsx_simple(rows):
+    S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    def cell(ref, v):
+        return f'<c r="{ref}" t="inlineStr"><is><t>{v}</t></is></c>'
+    data = "".join(
+        f'<row r="{i}">' + "".join(cell(f"{chr(65+j)}{i}", v) for j, v in enumerate(row)) + "</row>"
+        for i, row in enumerate(rows, start=1))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("xl/workbook.xml",
+                    f'<workbook xmlns="{S}" xmlns:r="{R}"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        zf.writestr("xl/_rels/workbook.xml.rels",
+                    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    '<Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/></Relationships>')
+        zf.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="{S}"><sheetData>{data}</sheetData></worksheet>')
+    return buf.getvalue()
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+
+
+class PreviewTests(APITestBase):
+    def setUp(self):
+        super().setUp()
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+
+    def _doc(self, name, content):
+        return make_doc(self.tree.ctrl1, owner=self.owner, name=name, content=content)
+
+    def _preview(self, doc, user=None):
+        return self.client_for(user or self.viewer).get(f"/api/documents/{doc.pk}/preview/")
+
+    def test_a_pdf_streams_inline_with_a_script_free_csp(self):
+        doc = self._doc("report.pdf", PDF)
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertTrue(r["Content-Disposition"].startswith("inline"))
+        self.assertIn("script-src 'none'", r["Content-Security-Policy"])
+        self.assertIn("frame-ancestors 'self'", r["Content-Security-Policy"])
+        self.assertEqual(b"".join(r.streaming_content), PDF)
+
+    def test_images_stream_inline_by_magic_bytes(self):
+        doc = self._doc("evidence.png", PNG)
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Content-Type"], "image/png")
+        self.assertTrue(r["Content-Disposition"].startswith("inline"))
+        jpg = self._doc("photo.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 16)
+        self.assertEqual(self._preview(jpg)["Content-Type"], "image/jpeg")
+
+    def test_the_extension_never_overrides_the_bytes(self):
+        """A file called report.pdf that is really HTML must not be shown inline."""
+        doc = self._doc("report.pdf", b"<html><script>alert(1)</script></html>")
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 415)
+        self.assertIsNone(r.data["kind"])
+        fake_png = self._doc("x.png", b"<svg onload=alert(1)>")
+        self.assertEqual(self._preview(fake_png).status_code, 415)
+
+    def test_word_comes_back_as_structure_not_html(self):
+        doc = self._doc("policy.docx", _docx([("Heading1", "Scope"), ("", "Applies to <everyone>"),
+                                              ("list", "First point")]))
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["kind"], "docx")
+        kinds = [b["type"] for b in r.data["blocks"]]
+        self.assertEqual(kinds, ["heading", "paragraph", "list_item", "table"])
+        self.assertEqual(r.data["blocks"][0]["text"], "Scope")
+        self.assertTrue(r.data["blocks"][1]["runs"][0]["b"], "bold run flag survives")
+        self.assertEqual(r.data["blocks"][1]["runs"][0]["t"], "Applies to <everyone>",
+                         "text is data, never markup")
+        self.assertEqual(r.data["blocks"][3]["rows"], [["Cell A", "Cell B"]])
+
+    def test_excel_comes_back_as_sheets_of_cells(self):
+        doc = self._doc("register.xlsx", _xlsx_simple([["Control", "Owner"], ["TC1.1", "Owen"]]))
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["kind"], "xlsx")
+        self.assertEqual(r.data["sheets"][0]["name"], "Data")
+        self.assertEqual(r.data["sheets"][0]["rows"], [["Control", "Owner"], ["TC1.1", "Owen"]])
+
+    def test_text_and_csv_preview(self):
+        doc = self._doc("notes.txt", b"plain text evidence")
+        self.assertEqual(self._preview(doc).data["text"], "plain text evidence")
+        csv_doc = self._doc("list.csv", b"a,b\n1,2\n")
+        r = self._preview(csv_doc)
+        self.assertEqual(r.data["sheets"][0]["rows"], [["a", "b"], ["1", "2"]])
+
+    def test_the_stored_filename_decides_the_kind_when_the_title_has_none(self):
+        """Titles are typed without extensions ("Access Control Policy"); the
+        file on disk keeps the real one, and that is what the preview reads."""
+        doc = self._doc("Access Control Policy", b"plain words")
+        self.assertTrue(doc.file.name.endswith(".txt"))
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["kind"], "text")
+
+    def test_unpreviewable_types_say_so_cleanly(self):
+        doc = self._doc("archive.zip", b"PK\x03\x04" + b"\x00" * 30)
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 415)
+        self.assertIn("Download", r.data["detail"])
+
+    def test_a_zip_bomb_docx_is_refused(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("word/document.xml", b"\x00" * (41 * 1024 * 1024))
+        doc = self._doc("bomb.docx", buf.getvalue())
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 415)
+
+    def test_preview_honours_folder_permissions_and_is_audited(self):
+        doc = self._doc("report.pdf", PDF)
+        self.assertEqual(self._preview(doc, self.auditor).status_code, 404, "no grant, no preview")
+        before = AuditLog.objects.filter(action="read").count()
+        self._preview(doc, self.viewer)
+        self.assertEqual(AuditLog.objects.filter(action="read").count(), before + 1)
+        self.assertEqual(AuditLog.objects.filter(action="read").latest("timestamp").user, self.viewer)
+
+    def test_a_packaged_pdf_previews_under_the_auditor_grant(self):
+        from attestations.models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant
+
+        doc = self._doc("report.pdf", PDF)
+        pkg = EvidencePackage.objects.create(name="P", status="sealed", created_by=self.manager)
+        row = PackageControl.objects.create(package=pkg, control=self.tree.c1,
+                                            control_ref="TC1.1", title="t")
+        item = PackageEvidence.objects.create(package_control=row, document=doc, document_name=doc.name)
+        c = self.client_for(self.auditor)
+        self.assertEqual(c.get(f"/api/package-evidence/{item.pk}/preview/").status_code, 404)
+        PackageGrant.objects.create(package=pkg, user=self.auditor, username="aria",
+                                    expires_at=timezone.now() + timezone.timedelta(days=5))
+        r = c.get(f"/api/package-evidence/{item.pk}/preview/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertTrue(AuditLog.objects.filter(object_type="evidence-packages",
+                                                detail__contains="previewed").exists())

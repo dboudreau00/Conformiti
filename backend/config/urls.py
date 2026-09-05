@@ -103,6 +103,7 @@ urlpatterns = [
     path("api/", include("governance.urls")),
     path("api/", include("integrations.urls")),
     path("api/", include("attestations.urls")),
+    path("api/", include("vendors.urls")),
 ]
 
 if settings.DEBUG and not getattr(settings, "USE_S3", False):

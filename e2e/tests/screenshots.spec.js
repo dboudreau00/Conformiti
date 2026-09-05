@@ -19,7 +19,9 @@ const THEME = process.env.SHOT_THEME || "ledger-dark";
 const test = base.extend({
   page: async ({ page }, use) => {
     const errors = [];
-    page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+    // A headed Chromium's PDF viewer phones home for its own resources; on a
+    // firewalled box that is refused and logged, and it is not the app's fault.
+    page.on("console", (m) => m.type() === "error" && !/ERR_NETWORK_ACCESS_DENIED/.test(m.text()) && errors.push(m.text()));
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.goto("/");
     await page.evaluate((t) => localStorage.setItem("theme", t), THEME);
@@ -63,6 +65,7 @@ const SIMPLE = [
   ["/meetings", "meetings", 1200],
   ["/groups", "groups", 1200],
   ["/jira", "jira", 1200],
+  ["/responsibilities", "responsibility-matrix", 1400],
 ];
 
 for (const [route, name, wait] of SIMPLE) {
@@ -72,6 +75,37 @@ for (const [route, name, wait] of SIMPLE) {
     await shot(page, name);
   });
 }
+
+test("vendors", async ({ page }) => {
+  await page.goto("/vendors");
+  await settle(page, 1400);
+  const aws = page.getByRole("button", { name: /Amazon Web Services/ });
+  if (await aws.count()) {
+    await aws.click().catch(() => {});
+    await page.waitForTimeout(600);
+    await page.getByText("Responsibility matrix", { exact: true }).click().catch(() => {});
+    await page.waitForTimeout(900);
+  }
+  await shot(page, "vendors");
+});
+
+test("viewer", async ({ page }) => {
+  await page.goto("/documents");
+  await settle(page, 1600);
+  for (const label of [/ISO/i, /^A\.8\b/i, /A\.8\.8/i]) {
+    const node = page.getByRole("treeitem", { name: label }).first();
+    if (await node.count()) {
+      await node.click().catch(() => {});
+      await page.waitForTimeout(600);
+    }
+  }
+  const doc = page.getByRole("button", { name: "Penetration Test Report", exact: true });
+  if (await doc.count()) {
+    await doc.click().catch(() => {});
+    await page.waitForTimeout(1500);
+  }
+  await shot(page, "viewer");
+});
 
 test("controls", async ({ page }) => {
   await page.goto("/controls");

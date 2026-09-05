@@ -171,6 +171,7 @@ class RiskSerializer(serializers.ModelSerializer):
     control_framework = serializers.CharField(
         source="control.category.framework.key", read_only=True, default=None
     )
+    vendor_name = serializers.CharField(source="vendor.name", read_only=True, default=None)
     score = serializers.IntegerField(read_only=True)
     rating = serializers.CharField(read_only=True)
     is_overdue = serializers.BooleanField(read_only=True)
@@ -182,6 +183,7 @@ class RiskSerializer(serializers.ModelSerializer):
             "id", "title", "description", "risk_type", "status", "treatment",
             "likelihood", "impact", "score", "rating",
             "owner", "owner_name", "control", "control_label", "control_framework",
+            "vendor", "vendor_name",
             "due_date", "identified_on", "is_overdue",
             "jira_key", "mitigation_plan", "note_count",
             "created_by", "created_by_name", "created_at", "updated_at", "closed_at",

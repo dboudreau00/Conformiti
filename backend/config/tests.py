@@ -70,7 +70,7 @@ class DemoDataTests(TestCase):
                 self.assertTrue(User.objects.get(username="admin").check_password("DemoPass123!"))
                 from documents.models import Document
                 from governance.models import Risk
-                self.assertEqual(Document.objects.count(), 7)
+                self.assertEqual(Document.objects.count(), 9)   # 7 text + a PDF + a PNG
                 self.assertEqual(Risk.objects.count(), 4)
                 from analytics.models import ReadinessSnapshot
                 from calendar_app.models import CalendarEvent
@@ -85,7 +85,7 @@ class DemoDataTests(TestCase):
                 # idempotent — and it never clobbers a status an operator changed
                 _Control.objects.filter(status="implemented").update(status="not_started")
                 call_command("bootstrap_demo", verbosity=0)
-                self.assertEqual(Document.objects.count(), 7)
+                self.assertEqual(Document.objects.count(), 9)
                 self.assertEqual(CalendarEvent.objects.count(), 3)
                 self.assertEqual(ReadinessSnapshot.objects.count(), 6)
                 self.assertEqual(_Control.objects.filter(status="implemented").count(), 0)

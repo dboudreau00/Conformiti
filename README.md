@@ -5,11 +5,11 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, documents, risks and access reviews in one audit-ready workspace.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.2.0-2563d8.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.4.0-2563d8.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
-![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-one%20command-2496ED?logo=docker&logoColor=white)
 
 <img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard — readiness, evidence coverage, risk posture, compliance calendar" width="900">
@@ -78,6 +78,22 @@ Local development without Docker (SQLite, console email) is one command too:
     <td align="center"><sub>Periodic user access reviews exported as audit evidence</sub></td>
     <td align="center"><sub>Immutable trail of every change and sign-in</sub></td>
   </tr>
+  <tr>
+    <td><img src="assets/screenshots/vendors.png" alt="Vendor register and shared responsibility matrix" width="440"></td>
+    <td><img src="assets/screenshots/responsibility-matrix.png" alt="RACI responsibility matrix" width="440"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Vendors: assurance on file and a shared responsibility matrix, typed, prompted or imported</sub></td>
+    <td align="center"><sub>RACI per control, for people and vendors, with the gaps counted</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/viewer.png" alt="Evidence opened in the browser" width="440"></td>
+    <td><img src="assets/screenshots/audit-packages.png" alt="Audit packages" width="440"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>PDF, image, Word and Excel evidence opened in the browser, with its digest</sub></td>
+    <td align="center"><sub>Sealed evidence packages issued to a named auditor</sub></td>
+  </tr>
 </table>
 
 ### Frameworks and controls
@@ -96,6 +112,28 @@ Local development without Docker (SQLite, console email) is one command too:
   cadences from monthly to biennial.
 - **Review reminders** emailed to owners and the compliance team at
   configurable lead times and once when overdue, deduplicated per window.
+- **Open in browser.** PDFs and images stream inline after a magic-byte
+  check; Word and Excel are parsed on the server and rendered as structure,
+  never as HTML from the file. The wrapper shows the version, the controls it
+  satisfies and a SHA-256 computed in the browser — the same digest a sealed
+  audit package records.
+
+### Third parties and shared responsibility
+- **Vendor register** with tier, data handled, owner and a review clock;
+  **assurance on file** — SOC 2 reports, ISO certificates, PCI AOCs, pen
+  tests, DPAs, a copy of their own responsibility matrix — with expiry
+  tracking, plus a built-in security questionnaire. Posture and risk rating
+  are computed from what is on file, not typed.
+- **Shared responsibility matrix per vendor** — provider / customer / shared
+  with a statement each side, over every control in scope. Type it, be walked
+  through the unstated controls, or **import the vendor's own CSV/XLSX**: the
+  columns and values are recognised in the layouts vendors actually send, and
+  nothing is written until you confirm what it read.
+- **RACI matrix** per control for people *and* vendors, with the control
+  owner as implied Accountable and a vendor's matrix as implied Responsible;
+  exactly one Accountable, and the gaps counted.
+- **Onboarding prompts** in the notification tray when a vendor has no
+  matrix, a report is about to lapse, or a review falls due.
 
 ### Governance
 - **Risk register** — likelihood × impact, treatment, due dates, Jira keys, a
@@ -110,6 +148,10 @@ Local development without Docker (SQLite, console email) is one command too:
 ### Security and access
 - **TOTP two-factor auth** with backup codes and admin reset; **rotating,
   revocable refresh tokens**; per-client login throttles shared across workers.
+- **Single sign-on over OpenID Connect** (Okta, Entra ID, Google Workspace,
+  Keycloak…), configured from the environment only, with verified-email
+  linking that never touches an administrator account, optional
+  auto-provisioning and a domain allow-list.
 - **Five built-in roles** plus custom roles, folder-level grants, and an API
   that enforces every rule the UI shows.
 - Security headers and CSP on by default; uploads size-capped, typed and
@@ -195,7 +237,7 @@ Everything in the badge row runs on every push:
 | Gate | What it proves |
 |---|---|
 | `tools/validate.py` — 17 static checks | app/route wiring, API contract between SPA and backend, shipped migrations, theme packs, tests + CI present |
-| `manage.py test` — **215 tests** | auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, audit trail, reminders, health, demo retirement, boot guard |
+| `manage.py test` — **293 tests** | auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, audit trail, reminders, health, demo retirement, boot guard |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 on SQLite, plus PostgreSQL 16 |
 | Frontend | production build + `npm audit --audit-level=high` |
 | Docker | both images build; the API image boots and answers `/api/health/` |
@@ -249,8 +291,8 @@ of what was disclosed, to whom, and every file they opened, is permanent.
 ```
 conformiti/
 ├── backend/            Django project (config/) + apps: accounts, compliance,
-│                       documents, governance, notifications, audit, analytics,
-│                       calendar_app, integrations · testutils.py · Dockerfile
+│                       documents, governance, vendors, attestations, notifications,
+│                       audit, analytics, calendar_app, integrations · testutils.py · Dockerfile
 ├── frontend/           React SPA (src/pages, src/components, src/styles) · Dockerfile · nginx.conf
 ├── compliance-data/    generated evidence folder tree (segregated by control)
 ├── docs/               architecture notes, sample risk import
@@ -264,10 +306,11 @@ conformiti/
 
 ## Roadmap
 
-Highlights from [ROADMAP.md](ROADMAP.md): cookie-based sessions, SSO
-(OIDC/SAML) and WebAuthn, automated evidence collection from cloud/SaaS
-integrations, per-control readiness scoring, evidence virus scanning,
-Slack/Teams notifications, and end-to-end browser tests in CI.
+Highlights from [ROADMAP.md](ROADMAP.md): sample rows on package items for a
+Type II operating-effectiveness workpaper, questionnaires sent to the vendor to
+answer, WebAuthn passkeys, a PBC request list, SAML for the providers that still
+insist on it, automated evidence collection from cloud/SaaS integrations, and
+Slack/Teams notifications.
 
 ## License
 

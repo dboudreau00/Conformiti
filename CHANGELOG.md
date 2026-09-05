@@ -5,6 +5,99 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-09-04
+
+The release that brings **third parties** into the picture and lets people
+**read evidence without downloading it**. Vendors get a register, the assurance
+they have given, and a shared responsibility matrix that can be typed, prompted
+or imported from whatever spreadsheet they sent; every control gets a RACI row
+that knows when a vendor is the one doing the work; Word, Excel, PDF and image
+evidence opens in the browser inside a wrapper that says what it is, what it
+satisfies and what its digest is; and sign-in can be delegated to an OpenID
+Connect provider, configured where an administrator cannot reach it.
+
+### Added
+
+- **Vendor risk management** (`vendors` app, `/vendors`). A register with
+  tier, status, data handled, services in scope, relationship owner and a
+  review cadence with an overdue clock. **Assurance on file** per vendor — SOC 2
+  Type I/II, ISO 27001 certificate, PCI DSS AOC, penetration test, DPA,
+  contract, a copy of their own responsibility matrix, or a **security
+  questionnaire** answered in-app from a shipped 12-question set — each with
+  period, issue and expiry dates, our conclusion and the filed document.
+  Assurance posture (current / partial / expired / unsatisfactory / none) and a
+  **risk rating that crosses tier with posture** are computed, never typed. A
+  risk can name its vendor. `GET /api/vendors/summary/`; CSV exports of the
+  register and of every matrix.
+- **Shared responsibility matrix per vendor.** An in-browser grid over every
+  control in scope — provider / customer / shared / not applicable, with a
+  statement for each side. Three ways to fill it: type into the grid, be
+  **walked through the unstated controls** one at a time, or **import the
+  vendor's own CSV/XLSX**. The importer recognises columns and values in the
+  layouts vendors actually send — an "AWS" column of X marks beside a
+  "Customer" column, a prose "Responsibility" column, "Provider statement /
+  Merchant statement", references written `Req 8.3.6`, `PCI DSS 8.3.6.` or
+  `A5.15` — shows how every column was read, calls out every unmatched
+  reference and unrecognised value for correction, and writes nothing until the
+  person confirms.
+- **Onboarding prompt.** A vendor with no responsibilities stated raises an
+  alert in the notification tray for its owner and the frameworks managers,
+  deep-linked to its matrix. Critical and high-tier vendors with under half the
+  matrix stated, an assurance report expiring within 60 days, and a review
+  falling overdue surface the same way.
+- **RACI responsibility matrix** (`/responsibilities`). Responsible,
+  Accountable, Consulted and Informed per control, for people *and* vendors.
+  The control owner is the implied Accountable; a vendor whose matrix says it
+  does or shares a control is the implied Responsible. **Exactly one
+  Accountable per control** — the API refuses a second. Gaps are counted, and
+  readiness scoring's *owner* signal now also accepts an explicit Accountable
+  row. CSV export.
+- **Open in browser.** PDFs and images (PNG, JPEG, GIF, WebP, BMP) stream
+  inline after a magic-byte check — a `report.pdf` that starts with `<html` is
+  refused. Word and Excel files are parsed on the server with the standard
+  library into headings, runs, list items, tables and sheets, and rendered by
+  the SPA from that vocabulary: **no HTML is ever produced from a file**, and no
+  third-party viewer sees it. The wrapper shows version, status, folder, the
+  controls the document satisfies, and a **SHA-256 computed in the browser from
+  the bytes on screen**, which a reviewer can compare with the digest recorded
+  in a sealed package. Reads are audited like downloads. Available from the
+  Documents page, from a control's linked evidence, and — under the auditor's
+  grant, through the package's own preview route — from an audit package.
+- **Single sign-on (OpenID Connect).** Authorization code + PKCE against any
+  OIDC provider (Okta, Entra ID, Google Workspace, Keycloak…), configured
+  **from the environment only**. The 0.3.0 design was held back because a
+  provider an administrator could register let them mint a superuser session;
+  removing the settable provider is what this design changes. ID tokens are
+  verified against the provider's JWKS (issuer, audience, expiry, nonce;
+  asymmetric algorithms only). A verified email links exactly one existing
+  account — never a superuser or staff account, which are linked only by the
+  deliberate `manage.py link_oidc_identity --allow-privileged`. Optional
+  auto-provisioning with a default role that is refused if it can manage users;
+  optional email-domain allow-list; one-time, session-bound tickets hand the SPA
+  its tokens in either transport; every outcome is in the audit trail. 22
+  offline tests drive the whole flow against a local RSA key.
+- Demo data: four vendors in the states above (a full matrix, a report about to
+  lapse, a lapsed one tied to the seeded vendor risk, and a fresh onboarding
+  with no matrix), a real PDF and PNG evidence file, and RACI rows.
+  `remove_demo_data` retires all of it.
+- End-to-end specs for vendors, the RACI matrix and the viewer; new README
+  screenshots.
+
+### Changed
+
+- Notification tray links may carry a query string (`/vendors?vendor=…&tab=matrix`).
+- `Risk` gains an optional `vendor` foreign key.
+- `PyJWT` is a direct dependency (it was already installed through SimpleJWT).
+
+### Upgrade notes
+
+- Apply migrations: `accounts 0003`, `compliance 0004` and `0005`, `vendors
+  0001`, `governance 0002`. Nothing else is required. SSO stays off until
+  `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` are all set; see
+  `.env.example` and INSTALL.md.
+
+---
+
 ## [0.3.0] — 2026-09-04
 
 The release that makes Conformiti useful **at audit time**, not just before

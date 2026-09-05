@@ -16,7 +16,8 @@ from .models import (
     FormTemplate,
 )
 from .access import accessible_folder_ids
-from .downloads import serve_stored_file
+from .downloads import serve_inline, serve_stored_file
+from . import preview as preview_lib
 from .scanning import scan_or_raise
 from .permissions import DocumentAccessPermission, FolderAccessPermission
 from .serializers import (
@@ -267,6 +268,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
         record_evidence_read(request, doc)
         return serve_stored_file(doc.file, doc.name)
 
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        """Show the document in the browser without rendering it as HTML.
+
+        PDFs and images stream inline after a magic-byte check; Word and Excel
+        come back as structured JSON the app renders itself. Same authorisation
+        as download, and recorded as a read the same way.
+        """
+        doc = self.get_object()
+        return preview_response(request, doc.file, doc.name, doc)
+
     @action(detail=True, methods=["get"], url_path=r"versions/(?P<version_pk>[^/.]+)/download")
     def download_version(self, request, pk=None, version_pk=None):
         """Stream an archived version. Same authorisation as the live file."""
@@ -332,3 +344,23 @@ class FormTemplateViewSet(viewsets.ModelViewSet):
         """Templates are blank forms, not evidence, so this is not audited --
         but it still goes through the API so no storage path is published."""
         return serve_stored_file(self.get_object().file, self.get_object().name)
+
+
+def preview_response(request, file_field, name, document, version=None):
+    """Shared by the document and package-evidence preview endpoints."""
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+
+    if not file_field:
+        raise DRFValidationError({"detail": "This document has no file."})
+    try:
+        result = preview_lib.render(file_field, name)
+    except preview_lib.PreviewError as exc:
+        return Response({"kind": None, "detail": str(exc)}, status=415)
+    record_evidence_read(request, document, version=version)
+    if result["kind"] == "pdf":
+        return serve_inline(file_field, "application/pdf", name)
+    if result["kind"] == "image":
+        with file_field.open("rb") as fh:
+            head = fh.read(16)
+        return serve_inline(file_field, preview_lib.image_content_type(head), name)
+    return Response(result)

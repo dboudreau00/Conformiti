@@ -8,6 +8,7 @@
 | `compliance` | `Framework`, `ControlCategory`, `Control`, `ControlMapping` (crosswalk), `ControlEvidence` (evidence ↔ control links), seed + on-disk folder tree, controls CSV export |
 | `documents` | `Folder` (self-parent tree with cycle guard), `FolderPermission`, `Document`, `DocumentVersion`, `FormTemplate`, upload validation |
 | `governance` | `Risk` + `RiskNote` (+ CSV/XLSX importer), `AccessReview` + snapshot items, `MeetingSeries` + minutes, `ChampionGroup` + members |
+| `vendors` | `Vendor` (tier, posture, computed risk rating), `VendorAssessment` (reports, AOCs, questionnaires, filed documents), `SharedResponsibility` (per-vendor matrix) + the CSV/XLSX recogniser (`matrix.py`) |
 | `notifications` | review-reminder scan (Celery task / management command), email transports (console, SMTP, mailbox, SES), derived per-user in-app feed + receipts |
 | `audit` | `AuditLog`, request middleware (mutations with field names), explicit auth events, read-only viewer API |
 | `analytics` | dashboard summary endpoint, `ReadinessSnapshot` history + trend |

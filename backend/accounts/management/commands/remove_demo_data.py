@@ -26,7 +26,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from accounts.management.commands.bootstrap_demo import (
-    ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, SAMPLE_DOCS,
+    ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, DEMO_VENDOR_NAMES, SAMPLE_DOCS,
 )
 
 DEMO_USERNAMES = [u[0] for u in DEMO_USERS]
@@ -97,9 +97,17 @@ class Command(BaseCommand):
         packages = EvidencePackage.objects.filter(
             name=DEMO_PACKAGE_NAME, created_by__username__in=DEMO_USERNAMES
         )
+        # Vendors cascade to their assessments, shared responsibility rows and
+        # RACI rows; a risk that named one is kept and simply loses the link.
+        from compliance.models import Responsibility
+        from vendors.models import Vendor
+        vendors = Vendor.objects.filter(name__in=DEMO_VENDOR_NAMES, created_by__username__in=DEMO_USERNAMES)
+        raci = Responsibility.objects.filter(created_by__username__in=DEMO_USERNAMES)
 
         self.stdout.write(f"Demo users ({'delete' if delete else 'deactivate'}): "
                           f"{', '.join(u.username for u in demo_users) or 'none'}")
+        self.stdout.write(f"Sample vendors {verb} be deleted: {vendors.count()}")
+        self.stdout.write(f"Seeded RACI rows {verb} be deleted: {raci.count()}")
         self.stdout.write(f"Sample documents {verb} be deleted: {docs.count()}")
         self.stdout.write(f"Sample risks {verb} be deleted: {risks.count()}")
         self.stdout.write(f"Sample meeting series {verb} be deleted: {series.count()}")
@@ -129,6 +137,8 @@ class Command(BaseCommand):
         reviews.delete()
         packages.delete()
         audit_rows.delete()
+        raci.delete()
+        vendors.delete()
 
         for user in demo_users:
             if delete:

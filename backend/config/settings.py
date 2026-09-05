@@ -181,6 +181,7 @@ INSTALLED_APPS = [
     "governance",
     "integrations",
     "attestations",
+    "vendors",
 ]
 
 MIDDLEWARE = [
@@ -542,6 +543,28 @@ AUTH_COOKIE_REFRESH = os.getenv("AUTH_COOKIE_REFRESH", "conformiti_refresh")
 # backup codes.
 AUTH_COOKIE_REFRESH_PATH = "/api/auth/token/"
 AUTH_COOKIE_SECURE = env_bool("AUTH_COOKIE_SECURE", BEHIND_TLS)
+
+# --- Single sign-on (OpenID Connect) -------------------------------------------
+# Environment only, on purpose: a provider an administrator could configure
+# from the UI is a provider an administrator could point at themselves. Leave
+# OIDC_ISSUER unset and the login screen shows no SSO button at all.
+OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip().rstrip("/")
+OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()
+OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
+OIDC_SCOPES = os.getenv("OIDC_SCOPES", "openid email profile").strip() or "openid email profile"
+OIDC_LABEL = os.getenv("OIDC_LABEL", "Single sign-on").strip() or "Single sign-on"
+# Defaults to https://<host>/api/auth/oidc/callback/ from the request; pin it
+# when the app sits behind a proxy that rewrites Host.
+OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "").strip()
+OIDC_ALLOWED_DOMAINS = [
+    d.strip().lower().lstrip("@") for d in os.getenv("OIDC_ALLOWED_DOMAINS", "").split(",") if d.strip()
+]
+OIDC_AUTO_PROVISION = env_bool("OIDC_AUTO_PROVISION", False)
+OIDC_DEFAULT_ROLE = os.getenv("OIDC_DEFAULT_ROLE", "Viewer").strip() or "Viewer"
+OIDC_LINK_BY_EMAIL = env_bool("OIDC_LINK_BY_EMAIL", True)
+OIDC_REQUIRE_VERIFIED_EMAIL = env_bool("OIDC_REQUIRE_VERIFIED_EMAIL", True)
+if OIDC_ISSUER and not OIDC_ISSUER.startswith("https://") and not DEBUG:
+    raise ImproperlyConfigured("OIDC_ISSUER must be an https:// URL.")
 
 # --- Logging ------------------------------------------------------------------
 # Plain, single-line console logging that docker/systemd/journald can ingest.

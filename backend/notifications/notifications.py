@@ -71,6 +71,66 @@ def build(user):
                 "/documents", d.next_review_date,
             ))
 
+    # ---- 1b. Vendors I own --------------------------------------------------
+    from vendors.models import Vendor, VendorAssessment
+    my_vendors = Vendor.objects.filter(
+        owner=user, status__in=("active", "offboarding")).prefetch_related("assessments")
+    for v in my_vendors:
+        if v.next_review_date and v.next_review_date < today:
+            items.append(_n(
+                f"vendor-review:{v.id}", "vendor", "high",
+                f"Vendor review overdue: {v.name}",
+                f"Was due {v.next_review_date.isoformat()}", "/vendors", v.next_review_date,
+            ))
+        posture = v.assurance()["posture"]
+        if posture in ("expired", "none") and v.tier in ("critical", "high"):
+            items.append(_n(
+                f"vendor-assurance:{v.id}", "vendor", "high",
+                f"No current assurance over {v.name}",
+                f"{v.get_tier_display()} vendor with {'expired' if posture == 'expired' else 'no'} "
+                "assessment on file", "/vendors",
+            ))
+    # Onboarding prompt: a new or unstated vendor needs its responsibility
+    # matrix before an auditor asks which controls' evidence to expect from
+    # whom. Surfaced to the vendor's owner and to every frameworks manager.
+    from vendors.models import SharedResponsibility
+    from compliance.models import Control
+    can_prompt = user.is_superuser or user.can_manage_frameworks
+    prompt_vendors = Vendor.objects.filter(status__in=("prospective", "active"))
+    if not can_prompt:
+        prompt_vendors = prompt_vendors.filter(owner=user)
+    total_controls = Control.objects.exclude(status="not_applicable").count()
+    for v in prompt_vendors.select_related("owner"):
+        stated = SharedResponsibility.objects.filter(vendor=v).count()
+        if stated == 0:
+            age = (today - v.created_at.date()).days
+            severity = "high" if v.tier in ("critical", "high") else "medium"
+            items.append(_n(
+                f"vendor-onboard:{v.id}", "vendor", severity,
+                f"New vendor: state responsibilities for {v.name}",
+                f"No shared responsibility matrix yet ({age}d since onboarding). "
+                "Record which controls they cover, or import their matrix.",
+                f"/vendors?vendor={v.id}&tab=matrix", v.created_at.date(),
+            ))
+        elif total_controls and stated < total_controls * 0.5 and v.tier in ("critical", "high"):
+            items.append(_n(
+                f"vendor-matrix-partial:{v.id}", "vendor", "low",
+                f"Responsibility matrix incomplete: {v.name}",
+                f"{stated} of {total_controls} controls stated.",
+                f"/vendors?vendor={v.id}&tab=matrix",
+            ))
+
+    soon = today + timezone.timedelta(days=60)
+    for a in VendorAssessment.objects.filter(
+        vendor__owner=user, expires_at__gte=today, expires_at__lte=soon
+    ).select_related("vendor"):
+        days = (a.expires_at - today).days
+        items.append(_n(
+            f"vendor-expiry:{a.id}", "vendor", "medium",
+            f"{a.get_kind_display()} expires for {a.vendor.name}",
+            f"Expires {a.expires_at.isoformat()} ({days}d)", "/vendors", a.expires_at,
+        ))
+
     # ---- 2. Risks I own -----------------------------------------------------
     my_risks = Risk.objects.filter(
         owner=user, status__in=[Risk.Status.OPEN, Risk.Status.MITIGATING]

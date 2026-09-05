@@ -69,3 +69,34 @@ def serve_stored_file(file_field, download_name=None):
     # Evidence is not public, and a shared cache must not keep a copy.
     response["Cache-Control"] = "private, no-store"
     return response
+
+
+def serve_inline(file_field, content_type, download_name=None):
+    """Stream a file for display *inside* the app, not as an attachment.
+
+    Only ever called for a kind the preview module has verified from the
+    file's own bytes -- a PDF that starts with %PDF-, an image with its magic
+    number. The CSP still forbids scripts and plugins, and frame-ancestors is
+    restricted to the app itself, so the document can be shown in the viewer
+    and nowhere else.
+    """
+    if not file_field:
+        raise Http404("This document has no file.")
+    name = download_name or posixpath.basename(file_field.name)
+    if getattr(settings, "MEDIA_INTERNAL", False) and not getattr(settings, "USE_S3", False):
+        response = HttpResponse(status=200)
+        response["X-Accel-Redirect"] = settings.MEDIA_ACCEL_PREFIX + quote(
+            file_field.name.replace(os.sep, "/"))
+        del response["Content-Type"]
+    else:
+        response = FileResponse(file_field.open("rb"))
+    response["Content-Type"] = content_type
+    response["Content-Disposition"] = "inline; " + _content_disposition(name).split("; ", 1)[1]
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Content-Security-Policy"] = (
+        "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; "
+        "frame-ancestors 'self'; object-src 'none'; script-src 'none'"
+    )
+    response["Referrer-Policy"] = "same-origin"
+    response["Cache-Control"] = "private, no-store"
+    return response

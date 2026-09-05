@@ -22,6 +22,31 @@ issues for vulnerabilities. You will get an acknowledgement within a week.
   authenticator app, enforced at login as a second step, with single-use backup
   codes and admin lockout-recovery. Implemented on the standard library and
   verified against the RFC 4226/6238 test vectors in the test suite.
+- **Single sign-on (optional, OpenID Connect):** authorization code + PKCE;
+  `state` and `nonce` held server-side in the session; ID tokens verified
+  against the provider's JWKS for signature (asymmetric algorithms only — an
+  `HS256` token signed with the client secret is refused), issuer, audience,
+  expiry and nonce; provider endpoints reached over https only, without
+  following redirects, with a bounded body. The provider is configured **from
+  the environment only** — there is deliberately no screen or API for it,
+  because a provider an administrator could register is a provider they could
+  point at themselves. A verified email links exactly one existing account and
+  **never a superuser or staff account**; those are linked only by an operator
+  running `manage.py link_oidc_identity --allow-privileged`. Auto-provisioning
+  is off by default and refuses a default role that can manage users. The
+  SPA receives its tokens through a one-time ticket bound to the browser
+  session that ran the flow. Every outcome — linked, provisioned, refused and
+  why — is in the audit trail.
+- **Evidence preview never renders a file as HTML.** PDFs and images stream
+  inline only when their first bytes say so; the SPA fetches them through the
+  API and shows them from a `blob:` URL that carries the server-assigned
+  content type, so a PDF frame can only ever hold a PDF document, and the
+  media location's forced-download and framing headers stay as they are. (The
+  frame is not `sandbox`ed: Chromium's PDF viewer is a plugin and a sandboxed
+  frame disables plugins, which renders blank.) Word and Excel are parsed on
+  the server with the standard library
+  (zip bomb and size limits, no external entities) into a small structured
+  vocabulary the SPA renders itself. No third-party viewer is involved.
 - **Secrets at rest:** the two columns that must be readable by the server —
   the TOTP shared secret and the Jira API token — are encrypted with
   AES-256-GCM under a rotatable key ring (`manage.py rotate_field_keys`). The
@@ -173,8 +198,20 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   the audit trail, which records the digest, plus publishing that digest to the
   auditor out of band. The product says so in the bundle's README and on the
   package screen; do not describe a package as *signed* or *certified*.
-- **Passkeys (WebAuthn) and OAuth/SAML SSO are not implemented.** TOTP MFA
-  covers the second-factor requirement today; SSO is on the roadmap.
+- **An SSO login trusts the identity provider for the second factor.** Local
+  TOTP is not asked for on an OpenID Connect sign-in; the provider
+  authenticated the person, and step-up policy belongs there. Enforce MFA at
+  the IdP. A compromised IdP tenant administrator can sign in as any linked
+  non-privileged user — which is why administrator accounts are never linked
+  by email and why the provider cannot be changed from inside the app.
+  Passkeys (WebAuthn) and SAML are not implemented.
+- **Office preview parses untrusted files on the server.** Word and Excel
+  previews go through `zipfile` and `xml.etree` with hard ceilings (40 MB
+  unzipped, 3,000 blocks, 12 sheets of 1,000×64 cells, 512 KB of text) and
+  Python's expat, which does not resolve external entities. The parsing is
+  bounded and stdlib-only rather than sandboxed; if you accept uploads from
+  people you do not control, keep malware scanning on, and note that the
+  preview endpoint runs in the API process.
 - **Malware scanning is off unless you turn it on.** Without the scanning
   profile, files are typed, size-capped and served as attachments, but not
   scanned. Turn it on if you accept files from people you do not control.

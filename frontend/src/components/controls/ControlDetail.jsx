@@ -4,6 +4,7 @@ import api, { fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
 import { CONTROL_STATUS, DOC_STATUS, READINESS_BAND } from "../../utils/tone.js";
+import DocumentViewer from "../documents/DocumentViewer.jsx";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
 import { Label, Loading } from "../ui/Panel.jsx";
@@ -37,6 +38,21 @@ export function ControlDetail({
   const [busy, setBusy] = useState(false); // attach / unlink in flight
   const [saving, setSaving] = useState(false); // status / owner PATCH in flight
   const [notice, setNotice] = useState(null); // { ok?, warn?, err?, skipped? }
+  const [viewing, setViewing] = useState(null); // in-browser viewer props
+
+  const openLink = (l) => setViewing({
+    title: l.document_name,
+    subtitle: `${l.folder_path} · evidence for ${control.control_id}`,
+    previewUrl: `/documents/${l.document}/preview/`,
+    downloadUrl: `/documents/${l.document}/download/`,
+    filename: l.document_name,
+    badge: DOC_STATUS[l.document_status] || { label: l.document_status, tone: "muted" },
+    facts: [
+      { label: "Folder", value: l.folder_path },
+      { label: "Linked by", value: l.linked_by_name || "—" },
+      { label: "Note", value: l.note || "—" },
+    ],
+  });
 
   const id = control.id;
 
@@ -247,7 +263,10 @@ export function ControlDetail({
                     <PaperclipIcon className="mt-1 h-3.5 w-3.5 shrink-0 text-faint" strokeWidth={2} aria-hidden="true" />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate text-[13px] font-medium text-ink">{l.document_name}</span>
+                        <button type="button" onClick={() => openLink(l)} title="Open in browser"
+                                className="truncate text-left text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:text-accent">
+                          {l.document_name}
+                        </button>
                         <Badge tone={ds.tone} dot>{ds.label}</Badge>
                       </div>
                       <p className="truncate font-mono text-2xs text-faint">{l.folder_path}</p>
@@ -318,6 +337,7 @@ export function ControlDetail({
           </form>
         ) : null}
       </div>
+      <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
     </div>
   );
 }

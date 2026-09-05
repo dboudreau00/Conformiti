@@ -49,8 +49,9 @@ export const test = base.extend({
     page.on("pageerror", (err) => problems.push(`pageerror: ${err.message}`));
     page.on("requestfailed", (req) => {
       const failure = req.failure()?.errorText || "";
-      if (IGNORED.some((re) => re.test(req.url()) || re.test(failure))) return;
-      problems.push(`requestfailed: ${req.method()} ${req.url()} — ${failure}`);
+      const text = `${req.method()} ${req.url()} — ${failure}`;
+      if (IGNORED.some((re) => re.test(req.url()) || re.test(failure)) || allowed(text)) return;
+      problems.push(`requestfailed: ${text}`);
     });
 
     await use(page);

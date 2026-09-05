@@ -107,8 +107,12 @@ class AuthConfigView(APIView):
     throttle_classes = []
 
     def get(self, request):
+        from .oidc import config as oidc_config
+
+        sso = oidc_config()
         return Response({
             "transport": cookie_auth.transport(),
             "mfa": True,
             "password_min_length": getattr(settings, "PASSWORD_MIN_LENGTH", 12),
+            "oidc": {"enabled": sso.enabled, "label": sso.label if sso.enabled else ""},
         })
