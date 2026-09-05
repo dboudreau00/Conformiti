@@ -392,6 +392,8 @@ REST_FRAMEWORK = {
         "refresh": os.getenv("THROTTLE_REFRESH", "30/min"),
         # Sealing and exporting hash every pinned file.
         "package_work": os.getenv("THROTTLE_PACKAGE_WORK", "6/min"),
+        # The vendor's side of the questionnaire: public, keyed by the link.
+        "questionnaire": os.getenv("THROTTLE_QUESTIONNAIRE", "20/min"),
     },
     # Browsable API only while developing; JSON-only in production.
     "DEFAULT_RENDERER_CLASSES": (
@@ -619,6 +621,31 @@ SSO_MFA_ASSERTIONS = [
         "http://schemas.microsoft.com/ws/2012/12/authmethod/fido",
     ).split(",") if a.strip()
 ]
+
+# --- Passkeys (WebAuthn) -------------------------------------------------------------
+# A passkey is bound to the relying-party id for life. By default it is the
+# host the request arrived on, without the port, and the accepted origin is
+# the request's own -- right for the shipped stack, where the SPA and the API
+# share one origin. Pin both when the app sits behind a proxy that rewrites
+# Host, or when it must keep serving keys enrolled under an earlier hostname.
+WEBAUTHN_RP_ID = os.getenv("WEBAUTHN_RP_ID", "").strip().lower()
+WEBAUTHN_RP_NAME = os.getenv("WEBAUTHN_RP_NAME", "Conformiti").strip() or "Conformiti"
+WEBAUTHN_ORIGINS = [
+    o.strip().rstrip("/").lower() for o in os.getenv("WEBAUTHN_ORIGINS", "").split(",") if o.strip()
+]
+# preferred (default): use a PIN/biometric when the authenticator has one;
+# required: refuse keys and sign-ins without one; discouraged: never ask.
+WEBAUTHN_USER_VERIFICATION = os.getenv("WEBAUTHN_USER_VERIFICATION", "preferred").strip().lower()
+if WEBAUTHN_USER_VERIFICATION not in ("required", "preferred", "discouraged"):
+    raise ImproperlyConfigured("WEBAUTHN_USER_VERIFICATION must be required, preferred or discouraged.")
+
+# --- Public address ---------------------------------------------------------------------
+# Where people outside the organisation reach this installation: the link in
+# a questionnaire emailed to a vendor is built from it. Defaults to the origin
+# the sending request arrived on, which behind the shipped nginx is right.
+PUBLIC_URL = os.getenv("PUBLIC_URL", "").strip().rstrip("/")
+# Named in what vendors receive ("a security questionnaire from Acme Ltd").
+ORGANISATION_NAME = os.getenv("ORGANISATION_NAME", "").strip()
 
 # --- Logging ------------------------------------------------------------------
 # Plain, single-line console logging that docker/systemd/journald can ingest.

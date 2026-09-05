@@ -336,7 +336,7 @@ class SamlFlowTests(APITestBase):
         ticket = self.sign_in()
         r = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data, {"mfa_required": True})
+        self.assertEqual((r.data["mfa_required"], r.data["factors"]["totp"]), (True, True))
         r = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket, "otp": "000000"}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data["code"], "mfa_invalid")
@@ -369,8 +369,8 @@ class SamlFlowTests(APITestBase):
             self.refused("mfa_required")
             self._enrol(self.viewer)
             ticket = self.sign_in()
-            self.assertEqual(self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data,
-                             {"mfa_required": True})
+            self.assertTrue(self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket},
+                                           format="json").data["mfa_required"])
         with override_settings(SSO_STEP_UP="off"):
             ticket = self.sign_in()
             self.assertIn("access", self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data)

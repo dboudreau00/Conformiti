@@ -369,3 +369,123 @@ class PackageGrant(models.Model):
     def is_live(self):
         from django.utils import timezone
         return self.revoked_at is None and self.expires_at > timezone.now()
+
+
+class PbcRequest(models.Model):
+    """One line of the auditor's request list ("prepared by client").
+
+    The package is what the organisation hands over; the request list is what
+    the auditor asks for, before and during fieldwork, and the other half of
+    the same workflow. Either side may raise a line: the issued auditor from
+    inside the package, or the organisation transcribing the list the auditor
+    emailed. The organisation assigns it, chases it (reminders go to the
+    assignee), and answers it by attaching documents; the auditor accepts the
+    answer or returns it with a note. Nothing here changes the sealed
+    manifest -- a request answered after sealing is a supplementary
+    disclosure, read under the same grant and recorded the same way.
+    """
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        PROVIDED = "provided", "Provided"
+        ACCEPTED = "accepted", "Accepted"
+        RETURNED = "returned", "Returned"
+        WITHDRAWN = "withdrawn", "Withdrawn"
+
+    class Priority(models.TextChoices):
+        NORMAL = "normal", "Normal"
+        HIGH = "high", "High"
+
+    class Side(models.TextChoices):
+        AUDITOR = "auditor", "Auditor"
+        ORGANISATION = "organisation", "Organisation"
+
+    # The statuses that are still the organisation's to act on.
+    ACTIONABLE = ("open", "returned")
+
+    package = models.ForeignKey(EvidencePackage, on_delete=models.CASCADE, related_name="pbc_requests")
+    ordinal = models.PositiveIntegerField()
+    reference = models.CharField(max_length=20)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    package_control = models.ForeignKey(
+        PackageControl, null=True, blank=True, on_delete=models.SET_NULL, related_name="pbc_requests")
+    control_ref = models.CharField(max_length=40, blank=True)
+    priority = models.CharField(max_length=8, choices=Priority.choices, default=Priority.NORMAL)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    due_date = models.DateField(null=True, blank=True)
+    assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="pbc_requests_assigned",
+    )
+    assignee_name = models.CharField(max_length=200, blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="pbc_requests_raised",
+    )
+    requested_by_name = models.CharField(max_length=200, blank=True)
+    requested_by_side = models.CharField(max_length=12, choices=Side.choices, default=Side.ORGANISATION)
+    response_note = models.TextField(blank=True)
+    provided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="pbc_requests_provided",
+    )
+    provided_by_name = models.CharField(max_length=200, blank=True)
+    provided_at = models.DateTimeField(null=True, blank=True)
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="pbc_requests_accepted",
+    )
+    accepted_by_name = models.CharField(max_length=200, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    returned_note = models.TextField(blank=True)
+    returned_at = models.DateTimeField(null=True, blank=True)
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
+    # Lead-time windows already emailed, like Document.reminders_sent.
+    reminders_sent = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["package", "ordinal"]
+        unique_together = ("package", "ordinal")
+
+    def __str__(self):
+        return f"{self.reference}: {self.title}"
+
+    @property
+    def is_actionable(self):
+        return self.status in self.ACTIONABLE
+
+    @property
+    def is_overdue(self):
+        from django.utils import timezone
+        return bool(self.is_actionable and self.due_date and self.due_date < timezone.localdate())
+
+
+class PbcItem(models.Model):
+    """A document attached in answer to a request, snapshotted as it stood
+    (name, version, digest) exactly like pinned package evidence, so the
+    answer stays a record even if the document moves on."""
+
+    request = models.ForeignKey(PbcRequest, on_delete=models.CASCADE, related_name="items")
+    document = models.ForeignKey(
+        "documents.Document", null=True, blank=True, on_delete=models.SET_NULL, related_name="pbc_items")
+    document_name = models.CharField(max_length=255)
+    version = models.PositiveIntegerField(default=1)
+    size_bytes = models.BigIntegerField(default=0)
+    content_sha256 = models.CharField(max_length=64, blank=True)
+    note = models.CharField(max_length=255, blank=True)
+    attached_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="pbc_items_attached",
+    )
+    attached_by_name = models.CharField(max_length=200, blank=True)
+    attached_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["attached_at", "pk"]
+        unique_together = ("request", "document")
+
+    def __str__(self):
+        return f"{self.document_name} on {self.request_id}"

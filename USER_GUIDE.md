@@ -140,12 +140,30 @@ stored server-side, never sent to the browser) and track boards by id;
 everyone can read the tracked boards' issues. Only `https://` public hosts are
 allowed.
 
+### Vendors
+The third-party register: tier, what they touch, the assurance on file with
+its expiry, the shared responsibility matrix, and the security questionnaire.
+**Send to the vendor** on the Questionnaire tab emails their contact a
+personal link (valid 14 days by default); they answer in their browser, and
+the result appears as *Returned by …* for you to mark satisfactory, exceptions
+noted or unsatisfactory.
+
+### Audit packages
+Assemble the controls and evidence for an engagement, seal the package and
+issue it to the auditor's account for a fixed period. The **Request list**
+on each package is what the auditor has asked for: raise lines (or let the
+auditor raise them), assign and date each one, attach the documents and mark
+it *provided*; the auditor accepts or returns it. Lines assigned to you are
+also listed on this page even if you cannot see the package itself.
+
 ### Settings
 - **Profile** — name, email (where reminders go), job title.
 - **Appearance** — theme packs, accent packs, a custom accent colour, live preview.
 - **Security** — change password; enable two-factor (setup key or `otpauth://`
   URI for any authenticator app, one-time backup codes), regenerate codes or
-  turn it off (password required).
+  turn it off (password required); enrol **passkeys or security keys**, which
+  then satisfy the second step instead of a code. A key flagged as possibly
+  cloned is disabled — remove it with your password and enrol a fresh one.
 - **Notifications** — how reminders reach you.
 - **Role & access** — your capabilities.
 - **About** — version, frameworks loaded, whether demo data is present.

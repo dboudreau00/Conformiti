@@ -155,6 +155,46 @@ not say a second factor was used (OIDC `amr`, SAML `AuthnContextClassRef`):
 factor; the default covers the usual OIDC `amr` values and SAML context
 classes, including Entra ID's `multipleauthn`.
 
+### Passkeys and security keys
+
+On with no configuration: people enrol from *Settings › Security › Passkeys*
+and are then asked for the key after their password (or at the SSO step-up).
+Two things to know:
+
+- Browsers only offer passkeys on **https** (or `localhost`). A LAN
+  deployment on plain http will show the enrolment as unavailable.
+- A passkey is bound for life to the **relying-party id**, which defaults to
+  the host the request arrives on, without the port; the accepted origin
+  defaults to the request's own. Behind a proxy that rewrites `Host`, or to
+  keep serving keys enrolled under an earlier hostname, pin them:
+  ```ini
+  WEBAUTHN_RP_ID=grc.example.com
+  WEBAUTHN_ORIGINS=https://grc.example.com
+  WEBAUTHN_USER_VERIFICATION=preferred     # or required, to insist on a PIN/biometric
+  ```
+
+A key whose signature counter goes backwards is treated as cloned: it is
+disabled and the sign-in refused, and the person needs their other factor.
+`manage.py`-free recovery is an administrator's *Reset MFA* on the Users page,
+which removes the authenticator app and every passkey.
+
+On the local development servers the Vite proxy rewrites `Host` to the
+backend's, so pin the relying party there too:
+`WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost:5173`.
+
+### The questionnaire sent to the vendor
+
+The link a vendor receives is built from `PUBLIC_URL`, or from the origin the
+sending browser was on when it is unset — right behind the shipped nginx.
+Set `ORGANISATION_NAME` so the email says who is asking:
+```ini
+PUBLIC_URL=https://grc.example.com
+ORGANISATION_NAME=Acme Ltd
+```
+Emails go out through whichever `EMAIL_PROVIDER` is configured; with
+`console` (the local default) the link is printed to the server log and shown
+once on screen instead.
+
 Everyday operations:
 
 ```bash

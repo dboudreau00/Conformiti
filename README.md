@@ -124,6 +124,9 @@ Local development without Docker (SQLite, console email) is one command too:
   tests, DPAs, a copy of their own responsibility matrix — with expiry
   tracking, plus a built-in security questionnaire. Posture and risk rating
   are computed from what is on file, not typed.
+- **The questionnaire, sent to the vendor**: one click emails their contact a
+  personal, time-boxed link; they answer in the browser with no account, and
+  the result comes back as a pending assessment for you to review.
 - **Shared responsibility matrix per vendor** — provider / customer / shared
   with a statement each side, over every control in scope. Type it, be walked
   through the unstated controls, or **import the vendor's own CSV/XLSX**: the
@@ -150,8 +153,11 @@ Local development without Docker (SQLite, console email) is one command too:
   sign-out, with actor, record, changed fields and IP.
 
 ### Security and access
-- **TOTP two-factor auth** with backup codes and admin reset; **rotating,
-  revocable refresh tokens**; per-client login throttles shared across workers.
+- **TOTP two-factor auth** with backup codes and admin reset; **passkeys and
+  security keys (WebAuthn)** alone or alongside it, with a clone detector
+  that disables the copied key and never drops the account to password-only;
+  **rotating, revocable refresh tokens**; per-client login throttles shared
+  across workers.
 - **Single sign-on over OpenID Connect or SAML 2.0** (Okta, Entra ID, Google
   Workspace, Keycloak…), configured from the environment only, with
   verified-email linking that never touches an administrator account,
@@ -291,6 +297,14 @@ sealing, the auditor adds their own selections and records **pass, exception
 or not tested** per item, with an exception note that is required, not
 optional. The bundle carries the whole workpaper as `samples.csv`.
 
+The other half of the workflow is the **PBC request list** on the same
+package: what the auditor has asked for. The auditor raises lines from inside
+the package (or you transcribe the list they emailed), each one is assigned,
+dated and chased — in the tray and by email — and answered by attaching
+documents and marking it *provided*; the auditor accepts it or returns it with
+a note. A control owner with no package access still sees and answers the
+lines assigned to them.
+
 > The bundle proves **integrity, not origin**: it carries no signature, so the
 > digest in the audit trail and the copy you publish out of band are what bind
 > it to a moment.
@@ -317,11 +331,10 @@ conformiti/
 
 ## Roadmap
 
-Highlights from [ROADMAP.md](ROADMAP.md): sample rows on package items for a
-Type II operating-effectiveness workpaper, questionnaires sent to the vendor to
-answer, WebAuthn passkeys, a PBC request list, SAML for the providers that still
-insist on it, automated evidence collection from cloud/SaaS integrations, and
-Slack/Teams notifications.
+Highlights from [ROADMAP.md](ROADMAP.md): year-over-year roll-forward between
+packages, backup codes for passkey-only accounts, scanner monitoring, cookie
+transport as the default, automated evidence collection from cloud/SaaS
+integrations, and Slack/Teams notifications.
 
 ## License
 

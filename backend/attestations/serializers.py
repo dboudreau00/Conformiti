@@ -2,7 +2,92 @@
 `__all__` here would publish the forensic storage path."""
 from rest_framework import serializers
 
-from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant, PackageSample
+from .models import (
+    EvidencePackage, PackageControl, PackageEvidence, PackageGrant, PackageSample, PbcItem, PbcRequest,
+)
+
+
+class PbcItemSerializer(serializers.ModelSerializer):
+    download_url = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PbcItem
+        fields = [
+            "id", "request", "document", "document_name", "version", "size_bytes", "content_sha256",
+            "note", "attached_by_name", "attached_at", "download_url", "preview_url",
+        ]
+        read_only_fields = ["document_name", "version", "size_bytes", "content_sha256",
+                            "attached_by_name", "attached_at"]
+
+    def get_download_url(self, obj):
+        return f"/pbc-items/{obj.pk}/file/"
+
+    def get_preview_url(self, obj):
+        return f"/pbc-items/{obj.pk}/preview/"
+
+
+class PbcRequestSerializer(serializers.ModelSerializer):
+    items = PbcItemSerializer(many=True, read_only=True)
+    package_name = serializers.CharField(source="package.name", read_only=True)
+    package_status = serializers.CharField(source="package.status", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    priority_display = serializers.CharField(source="get_priority_display", read_only=True)
+    is_overdue = serializers.BooleanField(read_only=True)
+    days_until_due = serializers.SerializerMethodField()
+    can = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PbcRequest
+        fields = [
+            "id", "package", "package_name", "package_status", "ordinal", "reference", "title",
+            "description", "package_control", "control_ref", "priority", "priority_display",
+            "status", "status_display", "due_date", "is_overdue", "days_until_due",
+            "assignee", "assignee_name", "requested_by_name", "requested_by_side",
+            "response_note", "provided_by_name", "provided_at",
+            "accepted_by_name", "accepted_at", "returned_note", "returned_at", "withdrawn_at",
+            "items", "can", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "ordinal", "reference", "control_ref", "status", "assignee_name", "requested_by_name",
+            "requested_by_side", "response_note", "provided_by_name", "provided_at",
+            "accepted_by_name", "accepted_at", "returned_note", "returned_at", "withdrawn_at",
+            "created_at", "updated_at",
+        ]
+
+    def validate_title(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Say what is being asked for.")
+        return value
+
+    def get_days_until_due(self, obj):
+        from django.utils import timezone
+        if not obj.due_date:
+            return None
+        return (obj.due_date - timezone.localdate()).days
+
+    def get_can(self, obj):
+        """What the caller may do to this line, so the screen shows only the
+        buttons that will work. Mirrors the checks in pbc_views."""
+        from . import access
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return {}
+        assembler = access.can_assemble(user)
+        grantee = access.live_grant(user, obj.package) is not None
+        closed = obj.package.status == EvidencePackage.Status.WITHDRAWN
+        own = grantee and obj.requested_by_id == user.pk
+        return {
+            "edit": not closed and (assembler or (own and obj.status in ("open", "returned"))),
+            "answer": not closed and obj.is_actionable and (assembler or obj.assignee_id == user.pk),
+            "attach": (not closed and obj.status not in ("accepted", "withdrawn")
+                       and (assembler or obj.assignee_id == user.pk)),
+            "judge": not closed and obj.status == "provided" and (grantee or assembler),
+            "withdraw": (not closed and obj.status not in ("accepted", "withdrawn") and (assembler or own)),
+        }
 
 
 class PackageSampleSerializer(serializers.ModelSerializer):
@@ -154,6 +239,7 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
     control_count = serializers.SerializerMethodField()
     evidence_count = serializers.SerializerMethodField()
     live_grants = serializers.SerializerMethodField()
+    pbc_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = EvidencePackage
@@ -167,7 +253,7 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
             "manifest_algorithm", "generator",
             "withdrawn_at", "withdrawn_reason",
             "created_by_name", "created_at", "updated_at",
-            "control_count", "evidence_count", "live_grants",
+            "control_count", "evidence_count", "live_grants", "pbc_summary",
         ]
         read_only_fields = [
             "status", "asserted_by_name", "asserted_at", "sealed_by_name", "sealed_at",
@@ -186,3 +272,13 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
             {"username": g.username, "full_name": g.full_name, "expires_at": g.expires_at}
             for g in obj.grants.all() if g.is_live
         ]
+
+    def get_pbc_summary(self, obj):
+        counts = {"total": 0, "open": 0, "provided": 0, "accepted": 0, "returned": 0,
+                  "withdrawn": 0, "overdue": 0}
+        for r in obj.pbc_requests.all():
+            counts["total"] += 1
+            counts[r.status] = counts.get(r.status, 0) + 1
+            if r.is_overdue:
+                counts["overdue"] += 1
+        return counts

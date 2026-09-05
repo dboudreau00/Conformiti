@@ -576,13 +576,15 @@ class Command(BaseCommand):
         from attestations.snapshot import pin_document, snapshot_control
         from compliance.models import ControlEvidence
 
-        if EvidencePackage.objects.filter(name=DEMO_PACKAGE_NAME).exists():
-            self.stdout.write("  Evidence package: already present, left alone")
-            return
-
         admin = User.objects.filter(username="admin").first()
         mia = User.objects.filter(username="mia").first()
         aria = User.objects.filter(username="aria").first()
+        existing = EvidencePackage.objects.filter(name=DEMO_PACKAGE_NAME).first()
+        if existing is not None:
+            self.stdout.write("  Evidence package: already present, left alone")
+            # A database seeded before 0.6.0 still gets the request list.
+            self._pbc_requests(existing, aria, mia or admin)
+            return
         links = list(
             ControlEvidence.objects.select_related(
                 "control__category__framework", "document", "linked_by"
@@ -698,6 +700,57 @@ class Command(BaseCommand):
             f"({package.controls.count()} control(s), {package.evidence_count} item(s)) "
             f"and issued to aria"
         )
+        self._pbc_requests(package, aria, mia or admin)
+
+    def _pbc_requests(self, package, aria, mia):
+        """The auditor's request list on the demo package: one answered and
+        accepted, one provided and waiting on the auditor, one open and due
+        soon -- so the list shows every state on a fresh install."""
+        from datetime import timedelta
+
+        from attestations.models import PbcItem, PbcRequest
+        from attestations.snapshot import digest_and_size
+
+        if package.pbc_requests.exists():
+            return
+        owen = User.objects.filter(username="owen").first()
+        today = timezone.localdate()
+        now = timezone.now()
+        row = package.controls.filter(control_ref="CC6.2").first() or package.controls.first()
+        doc = Document.objects.filter(name="User Access Provisioning Procedure").first()
+
+        def line(ordinal, title, description, **extra):
+            return PbcRequest.objects.create(
+                package=package, ordinal=ordinal, reference=f"PBC-{ordinal:02d}",
+                title=title, description=description,
+                requested_by=aria, requested_by_name=aria.get_full_name() if aria else "Aria Auditor",
+                requested_by_side=PbcRequest.Side.AUDITOR,
+                assignee=owen, assignee_name=owen.get_full_name() if owen else "", **extra)
+
+        first = line(1, "Access provisioning procedure, current version",
+                     "The approved procedure in force for the whole period, with its approval record.",
+                     package_control=row, control_ref=row.control_ref if row else "",
+                     due_date=today - timedelta(days=10), status=PbcRequest.Status.ACCEPTED,
+                     provided_by=owen, provided_by_name=owen.get_full_name() if owen else "",
+                     provided_at=now - timedelta(days=12), response_note="Attached, v1 as approved.",
+                     accepted_by=aria, accepted_by_name=aria.get_full_name() if aria else "",
+                     accepted_at=now - timedelta(days=11))
+        if doc:
+            sha, size = digest_and_size(doc.file)
+            PbcItem.objects.create(request=first, document=doc, document_name=doc.name, version=doc.version,
+                                   size_bytes=size, content_sha256=sha or "", attached_by=owen,
+                                   attached_by_name=owen.get_full_name() if owen else "")
+        line(2, "Leaver list from HR for the period",
+             "Every termination in the period with the date HR notified IT, to reconcile against "
+             "the deprovisioning report.",
+             package_control=row, control_ref=row.control_ref if row else "",
+             due_date=today - timedelta(days=2), status=PbcRequest.Status.PROVIDED,
+             provided_by=mia, provided_by_name=mia.get_full_name(), provided_at=now - timedelta(days=1),
+             response_note="HR export attached to the package as the population; no separate list exists.")
+        line(3, "Evidence of quarterly access reviews for the period",
+             "Sign-off for each quarter, and the exceptions raised.",
+             priority=PbcRequest.Priority.HIGH, due_date=today + timedelta(days=5))
+        self.stdout.write("  PBC request list: 3 line(s) on the demo package")
 
     def _control_program(self):
         """Give the control libraries a plausible programme state — a spread of

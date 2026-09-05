@@ -119,6 +119,14 @@ class UserViewSet(viewsets.ModelViewSet):
         device = getattr(target, "mfa_device", None)
         if device:
             device.delete()
+        # Passkeys go too: this is the recovery path for a person whose only
+        # remaining key was flagged as cloned.
+        removed = target.passkeys.count()
+        target.passkeys.all().delete()
+        from audit.events import record_auth_event
+        record_auth_event(request, target, "mfa",
+                          f"MFA reset by {request.user.get_username()}: authenticator "
+                          f"{'removed' if device else 'absent'}, {removed} passkey(s) removed")
         return Response({"detail": f"MFA reset for {target.get_username()}.", "mfa_enabled": False})
 
     def perform_destroy(self, instance):
@@ -202,13 +210,20 @@ class MfaStatusView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from . import passkeys
+
         device = getattr(request.user, "mfa_device", None)
+        factors = passkeys.factors(request.user)
         return Response({
             "enabled": bool(device and device.enabled),
             "pending": bool(device and not device.enabled),
             "backup_codes_remaining": (
                 device.backup_codes.filter(used_at__isnull=True).count() if device and device.enabled else 0
             ),
+            "passkeys": request.user.passkeys.count(),
+            "passkeys_suspect": factors["passkey_suspect"],
+            # Whether signing in takes a second factor at all.
+            "second_factor": request.user.mfa_enabled,
         })
 
 

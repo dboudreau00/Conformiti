@@ -132,8 +132,66 @@ def run_vendor_scan(dry_run=False):
     return chased
 
 
+def _notify_pbc(req, days, overdue, window=None):
+    recipients = []
+    if req.assignee and req.assignee.email:
+        recipients.append(req.assignee.email)
+    recipients.append(settings.COMPLIANCE_TEAM_EMAIL)
+    if overdue:
+        subject = f"[Overdue] Auditor request {req.reference} overdue: {req.title}"
+    else:
+        subject = f"[Reminder] Auditor request {req.reference} due in {days} day(s): {req.title}"
+    context = {
+        "request": req, "package": req.package, "days": days, "overdue": overdue, "window": window,
+        "assignee_name": req.assignee.get_full_name() if req.assignee else "team",
+    }
+    return send_templated_email(subject, "pbc_reminder", context, recipients)
+
+
+def run_pbc_scan(dry_run=False):
+    """Chase the auditor's request list: at most one email per request per
+    lead-time window (REVIEW_ALERT_LEAD_DAYS), one overdue notice, and
+    nothing for a line the auditor is sitting on. Returns the count."""
+    from attestations.models import EvidencePackage, PbcRequest
+
+    today = timezone.localdate()
+    leads = settings.REVIEW_ALERT_LEAD_DAYS
+    notified = 0
+    qs = PbcRequest.objects.filter(
+        status__in=PbcRequest.ACTIONABLE, due_date__isnull=False,
+    ).exclude(package__status=EvidencePackage.Status.WITHDRAWN).select_related("assignee", "package")
+    for req in qs:
+        days = (req.due_date - today).days
+        sent = list(req.reminders_sent or [])
+        changed = False
+        try:
+            if days < 0:
+                if OVERDUE not in sent:
+                    if not dry_run:
+                        _notify_pbc(req, days, overdue=True)
+                    sent.append(OVERDUE)
+                    changed = True
+            else:
+                applicable = sorted(l for l in leads if days <= l)
+                if applicable and any(l not in sent for l in applicable):
+                    if not dry_run:
+                        _notify_pbc(req, days, overdue=False, window=min(applicable))
+                    sent = sorted(set(sent) | set(applicable))
+                    changed = True
+        except Exception:
+            logger.exception("PBC reminder failed for request %s; will retry next run", req.pk)
+            continue
+        if changed:
+            notified += 1
+            if not dry_run:
+                req.reminders_sent = sent
+                req.save(update_fields=["reminders_sent"])
+    return notified
+
+
 @shared_task(name="notifications.tasks.scan_document_reviews")
 def scan_document_reviews():
     notified = run_review_scan()
     run_vendor_scan()
+    run_pbc_scan()
     return notified

@@ -96,3 +96,26 @@ def assert_pinnable(user, document):
     if document.folder_id not in accessible_folder_ids(user):
         raise PermissionDenied(_PIN_DENIED)
     return document
+
+
+def readable_pbc_requests(user):
+    """The auditor's request list, as far as this user may see it.
+
+    Two routes in, and this is the second folder-permission bypass in the
+    product: whoever can read a package reads its request list and every
+    document attached in answer -- for the issued auditor, under the same
+    live grant as the pinned evidence -- and the person a line is ASSIGNED to
+    sees that line, its attachments and the package's name, even with no
+    package access at all, because a control owner has to be able to answer
+    what they were asked for. An assignee is chosen by the organisation, so
+    naming someone on a line is itself a disclosure decision.
+    """
+    from django.db.models import Q
+
+    from .models import PbcRequest
+
+    if not (user and user.is_authenticated):
+        return PbcRequest.objects.none()
+    return PbcRequest.objects.filter(
+        Q(package__in=readable_packages(user)) | Q(assignee=user)
+    ).distinct()

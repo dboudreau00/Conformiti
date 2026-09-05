@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2933; line-height: 1.5; max-width: 640px; margin: 0 auto; padding: 24px;">
+    <p>Hello,</p>
+    <p>
+      <strong>{{ sender }}</strong>{% if organisation %} at <strong>{{ organisation }}</strong>{% endif %} has asked
+      <strong>{{ vendor.name }}</strong> to complete a short security questionnaire ({{ questions|length }} questions)
+      as part of their third-party risk review.
+    </p>
+    {% if message %}
+    <blockquote style="border-left: 3px solid #cbd2d9; margin: 16px 0; padding: 4px 12px; color: #52606d;">
+      {{ message|linebreaksbr }}
+    </blockquote>
+    {% endif %}
+    <p>
+      <a href="{{ link }}" style="display: inline-block; background: #1f2933; color: #fff; padding: 10px 16px; border-radius: 8px; text-decoration: none;">Answer the questionnaire</a>
+    </p>
+    <p style="color: #52606d; font-size: 14px;">
+      The link works until <strong>{{ deadline }}</strong>. You can save a draft and come back; submit once you are done.
+      It is personal to this request &mdash; please do not forward it.<br>
+      If the button does not work, copy this address: <span style="word-break: break-all;">{{ link }}</span>
+    </p>
+    <p style="color: #7b8794; font-size: 12px; margin-top: 24px;">&mdash; Conformiti{% if organisation %} for {{ organisation }}{% endif %}</p>
+  </body>
+</html>

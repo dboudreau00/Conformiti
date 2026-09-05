@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import DocumentViewer from "../components/documents/DocumentViewer.jsx";
+import { PbcList } from "../components/packages/PbcList.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -242,6 +243,12 @@ export default function Packages({ me }) {
           )}
         </Panel>
 
+        {/* A control owner with no package access still answers the lines
+            assigned to them from here. */}
+        {!canAssemble && !me?.role_detail?.is_auditor ? (
+          <PbcList mine onOpen={setViewing} onMessage={setMsg} />
+        ) : null}
+
         {canAssemble ? (
           <Panel className="p-4">
             {creating ? (
@@ -417,6 +424,11 @@ export default function Packages({ me }) {
                 </ul>
               )}
             </Panel>
+
+            {/* ------------------------------------------ request list */}
+            <PbcList key={selected.id} pkg={selected} controls={rows}
+                     canRaise={(canAssemble || isGrantee) && selected.status !== "withdrawn"}
+                     canAssemble={canAssemble} onOpen={setViewing} onMessage={setMsg} />
 
             {/* ------------------------------------------------ workpaper */}
             <Panel className="overflow-hidden">

@@ -1,0 +1,7 @@
+Hello {{ owner_name }},
+
+{{ vendor.name }} has returned the security questionnaire: {{ invite.respondent_name }}{% if invite.respondent_title %} ({{ invite.respondent_title }}){% endif %} <{{ invite.sent_to }}> answered {{ answered }} of {{ total }} questions{% if noes %}, {{ noes }} of them "No"{% endif %}.
+
+It is filed against the vendor as a pending assessment. Review the answers and record the outcome in Conformiti (Vendors > {{ vendor.name }} > Questionnaire).
+
+-- Conformiti

@@ -144,6 +144,38 @@ def build(user):
             "newer is on file. Ask for a bridge letter and file it against the vendor.",
             f"/vendors?vendor={vendor.id}&tab=assessments", report.expires_at,
         ))
+    # A questionnaire the vendor answered through the emailed link is waiting
+    # for someone here to read it; and a link that expired unanswered needs
+    # chasing. Owner and frameworks managers.
+    from vendors.models import QuestionnaireInvite
+    returned = QuestionnaireInvite.objects.filter(
+        submitted_at__isnull=False, assessment__isnull=False,
+        assessment__result=VendorAssessment.Result.PENDING,
+    ).select_related("vendor", "assessment")
+    lapsed = QuestionnaireInvite.objects.filter(
+        submitted_at__isnull=True, revoked_at__isnull=True, expires_at__lt=timezone.now(),
+        expires_at__gte=timezone.now() - timezone.timedelta(days=30),
+    ).select_related("vendor")
+    if not can_prompt:
+        returned = returned.filter(vendor__owner=user)
+        lapsed = lapsed.filter(vendor__owner=user)
+    for inv in returned:
+        answered = sum(1 for a in (inv.assessment.answers or {}).values() if a.get("answer"))
+        items.append(_n(
+            f"vendor-questionnaire:{inv.assessment_id}", "vendor", "medium",
+            f"Questionnaire returned by {inv.vendor.name}",
+            f"{inv.respondent_name or inv.sent_to} answered {answered} question(s) on "
+            f"{inv.submitted_at.date().isoformat()}. Review the answers and record the outcome.",
+            f"/vendors?vendor={inv.vendor_id}&tab=questionnaire", inv.submitted_at.date(),
+        ))
+    for inv in lapsed:
+        items.append(_n(
+            f"vendor-questionnaire-lapsed:{inv.id}", "vendor", "low",
+            f"Questionnaire unanswered by {inv.vendor.name}",
+            f"The link sent to {inv.sent_to} expired on {inv.expires_at.date().isoformat()} "
+            f"{'after being opened' if inv.opened_at else 'without being opened'}. Send it again or chase them.",
+            f"/vendors?vendor={inv.vendor_id}&tab=questionnaire", inv.expires_at.date(),
+        ))
 
     # ---- 2. Risks I own -----------------------------------------------------
     my_risks = Risk.objects.filter(
@@ -228,6 +260,66 @@ def build(user):
                 f"{org_overdue} document{'s' if org_overdue != 1 else ''} overdue for review org-wide",
                 "Owned by other team members", "/documents", today,
             ))
+
+    # ---- 6b. PBC requests: what I owe the auditor, and what the auditor is
+    # waiting on. The assignee is chased; managers get the org-wide gaps; the
+    # issued auditor sees what has been provided since they last looked.
+    from attestations import access as package_access
+    from attestations.models import EvidencePackage, PbcRequest
+    mine = PbcRequest.objects.filter(
+        assignee=user, status__in=PbcRequest.ACTIONABLE,
+    ).exclude(package__status=EvidencePackage.Status.WITHDRAWN).select_related("package")
+    for r in mine:
+        if r.status == PbcRequest.Status.RETURNED:
+            items.append(_n(
+                f"pbc-returned:{r.id}", "pbc", "high",
+                f"Returned by the auditor: {r.reference} {r.title}",
+                (r.returned_note or "Needs more")[:160] + f" · {r.package.name}",
+                "/packages", r.returned_at.date() if r.returned_at else today,
+            ))
+            continue
+        if r.due_date and r.due_date < today:
+            items.append(_n(
+                f"pbc-overdue:{r.id}", "pbc", "high",
+                f"Auditor request overdue: {r.reference} {r.title}",
+                f"Was due {r.due_date.isoformat()} ({(today - r.due_date).days}d ago) · {r.package.name}",
+                "/packages", r.due_date,
+            ))
+        elif r.due_date and (r.due_date - today).days <= 7:
+            items.append(_n(
+                f"pbc-due:{r.id}", "pbc", "medium",
+                f"Auditor request due soon: {r.reference} {r.title}",
+                f"Due {r.due_date.isoformat()} ({(r.due_date - today).days}d) · {r.package.name}",
+                "/packages", r.due_date,
+            ))
+    if getattr(caps, "can_manage_frameworks", False):
+        org_overdue = PbcRequest.objects.filter(
+            status__in=PbcRequest.ACTIONABLE, due_date__lt=today,
+        ).exclude(package__status=EvidencePackage.Status.WITHDRAWN).exclude(assignee=user).count()
+        if org_overdue:
+            items.append(_n(
+                "digest-pbc-overdue", "pbc", "high",
+                f"{org_overdue} auditor request{'s' if org_overdue != 1 else ''} overdue",
+                "Assigned to other people, past their due date", "/packages", today,
+            ))
+        unassigned = PbcRequest.objects.filter(
+            status__in=PbcRequest.ACTIONABLE, assignee__isnull=True,
+        ).exclude(package__status=EvidencePackage.Status.WITHDRAWN).count()
+        if unassigned:
+            items.append(_n(
+                "digest-pbc-unassigned", "pbc", "medium",
+                f"{unassigned} auditor request{'s' if unassigned != 1 else ''} nobody owns yet",
+                "Assign each one so it gets chased", "/packages", today,
+            ))
+    if getattr(caps, "is_auditor", False):
+        for pkg in package_access.readable_packages(user):
+            waiting = pkg.pbc_requests.filter(status=PbcRequest.Status.PROVIDED).count()
+            if waiting:
+                items.append(_n(
+                    f"pbc-awaiting:{pkg.id}", "pbc", "medium",
+                    f"{waiting} answer{'s' if waiting != 1 else ''} to review in {pkg.name}",
+                    "Provided by the organisation; accept or return each one", "/packages", today,
+                ))
 
     # ---- 7. Access reviews (admins act; auditors observe) -------------------
     is_admin = getattr(caps, "can_manage_users", False)

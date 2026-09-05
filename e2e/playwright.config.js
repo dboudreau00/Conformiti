@@ -33,6 +33,12 @@ const E2E_ENV = {
   THROTTLE_LOGIN: "1000/min",
   THROTTLE_ANON: "1000/min",
   THROTTLE_MFA: "1000/min",
+  THROTTLE_QUESTIONNAIRE: "1000/min",
+  // Passkeys need a relying-party id that is a domain, not an address; the
+  // passkey spec therefore drives the SPA at http://localhost:<port> while
+  // everything else uses 127.0.0.1. Both are trusted origins.
+  WEBAUTHN_RP_ID: "localhost",
+  WEBAUTHN_ORIGINS: `http://localhost:${PORT}`,
   DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1",
   CSRF_TRUSTED_ORIGINS: `${BASE_URL},http://localhost:${PORT}`,
   PYTHONUTF8: "1",

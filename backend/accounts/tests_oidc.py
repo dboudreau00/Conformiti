@@ -313,8 +313,9 @@ class OidcFlowTests(APITestBase):
         # No second factor asserted: the local authenticator is asked for.
         self.idp.claims["amr"] = ["pwd"]
         ticket = self.sign_in()
-        self.assertEqual(self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data,
-                         {"mfa_required": True})
+        pending = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data
+        self.assertEqual((pending["mfa_required"], pending["factors"]["totp"], pending["factors"]["passkey"]),
+                         (True, True, False))
         r = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket, "otp": mfa_lib.totp(secret)}, format="json")
         self.assertIn("access", r.data)
         # The provider asserted MFA: straight in.

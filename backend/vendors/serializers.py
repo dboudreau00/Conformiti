@@ -1,9 +1,28 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import DEFAULT_QUESTIONNAIRE, SharedResponsibility, Vendor, VendorAssessment
+from .models import (
+    DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, SharedResponsibility, Vendor, VendorAssessment,
+)
+from .questionnaire import validate_answers
 
-_QUESTION_IDS = {q["id"] for q in DEFAULT_QUESTIONNAIRE}
+
+class QuestionnaireInviteSerializer(serializers.ModelSerializer):
+    status = serializers.CharField(read_only=True)
+    vendor_name = serializers.CharField(source="vendor.name", read_only=True)
+    assessment_result = serializers.CharField(source="assessment.result", read_only=True, default=None)
+
+    class Meta:
+        model = QuestionnaireInvite
+        # token_hash is deliberately absent; the link itself is returned once,
+        # by the send action, and never again.
+        fields = [
+            "id", "vendor", "vendor_name", "sent_to", "message", "sent_by_name", "sent_at",
+            "email_sent", "expires_at", "opened_at", "saved_at", "submitted_at",
+            "respondent_name", "respondent_title", "assessment", "assessment_result",
+            "revoked_at", "status",
+        ]
+        read_only_fields = fields
 
 
 class VendorAssessmentSerializer(serializers.ModelSerializer):
@@ -35,18 +54,10 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
     def validate_answers(self, value):
         """Answers are keyed by the shipped question ids; anything else is a
         client bug rather than data."""
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Answers must be an object keyed by question id.")
-        unknown = set(value) - _QUESTION_IDS
-        if unknown:
-            raise serializers.ValidationError(f"Unknown question id(s): {', '.join(sorted(unknown))}")
-        for qid, entry in value.items():
-            if not isinstance(entry, dict) or entry.get("answer") not in ("yes", "no", "partial", "n/a", None):
-                raise serializers.ValidationError(
-                    f"{qid}: answer must be one of yes, no, partial, n/a.")
-            if len(str(entry.get("note", ""))) > 1000:
-                raise serializers.ValidationError(f"{qid}: note is too long.")
-        return value
+        try:
+            return validate_answers(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
 
     def validate_document(self, doc):
         """A report pinned to a vendor must be one the caller can see, or the
@@ -132,12 +143,17 @@ class VendorSerializer(serializers.ModelSerializer):
 class VendorDetailSerializer(VendorSerializer):
     assessments = VendorAssessmentSerializer(many=True, read_only=True)
     questionnaire = serializers.SerializerMethodField()
+    questionnaire_invites = serializers.SerializerMethodField()
 
     class Meta(VendorSerializer.Meta):
-        fields = VendorSerializer.Meta.fields + ["assessments", "questionnaire"]
+        fields = VendorSerializer.Meta.fields + ["assessments", "questionnaire", "questionnaire_invites"]
 
     def get_questionnaire(self, obj):
         return DEFAULT_QUESTIONNAIRE
+
+    def get_questionnaire_invites(self, obj):
+        rows = obj.questionnaire_invites.select_related("sent_by", "assessment")[:10]
+        return QuestionnaireInviteSerializer(rows, many=True).data
 
 
 class SharedResponsibilitySerializer(serializers.ModelSerializer):

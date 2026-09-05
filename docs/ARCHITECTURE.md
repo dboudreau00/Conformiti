@@ -4,11 +4,12 @@
 
 | App | Responsibility |
 |---|---|
-| `accounts` | Custom `User`, `Role` (capability flags), RBAC permission classes, TOTP MFA + backup codes, sign-out (token revocation), demo-data retirement, blacklist pruning task |
+| `accounts` | Custom `User`, `Role` (capability flags), RBAC permission classes, TOTP MFA + backup codes, passkeys (`webauthn.py` protocol + `passkeys.py` glue, `WebAuthnCredential`/`WebAuthnChallenge`), OIDC + SAML single sign-on, sign-out (token revocation), demo-data retirement, blacklist pruning task |
 | `compliance` | `Framework`, `ControlCategory`, `Control`, `ControlMapping` (crosswalk), `ControlEvidence` (evidence ↔ control links), seed + on-disk folder tree, controls CSV export |
 | `documents` | `Folder` (self-parent tree with cycle guard), `FolderPermission`, `Document`, `DocumentVersion`, `FormTemplate`, upload validation |
 | `governance` | `Risk` + `RiskNote` (+ CSV/XLSX importer), `AccessReview` + snapshot items, `MeetingSeries` + minutes, `ChampionGroup` + members |
-| `vendors` | `Vendor` (tier, posture, computed risk rating), `VendorAssessment` (reports, AOCs, questionnaires, filed documents), `SharedResponsibility` (per-vendor matrix) + the CSV/XLSX recogniser (`matrix.py`) |
+| `vendors` | `Vendor` (tier, posture, computed risk rating), `VendorAssessment` (reports, AOCs, questionnaires, filed documents), `SharedResponsibility` (per-vendor matrix) + the CSV/XLSX recogniser (`matrix.py`), `QuestionnaireInvite` + the public token endpoints (`questionnaire.py`, `public_views.py`) |
+| `attestations` | `EvidencePackage` → `PackageControl` → `PackageEvidence` / `PackageSample` snapshots, `PackageGrant` (the folder-permission bypass, `access.py`), manifest + bundle, `PbcRequest` / `PbcItem` (the auditor's request list, `pbc_views.py`) |
 | `notifications` | review-reminder scan (Celery task / management command), email transports (console, SMTP, mailbox, SES), derived per-user in-app feed + receipts |
 | `audit` | `AuditLog`, request middleware (mutations with field names), explicit auth events, read-only viewer API |
 | `analytics` | dashboard summary endpoint, `ReadinessSnapshot` history + trend |
@@ -58,8 +59,10 @@ analytics figure.
 
 ## Authentication
 
-- `POST /api/auth/token/` → access (60 min) + refresh (7 d). MFA-enabled
-  accounts get `{"mfa_required": true}` until an `otp` is supplied.
+- `POST /api/auth/token/` → access (60 min) + refresh (7 d). Accounts with a
+  second factor get `{"mfa_required": true, "factors": {...}, "passkey"?: {...}}`
+  until an `otp` (authenticator/backup code) or a `passkey` assertion is
+  supplied; passkey challenges live in `WebAuthnChallenge` rows that answer once.
 - `POST /api/auth/token/refresh/` rotates the refresh token and blacklists the
   old one; `POST /api/auth/logout/` blacklists the current one.
 - Session auth remains for the Django admin and (in DEBUG) the browsable API.

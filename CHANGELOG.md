@@ -5,6 +5,67 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.6.0] — 2026-09-05
+
+The vendor answers their own questionnaire, passkeys as a second factor with
+the clone detector done right, and the auditor's request list — the other
+half of the workflow the audit package started.
+
+### Added
+
+- **Questionnaire sent to the vendor.** From the vendor's Questionnaire tab,
+  *Send to the vendor* emails their contact a personal, time-boxed link (14
+  days by default, 90 at most; a new link supersedes the open one). They
+  answer the shipped twelve questions in their browser with no account, save
+  a draft as often as they like, and submit once; the answers land as a
+  **pending** questionnaire assessment, the owner and the sender are emailed,
+  and the tray shows *Returned by …* until someone records the outcome. Only
+  the token's hash is stored; the link is shown once to the sender and
+  travels in the email. The public endpoints show the questions and the
+  vendor's own draft, nothing else, on their own rate limit
+  (`THROTTLE_QUESTIONNAIRE`). A link that expires unanswered is flagged to
+  the owner. `PUBLIC_URL` and `ORGANISATION_NAME` shape the link and the email.
+- **Passkeys and security keys (WebAuthn)** as a second factor, alone or
+  beside the authenticator app: enrol from *Settings › Security*, sign in
+  with *Use passkey* after the password (or, on single sign-on, at the
+  step-up). ES256, RS256 and EdDSA keys; attestation is requested as `none`
+  and never trusted; the relying party is the request's host unless
+  `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGINS` pin it; `WEBAUTHN_USER_VERIFICATION`
+  can demand a PIN or biometric. The protocol side (CBOR, COSE, both
+  ceremonies) is in `accounts/webauthn.py` on the `cryptography` package the
+  project already carried — no new dependency — and the test suite drives it
+  with a fake authenticator for every algorithm. **The clone detector fails
+  closed:** a signature counter that does not advance disables that key and
+  refuses the sign-in, and the account keeps requiring a second factor; it is
+  recovered with another passkey, the authenticator app, or an
+  administrator's reset (which now removes passkeys too). Removing a key
+  takes the account password, like turning off the authenticator app.
+- **PBC request list** on every package: the lines the auditor has asked
+  for ("prepared by client"), raised by the issued auditor from inside the
+  package or transcribed by the organisation, each with a control, an
+  assignee, a due date and a priority. The organisation answers by attaching
+  documents (snapshotted with version and digest, like pinned evidence) and
+  marking the line *provided*; the auditor *accepts* or *returns* it with a
+  note. Reminders go to the assignee at the review lead-time windows and once
+  when overdue, from the same daily scan as document reviews; the tray shows
+  what each person owes, managers see the overdue and unowned lines, and the
+  auditor sees how many answers await them. A control owner with no package
+  access sees exactly the lines assigned to them and answers from there —
+  the second, deliberate folder-permission bypass, documented beside the
+  first in `attestations/access.py`. CSV export for the auditor's tracker.
+
+### Changed
+
+- The sign-in challenge (`POST /api/auth/token/` with the right password)
+  now names the factors on offer (`factors`) and, when a passkey is among
+  them, carries the WebAuthn options; the SSO redeem step does the same.
+  `mfa_enabled` on a user now means "signing in takes a second factor" —
+  authenticator app or passkey.
+- `manage.py send_review_reminders` (and the daily Celery task) also chases
+  PBC requests.
+
+---
+
 ## [0.5.0] — 2026-09-05
 
 Single sign-on for the providers that insist on SAML, a second factor that

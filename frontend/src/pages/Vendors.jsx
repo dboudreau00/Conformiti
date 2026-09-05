@@ -351,9 +351,112 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
 
 // --- Questionnaire ----------------------------------------------------------------------
 
-function QuestionnaireTab({ vendor, canManage, busy, onSubmit }) {
+const INVITE_TONE = { open: "info", submitted: "success", expired: "warning", revoked: "muted" };
+const OUTCOMES = [["satisfactory", "Satisfactory"], ["exceptions", "Exceptions noted"], ["unsatisfactory", "Unsatisfactory"]];
+
+/** Emailing the questionnaire to the vendor: a time-boxed link they answer
+ * themselves, the links sent so far, and the link shown exactly once. */
+function SendToVendor({ vendor, busy, act, refresh }) {
+  const invites = vendor.questionnaire_invites || [];
+  const [sending, setSending] = useState(false);
+  const [form, setForm] = useState({ email: vendor.contact_email || "", days: 14, message: "" });
+  const [sent, setSent] = useState(null);
+  const openCount = invites.filter((i) => i.status === "open").length;
+
+  const send = (e) => {
+    e.preventDefault();
+    return act(async () => {
+      const { data } = await api.post(`/vendors/${vendor.id}/questionnaire/send/`, {
+        email: form.email.trim(), days: Number(form.days) || 14, message: form.message,
+      });
+      setSent(data);
+      setSending(false);
+      await refresh();
+    }, "Questionnaire sent to the vendor.");
+  };
+  const revoke = (inv) => act(async () => { await api.post(`/questionnaire-invites/${inv.id}/revoke/`); await refresh(); }, "Link withdrawn.");
+
+  return (
+    <Panel className="overflow-hidden" aria-label="Send to the vendor">
+      <PanelHeader title="Sent to the vendor" meta={openCount ? `${openCount} open link${openCount === 1 ? "" : "s"}` : "No open link"}>
+        <Button size="sm" variant={sending ? "secondary" : "primary"} aria-expanded={sending} disabled={busy} onClick={() => { setSending((x) => !x); setSent(null); }}>
+          Send to the vendor
+        </Button>
+      </PanelHeader>
+      {sending ? (
+        <form onSubmit={send} className="grid gap-3 border-b border-line bg-surface-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_120px]">
+          <Field id="qsend-email" label="Their contact's email">
+            <input id="qsend-email" type="email" className="input" required value={form.email} placeholder="security@vendor.example"
+                   onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </Field>
+          <Field id="qsend-days" label="Link valid for (days)">
+            <input id="qsend-days" type="number" min="1" max="90" className="input" value={form.days}
+                   onChange={(e) => setForm({ ...form, days: e.target.value })} />
+          </Field>
+          <Field id="qsend-message" label="A note to them (optional)" className="sm:col-span-2">
+            <textarea id="qsend-message" className="input min-h-[72px]" value={form.message} placeholder="We are preparing for our SOC 2 audit and need this back before the 20th."
+                      onChange={(e) => setForm({ ...form, message: e.target.value })} />
+          </Field>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <Button type="submit" size="sm" variant="primary" disabled={busy || !form.email.trim()}>Send</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setSending(false)}>Cancel</Button>
+            <Label>A new link supersedes any open one.</Label>
+          </div>
+        </form>
+      ) : null}
+      {sent ? (
+        <div className="notice notice-ok m-4" role="status">
+          <span className="block font-medium">{sent.email_sent ? `Emailed to ${sent.sent_to}.` : "The email could not be sent — paste the link into your own message."}</span>
+          <span className="mt-1 block text-xs">The link, shown once:</span>
+          <code id="questionnaire-link" className="mt-1 block select-all break-all font-mono text-xs text-ink">{sent.link}</code>
+        </div>
+      ) : null}
+      {invites.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-faint">
+                <th className="px-5 py-2 font-normal" scope="col">Sent to</th>
+                <th className="py-2 pr-3 font-normal" scope="col">Sent</th>
+                <th className="py-2 pr-3 font-normal" scope="col">Valid until</th>
+                <th className="py-2 pr-3 font-normal" scope="col">Status</th>
+                <th className="py-2 pr-3 font-normal" scope="col">Answered by</th>
+                <th className="py-2 pr-5 font-normal" scope="col"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {invites.map((inv) => (
+                <tr key={inv.id} className="align-top">
+                  <td className="px-5 py-2 text-ink">{inv.sent_to}<span className="block text-faint">by {inv.sent_by_name}{inv.email_sent ? "" : " · email not sent"}</span></td>
+                  <td className="py-2 pr-3 text-muted">{fmtDate(inv.sent_at)}</td>
+                  <td className="py-2 pr-3 text-muted">{fmtDate(inv.expires_at)}</td>
+                  <td className="py-2 pr-3">
+                    <Badge tone={INVITE_TONE[inv.status] || "muted"} dot>{inv.status}</Badge>
+                    {inv.status === "open" && inv.opened_at ? <span className="block text-faint">opened {fmtDate(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span> : null}
+                  </td>
+                  <td className="py-2 pr-3 text-muted">{inv.respondent_name ? `${inv.respondent_name}${inv.respondent_title ? ` (${inv.respondent_title})` : ""} · ${fmtDate(inv.submitted_at)}` : "—"}</td>
+                  <td className="py-2 pr-5 text-right">
+                    {inv.status === "open" ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => revoke(inv)}>Revoke</Button> : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="px-5 py-3 text-xs text-muted">Nothing sent yet. The vendor gets an email with a personal link, answers in their browser, and the result lands here as a pending assessment for you to review.</p>
+      )}
+    </Panel>
+  );
+}
+
+function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
   const latest = (vendor.assessments || []).filter((x) => x.kind === "questionnaire").sort((x, y) => (x.created_at < y.created_at ? 1 : -1))[0];
   const [answers, setAnswers] = useState(() => latest?.answers || {});
+  // A submission arriving from the vendor replaces what is on screen.
+  useEffect(() => { setAnswers(latest?.answers || {}); }, [latest?.id]);
+  const returned = latest && latest.result === "pending"
+    ? (vendor.questionnaire_invites || []).find((i) => i.assessment === latest.id) : null;
   const questions = vendor.questionnaire || [];
   const areas = useMemo(() => {
     const out = [];
@@ -368,9 +471,33 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit }) {
   const setAnswer = (id, patch) => setAnswers((cur) => ({ ...cur, [id]: { ...(cur[id] || {}), ...patch } }));
   const suggested = Object.values(answers).some((x) => x?.answer === "no") ? "exceptions" : "satisfactory";
 
+  const lastMeta = !latest ? "Not yet completed"
+    : returned ? `Returned by ${returned.respondent_name || returned.sent_to} on ${fmtDate(latest.created_at)} · pending review`
+    : `Last submitted ${fmtDate(latest.created_at)} by ${latest.reviewed_by_name || "the vendor"}`;
+
   return (
+    <div className="flex flex-col gap-4">
+    {canManage ? <SendToVendor vendor={vendor} busy={busy} act={act} refresh={refresh} /> : null}
+    {returned ? (
+      <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
+        <span>
+          <span className="font-medium">Returned by {returned.respondent_name || returned.sent_to}{returned.respondent_title ? ` (${returned.respondent_title})` : ""} on {fmtDate(latest.created_at)}.</span>{" "}
+          Review the answers below and record the outcome.
+        </span>
+        {canManage ? (
+          <span className="flex flex-wrap gap-2">
+            {OUTCOMES.map(([k, l]) => (
+              <Button key={k} size="sm" variant={k === "unsatisfactory" ? "danger" : k === "satisfactory" ? "primary" : "secondary"} disabled={busy}
+                      onClick={() => act(async () => { await api.patch(`/vendor-assessments/${latest.id}/`, { result: k }); await refresh(); }, `Outcome recorded: ${l.toLowerCase()}.`)}>
+                {l}
+              </Button>
+            ))}
+          </span>
+        ) : null}
+      </div>
+    ) : null}
     <Panel className="overflow-hidden">
-      <PanelHeader title="Security questionnaire" meta={latest ? `Last submitted ${fmtDate(latest.created_at)} by ${latest.reviewed_by_name || "—"}` : "Not yet completed"}>
+      <PanelHeader title="Security questionnaire" meta={lastMeta}>
         <div className="flex items-center gap-3">
           <Meter value={answered} total={questions.length || 1} className="w-32" ariaLabel="Questions answered" />
           <Label>{answered}/{questions.length}</Label>
@@ -407,6 +534,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit }) {
         </div>
       ) : null}
     </Panel>
+    </div>
   );
 }
 
@@ -1016,7 +1144,7 @@ export default function Vendors({ me }) {
                                 onFile={(body) => act(async () => { await api.post("/vendor-assessments/", body); await refresh(); }, "Filed.")}
                                 onRemove={(r) => { if (window.confirm(`Remove this ${KIND_LABEL[r.kind] || r.kind} from the vendor's file?`)) act(async () => { await api.delete(`/vendor-assessments/${r.id}/`); await refresh(); }, "Removed."); }} />
               ) : tab === "questionnaire" ? (
-                <QuestionnaireTab key={detail.id} vendor={detail} canManage={canManage} busy={busy}
+                <QuestionnaireTab key={detail.id} vendor={detail} canManage={canManage} busy={busy} act={act} refresh={refresh}
                                   onSubmit={(body) => act(async () => { await api.post("/vendor-assessments/", body); await refresh(); }, "Questionnaire saved.")} />
               ) : (
                 <MatrixTab vendor={detail} canManage={canManage} intent={intent} onIntentDone={() => setIntent(null)} setMsg={setMsg} onChanged={refresh} />

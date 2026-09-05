@@ -18,8 +18,12 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from compliance.models import Control
 
 from . import matrix as matrix_lib
-from .models import DEFAULT_QUESTIONNAIRE, SharedResponsibility, Vendor, VendorAssessment
+from . import questionnaire as questionnaire_lib
+from .models import (
+    DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, SharedResponsibility, Vendor, VendorAssessment,
+)
 from .serializers import (
+    QuestionnaireInviteSerializer,
     SharedResponsibilitySerializer,
     VendorAssessmentSerializer,
     VendorDetailSerializer,
@@ -252,6 +256,28 @@ class VendorViewSet(viewsets.ModelViewSet):
         """The shipped question set, so the UI never hard-codes it."""
         return Response(DEFAULT_QUESTIONNAIRE)
 
+    @action(detail=True, methods=["post"], url_path="questionnaire/send")
+    def questionnaire_send(self, request, pk=None):
+        """Email the vendor a time-boxed link to answer the questionnaire
+        themselves. The link is in the response exactly once."""
+        vendor = self.get_object()
+        try:
+            invite, link = questionnaire_lib.create_invite(
+                vendor, request, request.data.get("email") or vendor.contact_email,
+                request.data.get("days"), request.data.get("message") or "",
+            )
+        except questionnaire_lib.QuestionnaireError as exc:
+            raise ValidationError({exc.code: exc.message})
+        data = QuestionnaireInviteSerializer(invite).data
+        data["link"] = link
+        return Response(data, status=201)
+
+    @action(detail=True, methods=["get"], url_path="questionnaire/invites")
+    def questionnaire_invites(self, request, pk=None):
+        vendor = self.get_object()
+        rows = vendor.questionnaire_invites.select_related("sent_by", "assessment")[:20]
+        return Response(QuestionnaireInviteSerializer(rows, many=True).data)
+
     @action(detail=False, methods=["get"])
     def summary(self, request):
         """The numbers the dashboard and the notifications feed share."""
@@ -315,3 +341,23 @@ class VendorAssessmentViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(reviewed_by=self.request.user)
+
+
+class QuestionnaireInviteViewSet(viewsets.ReadOnlyModelViewSet):
+    """The links sent out, and the one thing to do to one: withdraw it. New
+    links are issued from the vendor (``/vendors/{id}/questionnaire/send/``)."""
+    serializer_class = QuestionnaireInviteSerializer
+    permission_classes = [CanManageFrameworks]
+    filterset_fields = ["vendor"]
+
+    def get_queryset(self):
+        return QuestionnaireInvite.objects.select_related("vendor", "sent_by", "assessment")
+
+    @action(detail=True, methods=["post"])
+    def revoke(self, request, pk=None):
+        invite = self.get_object()
+        try:
+            questionnaire_lib.revoke(invite, request)
+        except questionnaire_lib.QuestionnaireError as exc:
+            raise ValidationError({"detail": exc.message})
+        return Response(QuestionnaireInviteSerializer(invite).data)

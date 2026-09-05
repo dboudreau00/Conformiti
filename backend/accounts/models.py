@@ -116,10 +116,88 @@ class User(AbstractUser):
         return self.get_full_name() or self.username
 
     @property
-    def mfa_enabled(self):
+    def totp_enabled(self):
         device = getattr(self, "mfa_device", None)
         return bool(device and device.enabled)
 
+    @property
+    def mfa_enabled(self):
+        """Does signing in take a second factor? True with an enrolled
+        authenticator app or ANY passkey -- including one marked suspect: a
+        suspect passkey cannot satisfy the factor, but it must not make the
+        requirement disappear either, or cloning a key would be the way to
+        drop an account to password-only."""
+        return self.totp_enabled or self.passkeys.exists()
+
+    @property
+    def usable_passkeys(self):
+        return self.passkeys.filter(suspect_at__isnull=True)
+
+
+class WebAuthnCredential(models.Model):
+    """One passkey or security key enrolled as a second factor.
+
+    The public key is stored as a DER SubjectPublicKeyInfo; the credential id
+    is the authenticator's own, base64url. ``sign_count`` is the last counter
+    value the authenticator reported; ``suspect_at`` is set the moment a
+    later assertion fails to increase it (a cloned key), after which the
+    credential refuses every sign-in until the person removes it with their
+    password and enrols afresh.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="passkeys"
+    )
+    name = models.CharField(max_length=80)
+    credential_id = models.CharField(max_length=1400, unique=True)
+    public_key = models.BinaryField()
+    algorithm = models.SmallIntegerField(help_text="COSE algorithm identifier.")
+    sign_count = models.PositiveBigIntegerField(default=0)
+    aaguid = models.CharField(max_length=36, blank=True)
+    transports = models.JSONField(default=list, blank=True)
+    backup_eligible = models.BooleanField(default=False)
+    backup_state = models.BooleanField(default=False)
+    user_verified = models.BooleanField(
+        default=False, help_text="The authenticator verified the person (PIN/biometric) at enrolment.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    suspect_at = models.DateTimeField(null=True, blank=True)
+    suspect_reason = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+    def __str__(self):
+        return f"Passkey({self.user_id}, {self.name!r})"
+
+    @property
+    def is_usable(self):
+        return self.suspect_at is None
+
+
+class WebAuthnChallenge(models.Model):
+    """A challenge handed to a browser, waiting for its answer.
+
+    Kept in the database rather than the cache (per-process by default) or
+    the session (a login carries none in header mode): every worker must be
+    able to check the answer, and the row is deleted the moment it is used or
+    has expired. ``token_hash`` is the SHA-256 of the opaque ``state`` the
+    client echoes, so a row is only reachable by the browser that asked.
+    """
+    class Purpose(models.TextChoices):
+        REGISTER = "register", "Enrol a passkey"
+        LOGIN = "login", "Sign in"
+
+    token_hash = models.CharField(max_length=64, unique=True)
+    challenge = models.CharField(max_length=64)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="webauthn_challenges"
+    )
+    purpose = models.CharField(max_length=12, choices=Purpose.choices)
+    expires_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.purpose} challenge for {self.user_id}"
 
 
 class MfaDevice(models.Model):

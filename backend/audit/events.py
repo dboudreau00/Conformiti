@@ -70,6 +70,22 @@ def record_logout(request):
         logger.exception("Failed to record logout")
 
 
+def record_auth_event(request, user, action, detail):
+    """An authentication-related fact that is neither a login nor a logout:
+    a factor enrolled or removed, a passkey refused, an MFA reset. The
+    ``/api/auth/`` prefix is excluded from the request middleware (it carries
+    credentials), so these are written explicitly, never with a value."""
+    try:
+        AuditLog.objects.create(
+            user=user if (user is not None and getattr(user, "pk", None)) else None,
+            action=str(action)[:20], object_type="auth",
+            object_id=str(user.pk) if (user is not None and getattr(user, "pk", None)) else "",
+            detail=str(detail)[:255], ip_address=_client_ip(request) if request is not None else None,
+        )
+    except Exception:
+        logger.exception("Failed to record an authentication event")
+
+
 EVIDENCE_READ = "read"
 
 

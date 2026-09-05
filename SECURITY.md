@@ -22,6 +22,20 @@ issues for vulnerabilities. You will get an acknowledgement within a week.
   authenticator app, enforced at login as a second step, with single-use backup
   codes and admin lockout-recovery. Implemented on the standard library and
   verified against the RFC 4226/6238 test vectors in the test suite.
+- **Passkeys / security keys (WebAuthn, optional, per user):** a second
+  factor after the password, alone or beside TOTP. The relying-party side
+  (CBOR, COSE keys, both ceremonies) is in `accounts/webauthn.py` on the
+  `cryptography` package, small enough to read; ES256, RS256 and EdDSA;
+  challenges are 32 random bytes kept in a database row that answers once
+  and expires in five minutes; origin, relying-party id, ceremony type and
+  user presence are all checked, user verification when configured.
+  Attestation is requested as `none` and never verified — a second factor
+  needs the same key to sign next time, not the authenticator's make. **The
+  signature counter is enforced and fails closed:** a counter that does not
+  advance marks the key as possibly cloned and refuses the sign-in, while
+  the account still requires a second factor (its other passkey, the
+  authenticator app, or an administrator's reset). Removing a key takes the
+  account password. Every enrolment, refusal and removal is in the audit trail.
 - **Single sign-on (optional, OpenID Connect):** authorization code + PKCE;
   `state` and `nonce` held server-side in the session; ID tokens verified
   against the provider's JWKS for signature (asymmetric algorithms only — an
@@ -218,7 +232,22 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   tenant administrator can sign in as any linked non-privileged user — which
   is why administrator accounts are never linked by email and why the
   provider cannot be changed from inside the app. SAML requests are not
-  signed (responses are); passkeys (WebAuthn) are not implemented.
+  signed (responses are).
+- **A passkey-only account has no backup codes.** Codes belong to the TOTP
+  device; a person whose single passkey is lost or flagged as cloned needs a
+  second key, the authenticator app, or an administrator's reset. The
+  settings screen says so before they rely on one key.
+- **The questionnaire link is a bearer credential.** Whoever holds it can
+  read the twelve questions, the vendor's own draft and the vendor's name,
+  and submit once — nothing else. It is 32 random bytes, stored only as a
+  hash, expires (14 days by default, 90 at most), is superseded by the next
+  send, and can be withdrawn; the public endpoints have their own rate
+  limit. It goes out by email, so it is as private as the vendor's mailbox.
+- **Naming an assignee on a PBC request is a disclosure.** The person
+  assigned sees that line, the package's name, and every document attached
+  to it (which they could attach only from folders they can already see),
+  even with no package access. This is the second folder-permission bypass
+  in the product and sits beside the first in `attestations/access.py`.
 - **Office preview parses untrusted files on the server.** Word and Excel
   previews go through `zipfile` and `xml.etree` with hard ceilings (40 MB
   unzipped as declared, 12 MB per part as actually read, 400,000 tags per

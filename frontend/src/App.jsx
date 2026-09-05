@@ -22,6 +22,7 @@ import Risks from "./pages/Risks.jsx";
 import Users from "./pages/Users.jsx";
 import Vendors from "./pages/Vendors.jsx";
 import Responsibilities from "./pages/Responsibilities.jsx";
+import Questionnaire from "./pages/Questionnaire.jsx";
 
 function Protected({ me, setMe }) {
   const nav = useNavigate();
@@ -151,6 +152,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login onDone={setMe} />} />
+      {/* The vendor's questionnaire: reached from an emailed link, no account. */}
+      <Route path="/questionnaire/:token" element={<Questionnaire />} />
       <Route path="/*" element={<Protected me={me} setMe={setMe} />} />
     </Routes>
   );

@@ -276,3 +276,66 @@ class SharedResponsibility(models.Model):
 
     def __str__(self):
         return f"{self.vendor}: {self.control.control_id} = {self.responsibility}"
+
+
+class QuestionnaireInvite(models.Model):
+    """The questionnaire, sent to the vendor to answer themselves.
+
+    A time-boxed link, like an audit package grant but for someone with no
+    account: the vendor's contact gets an email with a URL carrying a random
+    token, answers the shipped questions in the browser, saves a draft as
+    often as they like, and submits once. The submission lands as a
+    ``VendorAssessment`` of kind ``questionnaire`` with ``result=pending`` for
+    the organisation to review. Only the token's hash is stored; the link is
+    shown once to the person who sent it and travels in the email.
+    """
+    DEFAULT_DAYS = 14
+    MAX_DAYS = 90
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="questionnaire_invites")
+    token_hash = models.CharField(max_length=64, unique=True)
+    sent_to = models.EmailField()
+    message = models.TextField(blank=True, help_text="A note to the vendor, included in the email.")
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="questionnaire_invites_sent",
+    )
+    sent_by_name = models.CharField(max_length=200, blank=True)
+    sent_at = models.DateTimeField(auto_now_add=True)
+    email_sent = models.BooleanField(default=False)
+    expires_at = models.DateTimeField()
+    opened_at = models.DateTimeField(null=True, blank=True)
+    saved_at = models.DateTimeField(null=True, blank=True)
+    draft = models.JSONField(default=dict, blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    respondent_name = models.CharField(max_length=160, blank=True)
+    respondent_title = models.CharField(max_length=160, blank=True)
+    assessment = models.ForeignKey(
+        VendorAssessment, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="invites",
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="questionnaire_invites_revoked",
+    )
+
+    class Meta:
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"Questionnaire for {self.vendor} -> {self.sent_to}"
+
+    @property
+    def status(self):
+        if self.submitted_at:
+            return "submitted"
+        if self.revoked_at:
+            return "revoked"
+        if self.expires_at <= timezone.now():
+            return "expired"
+        return "open"
+
+    @property
+    def is_live(self):
+        return self.status == "open"

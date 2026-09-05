@@ -7,12 +7,13 @@ Use --dry-run to see how many reminders would go out without sending them.
 """
 from django.core.management.base import BaseCommand
 
-from notifications.tasks import run_review_scan, run_vendor_scan
+from notifications.tasks import run_pbc_scan, run_review_scan, run_vendor_scan
 
 
 class Command(BaseCommand):
-    help = ("Scan documents for upcoming/overdue reviews and vendors for lapsed SOC "
-            "reports needing a bridge letter, and email the reminders.")
+    help = ("Scan documents for upcoming/overdue reviews, vendors for lapsed SOC "
+            "reports needing a bridge letter, and auditor (PBC) requests falling due, "
+            "and email the reminders.")
 
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true",
@@ -26,3 +27,6 @@ class Command(BaseCommand):
         chased = run_vendor_scan(dry_run=dry)
         verb = "would be chased" if dry else "chased"
         self.stdout.write(self.style.SUCCESS(f"Vendor scan complete. Bridge letters {verb}: {chased}"))
+        pbc = run_pbc_scan(dry_run=dry)
+        verb = "would be reminded" if dry else "reminded"
+        self.stdout.write(self.style.SUCCESS(f"PBC scan complete. Auditor requests {verb}: {pbc}"))

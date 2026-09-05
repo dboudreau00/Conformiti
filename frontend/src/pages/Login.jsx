@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import axios from "axios";
 import { login, oidcConfig, redeemSso, samlConfig } from "../api/client.js";
+import { getAssertion, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
 import { Button } from "../components/ui/Button.jsx";
 import { Label, Panel } from "../components/ui/Panel.jsx";
 
@@ -24,6 +25,8 @@ const SSO_ERRORS = {
   mfa_required: "This server requires a second factor for single sign-on. Sign in with your password once and enrol an authenticator, or have your identity provider assert one.",
 };
 
+const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0 };
+
 export default function Login({ onDone }) {
   const nav = useNavigate();
   const [health, setHealth] = useState(null);
@@ -33,17 +36,32 @@ export default function Login({ onDone }) {
   const [mfaStep, setMfaStep] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // What the server said after the password: which factors may satisfy the
+  // second step, and the passkey challenge when one is on offer.
+  const [factors, setFactors] = useState(NO_FACTORS);
+  const [passkey, setPasskey] = useState(null);
+  const [method, setMethod] = useState("code");
   // A single sign-on that still needs the local second factor: the ticket
   // waits here, never in the URL, while the person types the code.
   const [ssoTicket, setSsoTicket] = useState(null);
   const [ssoNext, setSsoNext] = useState("/");
   const sso = oidcConfig();
   const samlSso = samlConfig();
+  const canPasskey = passkeysSupported();
 
   // The demo hint is only shown while the seeded demo accounts still exist.
   useEffect(() => {
     axios.get("/api/health/").then((r) => setHealth(r.data)).catch(() => setHealth(null));
   }, []);
+
+  function challenge(data) {
+    const f = { ...NO_FACTORS, ...(data?.factors || {}) };
+    setFactors(f);
+    setPasskey(data?.passkey || null);
+    setMethod(f.passkey && canPasskey ? "passkey" : "code");
+    setMfaStep(true);
+    setErr("");
+  }
 
   // Back from the identity provider: the callback left a one-time ticket (or
   // a reason) in the query string.
@@ -66,7 +84,7 @@ export default function Login({ onDone }) {
         if (data?.mfa_required) {
           setSsoTicket(ticket);
           setSsoNext(safeNext);
-          setMfaStep(true);
+          challenge(data);
           return;
         }
         onDone?.(null);
@@ -85,42 +103,116 @@ export default function Login({ onDone }) {
     }
   }
 
+  /** Complete the sign-in with a second factor, by either route. */
+  async function finish(second) {
+    if (ssoTicket) {
+      const data = await redeemSso(ssoTicket, second);
+      if (data?.mfa_required) throw Object.assign(new Error("mfa"), { response: { data: { code: "mfa_invalid" } } });
+      onDone?.(null);
+      nav(ssoNext);
+      return;
+    }
+    await login(username.trim(), password, second);
+    onDone?.(null);
+    nav("/");
+  }
+
+  /** A passkey challenge answers once; after a refusal, ask for a fresh one. */
+  async function refreshChallenge() {
+    try {
+      if (ssoTicket) {
+        const data = await redeemSso(ssoTicket);
+        if (data?.mfa_required) setPasskey(data.passkey || null);
+      } else {
+        await login(username.trim(), password);
+      }
+    } catch (ex) {
+      if (ex?.response?.data?.mfa_required) setPasskey(ex.response.data.passkey || null);
+    }
+  }
+
+  async function usePasskey() {
+    if (!passkey) return;
+    setErr("");
+    setBusy(true);
+    try {
+      const credential = await getAssertion(passkey.options);
+      await finish({ passkey: { state: passkey.state, credential } });
+    } catch (ex) {
+      const data = ex?.response?.data;
+      if (ex?.response?.status === 429) {
+        setErr("Too many attempts. Wait a minute and try again.");
+      } else if (ssoTicket && data?.code && data.code !== "mfa_invalid") {
+        resetToStart(SSO_ERRORS[data.code] || data.detail || SSO_ERRORS.state);
+      } else {
+        setErr(data?.detail || passkeyErrorText(ex));
+        await refreshChallenge();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function resetToStart(message) {
+    setSsoTicket(null);
+    setMfaStep(false);
+    setOtp("");
+    setFactors(NO_FACTORS);
+    setPasskey(null);
+    setErr(message || "");
+  }
+
   async function submit(e) {
     e.preventDefault();
     setErr("");
     setBusy(true);
     try {
-      if (ssoTicket) {
-        const data = await redeemSso(ssoTicket, otp);
-        if (data?.mfa_required) throw Object.assign(new Error("mfa"), { response: { data: { code: "mfa_invalid" } } });
-        onDone?.(null);
-        nav(ssoNext);
+      if (mfaStep) {
+        await finish({ otp });
         return;
       }
-      await login(username.trim(), password, mfaStep ? otp : undefined);
+      await login(username.trim(), password);
       onDone?.(null);
       nav("/");
     } catch (ex) {
       const data = ex?.response?.data;
       if (data?.mfa_required) {
-        setMfaStep(true);
-        setErr("");
+        challenge(data);
       } else if (ex?.response?.status === 429) {
         setErr("Too many attempts. Wait a minute and try again.");
       } else if (ssoTicket && data?.code && data.code !== "mfa_invalid") {
         // The ticket is gone (expired, or too many tries): back to the start.
-        setSsoTicket(null);
-        setMfaStep(false);
-        setOtp("");
-        setErr(SSO_ERRORS[data.code] || data.detail || SSO_ERRORS.state);
+        resetToStart(SSO_ERRORS[data.code] || data.detail || SSO_ERRORS.state);
       } else if (mfaStep) {
-        setErr("That authentication code isn't valid. Try again, or use a backup code.");
+        setErr(data?.detail && !/invalid authentication code/i.test(String(data.detail))
+          ? String(data.detail)
+          : "That authentication code isn't valid. Try again, or use a backup code.");
       } else {
         setErr("Incorrect username or password.");
       }
     } finally {
       setBusy(false);
     }
+  }
+
+  // Nothing usable: every passkey is suspect and there is no authenticator app.
+  const lockedOut = mfaStep && !factors.totp && !factors.passkey && factors.passkey_suspect > 0;
+  const showCode = mfaStep && !lockedOut && (method === "code" || !factors.passkey);
+  const showPasskey = mfaStep && !lockedOut && factors.passkey && method === "passkey";
+
+  const heading = mfaStep ? "Two-factor authentication" : "Sign in";
+  let intro = "Continuous compliance for SOC 2, ISO 27001 and PCI DSS.";
+  if (lockedOut) {
+    intro = "Your only passkey was disabled because it may have been cloned, and there is no "
+      + "authenticator app on this account. Ask an administrator to reset your second factor.";
+  } else if (showPasskey) {
+    intro = ssoTicket
+      ? "Your identity provider signed you in, but did not assert a second factor. Confirm with your passkey."
+      : "Confirm it's you with your passkey or security key.";
+  } else if (mfaStep) {
+    intro = ssoTicket
+      ? "Your identity provider signed you in, but did not assert a second factor. Enter the code from your authenticator app, or a backup code."
+      : "Enter the 6-digit code from your authenticator app, or a backup code.";
   }
 
   return (
@@ -135,14 +227,8 @@ export default function Login({ onDone }) {
                 <Label>SOC 2 · ISO 27001 · PCI</Label>
               </div>
             </div>
-            <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{mfaStep ? "Two-factor authentication" : "Sign in"}</h1>
-            <p className="mt-1 text-[13px] leading-snug text-muted">
-              {mfaStep
-                ? (ssoTicket
-                    ? "Your identity provider signed you in, but did not assert a second factor. Enter the code from your authenticator app, or a backup code."
-                    : "Enter the 6-digit code from your authenticator app, or a backup code.")
-                : "Continuous compliance for SOC 2, ISO 27001 and PCI DSS."}
-            </p>
+            <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
+            <p className="mt-1 text-[13px] leading-snug text-muted">{intro}</p>
             {err ? <div className="notice notice-err mt-4" role="alert">{err}</div> : null}
             {!mfaStep ? (
               <>
@@ -155,7 +241,8 @@ export default function Login({ onDone }) {
                   <input id="login-password" name="password" type="password" autoComplete="current-password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={onEnter} />
                 </div>
               </>
-            ) : (
+            ) : null}
+            {showCode ? (
               <div className="mt-5">
                 <label htmlFor="login-otp" className="field-label">Authentication code</label>
                 <input
@@ -171,11 +258,26 @@ export default function Login({ onDone }) {
                   placeholder="123456 or backup code"
                 />
               </div>
-            )}
-            <Button type="submit" variant="primary" className="mt-5 w-full"
-                    disabled={busy || (ssoTicket ? !otp : (!username || !password))}>
-              {busy ? "Signing in…" : mfaStep ? "Verify" : "Sign in"}
-            </Button>
+            ) : null}
+            {showPasskey ? (
+              <Button type="button" variant="primary" className="mt-5 w-full" disabled={busy || !passkey} onClick={usePasskey} autoFocus>
+                {busy ? "Waiting for your passkey…" : "Use passkey"}
+              </Button>
+            ) : !lockedOut ? (
+              <Button type="submit" variant="primary" className="mt-5 w-full"
+                      disabled={busy || (mfaStep ? !otp : (!username || !password))}>
+                {busy ? "Signing in…" : mfaStep ? "Verify" : "Sign in"}
+              </Button>
+            ) : null}
+            {mfaStep && !lockedOut && factors.passkey && factors.totp ? (
+              <button type="button" className="link mt-3 block" disabled={busy}
+                      onClick={() => { setErr(""); setMethod(method === "passkey" ? "code" : "passkey"); }}>
+                {method === "passkey" ? "Use a code instead" : "Use a passkey instead"}
+              </button>
+            ) : null}
+            {mfaStep && !lockedOut && factors.passkey && !canPasskey && !factors.totp ? (
+              <p className="mt-3 text-xs text-muted">This browser cannot use passkeys. Sign in from a browser that can, or ask an administrator to reset your second factor.</p>
+            ) : null}
             {(sso.enabled || samlSso.enabled) && !mfaStep ? (
               <>
                 <div className="my-4 flex items-center gap-3" aria-hidden="true">
@@ -198,7 +300,7 @@ export default function Login({ onDone }) {
               </>
             ) : null}
             {mfaStep ? (
-              <button type="button" className="link mt-4" onClick={() => { setMfaStep(false); setOtp(""); setErr(""); setSsoTicket(null); }}>
+              <button type="button" className="link mt-4" onClick={() => resetToStart("")}>
                 {ssoTicket ? "← Start over" : "← Back to password"}
               </button>
             ) : health?.demo_accounts ? (

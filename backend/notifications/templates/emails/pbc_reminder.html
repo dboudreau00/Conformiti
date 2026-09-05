@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2933; line-height: 1.5; max-width: 640px; margin: 0 auto; padding: 24px;">
+    <p>Hello {{ assignee_name }},</p>
+    <p>
+      {% if overdue %}The auditor's request <strong>{{ request.reference }}</strong> assigned to you is
+      <strong>overdue</strong>: it was due {{ request.due_date }}.{% else %}The auditor's request
+      <strong>{{ request.reference }}</strong> assigned to you is due in <strong>{{ days }} day{{ days|pluralize }}</strong>
+      ({{ request.due_date }}).{% endif %}
+    </p>
+    <table style="border-collapse: collapse; font-size: 14px;">
+      <tr><td style="padding: 2px 12px 2px 0; color: #52606d;">Request</td><td>{{ request.reference }} &middot; {{ request.title }}{% if request.control_ref %} ({{ request.control_ref }}){% endif %}</td></tr>
+      <tr><td style="padding: 2px 12px 2px 0; color: #52606d;">Package</td><td>{{ package.name }}{% if package.audit_firm %} &middot; {{ package.audit_firm }}{% endif %}</td></tr>
+      <tr><td style="padding: 2px 12px 2px 0; color: #52606d;">Raised by</td><td>{{ request.requested_by_name }} ({{ request.get_requested_by_side_display }})</td></tr>
+    </table>
+    {% if request.description %}<p style="color: #52606d;">{{ request.description|linebreaksbr }}</p>{% endif %}
+    {% if request.status == "returned" and request.returned_note %}
+    <p><strong>Returned by the auditor:</strong> {{ request.returned_note }}</p>
+    {% endif %}
+    <p>Attach the document(s) and mark it provided in Conformiti (<em>Audit packages &rsaquo; {{ package.name }} &rsaquo; Request list</em>).</p>
+    <p style="color: #7b8794; font-size: 12px; margin-top: 24px;">&mdash; Conformiti</p>
+  </body>
+</html>

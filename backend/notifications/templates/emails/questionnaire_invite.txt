@@ -1,0 +1,14 @@
+Hello,
+
+{{ sender }}{% if organisation %} at {{ organisation }}{% endif %} has asked {{ vendor.name }} to complete a short security questionnaire ({{ questions|length }} questions) as part of their third-party risk review.
+{% if message %}
+{{ sender }} writes:
+{{ message }}
+{% endif %}
+Answer it here (the link works until {{ deadline }}):
+
+{{ link }}
+
+You can save a draft and come back; submit once you are done. The link is personal to this request -- please do not forward it.
+
+-- Conformiti{% if organisation %} for {{ organisation }}{% endif %}

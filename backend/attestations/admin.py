@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant
+from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant, PbcRequest
+
+
+@admin.register(PbcRequest)
+class PbcRequestAdmin(admin.ModelAdmin):
+    list_display = ["reference", "title", "package", "status", "due_date", "assignee_name"]
+    list_filter = ["status", "priority"]
 
 
 @admin.register(EvidencePackage)

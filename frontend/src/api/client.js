@@ -45,12 +45,22 @@ export async function loadAuthConfig() {
   return transport;
 }
 
+/** The second factor a sign-in call carries: {otp} for an authenticator or
+ *  backup code, {passkey: {state, credential}} for a WebAuthn assertion. */
+function withSecondFactor(body, second) {
+  if (typeof second === "string") second = { otp: second };
+  if (second?.otp) body.otp = second.otp;
+  if (second?.passkey) body.passkey = second.passkey;
+  return body;
+}
+
 /** Finish a single sign-on: swap the one-time ticket from the callback
  *  redirect for tokens, delivered the same way a password login delivers them.
  *  When the server wants a local second factor first it answers
- *  {mfa_required: true} and keeps the ticket; call again with the code. */
-export async function redeemSso(ticket, otp) {
-  const body = otp ? { ticket, otp } : { ticket };
+ *  {mfa_required: true, factors, passkey?} and keeps the ticket; call again
+ *  with the code or the passkey assertion. */
+export async function redeemSso(ticket, second) {
+  const body = withSecondFactor({ ticket }, second);
   const { data } = await axios.post("/api/auth/oidc/redeem/", body, {
     withCredentials: true,
     headers: cookieMode() ? { "X-CSRFToken": readCookie("csrftoken") || "" } : {},
@@ -124,9 +134,8 @@ api.interceptors.response.use(
   }
 );
 
-export async function login(username, password, otp) {
-  const body = { username, password };
-  if (otp) body.otp = otp;
+export async function login(username, password, second) {
+  const body = withSecondFactor({ username, password }, second);
   const { data } = await axios.post("/api/auth/token/", body, {
     withCredentials: true,
     headers: cookieMode() ? { "X-CSRFToken": readCookie("csrftoken") || "" } : {},

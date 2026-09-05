@@ -6,6 +6,7 @@ import {
   ContrastIcon,
   DownloadIcon,
   ExternalLinkIcon,
+  FingerprintIcon,
   InfoIcon,
   KeyRoundIcon,
   MinusIcon,
@@ -14,6 +15,7 @@ import {
   UserIcon,
 } from "lucide-react";
 import api, { fetchAll } from "../api/client.js";
+import { createPasskey, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
 import { ACCENT_PACKS, THEME_PACKS, accentHex, useTheme } from "../theme.js";
 import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
@@ -601,15 +603,160 @@ function MfaBlock() {
   );
 }
 
+/** Passkeys and security keys as a second factor. Enrolling one is a browser
+ * ceremony (the server issues a challenge, the authenticator signs it);
+ * removing one takes the account password, so a hijacked session cannot
+ * quietly strip a factor. A key the server has flagged as possibly cloned is
+ * shown as such and can only be removed. */
+function PasskeysBlock() {
+  const [state, setState] = useState(null); // {results, factors, rp_id, max}
+  const [loadErr, setLoadErr] = useState(null);
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const supported = passkeysSupported();
+
+  function load() {
+    setLoadErr(null);
+    api.get("/auth/webauthn/")
+      .then((r) => setState(r.data))
+      .catch((e) => { setState(null); setLoadErr(errorText(e, "Couldn't load passkeys.")); });
+  }
+  useEffect(() => { load(); }, []);
+
+  async function add(e) {
+    e.preventDefault();
+    setMsg(null);
+    setBusy(true);
+    try {
+      const { data } = await api.post("/auth/webauthn/register/options/");
+      const credential = await createPasskey(data.options);
+      await api.post("/auth/webauthn/register/", { state: data.state, name: name.trim(), credential });
+      setName("");
+      load();
+      setMsg({ ok: true, text: "Passkey enrolled. Signing in now takes your password and this key." });
+    } catch (err) {
+      setMsg({ ok: false, text: passkeyErrorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(row) {
+    setMsg(null);
+    setBusy(true);
+    try {
+      await api.delete(`/auth/webauthn/${row.id}/`, { data: { password } });
+      setPassword("");
+      load();
+      setMsg({ ok: true, text: `Removed "${row.name}".` });
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "Couldn't remove the passkey.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rename(row) {
+    const next = window.prompt("Name this passkey", row.name);
+    if (!next || next.trim() === row.name) return;
+    try {
+      await api.patch(`/auth/webauthn/${row.id}/`, { name: next.trim() });
+      load();
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "Couldn't rename the passkey.") });
+    }
+  }
+
+  const rows = state?.results || [];
+  const suspect = rows.filter((r) => !r.usable).length;
+
+  return (
+    <>
+      <SubTitle title="Passkeys and security keys">
+        Phishing-resistant sign-in with a passkey (Touch ID, Windows Hello, a phone) or a hardware security key. Works alongside, or instead of, the authenticator app.
+      </SubTitle>
+      {loadErr ? (
+        <div className="mt-4 flex max-w-[640px] flex-wrap items-center gap-3">
+          <div className="notice notice-err flex-1" role="alert">{loadErr}</div>
+          <Button size="sm" onClick={load}>Retry</Button>
+        </div>
+      ) : !state ? (
+        <Loading className="py-6 text-left" />
+      ) : (
+        <>
+          {suspect ? (
+            <div className="notice notice-err mt-4 max-w-[640px]" role="alert">
+              {suspect === 1 ? "One passkey was" : `${suspect} passkeys were`} disabled because the signature counter went backwards, which means a copy of the key may exist. Remove {suspect === 1 ? "it" : "them"} with your password and enrol a fresh key.
+            </div>
+          ) : null}
+          <ul className="mt-4 max-w-[640px] divide-y divide-line rounded-xl border border-line" aria-label="Enrolled passkeys">
+            {rows.length === 0 ? (
+              <li className="px-4 py-3 text-xs text-muted">No passkeys enrolled.</li>
+            ) : rows.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+                <FingerprintIcon className={cn("h-4 w-4 shrink-0", r.usable ? "text-muted" : "text-danger")} strokeWidth={1.75} aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-medium text-ink">{r.name}</span>
+                  <span className="block text-xs text-muted">
+                    {r.algorithm}{r.backup_eligible ? " · synced passkey" : " · device-bound"}
+                    {" · added "}{String(r.created_at).slice(0, 10)}
+                    {r.last_used_at ? ` · last used ${String(r.last_used_at).slice(0, 10)}` : " · never used"}
+                  </span>
+                  {!r.usable ? <span className="block text-xs text-danger">{r.suspect_reason}</span> : null}
+                </span>
+                <Badge tone={r.usable ? "success" : "danger"} dot>{r.usable ? "Active" : "Disabled"}</Badge>
+                {r.usable ? <Button size="sm" variant="ghost" onClick={() => rename(r)} disabled={busy}>Rename</Button> : null}
+                <Button size="sm" variant="danger" onClick={() => remove(r)} disabled={busy || !password} title={password ? "" : "Confirm your password below first"}>
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <Notice msg={msg} className="mt-4 max-w-[640px]" />
+      {state && supported && rows.length < (state.max || 10) ? (
+        <form onSubmit={add} noValidate className="mt-4 flex max-w-[640px] flex-wrap items-end gap-2">
+          <Field id="passkey-name" label="Name for the new key" className="min-w-[220px] flex-1">
+            <input id="passkey-name" className="input" value={name} placeholder="Work laptop" maxLength={80}
+                   onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <Button type="submit" variant="primary" disabled={busy}
+                  icon={<FingerprintIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+            {busy ? "Waiting for your authenticator…" : "Add passkey"}
+          </Button>
+        </form>
+      ) : state && !supported ? (
+        <p className="mt-3 max-w-[640px] text-xs text-muted">This browser cannot enrol passkeys (it needs a secure https address and a modern browser).</p>
+      ) : null}
+      {rows.length ? (
+        <div className="mt-4 max-w-[640px]">
+          <Field id="passkey-password" label="Confirm your password to remove a key">
+            <input id="passkey-password" type="password" autoComplete="current-password" className="input sm:max-w-[312px]"
+                   value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Field>
+          <p className="mt-2 text-xs text-muted">
+            Recovery if you lose this key: a second passkey, the authenticator app with its backup codes, or an administrator's reset. Enrol one of those before you rely on a single key.
+          </p>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function SecuritySection() {
   return (
     <Panel className="p-5">
-      <SectionTitle title="Security">Authentication factors on this account: your password and an optional authenticator app.</SectionTitle>
+      <SectionTitle title="Security">Authentication factors on this account: your password, an optional authenticator app, and optional passkeys or security keys.</SectionTitle>
       <div className="mt-5">
         <PasswordBlock />
       </div>
       <Divider className="my-6" />
       <MfaBlock />
+      <Divider className="my-6" />
+      <PasskeysBlock />
     </Panel>
   );
 }

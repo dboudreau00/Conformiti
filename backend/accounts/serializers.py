@@ -125,23 +125,57 @@ class PasswordChangeSerializer(serializers.Serializer):
 # MFA-aware login
 # --------------------------------------------------------------------------
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer  # noqa: E402
-from rest_framework.exceptions import AuthenticationFailed  # noqa: E402
+from rest_framework.exceptions import APIException, AuthenticationFailed  # noqa: E402
+
+
+class MfaChallenge(APIException):
+    """The password was right and a second factor is now due.
+
+    Carries a plain dict rather than DRF's error details: the payload holds
+    WebAuthn options (integers, nested lists) that must reach the browser
+    untouched, and ``_get_error_details`` would stringify every leaf.
+    """
+    status_code = 400
+
+    def __init__(self, payload):
+        self.detail = payload
 
 
 class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
     """Standard username/password login, plus a second factor when the account
-    has TOTP enabled. Password is verified first (by super()); if MFA is on we
-    require a valid `otp` before the tokens are returned — they're only handed
-    back on the final `return`, so nothing leaks on the challenge step."""
+    has one: a TOTP code (``otp``) or a passkey assertion (``passkey``).
+    Password is verified first (by super()); the challenge step then names
+    the factors on offer and, when a passkey is among them, includes the
+    options for it. Tokens are only handed back on the final ``return``, so
+    nothing leaks on the challenge step."""
 
     def validate(self, attrs):
+        from . import passkeys
+
         data = super().validate(attrs)  # authenticates; sets self.user; builds tokens
-        device = getattr(self.user, "mfa_device", None)
-        if device and device.enabled:
-            otp = (self.initial_data.get("otp") or "").strip()
-            if not otp:
-                # 400 with a flag the login screen branches on to prompt for a code.
-                raise serializers.ValidationError({"mfa_required": True})
-            if not device.verify(otp):
+        user = self.user
+        device = getattr(user, "mfa_device", None)
+        totp_on = bool(device and device.enabled)
+        if not (totp_on or user.passkeys.exists()):
+            return data
+
+        request = self.context.get("request")
+        otp = (self.initial_data.get("otp") or "").strip()
+        assertion = self.initial_data.get("passkey")
+        if otp:
+            if not (totp_on and device.verify(otp)):
                 raise AuthenticationFailed("Invalid authentication code.", "mfa_invalid")
-        return data
+            return data
+        if assertion is not None:
+            try:
+                passkeys.finish_login(user, request, assertion)
+            except passkeys.PasskeyRefused as exc:
+                from audit.events import record_auth_event
+                record_auth_event(request, user, "mfa", f"passkey refused ({exc.code})")
+                raise AuthenticationFailed(exc.message, "mfa_invalid")
+            return data
+        # 400 with a flag the login screen branches on to prompt for a factor.
+        payload = {"mfa_required": True, "factors": passkeys.factors(user)}
+        if payload["factors"]["passkey"]:
+            payload["passkey"] = passkeys.begin_login(user, request)
+        raise MfaChallenge(payload)

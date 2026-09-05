@@ -33,15 +33,17 @@
   SSO logins, PDFs drawn by pdf.js instead of a plugin frame, and the fix for
   the duplicate Content-Disposition header that had broken every download
   through nginx since 0.3.0.
+- **0.6.0** — the security questionnaire sent to the vendor to answer by a
+  time-boxed link, passkeys / security keys (WebAuthn) as a second factor
+  with a clone detector that fails closed, and the PBC request list with
+  due-date reminders on every audit package.
 
-## Next (0.5.1)
+## Next (0.6.1)
 
 | Item | Why |
 |---|---|
-| **Vendor questionnaire sent to the vendor** — a time-boxed link like an audit package grant, answered by them, reviewed by us | 0.4.0 records the answers; the vendor should be able to give them |
-| **WebAuthn / passkeys** as a second factor | phishing-resistant MFA. Deferred from 0.3.0: the design's clone detector disabled the passkey and dropped the account to password-only — a fail-open that has to be fixed before it ships |
-| **PBC request list** with due-date reminders | the other half of the auditor's workflow |
 | **Roll-forward**: a prior-package link and a year-over-year scope diff | the column already ships, nullable, so this needs no migration |
+| **Backup codes for passkey-only accounts** | today recovery is a second key, the authenticator app, or an administrator; codes belong to the TOTP device |
 | **Scanner monitoring** — health probe, alerting, `manage.py scan_evidence` | 0.3.0 ships the boundary; this watches it |
 | **Cookie transport as the default**, with `__Host-` cookie prefixes | once it has run in the field for a release |
 

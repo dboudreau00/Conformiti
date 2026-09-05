@@ -64,16 +64,23 @@ class OidcRedeemView(APIView):
     throttle_classes = [_LoginThrottle]
 
     def post(self, request):
+        from . import passkeys
+
         otp = request.data.get("otp")
+        passkey = request.data.get("passkey")
         try:
-            user = oidc.redeem_ticket(request, request.data.get("ticket"), otp)
-        except oidc.StepUpRequired:
-            return Response({"mfa_required": True})
+            user = oidc.redeem_ticket(request, request.data.get("ticket"), otp, passkey)
+        except oidc.StepUpRequired as pending:
+            payload = {"mfa_required": True, "factors": passkeys.factors(pending.user)}
+            if payload["factors"]["passkey"]:
+                payload["passkey"] = passkeys.begin_login(pending.user, request)
+            return Response(payload)
         except oidc.OidcError as exc:
             oidc.audit(request, None, False, f"sso ticket refused ({exc.code}): {exc.detail}")
             return Response({"detail": exc.message, "code": exc.code}, status=400)
-        if otp is not None:
-            oidc.audit(request, user, True, f"sso step-up: second factor verified for {user.get_username()}")
+        if otp is not None or passkey is not None:
+            how = "passkey verified" if passkey is not None else "second factor verified"
+            oidc.audit(request, user, True, f"sso step-up: {how} for {user.get_username()}")
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)
         update_last_login(None, user)

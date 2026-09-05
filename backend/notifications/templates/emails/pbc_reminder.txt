@@ -1,0 +1,15 @@
+Hello {{ assignee_name }},
+
+{% if overdue %}The auditor's request {{ request.reference }} assigned to you is overdue: it was due {{ request.due_date }}.{% else %}The auditor's request {{ request.reference }} assigned to you is due in {{ days }} day{{ days|pluralize }} ({{ request.due_date }}).{% endif %}
+
+  {{ request.reference }}  {{ request.title }}{% if request.control_ref %}  ({{ request.control_ref }}){% endif %}
+  Package: {{ package.name }}{% if package.audit_firm %} - {{ package.audit_firm }}{% endif %}
+  Raised by: {{ request.requested_by_name }} ({{ request.get_requested_by_side_display }})
+{% if request.description %}
+{{ request.description }}
+{% endif %}{% if request.status == "returned" and request.returned_note %}
+Returned by the auditor: {{ request.returned_note }}
+{% endif %}
+Attach the document(s) and mark it provided in Conformiti (Audit packages > {{ package.name }} > Request list).
+
+-- Conformiti

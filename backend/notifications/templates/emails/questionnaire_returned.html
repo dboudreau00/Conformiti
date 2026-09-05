@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2933; line-height: 1.5; max-width: 640px; margin: 0 auto; padding: 24px;">
+    <p>Hello {{ owner_name }},</p>
+    <p>
+      <strong>{{ vendor.name }}</strong> has returned the security questionnaire:
+      {{ invite.respondent_name }}{% if invite.respondent_title %} ({{ invite.respondent_title }}){% endif %}
+      &lt;{{ invite.sent_to }}&gt; answered <strong>{{ answered }} of {{ total }}</strong> questions{% if noes %},
+      <strong>{{ noes }}</strong> of them &ldquo;No&rdquo;{% endif %}.
+    </p>
+    <p>
+      It is filed against the vendor as a pending assessment. Review the answers and record the outcome in Conformiti
+      (<em>Vendors &rsaquo; {{ vendor.name }} &rsaquo; Questionnaire</em>).
+    </p>
+    <p style="color: #7b8794; font-size: 12px; margin-top: 24px;">&mdash; Conformiti</p>
+  </body>
+</html>

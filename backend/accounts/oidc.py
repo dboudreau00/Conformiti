@@ -87,7 +87,12 @@ MESSAGES = {
 
 
 class StepUpRequired(Exception):
-    """The ticket is good, but the local second factor has not been given yet."""
+    """The ticket is good, but the local second factor has not been given yet.
+    Carries the user so the view can say which factors are on offer."""
+
+    def __init__(self, user=None):
+        super().__init__("step-up required")
+        self.user = user
 
 
 class OidcError(Exception):
@@ -313,8 +318,7 @@ def step_up_needed(user, asserted):
     policy = str(getattr(settings, "SSO_STEP_UP", "if_enrolled") or "if_enrolled")
     if policy == "off" or asserted:
         return False
-    device = getattr(user, "mfa_device", None)
-    if device is not None and device.enabled:
+    if user.mfa_enabled:   # an authenticator app or a passkey
         return True
     if policy == "required":
         raise OidcError("mfa_required", f"{user.get_username()} has no authenticator and the "
@@ -488,7 +492,7 @@ def _drop_ticket(request):
     request.session.modified = True
 
 
-def redeem_ticket(request, ticket, otp=None):
+def redeem_ticket(request, ticket, otp=None, passkey=None):
     data = request.session.get(TICKET_KEY)
     if not data:
         raise OidcError("state", "no sign-in ticket in this browser session, or it was already used")
@@ -504,17 +508,27 @@ def redeem_ticket(request, ticket, otp=None):
         _drop_ticket(request)
         raise OidcError("inactive")
     if data.get("mfa"):
-        if otp is None:
-            raise StepUpRequired()
-        device = getattr(user, "mfa_device", None)
-        if not (device is not None and device.enabled and device.verify(str(otp)[:64])):
+        if otp is None and passkey is None:
+            raise StepUpRequired(user)
+        if otp is not None:
+            device = getattr(user, "mfa_device", None)
+            ok = device is not None and device.enabled and device.verify(str(otp)[:64])
+            why = "wrong code"
+        else:
+            from . import passkeys
+            try:
+                passkeys.finish_login(user, request, passkey)
+                ok = True
+            except passkeys.PasskeyRefused as exc:
+                ok, why = False, f"passkey refused ({exc.code})"
+        if not ok:
             data["tries"] = int(data.get("tries", 0)) + 1
             if data["tries"] >= STEP_UP_TRIES:
                 _drop_ticket(request)
                 raise OidcError("state", "too many wrong codes; start the sign-in again")
             request.session[TICKET_KEY] = data
             request.session.modified = True
-            raise OidcError("mfa_invalid", f"wrong code ({data['tries']}/{STEP_UP_TRIES})")
+            raise OidcError("mfa_invalid", f"{why} ({data['tries']}/{STEP_UP_TRIES})")
     _drop_ticket(request)
     return user
 
