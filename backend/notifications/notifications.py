@@ -94,6 +94,7 @@ def build(user):
     # matrix before an auditor asks which controls' evidence to expect from
     # whom. Surfaced to the vendor's owner and to every frameworks manager.
     from vendors.models import SharedResponsibility
+    from vendors.assurance import bridge_letter_gaps
     from compliance.models import Control
     can_prompt = user.is_superuser or user.can_manage_frameworks
     prompt_vendors = Vendor.objects.filter(status__in=("prospective", "active"))
@@ -128,7 +129,20 @@ def build(user):
         items.append(_n(
             f"vendor-expiry:{a.id}", "vendor", "medium",
             f"{a.get_kind_display()} expires for {a.vendor.name}",
-            f"Expires {a.expires_at.isoformat()} ({days}d)", "/vendors", a.expires_at,
+            f"Expires {a.expires_at.isoformat()} ({days}d)",
+            f"/vendors?vendor={a.vendor_id}&tab=assessments", a.expires_at,
+        ))
+    # A SOC report whose period has ended, with no newer report and no bridge
+    # letter covering the gap: the auditor will ask for the letter, so ask the
+    # vendor first. Owner and frameworks managers alike.
+    for vendor, report in bridge_letter_gaps(user):
+        items.append(_n(
+            f"vendor-bridge:{vendor.id}", "vendor",
+            "high" if vendor.tier in ("critical", "high") else "medium",
+            f"Bridge letter needed from {vendor.name}",
+            f"{report.get_kind_display()} lapsed on {report.expires_at.isoformat()} and nothing "
+            "newer is on file. Ask for a bridge letter and file it against the vendor.",
+            f"/vendors?vendor={vendor.id}&tab=assessments", report.expires_at,
         ))
 
     # ---- 2. Risks I own -----------------------------------------------------

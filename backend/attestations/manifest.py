@@ -15,7 +15,10 @@ import json
 import os
 import re
 
-MANIFEST_VERSION = 1
+# 2 (0.4.1): each control carries its stated population and the sample items
+# listed before sealing. A version-1 manifest still verifies with verify.py;
+# it simply has no "population"/"samples" keys.
+MANIFEST_VERSION = 2
 HASH_ALGORITHM = "sha256"
 
 
@@ -101,6 +104,7 @@ def build_manifest(package, controls):
         "totals": {
             "controls": len(controls),
             "evidence": sum(len(c["evidence"]) for c in controls),
+            "samples": sum(len(c.get("samples") or []) for c in controls),
         },
         "controls": controls,
     }

@@ -49,7 +49,31 @@ def control_payload(row):
         "concluded_by": row.concluded_by_name,
         "concluded_at": _iso(row.concluded_at),
         "management_response": row.management_response,
+        "population": {
+            "size": row.population_size,
+            "source": row.population_source,
+            "sampling_method": row.sampling_method,
+        },
         "evidence": [evidence_payload(e) for e in row.evidence.all()],
+        "samples": [sample_payload(s) for s in row.samples.all() if s.sealed_in],
+    }
+
+
+def sample_payload(row):
+    """One sampled item as the manifest sees it. Results are workpaper data
+    written after sealing, so at seal they read 'pending' -- like the
+    conclusions beside them."""
+    return {
+        "ordinal": row.ordinal,
+        "identifier": row.identifier,
+        "description": row.description,
+        "population_ref": row.population_ref,
+        "evidence": row.evidence_name,
+        "evidence_path": row.evidence.member_path if row.evidence_id else None,
+        "selected_by": row.selected_by_name,
+        "selected_at": _iso(row.selected_at),
+        "result": row.result,
+        "exception_note": row.exception_note,
     }
 
 
@@ -122,12 +146,18 @@ def assign_paths(package):
             row.ordinal = e_index
             row.member_path = f"{directory}/{mf.safe_member_name(row.document_name, row.storage_name, e_index)}"
             row.save(update_fields=["ordinal", "member_path"])
+        # Every item listed before the seal becomes part of the manifest.
+        for s_index, sample in enumerate(control.samples.all().order_by("identifier", "pk"), start=1):
+            sample.ordinal = s_index
+            sample.sealed_in = True
+            sample.save(update_fields=["ordinal", "sealed_in"])
 
 
 def build_manifest(package):
     """The manifest dict for a package whose paths are already assigned."""
     controls = list(
-        package.controls.all().prefetch_related("evidence").order_by("ordinal", "control_ref")
+        package.controls.all().prefetch_related("evidence", "samples__evidence")
+        .order_by("ordinal", "control_ref")
     )
     return mf.build_manifest(package_payload(package), [control_payload(c) for c in controls])
 
@@ -147,10 +177,14 @@ def controls_csv(package):
         "Management status at seal", "Design conclusion", "Operating conclusion",
         "Not-tested reason", "Concluded by", "Concluded at", "Auditor note",
         "Management response", "Evidence count", "Population source",
+        "Population size", "Population stated as", "Sampling method",
+        "Samples", "Sample passes", "Sample exceptions", "Samples not tested",
+        "Sampling note",
     ]
     rows = []
-    for c in package.controls.all().prefetch_related("evidence"):
+    for c in package.controls.all().prefetch_related("evidence", "samples"):
         evidence = list(c.evidence.all())
+        samples = list(c.samples.all())
         rows.append([
             c.framework_name, c.framework_version, c.category_name, c.control_ref,
             c.title, c.objective, c.mgmt_status_display,
@@ -158,6 +192,38 @@ def controls_csv(package):
             c.not_tested_reason, c.concluded_by_name, _iso(c.concluded_at) or "",
             c.auditor_note, c.management_response, len(evidence),
             "yes" if any(e.is_population for e in evidence) else "no",
+            c.population_size if c.population_size is not None else "",
+            c.population_source, c.get_sampling_method_display() if c.sampling_method else "",
+            len(samples),
+            sum(1 for s in samples if s.result == "pass"),
+            sum(1 for s in samples if s.result == "fail"),
+            sum(1 for s in samples if s.result == "not_tested"),
+            c.sampling_note,
+        ])
+    return _csv_bytes(header, rows)
+
+
+def samples_csv(package):
+    """One row per sampled item: what was tested, against which artefact,
+    with what result, by whom -- the operating-effectiveness workpaper."""
+    from .models import PackageSample
+
+    header = [
+        "Control ID", "Item", "Description", "Population reference",
+        "Evidence document", "Path in bundle", "In sealed manifest",
+        "Listed by", "Listed at", "Result", "Exception note", "Tested by", "Tested at",
+    ]
+    rows = []
+    for s in PackageSample.objects.filter(
+        package_control__package=package
+    ).select_related("package_control", "evidence").order_by("package_control__ordinal", "ordinal", "identifier"):
+        rows.append([
+            s.package_control.control_ref, s.identifier, s.description, s.population_ref,
+            s.evidence_name, s.evidence.member_path if s.evidence_id else "",
+            "yes" if s.sealed_in else "no",
+            s.selected_by_name, _iso(s.selected_at) or "",
+            s.get_result_display(), s.exception_note,
+            s.tested_by_name, _iso(s.tested_at) or "",
         ])
     return _csv_bytes(header, rows)
 
@@ -238,6 +304,7 @@ def readme_text(package, digest, summary):
         f"Controls         {summary['controls']}",
         f"Evidence files   {summary['items']}",
         f"Not tested       {summary['not_tested']}",
+        f"Sample items     {summary['samples']} ({summary['sample_exceptions']} exception(s))",
         "",
         "MANAGEMENT ASSERTION",
         "--------------------",
@@ -250,6 +317,11 @@ def readme_text(package, digest, summary):
         "accepts a conclusion only from the account the package was issued to.",
         "The management response column is the organisation's reply and is",
         "written by the organisation.",
+        "",
+        "samples.csv lists every sampled item. Items marked 'In sealed manifest:",
+        "yes' were listed by the organisation before sealing and are part of the",
+        "manifest digest; the others are the auditor's own selections. Every",
+        "result and exception note was recorded by the auditor named on the row.",
         "",
         "VERIFYING THIS BUNDLE",
         "---------------------",
@@ -349,9 +421,13 @@ def write_bundle(package, fh):
         else:
             integrity_line = "OK: every file matches the digest recorded when the package was sealed."
 
+        from .models import PackageSample
+        sample_rows = PackageSample.objects.filter(package_control__package=package)
         summary = {
             "items": len(rows), "altered": altered, "missing": missing,
             "controls": package.controls.count(), "not_tested": not_tested,
+            "samples": sample_rows.count(),
+            "sample_exceptions": sample_rows.filter(result="fail").count(),
             "integrity_line": integrity_line,
         }
 
@@ -365,6 +441,7 @@ def write_bundle(package, fh):
 
         write("controls.csv", controls_csv(package))
         write("evidence.csv", evidence_csv(package, actual))
+        write("samples.csv", samples_csv(package))
         write("trail.csv", trail_csv(package))
         write("INTEGRITY.txt", (integrity_line + "\n").encode("utf-8"))
         write("README.txt", readme_text(package, digest, summary))

@@ -1,0 +1,10 @@
+Hello {{ owner_name }},
+
+{{ vendor.name }}'s {{ report.get_kind_display }} lapsed on {{ lapsed_on }} ({{ days }} day{{ days|pluralize }} ago) and nothing newer is on file: no successor report and no bridge letter.
+
+An auditor will ask for the bridge letter covering the gap between that report's period end and the next report. Ask {{ vendor.name }}{% if vendor.contact_email %} ({{ vendor.contact_email }}){% endif %} for it now, then file it against the vendor in Conformiti (Vendors > {{ vendor.name }} > Assurance > File a report > Bridge letter) so the reminder stops.
+
+Tier: {{ vendor.get_tier_display }}
+Data handled: {{ vendor.data_handled|default:"not stated" }}
+
+-- Conformiti

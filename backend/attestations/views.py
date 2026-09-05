@@ -29,12 +29,13 @@ from documents.models import Document
 
 from . import access, bundle
 from .manifest import canonical_bytes, sha256_hex
-from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant
+from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant, PackageSample
 from .serializers import (
     EvidencePackageSerializer,
     PackageControlSerializer,
     PackageEvidenceSerializer,
     PackageGrantSerializer,
+    PackageSampleSerializer,
 )
 from .snapshot import pin_document, snapshot_control, stamp, verify_pins
 
@@ -287,7 +288,7 @@ class PackageControlViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return PackageControl.objects.filter(
             package__in=access.readable_packages(self.request.user)
-        ).select_related("package").prefetch_related("evidence")
+        ).select_related("package").prefetch_related("evidence", "samples")
 
     def create(self, request, *args, **kwargs):
         from rest_framework.exceptions import MethodNotAllowed
@@ -300,7 +301,7 @@ class PackageControlViewSet(viewsets.ModelViewSet):
         user = self.request.user
         data = serializer.validated_data
         auditor_fields = {"design_conclusion", "operating_conclusion",
-                          "not_tested_reason", "auditor_note"}
+                          "not_tested_reason", "auditor_note", "sampling_note"}
         touching_conclusions = bool(auditor_fields & set(data))
         touching_response = "management_response" in data
 
@@ -369,6 +370,113 @@ class PackageControlViewSet(viewsets.ModelViewSet):
         record_package_event(request, row.package, "update",
                              f"raised risk {risk.pk} from finding on {row.control_ref}")
         return Response(PackageControlSerializer(row).data, status=status.HTTP_201_CREATED)
+
+
+class PackageSampleViewSet(viewsets.ModelViewSet):
+    """Sampled items on a workpaper row.
+
+    Two writers, never at the same time: the organisation lists items while
+    the package is a draft (they are sealed into the manifest); the issued
+    auditor adds their own selections and records every result after sealing.
+    Results are the auditor's alone, like conclusions.
+    """
+    serializer_class = PackageSampleSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ["package_control", "result", "sealed_in"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    ITEM_FIELDS = {"identifier", "description", "population_ref", "evidence"}
+    RESULT_FIELDS = {"result", "exception_note"}
+
+    def get_queryset(self):
+        return PackageSample.objects.filter(
+            package_control__package__in=access.readable_packages(self.request.user)
+        ).select_related("package_control__package", "evidence")
+
+    @staticmethod
+    def _check_evidence(row, evidence):
+        if evidence is not None and evidence.package_control_id != row.pk:
+            raise ValidationError({"evidence": "Pick an artefact pinned to this control."})
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        data = serializer.validated_data
+        row = data["package_control"]
+        package = row.package
+        if package not in access.readable_packages(user):
+            raise PermissionDenied("Unknown package.")
+        self._check_evidence(row, data.get("evidence"))
+        extra = {"evidence_name": data["evidence"].document_name if data.get("evidence") else ""}
+        if package.is_open:
+            if not access.can_assemble(user):
+                raise PermissionDenied("You need the frameworks capability to list sample items.")
+            if data.get("result", PackageSample.Result.PENDING) != PackageSample.Result.PENDING:
+                raise ValidationError({"result": "Results are recorded by the auditor after sealing."})
+        elif package.status == EvidencePackage.Status.SEALED:
+            if access.live_grant(user, package) is None:
+                raise PermissionDenied(
+                    "After sealing, only the auditor this package was issued to can add sample items.")
+            if data.get("result", PackageSample.Result.PENDING) != PackageSample.Result.PENDING:
+                now = timezone.now()
+                extra.update(tested_by=user, tested_at=now,
+                             tested_by_name=(user.get_full_name() or user.get_username())[:200])
+        else:
+            assert_open(package)
+        sample = serializer.save(
+            selected_by=user, selected_at=timezone.now(),
+            selected_by_name=(user.get_full_name() or user.get_username())[:200], **extra)
+        record_package_event(self.request, package, "update",
+                             f"listed sample item '{sample.identifier}' on {row.control_ref} "
+                             f"in package {package.pk}")
+
+    def perform_update(self, serializer):
+        sample = self.get_object()
+        user = self.request.user
+        row = sample.package_control
+        package = row.package
+        data = serializer.validated_data
+        touching_result = bool(self.RESULT_FIELDS & set(data))
+        touching_item = bool(self.ITEM_FIELDS & set(data))
+        if package.status == EvidencePackage.Status.WITHDRAWN:
+            assert_open(package)
+        extra = {}
+        if touching_result:
+            if access.live_grant(user, package) is None:
+                raise PermissionDenied(
+                    "Only the auditor this package was issued to can record a sample result.")
+            stamp(sample, user, "tested")
+            extra.update(tested_by=sample.tested_by, tested_by_name=sample.tested_by_name,
+                         tested_at=sample.tested_at)
+        if touching_item:
+            if package.is_open:
+                if not access.can_assemble(user):
+                    raise PermissionDenied("You cannot change this package.")
+            else:
+                # Sealed: the manifest's items are fixed; an auditor may still
+                # correct the selections they added themselves.
+                if sample.sealed_in or access.live_grant(user, package) is None:
+                    raise PermissionDenied("Sample items in the sealed manifest cannot be changed.")
+            if "evidence" in data:
+                self._check_evidence(row, data.get("evidence"))
+                extra["evidence_name"] = data["evidence"].document_name if data.get("evidence") else ""
+        serializer.save(**extra)
+        if touching_result:
+            record_package_event(self.request, package, "update",
+                                 f"sample '{sample.identifier}' on {row.control_ref}: "
+                                 f"{serializer.instance.get_result_display()}")
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        package = instance.package_control.package
+        if package.is_open:
+            if not access.can_assemble(user):
+                raise PermissionDenied("You cannot change this package.")
+        elif package.status == EvidencePackage.Status.SEALED:
+            if instance.sealed_in or access.live_grant(user, package) is None:
+                raise PermissionDenied("Sample items in the sealed manifest cannot be removed.")
+        else:
+            assert_open(package)
+        instance.delete()
 
 
 class PackageEvidenceViewSet(viewsets.ModelViewSet):

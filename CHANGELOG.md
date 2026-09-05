@@ -5,6 +5,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.1] — 2026-09-05
+
+The Type II workpaper, and the two loose ends of the vendor story.
+
+### Added
+
+- **Sample items on a package control.** The organisation states each
+  control's population (size, source, sampling method) and may list the items
+  while the package is a draft; they are sealed into the manifest with the
+  pinned artefact that supports each one (`manifest_version` 2). After
+  sealing, the issued auditor adds their own selections and records **pass,
+  exception or not tested** per item — an exception without a note is
+  refused — plus a sampling note, all writable by the auditor alone, like the
+  conclusions beside them. `GET/POST/PATCH/DELETE /api/package-samples/`;
+  `sample_summary` and the rows on every package control; `samples.csv` and
+  new population/sample columns in `controls.csv` in the export bundle; the
+  bundle README says which items were sealed and which the auditor added.
+  The demo package ships a population and three sampled items, one already
+  an exception.
+- **Responsibility matrix export in the vendor's own layout.** Confirming an
+  import remembers the file's column layout on the vendor; **Export in their
+  layout** writes the stated matrix back under their headers — X marks where
+  their marks were, our labels in their prose column, statements in their
+  statement columns, and any column we never understood left blank rather
+  than guessed.
+- **Bridge-letter reminder.** When a vendor's most recent SOC 2 report has
+  lapsed with no newer report and no bridge letter on file, the notification
+  tray tells the owner and the frameworks managers, deep-linked to the
+  vendor's assurance tab, and the daily reminder run emails the owner and the
+  compliance team **once per lapse**. A new **Bridge letter** assessment kind
+  closes the gap when filed. `send_review_reminders` (and the Celery beat
+  task) now run both scans.
+
+### Fixed
+
+- Packages page: the frameworks capability was read from the wrong shape of
+  the `capabilities` object; it now matches the API.
+
+---
+
 ## [0.4.0] — 2026-09-04
 
 The release that brings **third parties** into the picture and lets people

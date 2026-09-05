@@ -96,9 +96,9 @@ class VendorSerializer(serializers.ModelSerializer):
             "tier", "tier_display", "status", "status_display", "data_handled", "services",
             "owner", "owner_name", "review_cadence", "last_reviewed", "next_review_date",
             "is_review_overdue", "notes", "assurance", "risk_rating", "assessment_count",
-            "control_count", "open_risk_count", "created_by", "created_at", "updated_at",
+            "control_count", "open_risk_count", "matrix_layout", "created_by", "created_at", "updated_at",
         ]
-        read_only_fields = ["created_by", "next_review_date"]
+        read_only_fields = ["created_by", "next_review_date", "matrix_layout"]
 
     def get_assurance(self, obj):
         return obj.assurance()

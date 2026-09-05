@@ -71,7 +71,7 @@ prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
    or set `SEED_DEMO_DATA=false` and `DJANGO_SUPERUSER_USERNAME` /
    `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first boot.
 4. Confirm: `curl -s https://grc.example.com/api/health/` →
-   `{"status":"ok","version":"0.4.0","database":"ok","demo_accounts":false}`.
+   `{"status":"ok","version":"0.4.1","database":"ok","demo_accounts":false}`.
 5. Back up the `pgdata` and `media` volumes nightly.
 
 ### Single sign-on (OpenID Connect)

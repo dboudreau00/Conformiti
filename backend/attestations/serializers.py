@@ -2,7 +2,44 @@
 `__all__` here would publish the forensic storage path."""
 from rest_framework import serializers
 
-from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant
+from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant, PackageSample
+
+
+class PackageSampleSerializer(serializers.ModelSerializer):
+    result_display = serializers.CharField(source="get_result_display", read_only=True)
+    control_ref = serializers.CharField(source="package_control.control_ref", read_only=True)
+
+    class Meta:
+        model = PackageSample
+        fields = [
+            "id", "package_control", "control_ref", "ordinal", "identifier", "description",
+            "population_ref", "evidence", "evidence_name", "sealed_in",
+            "selected_by_name", "selected_at",
+            "result", "result_display", "exception_note", "tested_by_name", "tested_at",
+            "created_at",
+        ]
+        read_only_fields = [
+            "ordinal", "evidence_name", "sealed_in", "selected_by_name", "selected_at",
+            "tested_by_name", "tested_at", "created_at",
+        ]
+
+    def validate_identifier(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Name the item that was sampled.")
+        return value
+
+    def validate(self, attrs):
+        """An exception has to say what the exception was; a bare 'fail' is
+        useless to the person reading the workpaper next year."""
+        merged = {
+            "result": getattr(self.instance, "result", PackageSample.Result.PENDING),
+            "exception_note": getattr(self.instance, "exception_note", ""),
+            **attrs,
+        }
+        if merged["result"] == PackageSample.Result.FAIL and not (merged["exception_note"] or "").strip():
+            raise serializers.ValidationError({"exception_note": "Say what the exception was."})
+        return attrs
 
 
 class PackageEvidenceSerializer(serializers.ModelSerializer):
@@ -44,6 +81,9 @@ class PackageEvidenceSerializer(serializers.ModelSerializer):
 
 class PackageControlSerializer(serializers.ModelSerializer):
     evidence = PackageEvidenceSerializer(many=True, read_only=True)
+    samples = PackageSampleSerializer(many=True, read_only=True)
+    sample_summary = serializers.SerializerMethodField()
+    sampling_method_display = serializers.CharField(source="get_sampling_method_display", read_only=True)
 
     class Meta:
         model = PackageControl
@@ -55,6 +95,8 @@ class PackageControlSerializer(serializers.ModelSerializer):
             "design_conclusion", "operating_conclusion", "not_tested_reason",
             "auditor_note", "concluded_by_name", "concluded_at",
             "management_response", "responded_by_name", "responded_at",
+            "population_size", "population_source", "sampling_method", "sampling_method_display",
+            "sampling_note", "sample_summary", "samples",
             "risk", "evidence",
         ]
         read_only_fields = [
@@ -64,6 +106,13 @@ class PackageControlSerializer(serializers.ModelSerializer):
             "included_by_name", "snapshot_at", "concluded_by_name", "concluded_at",
             "responded_by_name", "responded_at", "risk",
         ]
+
+    def get_sample_summary(self, obj):
+        counts = {"total": 0, "pass": 0, "fail": 0, "not_tested": 0, "pending": 0}
+        for s in obj.samples.all():
+            counts["total"] += 1
+            counts[s.result] = counts.get(s.result, 0) + 1
+        return counts
 
     def validate(self, attrs):
         """A "not tested" conclusion has to say why. An auditor reading this

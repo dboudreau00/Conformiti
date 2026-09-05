@@ -209,6 +209,9 @@ def recognise_headers(header_row, vendor_name=""):
     for i, name in enumerate(columns):
         if i not in taken_cols and name:
             report.append({"column": name, "index": i, "role": None, "confidence": 0})
+    # In the file's own column order: the report is shown as-is and, once
+    # confirmed, remembered as the vendor's layout.
+    report.sort(key=lambda c: c["index"])
     return assigned, report
 
 
@@ -328,6 +331,73 @@ def recognise(filename, data, vendor_name="", control_refs=None):
             "row_limit": MAX_ROWS,
         },
     }
+
+
+ROLES = {"control", "responsibility", "provider_statement", "customer_statement",
+         "provider_mark", "customer_mark"}
+RESPONSIBILITY_LABEL = {"provider": "Provider", "customer": "Customer", "shared": "Shared",
+                        "not_applicable": "N/A"}
+
+
+def clean_layout(columns, file_name="", framework=""):
+    """Validate a column layout the client sends back from a parse report.
+    Returns the stored form or None when there is nothing usable."""
+    from django.utils import timezone
+
+    out = []
+    for position, col in enumerate(list(columns)[:50]):
+        if not isinstance(col, dict):
+            continue
+        name = str(col.get("column") or col.get("name") or "").strip()[:120]
+        role = col.get("role")
+        if not name:
+            continue
+        try:
+            index = int(col.get("index", position))
+        except (TypeError, ValueError):
+            index = position
+        out.append({"name": name, "role": role if role in ROLES else None, "index": index})
+    out.sort(key=lambda c: c["index"])
+    for c in out:
+        c.pop("index", None)
+    if not any(c["role"] == "control" for c in out):
+        return None
+    return {"columns": out, "file": file_name, "framework": framework,
+            "saved_at": timezone.now().isoformat()}
+
+
+def render_layout(layout, rows):
+    """Lay the stated rows out under the vendor's own headers.
+
+    A mark column gets an X where that side is responsible (both for
+    'shared'); a prose column gets the label; a statement column gets the
+    statement; a column we never understood stays blank rather than being
+    guessed at.
+    """
+    columns = layout.get("columns") or []
+    header = [c["name"] for c in columns]
+    lines = []
+    for r in rows:
+        resp = r.get("responsibility")
+        line = []
+        for c in columns:
+            role = c.get("role")
+            if role == "control":
+                line.append(r.get("control_id", ""))
+            elif role == "responsibility":
+                line.append(RESPONSIBILITY_LABEL.get(resp, ""))
+            elif role == "provider_statement":
+                line.append(r.get("provider_statement", ""))
+            elif role == "customer_statement":
+                line.append(r.get("customer_statement", ""))
+            elif role == "provider_mark":
+                line.append("X" if resp in ("provider", "shared") else ("N/A" if resp == "not_applicable" else ""))
+            elif role == "customer_mark":
+                line.append("X" if resp in ("customer", "shared") else ("N/A" if resp == "not_applicable" else ""))
+            else:
+                line.append("")
+        lines.append(line)
+    return header, lines
 
 
 def _split(parsed):

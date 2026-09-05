@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2933; line-height: 1.5; max-width: 640px; margin: 0 auto; padding: 24px;">
+    <p>Hello {{ owner_name }},</p>
+    <p>
+      <strong>{{ vendor.name }}</strong>'s {{ report.get_kind_display }} lapsed on
+      <strong>{{ lapsed_on }}</strong> ({{ days }} day{{ days|pluralize }} ago) and nothing newer is on file:
+      no successor report and no bridge letter.
+    </p>
+    <p>
+      An auditor will ask for the bridge letter covering the gap between that report's period end and the
+      next report. Ask {{ vendor.name }}{% if vendor.contact_email %} (<a href="mailto:{{ vendor.contact_email }}">{{ vendor.contact_email }}</a>){% endif %}
+      for it now, then file it against the vendor in Conformiti
+      (<em>Vendors &rsaquo; {{ vendor.name }} &rsaquo; Assurance &rsaquo; File a report &rsaquo; Bridge letter</em>)
+      so the reminder stops.
+    </p>
+    <table style="border-collapse: collapse; font-size: 14px;">
+      <tr><td style="padding: 2px 12px 2px 0; color: #52606d;">Tier</td><td>{{ vendor.get_tier_display }}</td></tr>
+      <tr><td style="padding: 2px 12px 2px 0; color: #52606d;">Data handled</td><td>{{ vendor.data_handled|default:"not stated" }}</td></tr>
+    </table>
+    <p style="color: #7b8794; font-size: 12px; margin-top: 24px;">&mdash; Conformiti</p>
+  </body>
+</html>

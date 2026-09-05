@@ -158,6 +158,11 @@ class VendorViewSet(viewsets.ModelViewSet):
             clean.append((control_id, resp,
                           str(row.get("provider_statement") or "")[:4000],
                           str(row.get("customer_statement") or "")[:4000]))
+        layout = None
+        if source == "import" and isinstance(request.data.get("layout"), list):
+            layout = matrix_lib.clean_layout(
+                request.data["layout"], str(request.data.get("layout_name") or "")[:120],
+                str(request.data.get("framework") or "")[:40])
         with transaction.atomic():
             if clear:
                 SharedResponsibility.objects.filter(vendor=vendor, control_id__in=clear).delete()
@@ -168,7 +173,11 @@ class VendorViewSet(viewsets.ModelViewSet):
                               "customer_statement": cs, "source": source,
                               "updated_by": request.user},
                 )
-        return Response({"saved": len(clean), "cleared": len(clear)})
+            if layout:
+                # Remember how they laid it out, so it can go back the same way.
+                vendor.matrix_layout = layout
+                vendor.save(update_fields=["matrix_layout", "updated_at"])
+        return Response({"saved": len(clean), "cleared": len(clear), "layout_saved": bool(layout)})
 
     @action(detail=True, methods=["post"], url_path="matrix/parse",
             parser_classes=[MultiPartParser, FormParser, JSONParser])
@@ -204,15 +213,27 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="matrix/export")
     def matrix_export(self, request, pk=None):
+        """The matrix as CSV -- in our layout, or with ``?layout=vendor`` in the
+        column layout of the file the vendor last sent, so it can go back to
+        them looking like their own document with our side filled in."""
         from config.csvsafe import csv_safe
 
         vendor = self.get_object()
         data = self.matrix(request, pk=pk).data
         response = HttpResponse(content_type="text/csv")
         slug = "".join(ch if ch.isalnum() else "-" for ch in vendor.name).strip("-").lower()
+        writer = csv.writer(response)
+        if request.query_params.get("layout") == "vendor" and vendor.matrix_layout:
+            response["Content-Disposition"] = (
+                'attachment; filename="responsibility-matrix-' + slug + '-their-layout.csv"')
+            rows = [r for r in data["rows"] if r["responsibility"]]
+            header, lines = matrix_lib.render_layout(vendor.matrix_layout, rows)
+            writer.writerow(header)
+            for line in lines:
+                writer.writerow(csv_safe(line))
+            return response
         response["Content-Disposition"] = (
             'attachment; filename="responsibility-matrix-' + slug + '.csv"')
-        writer = csv.writer(response)
         writer.writerow(["Framework", "Control ID", "Title", "Responsibility",
                          "Provider statement", "Customer statement"])
         for r in data["rows"]:

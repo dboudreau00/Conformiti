@@ -78,13 +78,17 @@ export default function Packages({ me }) {
     ],
   });
 
-  const canAssemble = !!(me?.is_superuser || me?.capabilities?.includes?.("frameworks")
+  const canAssemble = !!(me?.is_superuser || me?.capabilities?.manage_frameworks
     || me?.role_detail?.can_manage_frameworks);
 
   const selected = useMemo(
     () => (packages || []).find((p) => p.id === selectedId) || null,
     [packages, selectedId]
   );
+  // The auditor this package was issued to: the only writer of results.
+  const isGrantee = !!(me?.role_detail?.is_auditor
+    && (selected?.live_grants || []).some((g) => g.username === me?.username));
+  const reloadRows = async () => setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
 
   async function loadPackages(keep = selectedId) {
     const data = await fetchAll("/evidence-packages/");
@@ -475,6 +479,9 @@ export default function Packages({ me }) {
                           <Label className="mt-2 block">No evidence attached</Label>
                         )}
 
+                        <SampleSection row={row} pkg={selected} canAssemble={canAssemble} isGrantee={isGrantee}
+                                       busy={busy} act={act} reload={reloadRows} onOpen={openEvidence} />
+
                         {row.auditor_note ? (
                           <p className="mt-2 text-xs leading-snug text-muted">
                             <span className="text-faint">Auditor: </span>{row.auditor_note}
@@ -525,6 +532,222 @@ export default function Packages({ me }) {
     </div>
     <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
     </PanelTransition>
+  );
+}
+
+const SAMPLE_RESULT = {
+  pending: { label: "Not yet tested", tone: "faint" },
+  pass: { label: "Pass", tone: "success" },
+  fail: { label: "Exception", tone: "danger" },
+  not_tested: { label: "Not tested", tone: "muted" },
+};
+const SAMPLING = [["", "Method not stated"], ["random", "Random"], ["haphazard", "Haphazard"],
+                  ["judgmental", "Judgmental"], ["complete", "Complete population"]];
+const EMPTY_SAMPLE = { identifier: "", description: "", population_ref: "", evidence: "" };
+const DATE = (iso) => (iso ? String(iso).slice(0, 10) : "");
+
+/** The operating-effectiveness workpaper for one control: the population the
+ * organisation stated, the items sampled from it, and the auditor's result
+ * per item. Items listed before sealing are part of the manifest; results are
+ * the auditor's alone. */
+function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, onOpen }) {
+  const draft = pkg?.status === "draft";
+  const sealed = pkg?.status === "sealed";
+  const canList = (canAssemble && draft) || (isGrantee && sealed);
+  const canJudge = isGrantee && sealed;
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState(EMPTY_SAMPLE);
+  const [pop, setPop] = useState(null);
+  const s = row.sample_summary || { total: 0, pass: 0, fail: 0, not_tested: 0, pending: 0 };
+  const samples = row.samples || [];
+  const id = (k) => `sample-${row.id}-${k}`;
+
+  const submit = (e) => {
+    e.preventDefault();
+    return act(`sample-add-${row.id}`, async () => {
+      await api.post("/package-samples/", {
+        package_control: row.id, identifier: form.identifier.trim(), description: form.description,
+        population_ref: form.population_ref, evidence: form.evidence ? Number(form.evidence) : null,
+      });
+      setForm(EMPTY_SAMPLE);
+      setAdding(false);
+      await reload();
+    }, "Sample item listed.");
+  };
+  const judge = (sample, result) => act(`sample-${sample.id}`, async () => {
+    const body = { result };
+    if (result === "fail") {
+      const note = window.prompt("What was the exception?", sample.exception_note || "");
+      if (!note) return;
+      body.exception_note = note;
+    }
+    await api.patch(`/package-samples/${sample.id}/`, body);
+    await reload();
+  });
+  const remove = (sample) => act(`sample-${sample.id}`, async () => {
+    await api.delete(`/package-samples/${sample.id}/`);
+    await reload();
+  });
+  const savePopulation = (e) => {
+    e.preventDefault();
+    return act(`pop-${row.id}`, async () => {
+      await api.patch(`/package-controls/${row.id}/`, {
+        population_size: pop.population_size === "" ? null : Number(pop.population_size),
+        population_source: pop.population_source, sampling_method: pop.sampling_method,
+      });
+      setPop(null);
+      await reload();
+    }, "Population recorded.");
+  };
+
+  return (
+    <section className="mt-3 rounded-lg border border-line bg-surface-2 p-3" aria-label={`Samples for ${row.control_ref}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Label>Samples</Label>
+          <Badge tone="muted" mono>{s.total} sampled</Badge>
+          {s.pass ? <Badge tone="success" mono>{s.pass} pass</Badge> : null}
+          {s.fail ? <Badge tone="danger" mono>{s.fail} exception{s.fail === 1 ? "" : "s"}</Badge> : null}
+          {s.not_tested ? <Badge tone="muted" mono>{s.not_tested} not tested</Badge> : null}
+          {s.pending ? <Badge tone="warning" mono>{s.pending} open</Badge> : null}
+        </span>
+        <span className="flex gap-1.5">
+          {canAssemble && draft && !pop ? (
+            <Button size="sm" variant="ghost" disabled={busy != null && busy !== false && busy !== null}
+                    onClick={() => setPop({ population_size: row.population_size ?? "", population_source: row.population_source || "", sampling_method: row.sampling_method || "" })}>
+              Population
+            </Button>
+          ) : null}
+          {canList ? (
+            <Button size="sm" variant={adding ? "secondary" : "ghost"} aria-expanded={adding} onClick={() => setAdding((x) => !x)}>
+              Add item
+            </Button>
+          ) : null}
+        </span>
+      </div>
+
+      {pop ? (
+        <form onSubmit={savePopulation} className="mt-2 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)_180px_auto]">
+          <div>
+            <label htmlFor={id("size")} className="field-label">Population size</label>
+            <input id={id("size")} type="number" min="0" className="input input-sm" value={pop.population_size}
+                   onChange={(e) => setPop({ ...pop, population_size: e.target.value })} />
+          </div>
+          <div>
+            <label htmlFor={id("source")} className="field-label">Population source</label>
+            <input id={id("source")} className="input input-sm" value={pop.population_source} placeholder="HR termination report, FY26"
+                   onChange={(e) => setPop({ ...pop, population_source: e.target.value })} />
+          </div>
+          <div>
+            <label htmlFor={id("method")} className="field-label">Sampling method</label>
+            <select id={id("method")} className="input input-sm" value={pop.sampling_method}
+                    onChange={(e) => setPop({ ...pop, sampling_method: e.target.value })}>
+              {SAMPLING.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end gap-1.5">
+            <Button size="sm" variant="primary" type="submit">Save</Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setPop(null)}>Cancel</Button>
+          </div>
+        </form>
+      ) : (
+        <p className="mt-1 text-xs text-muted">
+          Population: {row.population_size ?? "—"}
+          {row.population_source ? ` · ${row.population_source}` : " · source not stated"}
+          {row.sampling_method_display ? ` · ${row.sampling_method_display}` : ""}
+          {row.sampling_note ? <span className="block text-faint">Auditor: {row.sampling_note}</span> : null}
+        </p>
+      )}
+
+      {samples.length ? (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-faint">
+                <th className="py-1 pr-3 font-normal" scope="col">Item</th>
+                <th className="py-1 pr-3 font-normal" scope="col">What</th>
+                <th className="py-1 pr-3 font-normal" scope="col">In population</th>
+                <th className="py-1 pr-3 font-normal" scope="col">Evidence</th>
+                <th className="py-1 pr-3 font-normal" scope="col">Result</th>
+                <th className="py-1 font-normal" scope="col">Tested</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {samples.map((sm) => {
+                const r = SAMPLE_RESULT[sm.result] || SAMPLE_RESULT.pending;
+                const artefact = (row.evidence || []).find((e) => e.id === sm.evidence);
+                return (
+                  <tr key={sm.id} className="align-top">
+                    <td className="py-1.5 pr-3 font-mono text-ink">{sm.identifier}{sm.sealed_in ? "" : <span className="ml-1 text-faint" title="Added by the auditor after sealing">†</span>}</td>
+                    <td className="py-1.5 pr-3 text-muted">{sm.description || "—"}</td>
+                    <td className="py-1.5 pr-3 text-muted">{sm.population_ref || "—"}</td>
+                    <td className="py-1.5 pr-3">
+                      {artefact ? (
+                        <button type="button" onClick={() => onOpen(artefact)} className="text-accent hover:underline">{sm.evidence_name}</button>
+                      ) : <span className="text-faint">{sm.evidence_name || "—"}</span>}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      <Badge tone={r.tone} dot>{r.label}</Badge>
+                      {sm.exception_note ? <span className="mt-1 block max-w-[320px] text-danger">{sm.exception_note}</span> : null}
+                    </td>
+                    <td className="py-1.5">
+                      <span className="block text-muted">{sm.tested_by_name ? `${sm.tested_by_name} · ${DATE(sm.tested_at)}` : "—"}</span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {canJudge ? ["pass", "fail", "not_tested"].map((v) => (
+                          <Button key={v} size="sm" variant={sm.result === v ? "primary" : "ghost"} disabled={busy === `sample-${sm.id}`}
+                                  onClick={() => judge(sm, v)}>{SAMPLE_RESULT[v].label}</Button>
+                        )) : null}
+                        {(canAssemble && draft) || (canJudge && !sm.sealed_in) ? (
+                          <Button size="sm" variant="ghost" aria-label={`Remove ${sm.identifier}`} disabled={busy === `sample-${sm.id}`} onClick={() => remove(sm)}>Remove</Button>
+                        ) : null}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Label className="mt-2 block">No sampled items yet.</Label>
+      )}
+
+      {canJudge && s.fail > 0 && row.operating_conclusion === "pending" ? (
+        <p className="mt-2 text-xs text-warning">Exceptions recorded — conclude operating effectiveness below.</p>
+      ) : null}
+
+      {adding && canList ? (
+        <form onSubmit={submit} className="mt-3 grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_200px_auto]">
+          <div>
+            <label htmlFor={id("identifier")} className="field-label">Sample item</label>
+            <input id={id("identifier")} className="input input-sm" required value={form.identifier} placeholder="u-1042 / CHG-311"
+                   onChange={(e) => setForm({ ...form, identifier: e.target.value })} />
+          </div>
+          <div>
+            <label htmlFor={id("description")} className="field-label">What it is</label>
+            <input id={id("description")} className="input input-sm" value={form.description}
+                   onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+          <div>
+            <label htmlFor={id("ref")} className="field-label">Where in the population</label>
+            <input id={id("ref")} className="input input-sm" value={form.population_ref} placeholder="row 17 of the export"
+                   onChange={(e) => setForm({ ...form, population_ref: e.target.value })} />
+          </div>
+          <div>
+            <label htmlFor={id("evidence")} className="field-label">Evidence</label>
+            <select id={id("evidence")} className="input input-sm" value={form.evidence}
+                    onChange={(e) => setForm({ ...form, evidence: e.target.value })}>
+              <option value="">None</option>
+              {(row.evidence || []).map((e) => <option key={e.id} value={e.id}>{e.document_name}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end gap-1.5">
+            <Button size="sm" variant="primary" type="submit" disabled={busy === `sample-add-${row.id}` || !form.identifier.trim()}>Add</Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setAdding(false)}>Cancel</Button>
+          </div>
+        </form>
+      ) : null}
+    </section>
   );
 }
 

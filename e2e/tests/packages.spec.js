@@ -55,6 +55,30 @@ test.describe("audit packages", () => {
     await expect(page.getByText("Pick a folder on the left")).toBeVisible();
   });
 
+  test("the sample workpaper shows the population and every item's result", async ({ page }) => {
+    await open(page, "/packages", "Audit packages");
+    await expect(page.getByText("Samples", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Okta deprovisioning report/)).toBeVisible();
+    await expect(page.getByText("u-1077", { exact: true })).toBeVisible();
+    await expect(page.getByText("Exception", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Access removed 4 business days/)).toBeVisible();
+    // The organisation reads results; it never records them.
+    await expect(page.getByRole("button", { name: "Pass", exact: true })).toHaveCount(0);
+  });
+
+  test("the issued auditor records a result per sampled item", async ({ page }) => {
+    await page.goto("/login");
+    await page.evaluate(() => localStorage.clear());
+    await signIn(page, DEMO.auditor);
+    await open(page, "/packages", "Audit packages");
+    const item = page.locator("tr", { hasText: "u-1113" });
+    await expect(item.getByText("Not yet tested", { exact: true })).toBeVisible();
+    await item.getByRole("button", { name: "Pass", exact: true }).click();
+    await expect(item.getByText("Aria Auditor")).toBeVisible();
+    await expect(item.locator("span", { hasText: /^Pass$/ }).first()).toBeVisible();
+    await expect(page.getByText(/3 pass|2 pass/)).toBeVisible();
+  });
+
   test("a viewer sees an empty workspace rather than an error", async ({ page }) => {
     await page.goto("/login");
     await page.evaluate(() => localStorage.clear());

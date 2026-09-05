@@ -185,12 +185,88 @@ class PackageControl(models.Model):
         on_delete=models.SET_NULL, related_name="package_findings",
     )
 
+    # --- the population, stated by the organisation while the package is a
+    # draft and sealed with it: what the auditor samples FROM. The sampling
+    # note is the auditor's, written after sealing like a conclusion.
+    class Sampling(models.TextChoices):
+        RANDOM = "random", "Random"
+        HAPHAZARD = "haphazard", "Haphazard"
+        JUDGMENTAL = "judgmental", "Judgmental"
+        COMPLETE = "complete", "Complete population"
+
+    population_size = models.PositiveIntegerField(null=True, blank=True)
+    population_source = models.CharField(
+        max_length=255, blank=True,
+        help_text="Where the population came from, e.g. 'HR termination report, FY26'.")
+    sampling_method = models.CharField(max_length=12, blank=True, choices=Sampling.choices)
+    sampling_note = models.TextField(blank=True)
+
     class Meta:
         ordering = ["ordinal", "control_ref"]
         unique_together = ("package", "control")
 
     def __str__(self):
         return f"{self.control_ref} in {self.package_id}"
+
+
+class PackageSample(models.Model):
+    """One sampled item on a control's workpaper row: the unit a Type II
+    operating-effectiveness test is actually performed on.
+
+    Items listed while the package is a draft are sealed into the manifest
+    (identifier, what it is, where in the population it came from, which
+    pinned artefact supports it). After sealing only the issued auditor adds
+    items — their own selections — and records the result per item. The
+    result is workpaper data, mutable by the auditor alone, exactly like a
+    conclusion; the organisation never touches it.
+    """
+
+    class Result(models.TextChoices):
+        PENDING = "pending", "Not yet tested"
+        PASS = "pass", "Pass"
+        FAIL = "fail", "Exception"
+        NOT_TESTED = "not_tested", "Not tested"
+
+    package_control = models.ForeignKey(
+        PackageControl, on_delete=models.CASCADE, related_name="samples")
+    ordinal = models.PositiveIntegerField(default=0)
+    identifier = models.CharField(
+        max_length=120, help_text="The item sampled: a ticket, a user, a change number, a date.")
+    description = models.CharField(max_length=255, blank=True)
+    population_ref = models.CharField(
+        max_length=255, blank=True,
+        help_text="Where this item sits in the population, e.g. 'row 17 of the export'.")
+    evidence = models.ForeignKey(
+        "attestations.PackageEvidence", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="samples",
+    )
+    evidence_name = models.CharField(max_length=255, blank=True)
+    # True for items that were part of the sealed manifest; an auditor's own
+    # selections after sealing are not, and the bundle says which is which.
+    sealed_in = models.BooleanField(default=False)
+    selected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="samples_selected",
+    )
+    selected_by_name = models.CharField(max_length=200, blank=True)
+    selected_at = models.DateTimeField(null=True, blank=True)
+
+    result = models.CharField(max_length=12, choices=Result.choices, default=Result.PENDING)
+    exception_note = models.TextField(blank=True)
+    tested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="samples_tested",
+    )
+    tested_by_name = models.CharField(max_length=200, blank=True)
+    tested_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["ordinal", "identifier", "pk"]
+        unique_together = ("package_control", "identifier")
+
+    def __str__(self):
+        return f"{self.identifier} on {self.package_control_id}"
 
 
 class PackageEvidence(models.Model):

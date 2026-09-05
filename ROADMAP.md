@@ -25,14 +25,18 @@
   responsibility matrix for people and vendors, in-browser viewing of PDF,
   image, Word and Excel evidence with a digest the reviewer can check, and
   single sign-on over OpenID Connect configured from the environment.
+- **0.4.1** — sample items on a package control (population, sealed items,
+  per-item pass/exception/not-tested by the auditor, `samples.csv` in the
+  bundle), responsibility matrix export in the vendor's own layout, and a
+  bridge-letter reminder when a SOC report lapses.
 
-## Next (0.4.1)
+## Next (0.5.0)
 
 | Item | Why |
 |---|---|
-| **Sample rows on a package item** (identifier, population reference, pass/fail, exception note) | the one thing between this and a Type II operating-effectiveness workpaper |
+| **SAML 2.0** single sign-on (SP-initiated, signed responses) | the providers that still insist on it; OIDC shipped in 0.4.0 |
+| **Step-up on SSO logins** — a local TOTP prompt when the provider does not assert a second factor, or always when the operator says so | organisations that cannot enforce MFA at the IdP |
 | **Vendor questionnaire sent to the vendor** — a time-boxed link like an audit package grant, answered by them, reviewed by us | 0.4.0 records the answers; the vendor should be able to give them |
-| **Responsibility matrix export in the vendor's own layout** and a bridge-letter reminder when a report lapses | the other half of the import story |
 | **WebAuthn / passkeys** as a second factor | phishing-resistant MFA. Deferred from 0.3.0: the design's clone detector disabled the passkey and dropped the account to password-only — a fail-open that has to be fixed before it ships |
 | **PBC request list** with due-date reminders | the other half of the auditor's workflow |
 | **Roll-forward**: a prior-package link and a year-over-year scope diff | the column already ships, nullable, so this needs no migration |
@@ -41,10 +45,6 @@
 
 ## Later
 
-- **SAML 2.0** for the providers that still insist on it; OIDC ships in 0.4.0.
-- **Step-up on SSO logins** — a local TOTP prompt when the provider does not
-  assert `amr`/`acr` multi-factor, for organisations that cannot enforce MFA
-  at the IdP.
 - Detached signatures over a package manifest, once there is a key-management
   story worth the name — a signing key sitting in the same database as the
   evidence would be theatre.

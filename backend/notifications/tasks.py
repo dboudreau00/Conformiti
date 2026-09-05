@@ -92,6 +92,48 @@ def run_review_scan(dry_run=False):
     return notified
 
 
+def _notify_bridge(vendor, report):
+    recipients = []
+    if vendor.owner and vendor.owner.email:
+        recipients.append(vendor.owner.email)
+    recipients.append(settings.COMPLIANCE_TEAM_EMAIL)
+    subject = f"[Action] Bridge letter needed from {vendor.name}"
+    context = {
+        "vendor": vendor, "report": report,
+        "owner_name": vendor.owner.get_full_name() if vendor.owner else "team",
+        "lapsed_on": report.expires_at,
+        "days": (timezone.localdate() - report.expires_at).days,
+    }
+    return send_templated_email(subject, "bridge_letter", context, recipients)
+
+
+def run_vendor_scan(dry_run=False):
+    """Email the owner (and the compliance team) once for every SOC report
+    that has lapsed with no newer report and no bridge letter on file.
+
+    One email per lapse: the report remembers it was chased, and the in-app
+    feed keeps nagging until a letter is filed. Returns the number chased.
+    """
+    from vendors.assurance import bridge_letter_gaps
+
+    chased = 0
+    for vendor, report in bridge_letter_gaps():
+        if report.bridge_reminded_at:
+            continue
+        try:
+            if not dry_run:
+                _notify_bridge(vendor, report)
+                report.bridge_reminded_at = timezone.now()
+                report.save(update_fields=["bridge_reminded_at"])
+        except Exception:
+            logger.exception("Bridge-letter reminder failed for vendor %s; will retry next run", vendor.pk)
+            continue
+        chased += 1
+    return chased
+
+
 @shared_task(name="notifications.tasks.scan_document_reviews")
 def scan_document_reviews():
-    return run_review_scan()
+    notified = run_review_scan()
+    run_vendor_scan()
+    return notified

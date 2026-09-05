@@ -241,13 +241,13 @@ class MatrixTests(APITestBase):
              "provider_statement": "Platform patching.", "customer_statement": "Guest OS patching."},
         ]}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
-        self.assertEqual(r.data, {"saved": 2, "cleared": 0})
+        self.assertEqual((r.data["saved"], r.data["cleared"]), (2, 0))
         r = self.c.get(f"/api/vendors/{self.v.pk}/matrix/").data
         self.assertEqual(r["summary"]["stated"], 2)
         # Clearing one
         r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
             {"control": self.tree.c1.pk, "responsibility": None}]}, format="json")
-        self.assertEqual(r.data, {"saved": 0, "cleared": 1})
+        self.assertEqual((r.data["saved"], r.data["cleared"]), (0, 1))
         self.assertEqual(SharedResponsibility.objects.filter(vendor=self.v).count(), 1)
 
     def test_the_grid_validates_before_it_writes(self):
@@ -417,6 +417,42 @@ class ImportRecognitionTests(APITestBase):
         self.assertEqual(r.data["saved"], 2)
         self.assertEqual(set(SharedResponsibility.objects.values_list("source", flat=True)), {"import"})
 
+    def test_their_layout_is_remembered_and_the_matrix_goes_back_in_it(self):
+        upload = SimpleUploadedFile("aws.csv", b"Requirement,AWS,Customer,Notes\nTC1.1,X,X,keep\nTC1.2,,X,\n")
+        parsed = self.c.post(f"/api/vendors/{self.v.pk}/matrix/parse/", {"file": upload, "framework": "tfw"}).data
+        rows = [{"control": x["control_id"], "responsibility": x["responsibility"],
+                 "provider_statement": x["provider_statement"], "customer_statement": x["customer_statement"]}
+                for x in parsed["rows"]]
+        r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {
+            "rows": rows, "source": "import", "framework": "tfw", "layout_name": "aws.csv",
+            "layout": [{"name": c["column"], "role": c["role"]} for c in parsed["columns"]],
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertTrue(r.data["layout_saved"])
+        self.v.refresh_from_db()
+        self.assertEqual([c["name"] for c in self.v.matrix_layout["columns"]], ["Requirement", "AWS", "Customer", "Notes"])
+        self.assertEqual(self.v.matrix_layout["file"], "aws.csv")
+        self.assertEqual(self.client_for(self.viewer).get(f"/api/vendors/{self.v.pk}/").data["matrix_layout"]["file"], "aws.csv")
+        # Back to them in their own columns: X marks where they were, a column
+        # we never understood left blank rather than guessed.
+        r = self.c.get(f"/api/vendors/{self.v.pk}/matrix/export/?layout=vendor")
+        self.assertEqual(r.status_code, 200)
+        lines = r.content.decode("utf-8").strip().splitlines()
+        self.assertEqual(lines[0].strip(), "Requirement,AWS,Customer,Notes")
+        self.assertEqual(lines[1].strip(), "TC1.1,X,X,")
+        self.assertEqual(lines[2].strip(), "TC1.2,,X,")
+        self.assertIn("their-layout", r["Content-Disposition"])
+        # Without a stored layout the flag falls back to our columns.
+        other = _vendor(name="No Layout")
+        r = self.c.get(f"/api/vendors/{other.pk}/matrix/export/?layout=vendor")
+        self.assertTrue(r.content.decode("utf-8").startswith("Framework,Control ID"))
+
+    def test_a_layout_without_a_control_column_is_not_kept(self):
+        r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {
+            "rows": [], "source": "import", "layout": [{"name": "Foo", "role": None}]}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertFalse(r.data["layout_saved"])
+
     def test_a_viewer_cannot_use_the_parser_as_an_oracle(self):
         upload = SimpleUploadedFile("m.csv", b"Requirement,Responsibility\nTC1.1,Provider\n")
         r = self.client_for(self.viewer).post(f"/api/vendors/{self.v.pk}/matrix/parse/", {"file": upload})
@@ -504,6 +540,54 @@ class VendorRiskAndFeedTests(APITestBase):
                          "a viewer who owns nothing is not prompted")
         SharedResponsibility.objects.create(vendor=v, control=self.tree.c1, responsibility="provider")
         self.assertNotIn(f"vendor-onboard:{v.pk}", {i["key"] for i in build_feed(self.owner)})
+
+    def test_a_lapsed_soc_report_asks_for_a_bridge_letter_until_one_is_filed(self):
+        from vendors.assurance import bridge_letter_gaps
+
+        v = _vendor(owner=self.owner, tier="medium")
+        report = VendorAssessment.objects.create(
+            vendor=v, kind="soc2_type2", result="satisfactory",
+            issued_at=timezone.localdate() - timedelta(days=400),
+            expires_at=timezone.localdate() - timedelta(days=30))
+        self.assertEqual([(x.pk, r.pk) for x, r in bridge_letter_gaps()], [(v.pk, report.pk)])
+        key = f"vendor-bridge:{v.pk}"
+        self.assertIn(key, {i["key"] for i in build_feed(self.owner)})
+        self.assertIn(key, {i["key"] for i in build_feed(self.manager)}, "managers see every gap")
+        self.assertNotIn(key, {i["key"] for i in build_feed(self.viewer)})
+        item = next(i for i in build_feed(self.owner) if i["key"] == key)
+        self.assertEqual(item["to"], f"/vendors?vendor={v.pk}&tab=assessments")
+        # A bridge letter that covers the gap closes it...
+        letter = VendorAssessment.objects.create(
+            vendor=v, kind="bridge_letter", result="satisfactory",
+            expires_at=timezone.localdate() + timedelta(days=60))
+        self.assertEqual(bridge_letter_gaps(), [])
+        # ...until it too lapses.
+        letter.expires_at = timezone.localdate() - timedelta(days=1)
+        letter.save()
+        self.assertEqual(len(bridge_letter_gaps()), 1)
+        # A newer report closes it for good; a vendor with no SOC report never appears.
+        VendorAssessment.objects.create(vendor=v, kind="soc2_type2", result="satisfactory",
+                                        expires_at=timezone.localdate() + timedelta(days=300))
+        self.assertEqual(bridge_letter_gaps(), [])
+        _vendor(name="No SOC", owner=self.owner, tier="critical")
+        self.assertEqual(bridge_letter_gaps(), [])
+
+    def test_the_bridge_letter_reminder_is_emailed_once_per_lapse(self):
+        from django.core import mail
+
+        from notifications.tasks import run_vendor_scan
+
+        v = _vendor(owner=self.owner)
+        VendorAssessment.objects.create(vendor=v, kind="soc2_type2", result="satisfactory",
+                                        expires_at=timezone.localdate() - timedelta(days=3))
+        self.assertEqual(run_vendor_scan(dry_run=True), 1)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(run_vendor_scan(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("bridge letter", mail.outbox[0].subject.lower())
+        self.assertIn(v.name, mail.outbox[0].body)
+        self.assertIn(self.owner.email, mail.outbox[0].to)
+        self.assertEqual(run_vendor_scan(), 0, "one email per lapse, not one per day")
 
     def test_expiring_and_missing_assurance_surface_to_the_owner(self):
         v = _vendor(owner=self.owner, tier="critical")

@@ -60,6 +60,10 @@ class Vendor(models.Model):
     CADENCE_DAYS = {"quarterly": 91, "semiannual": 182, "annual": 365, "biennial": 730}
 
     name = models.CharField(max_length=160, unique=True)
+    # The column layout of the last matrix file they sent us, so the matrix
+    # can go back to them in their own shape: {"columns": [{"name", "role"}],
+    # "file", "framework", "saved_at"}.
+    matrix_layout = models.JSONField(null=True, blank=True)
     category = models.CharField(
         max_length=80, blank=True,
         help_text="What they do for us: cloud hosting, payroll, identity, security testing…",
@@ -174,7 +178,12 @@ class VendorAssessment(models.Model):
         DPA = "dpa", "Data-processing agreement"
         CONTRACT = "contract", "Contract / MSA"
         RESP_MATRIX = "resp_matrix", "Responsibility matrix (their document)"
+        BRIDGE_LETTER = "bridge_letter", "Bridge letter"
         OTHER = "other", "Other"
+
+    # The kinds a bridge letter bridges: a SOC report whose period has ended
+    # while the next one is still being written.
+    BRIDGEABLE = ("soc2_type1", "soc2_type2")
 
     class Result(models.TextChoices):
         SATISFACTORY = "satisfactory", "Satisfactory"
@@ -204,6 +213,9 @@ class VendorAssessment(models.Model):
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="vendor_assessments_reviewed",
     )
+    # When the bridge-letter reminder for this lapsed report went out: one
+    # email per lapse, never one per day.
+    bridge_reminded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -47,7 +47,8 @@ const KINDS = [
   ["soc2_type2", "SOC 2 Type II"], ["soc2_type1", "SOC 2 Type I"], ["iso27001", "ISO 27001 certificate"],
   ["pci_aoc", "PCI DSS Attestation of Compliance"], ["pentest", "Penetration test"],
   ["questionnaire", "Security questionnaire"], ["dpa", "Data processing agreement"],
-  ["contract", "Contract / MSA"], ["resp_matrix", "Their shared responsibility matrix"], ["other", "Other"],
+  ["contract", "Contract / MSA"], ["resp_matrix", "Their shared responsibility matrix"],
+  ["bridge_letter", "Bridge letter"], ["other", "Other"],
 ];
 const KIND_LABEL = Object.fromEntries(KINDS);
 const RESULTS = [["pending", "Pending review"], ["satisfactory", "Satisfactory"], ["exceptions", "Exceptions noted"], ["unsatisfactory", "Unsatisfactory"]];
@@ -498,7 +499,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
     setParsing(true);
     try {
       const { data } = await api.post(`/vendors/${vendor.id}/matrix/parse/`, fd);
-      setReview({ ...data, rows: data.rows.map((r, i) => ({ ...r, key: i, include: r.matched && !!r.responsibility })) });
+      setReview({ ...data, file_name: file.name, rows: data.rows.map((r, i) => ({ ...r, key: i, include: r.matched && !!r.responsibility })) });
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't read that file.") });
     } finally {
@@ -593,10 +594,13 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
               </div>
               <div className="flex items-center gap-3">
                 <Button size="sm" variant="primary" disabled={busy || ready.length === 0}
-                        onClick={() => onConfirm(ready.map((r) => ({ control: r.control_id, responsibility: r.responsibility, provider_statement: r.provider_statement, customer_statement: r.customer_statement })))}>
+                        onClick={() => onConfirm(
+                          ready.map((r) => ({ control: r.control_id, responsibility: r.responsibility, provider_statement: r.provider_statement, customer_statement: r.customer_statement })),
+                          { layout: review.columns.map((c) => ({ name: c.column, role: c.role, index: c.index })), layout_name: review.file_name || "", framework: fw },
+                        )}>
                   {busy ? "Importing…" : `Import ${ready.length} row(s)`}
                 </Button>
-                <Label>Rows already stated for this vendor are replaced; everything else is left alone.</Label>
+                <Label>Rows already stated for this vendor are replaced; everything else is left alone. Their column layout is remembered, so the matrix can go back to them the same way.</Label>
               </div>
             </>
           ) : null}
@@ -647,10 +651,10 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
     return { ...cur, [control]: { responsibility: base.responsibility, provider_statement: base.provider_statement, customer_statement: base.customer_statement, ...(cur[control] || {}), ...patch } };
   });
 
-  async function put(rows, source = "manual", okText) {
+  async function put(rows, source = "manual", okText, extra = {}) {
     setBusy(true);
     try {
-      await api.put(`/vendors/${vendor.id}/matrix/`, { rows, source });
+      await api.put(`/vendors/${vendor.id}/matrix/`, { rows, source, ...extra });
       await load();
       onChanged();
       if (okText) setMsg({ ok: true, text: okText });
@@ -685,7 +689,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
                     onSave={(row) => put([row], "manual")} onDone={() => setMode(null)} />
       ) : mode === "import" ? (
         <ImportWizard vendor={vendor} framework={fw} frameworks={frameworks} controls={controls} busy={busy} setMsg={setMsg} onCancel={() => setMode(null)}
-                      onConfirm={async (rows) => { if (await put(rows, "import", `${rows.length} row(s) imported from ${vendor.name}'s matrix.`)) setMode(null); }} />
+                      onConfirm={async (rows, extra) => { if (await put(rows, "import", `${rows.length} row(s) imported from ${vendor.name}'s matrix.`, extra)) setMode(null); }} />
       ) : null}
 
       <Panel className="overflow-hidden">
@@ -707,6 +711,13 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
                     icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
               Export
             </Button>
+            {vendor.matrix_layout ? (
+              <Button size="sm" variant="ghost" title={`Columns from ${vendor.matrix_layout.file || "their last file"}`}
+                      onClick={() => downloadFile(`/vendors/${vendor.id}/matrix/export/?layout=vendor`, `responsibility-matrix-${slug(vendor.name)}-their-layout.csv`)}
+                      icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                Export in their layout
+              </Button>
+            ) : null}
           </div>
         </PanelHeader>
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">

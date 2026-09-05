@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, documents, risks and access reviews in one audit-ready workspace.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.4.0-2563d8.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.4.1-2563d8.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -133,7 +133,11 @@ Local development without Docker (SQLite, console email) is one command too:
   owner as implied Accountable and a vendor's matrix as implied Responsible;
   exactly one Accountable, and the gaps counted.
 - **Onboarding prompts** in the notification tray when a vendor has no
-  matrix, a report is about to lapse, or a review falls due.
+  matrix, a report is about to lapse, or a review falls due — and a
+  **bridge-letter reminder**, in the tray and by email, when a SOC report has
+  lapsed with nothing newer on file.
+- **Export in their layout**: the stated matrix goes back to the vendor under
+  the column headers of the file they sent.
 
 ### Governance
 - **Risk register** — likelihood × impact, treatment, due dates, Jira keys, a
@@ -278,11 +282,17 @@ a stdlib-only `verify.py` — which checks out with `sha256sum -c SHA256SUMS` an
 no vendor involvement. Access expires or is withdrawn in one click; the record
 of what was disclosed, to whom, and every file they opened, is permanent.
 
+Operating effectiveness is tested on **sampled items**, and the package holds
+them. The organisation states each control's population (size, source,
+sampling method) and may list the items while the package is a draft; they are
+sealed into the manifest with the artefact that supports each one. After
+sealing, the auditor adds their own selections and records **pass, exception
+or not tested** per item, with an exception note that is required, not
+optional. The bundle carries the whole workpaper as `samples.csv`.
+
 > The bundle proves **integrity, not origin**: it carries no signature, so the
 > digest in the audit trail and the copy you publish out of band are what bind
-> it to a moment. And because the unit of evidence is a document, this is a
-> design-and-implementation package — populations, sampling and per-item test
-> results are the next release.
+> it to a moment.
 
 ![Audit packages](assets/screenshots/audit-packages.png)
 

@@ -615,6 +615,28 @@ class Command(BaseCommand):
             for evidence_link in control.evidence_links.select_related("document", "linked_by"):
                 pin_document(row, evidence_link.document, mia or admin, link=evidence_link)
 
+        # A population and three sampled items on the access-control row, so
+        # the operating-effectiveness workpaper is not blank on a fresh install.
+        # Listed before sealing, so they are part of the manifest.
+        from attestations.models import PackageSample
+        sampled = package.controls.filter(control_ref="CC6.2").first() \
+            or package.controls.order_by("control_ref").first()
+        if sampled:
+            sampled.population_size = 42
+            sampled.population_source = "Okta deprovisioning report, FY period"
+            sampled.sampling_method = PackageControl.Sampling.RANDOM
+            sampled.save(update_fields=["population_size", "population_source", "sampling_method"])
+            artefact = sampled.evidence.order_by("pk").first()
+            for identifier, ref in (("u-1042", "row 7"), ("u-1077", "row 19"), ("u-1113", "row 31")):
+                PackageSample.objects.create(
+                    package_control=sampled, identifier=identifier,
+                    description="Leaver's access removed within one business day",
+                    population_ref=f"{ref} of the export", evidence=artefact,
+                    evidence_name=artefact.document_name if artefact else "",
+                    selected_by=mia or admin,
+                    selected_by_name=(mia or admin).get_full_name(), selected_at=timezone.now(),
+                )
+
         package.assertion = (
             "Management asserts that the controls described in this package were "
             "designed and implemented as described, and that the evidence attached "
@@ -648,6 +670,18 @@ class Command(BaseCommand):
             first.concluded_by_name = aria.get_full_name() if aria else ""
             first.concluded_at = now
             first.save()
+        # Two of the three sampled items already tested by the auditor: one
+        # pass, one exception, one still open.
+        if sampled and aria:
+            results = {"u-1042": ("pass", ""),
+                       "u-1077": ("fail", "Access removed 4 business days after termination (SLA: 1).")}
+            for sample in sampled.samples.all():
+                if sample.identifier in results:
+                    sample.result, sample.exception_note = results[sample.identifier]
+                    sample.tested_by, sample.tested_by_name, sample.tested_at = aria, aria.get_full_name(), now
+                    sample.save(update_fields=["result", "exception_note", "tested_by", "tested_by_name", "tested_at"])
+            sampled.sampling_note = "25 of 42 leavers selected at random from the deprovisioning report."
+            sampled.save(update_fields=["sampling_note"])
 
         if aria:
             PackageGrant.objects.create(
