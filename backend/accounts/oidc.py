@@ -80,7 +80,14 @@ MESSAGES = {
     "unknown_user": "No account is linked to that identity. Ask an administrator to link it.",
     "inactive": "That account is deactivated.",
     "role": "The server's default single sign-on role is misconfigured.",
+    "mfa_required": "This server requires a second factor for single sign-on. Sign in with your "
+                    "password once and enrol an authenticator, or have your identity provider assert one.",
+    "mfa_invalid": "That authentication code isn't valid.",
 }
+
+
+class StepUpRequired(Exception):
+    """The ticket is good, but the local second factor has not been given yet."""
 
 
 class OidcError(Exception):
@@ -288,8 +295,35 @@ def begin(request, next_path="/"):
     return endpoint + ("&" if "?" in endpoint else "?") + urllib.parse.urlencode(params)
 
 
+def mfa_asserted(claims):
+    """Did the provider say a second factor was used? OIDC puts it in ``amr``
+    (and sometimes ``acr``); the accepted values are SSO_MFA_ASSERTIONS."""
+    accepted = set(getattr(settings, "SSO_MFA_ASSERTIONS", []) or [])
+    amr = claims.get("amr") or []
+    if isinstance(amr, str):
+        amr = [amr]
+    if any(str(a) in accepted for a in amr):
+        return True
+    return bool(claims.get("acr")) and str(claims.get("acr")) in accepted
+
+
+def step_up_needed(user, asserted):
+    """Apply SSO_STEP_UP. Returns True when the local authenticator must be
+    asked for before tokens are issued; raises when the sign-in is refused."""
+    policy = str(getattr(settings, "SSO_STEP_UP", "if_enrolled") or "if_enrolled")
+    if policy == "off" or asserted:
+        return False
+    device = getattr(user, "mfa_device", None)
+    if device is not None and device.enabled:
+        return True
+    if policy == "required":
+        raise OidcError("mfa_required", f"{user.get_username()} has no authenticator and the "
+                                        "provider asserted no second factor")
+    return False
+
+
 def complete(request):
-    """Finish the sign-in. Returns ``(user, how, next_path)``."""
+    """Finish the sign-in. Returns ``(user, how, next_path, mfa_asserted)``."""
     cfg = config()
     if not cfg.enabled:
         raise OidcError("disabled")
@@ -331,7 +365,7 @@ def complete(request):
                     claims[field] = info[field]
 
     user, how = resolve_user(claims, cfg)
-    return user, how, flow.get("next") or "/"
+    return user, how, flow.get("next") or "/", mfa_asserted(claims)
 
 
 # --------------------------------------------------------------------------- #
@@ -429,35 +463,59 @@ def resolve_user(claims, cfg):
 # Tickets: the callback is a browser navigation; the SPA needs the tokens
 # --------------------------------------------------------------------------- #
 TICKET_KEY = "oidc_ticket"
+STEP_UP_TTL = 300       # long enough to find the phone
+STEP_UP_TRIES = 5
 
 
-def issue_ticket(request, user):
+def issue_ticket(request, user, mfa_pending=False):
     """A one-time ticket, kept (hashed) in the browser session that ran the
     flow. The session store is shared by every worker, which the default
     per-process cache is not, and a ticket lifted out of the redirect URL is
-    useless in any other browser."""
+    useless in any other browser. With ``mfa_pending`` the ticket is only
+    redeemable together with a valid local authenticator code."""
     ticket = secrets.token_urlsafe(32)
     request.session[TICKET_KEY] = {
         "hash": hashlib.sha256(ticket.encode("ascii")).hexdigest(),
-        "user": user.pk, "exp": int(time.time()) + TICKET_TTL,
+        "user": user.pk, "exp": int(time.time()) + (STEP_UP_TTL if mfa_pending else TICKET_TTL),
+        "mfa": bool(mfa_pending), "tries": 0,
     }
     request.session.modified = True
     return ticket
 
 
-def redeem_ticket(request, ticket):
-    data = request.session.pop(TICKET_KEY, None)
+def _drop_ticket(request):
+    request.session.pop(TICKET_KEY, None)
     request.session.modified = True
+
+
+def redeem_ticket(request, ticket, otp=None):
+    data = request.session.get(TICKET_KEY)
     if not data:
         raise OidcError("state", "no sign-in ticket in this browser session, or it was already used")
     if int(time.time()) > int(data.get("exp", 0)):
+        _drop_ticket(request)
         raise OidcError("state", "ticket expired")
     presented = hashlib.sha256(str(ticket or "")[:256].encode("utf-8")).hexdigest()
     if not _same(presented, data.get("hash")):
+        _drop_ticket(request)
         raise OidcError("state", "ticket mismatch")
     user = get_user_model().objects.filter(pk=data["user"], is_active=True).first()
     if user is None:
+        _drop_ticket(request)
         raise OidcError("inactive")
+    if data.get("mfa"):
+        if otp is None:
+            raise StepUpRequired()
+        device = getattr(user, "mfa_device", None)
+        if not (device is not None and device.enabled and device.verify(str(otp)[:64])):
+            data["tries"] = int(data.get("tries", 0)) + 1
+            if data["tries"] >= STEP_UP_TRIES:
+                _drop_ticket(request)
+                raise OidcError("state", "too many wrong codes; start the sign-in again")
+            request.session[TICKET_KEY] = data
+            request.session.modified = True
+            raise OidcError("mfa_invalid", f"wrong code ({data['tries']}/{STEP_UP_TRIES})")
+    _drop_ticket(request)
     return user
 
 

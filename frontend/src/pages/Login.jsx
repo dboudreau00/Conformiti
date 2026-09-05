@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import axios from "axios";
-import { login, oidcConfig, redeemSso } from "../api/client.js";
+import { login, oidcConfig, redeemSso, samlConfig } from "../api/client.js";
 import { Button } from "../components/ui/Button.jsx";
 import { Label, Panel } from "../components/ui/Panel.jsx";
 
@@ -21,6 +21,7 @@ const SSO_ERRORS = {
   unknown_user: "No account is linked to that identity. Ask an administrator to link it.",
   inactive: "That account is deactivated.",
   role: "The server's default single sign-on role is misconfigured.",
+  mfa_required: "This server requires a second factor for single sign-on. Sign in with your password once and enrol an authenticator, or have your identity provider assert one.",
 };
 
 export default function Login({ onDone }) {
@@ -32,7 +33,12 @@ export default function Login({ onDone }) {
   const [mfaStep, setMfaStep] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // A single sign-on that still needs the local second factor: the ticket
+  // waits here, never in the URL, while the person types the code.
+  const [ssoTicket, setSsoTicket] = useState(null);
+  const [ssoNext, setSsoNext] = useState("/");
   const sso = oidcConfig();
+  const samlSso = samlConfig();
 
   // The demo hint is only shown while the seeded demo accounts still exist.
   useEffect(() => {
@@ -52,10 +58,20 @@ export default function Login({ onDone }) {
     }
     if (!ticket) return;
     const next = params.get("next") || "/";
+    const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
     window.history.replaceState(null, "", "/login");
     setBusy(true);
     redeemSso(ticket)
-      .then(() => { onDone?.(null); nav(next.startsWith("/") && !next.startsWith("//") ? next : "/"); })
+      .then((data) => {
+        if (data?.mfa_required) {
+          setSsoTicket(ticket);
+          setSsoNext(safeNext);
+          setMfaStep(true);
+          return;
+        }
+        onDone?.(null);
+        nav(safeNext);
+      })
       .catch((ex) => setErr(ex?.response?.data?.detail || SSO_ERRORS.state))
       .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -74,6 +90,13 @@ export default function Login({ onDone }) {
     setErr("");
     setBusy(true);
     try {
+      if (ssoTicket) {
+        const data = await redeemSso(ssoTicket, otp);
+        if (data?.mfa_required) throw Object.assign(new Error("mfa"), { response: { data: { code: "mfa_invalid" } } });
+        onDone?.(null);
+        nav(ssoNext);
+        return;
+      }
       await login(username.trim(), password, mfaStep ? otp : undefined);
       onDone?.(null);
       nav("/");
@@ -84,6 +107,12 @@ export default function Login({ onDone }) {
         setErr("");
       } else if (ex?.response?.status === 429) {
         setErr("Too many attempts. Wait a minute and try again.");
+      } else if (ssoTicket && data?.code && data.code !== "mfa_invalid") {
+        // The ticket is gone (expired, or too many tries): back to the start.
+        setSsoTicket(null);
+        setMfaStep(false);
+        setOtp("");
+        setErr(SSO_ERRORS[data.code] || data.detail || SSO_ERRORS.state);
       } else if (mfaStep) {
         setErr("That authentication code isn't valid. Try again, or use a backup code.");
       } else {
@@ -108,7 +137,11 @@ export default function Login({ onDone }) {
             </div>
             <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{mfaStep ? "Two-factor authentication" : "Sign in"}</h1>
             <p className="mt-1 text-[13px] leading-snug text-muted">
-              {mfaStep ? "Enter the 6-digit code from your authenticator app, or a backup code." : "Continuous compliance for SOC 2, ISO 27001 and PCI DSS."}
+              {mfaStep
+                ? (ssoTicket
+                    ? "Your identity provider signed you in, but did not assert a second factor. Enter the code from your authenticator app, or a backup code."
+                    : "Enter the 6-digit code from your authenticator app, or a backup code.")
+                : "Continuous compliance for SOC 2, ISO 27001 and PCI DSS."}
             </p>
             {err ? <div className="notice notice-err mt-4" role="alert">{err}</div> : null}
             {!mfaStep ? (
@@ -139,25 +172,34 @@ export default function Login({ onDone }) {
                 />
               </div>
             )}
-            <Button type="submit" variant="primary" className="mt-5 w-full" disabled={busy || !username || !password}>
+            <Button type="submit" variant="primary" className="mt-5 w-full"
+                    disabled={busy || (ssoTicket ? !otp : (!username || !password))}>
               {busy ? "Signing in…" : mfaStep ? "Verify" : "Sign in"}
             </Button>
-            {sso.enabled && !mfaStep ? (
+            {(sso.enabled || samlSso.enabled) && !mfaStep ? (
               <>
                 <div className="my-4 flex items-center gap-3" aria-hidden="true">
                   <span className="h-px flex-1 bg-line" />
                   <Label>or</Label>
                   <span className="h-px flex-1 bg-line" />
                 </div>
-                <Button type="button" variant="secondary" className="w-full" disabled={busy}
-                        onClick={() => window.location.assign("/api/auth/oidc/start/")}>
-                  {sso.label}
-                </Button>
+                {sso.enabled ? (
+                  <Button type="button" variant="secondary" className="w-full" disabled={busy}
+                          onClick={() => window.location.assign("/api/auth/oidc/start/")}>
+                    {sso.label}
+                  </Button>
+                ) : null}
+                {samlSso.enabled ? (
+                  <Button type="button" variant="secondary" className={sso.enabled ? "mt-2 w-full" : "w-full"} disabled={busy}
+                          onClick={() => window.location.assign("/api/auth/saml/start/")}>
+                    {samlSso.label}
+                  </Button>
+                ) : null}
               </>
             ) : null}
             {mfaStep ? (
-              <button type="button" className="link mt-4" onClick={() => { setMfaStep(false); setOtp(""); setErr(""); }}>
-                ← Back to password
+              <button type="button" className="link mt-4" onClick={() => { setMfaStep(false); setOtp(""); setErr(""); setSsoTicket(null); }}>
+                {ssoTicket ? "← Start over" : "← Back to password"}
               </button>
             ) : health?.demo_accounts ? (
               <p className="mt-4 text-center text-xs text-muted">

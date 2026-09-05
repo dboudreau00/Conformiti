@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, documents, risks and access reviews in one audit-ready workspace.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.4.1-2563d8.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.5.0-2563d8.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -152,10 +152,11 @@ Local development without Docker (SQLite, console email) is one command too:
 ### Security and access
 - **TOTP two-factor auth** with backup codes and admin reset; **rotating,
   revocable refresh tokens**; per-client login throttles shared across workers.
-- **Single sign-on over OpenID Connect** (Okta, Entra ID, Google Workspace,
-  Keycloak…), configured from the environment only, with verified-email
-  linking that never touches an administrator account, optional
-  auto-provisioning and a domain allow-list.
+- **Single sign-on over OpenID Connect or SAML 2.0** (Okta, Entra ID, Google
+  Workspace, Keycloak…), configured from the environment only, with
+  verified-email linking that never touches an administrator account,
+  optional auto-provisioning, a domain allow-list, and **step-up** to the
+  person's local authenticator when the provider asserted no second factor.
 - **Five built-in roles** plus custom roles, folder-level grants, and an API
   that enforces every rule the UI shows.
 - Security headers and CSP on by default; uploads size-capped, typed and

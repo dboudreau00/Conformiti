@@ -30,6 +30,8 @@ MAX_SHEET_ROWS = 1000
 MAX_SHEET_COLS = 64
 MAX_SHEETS = 12
 MAX_UNZIPPED_BYTES = 40 * 1024 * 1024
+MAX_PART_BYTES = 12 * 1024 * 1024      # one XML part, read in bounded chunks, never trusting the header
+MAX_ELEMENTS = 400_000                 # a part with more tags than this is not a document, it is a bomb
 MAX_TEXT_BYTES = 512 * 1024
 
 PDF_MAGIC = b"%PDF-"
@@ -99,10 +101,21 @@ def _open_zip(data):
 
 
 def _read_xml(zf, member):
+    """Parse one part, bounded twice: the bytes are read in chunks up to a
+    ceiling the zip header cannot talk us past, and a part with an absurd
+    number of tags is refused before ElementTree builds a tree out of it --
+    a few megabytes of ``<w:p/>`` expand to a tree many times their size."""
     try:
-        raw = zf.read(member)
+        with zf.open(member) as fh:
+            raw = fh.read(MAX_PART_BYTES + 1)
     except KeyError:
         return None
+    except (zipfile.BadZipFile, OSError, EOFError):
+        raise PreviewError("The document's contents could not be read.")
+    if len(raw) > MAX_PART_BYTES:
+        raise PreviewError("The document is too large to preview. Download it instead.")
+    if raw.count(b"<") > MAX_ELEMENTS:
+        raise PreviewError("The document is too complex to preview. Download it instead.")
     try:
         # ElementTree does not resolve external entities, so this is safe on
         # untrusted input; a malformed part is a preview failure, not a crash.

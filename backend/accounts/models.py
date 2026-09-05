@@ -65,6 +65,18 @@ class OidcIdentity(models.Model):
         return f"{self.issuer} / {self.subject} -> {self.user_id}"
 
 
+class SsoAssertion(models.Model):
+    """A SAML assertion id that has been accepted, kept until it would have
+    expired anyway. Replays are refused from here -- a shared table, not a
+    per-process cache, so every worker sees the same history."""
+    assertion_id = models.CharField(max_length=255, unique=True)
+    expires_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.assertion_id
+
+
 class User(AbstractUser):
     """Application user. Every user has an optional single role."""
     role = models.ForeignKey(

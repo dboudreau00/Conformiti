@@ -3,12 +3,10 @@
  *
  * Nothing here is rendered as HTML from the file. PDFs and images are fetched
  * through the API client (so the credential travels the same way as every
- * other request, in header or cookie mode) and shown from a blob URL — the
- * PDF in a frame, the image in an <img>. The blob carries the content type the
- * server assigned after checking the file's magic bytes, so the frame can only
- * ever hold a PDF document, never a page. (It is deliberately not a sandboxed
- * frame: Chromium's PDF viewer is a plugin, and any `sandbox` attribute
- * disables plugins outright — the frame simply renders blank.) Word and Excel
+ * other request, in header or cookie mode). Images are shown from a blob URL
+ * in an <img>; PDFs are drawn onto canvases by pdf.js, in a worker that is
+ * part of this bundle, with scripting off — no frame, no plugin, and no PDF
+ * JavaScript ever runs. Word and Excel
  * files arrive from the server already parsed into a small structured
  * vocabulary (headings, runs, list items, tables, sheets) and are rendered
  * from that. A file whose bytes do not match its extension is refused by the
@@ -22,7 +20,18 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DownloadIcon, FingerprintIcon, PanelRightIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
+import * as pdfjs from "pdfjs-dist";
 import api, { downloadFile } from "../../api/client.js";
+
+// pdf.js renders the pages onto canvases in our own page. No frame, no
+// plugin, and nothing in the PDF ever executes: the library's scripting
+// support is off, the worker is a same-origin asset of this bundle, and the
+// bytes never leave the browser. (Chromium's built-in viewer was the
+// alternative; it is a plugin that cannot be sandboxed and runs PDF
+// JavaScript, and the headless browser the test suite drives has no viewer at
+// all.)
+pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+const PDF_PAGE_BATCH = 20;
 import { EASE } from "../layout/PanelTransition.jsx";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
@@ -176,6 +185,129 @@ function SheetBody({ sheets }) {
   );
 }
 
+/** Tear a pdf.js document down without letting anything it throws reach
+ *  React: cancel the render tasks first, and destroy on the next tick, so an
+ *  effect cleanup never raises mid-commit (an error there takes the whole
+ *  page to the error boundary). */
+function disposePdf(doc, tasks) {
+  for (const task of tasks.values()) {
+    try { task.cancel(); } catch { /* already finished */ }
+  }
+  tasks.clear();
+  if (!doc) return;
+  setTimeout(() => {
+    try {
+      const done = doc.destroy();
+      if (done && typeof done.catch === "function") done.catch(() => {});
+    } catch { /* the worker is gone; nothing to release */ }
+  }, 0);
+}
+
+function PdfBody({ bytes, title }) {
+  const [state, setState] = useState({ status: "loading", pages: 0, shown: 0, error: "" });
+  const [zoom, setZoom] = useState(1);
+  const docRef = useRef(null);
+  const hostRef = useRef(null);
+  const tasksRef = useRef(new Map());   // page number -> in-flight RenderTask
+
+  useEffect(() => {
+    let live = true;
+    let loading = null;
+    setState({ status: "loading", pages: 0, shown: 0, error: "" });
+    (async () => {
+      try {
+        const data = new Uint8Array(await bytes.arrayBuffer());
+        loading = pdfjs.getDocument({ data, isEvalSupported: false, disableAutoFetch: true, enableXfa: false });
+        const doc = await loading.promise;
+        if (!live) { disposePdf(doc, new Map()); return; }
+        docRef.current = doc;
+        setState({ status: "ready", pages: doc.numPages, shown: Math.min(doc.numPages, PDF_PAGE_BATCH), error: "" });
+      } catch (e) {
+        if (live) setState({ status: "error", pages: 0, shown: 0, error: e?.message || "This PDF could not be rendered." });
+      }
+    })();
+    return () => {
+      live = false;
+      const doc = docRef.current;
+      docRef.current = null;
+      if (doc) disposePdf(doc, tasksRef.current);
+      else if (loading) setTimeout(() => { try { loading.destroy(); } catch { /* not started */ } }, 0);
+    };
+  }, [bytes]);
+
+  // Draw every visible page whenever the count or the zoom changes. A newer
+  // pass cancels the tasks of the one before it.
+  useEffect(() => {
+    const doc = docRef.current;
+    const host = hostRef.current;
+    if (state.status !== "ready" || !doc || !host) return undefined;
+    let cancelled = false;
+    const tasks = tasksRef.current;
+    (async () => {
+      const width = Math.max(320, host.clientWidth - 48);
+      for (let n = 1; n <= state.shown && !cancelled; n++) {
+        const canvas = host.querySelector(`canvas[data-page="${n}"]`);
+        if (!canvas || canvas.dataset.zoom === String(zoom)) continue;
+        const page = await doc.getPage(n);
+        if (cancelled) return;
+        const base = page.getViewport({ scale: 1 });
+        const scale = (width / base.width) * zoom;
+        const dpr = window.devicePixelRatio || 1;
+        const viewport = page.getViewport({ scale: scale * dpr });
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
+        canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
+        const task = page.render({ canvasContext: canvas.getContext("2d"), viewport });
+        tasks.set(n, task);
+        try {
+          await task.promise;
+          if (!cancelled) canvas.dataset.zoom = String(zoom);
+        } finally {
+          if (tasks.get(n) === task) tasks.delete(n);
+        }
+      }
+    })().catch(() => { /* cancelled, or the document was torn down */ });
+    return () => {
+      cancelled = true;
+      for (const task of tasks.values()) {
+        try { task.cancel(); } catch { /* finished */ }
+      }
+      tasks.clear();
+    };
+  }, [state, zoom]);
+
+  if (state.status === "loading") return <Loading className="py-24">Rendering…</Loading>;
+  if (state.status === "error") {
+    return <p className="p-8 text-center text-sm text-danger" role="alert">{state.error}</p>;
+  }
+  return (
+    <div ref={hostRef} className="min-h-full px-6 py-4" data-pdf-pages={state.pages}>
+      <div className="mb-3 flex items-center justify-center gap-2">
+        <Button size="sm" variant="ghost" aria-label="Zoom out" disabled={zoom <= 0.5} onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}>
+          <ZoomOutIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+        </Button>
+        <Label>{state.pages} page{state.pages === 1 ? "" : "s"} · {Math.round(zoom * 100)}%</Label>
+        <Button size="sm" variant="ghost" aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}>
+          <ZoomInIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+        </Button>
+      </div>
+      <div className="flex flex-col items-center gap-4">
+        {Array.from({ length: state.shown }, (_, i) => (
+          <canvas key={i + 1} data-page={i + 1} className="max-w-full rounded-sm bg-white shadow-md" aria-label={`${title}, page ${i + 1}`} role="img" />
+        ))}
+      </div>
+      {state.shown < state.pages ? (
+        <div className="mt-4 flex justify-center">
+          <Button size="sm" onClick={() => setState((s) => ({ ...s, shown: Math.min(s.pages, s.shown + PDF_PAGE_BATCH) }))}>
+            Show {Math.min(PDF_PAGE_BATCH, state.pages - state.shown)} more page(s)
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // --- The wrapper ------------------------------------------------------------------
 
 export default function DocumentViewer({
@@ -276,7 +408,7 @@ export default function DocumentViewer({
       </div>
     );
   } else if (state.kind === "pdf") {
-    body = <iframe title={title} src={state.blobUrl} className="h-full w-full border-0 bg-white" />;
+    body = <PdfBody bytes={state.bytes} title={title} />;
   } else if (state.kind === "image") {
     body = (
       <div className={cn("min-h-full p-6", zoom === "fit" && "flex items-center justify-center")}>

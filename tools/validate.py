@@ -337,6 +337,8 @@ def check_css(files):
 # ===========================================================================
 PIP_NAME = {
     "jwt": "PyJWT",
+    "signxml": "signxml",
+    "lxml": "lxml",
     "django": "django", "rest_framework": "djangorestframework",
     "rest_framework_simplejwt": "djangorestframework-simplejwt",
     "corsheaders": "django-cors-headers", "django_filters": "django-filter",

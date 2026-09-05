@@ -37,14 +37,27 @@ issues for vulnerabilities. You will get an acknowledgement within a week.
   SPA receives its tokens through a one-time ticket bound to the browser
   session that ran the flow. Every outcome — linked, provisioned, refused and
   why — is in the audit trail.
-- **Evidence preview never renders a file as HTML.** PDFs and images stream
-  inline only when their first bytes say so; the SPA fetches them through the
-  API and shows them from a `blob:` URL that carries the server-assigned
-  content type, so a PDF frame can only ever hold a PDF document, and the
-  media location's forced-download and framing headers stay as they are. (The
-  frame is not `sandbox`ed: Chromium's PDF viewer is a plugin and a sandboxed
-  frame disables plugins, which renders blank.) Word and Excel are parsed on
-  the server with the standard library
+- **Single sign-on over SAML 2.0 (optional):** SP-initiated, signed
+  HTTP-POST responses only. The provider's signing certificate from the
+  environment is the sole trust anchor — no metadata fetch, no certificate
+  taken from the message. Signatures are verified with asymmetric algorithms
+  only, and **only the element the signature covers is read**, so a Response
+  carrying an extra unsigned assertion yields nothing from it. Issuer,
+  audience, destination, recipient, `InResponseTo`, the validity window
+  (with clock skew) and bearer confirmation are all checked; assertion ids
+  are accepted once, from a shared table. XML is parsed with entities and
+  DTDs refused and no network. The sign-in state travels in a signed
+  `SameSite=None; Secure` cookie because the provider's POST is cross-site.
+  Account rules are the OIDC rules, in the same code.
+- **Step-up on SSO (default on when enrolled):** when the provider did not
+  assert a second factor and the person has a local authenticator, the
+  tokens are withheld until its code is given; `SSO_STEP_UP=required` refuses
+  a sign-in with neither. Five wrong codes spend the ticket.
+- **Evidence preview never renders a file as HTML.** Images stream inline
+  only when their first bytes say so and are shown from a `blob:` URL in an
+  `<img>`. **PDFs are drawn by pdf.js onto canvases** in a worker shipped
+  with the bundle, scripting off — no frame, no plugin, no PDF JavaScript.
+  Word and Excel are parsed on the server with the standard library
   (zip bomb and size limits, no external entities) into a small structured
   vocabulary the SPA renders itself. No third-party viewer is involved.
 - **Secrets at rest:** the two columns that must be readable by the server —
@@ -198,16 +211,18 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   the audit trail, which records the digest, plus publishing that digest to the
   auditor out of band. The product says so in the bundle's README and on the
   package screen; do not describe a package as *signed* or *certified*.
-- **An SSO login trusts the identity provider for the second factor.** Local
-  TOTP is not asked for on an OpenID Connect sign-in; the provider
-  authenticated the person, and step-up policy belongs there. Enforce MFA at
-  the IdP. A compromised IdP tenant administrator can sign in as any linked
-  non-privileged user — which is why administrator accounts are never linked
-  by email and why the provider cannot be changed from inside the app.
-  Passkeys (WebAuthn) and SAML are not implemented.
+- **An SSO login still rests on the identity provider.** Step-up asks for a
+  local authenticator only when one is enrolled (or, with
+  `SSO_STEP_UP=required`, refuses otherwise); a person with no local
+  authenticator is as strong as the provider's assertion. A compromised IdP
+  tenant administrator can sign in as any linked non-privileged user — which
+  is why administrator accounts are never linked by email and why the
+  provider cannot be changed from inside the app. SAML requests are not
+  signed (responses are); passkeys (WebAuthn) are not implemented.
 - **Office preview parses untrusted files on the server.** Word and Excel
   previews go through `zipfile` and `xml.etree` with hard ceilings (40 MB
-  unzipped, 3,000 blocks, 12 sheets of 1,000×64 cells, 512 KB of text) and
+  unzipped as declared, 12 MB per part as actually read, 400,000 tags per
+  part, 3,000 blocks, 12 sheets of 1,000×64 cells, 512 KB of text) and
   Python's expat, which does not resolve external entities. The parsing is
   bounded and stdlib-only rather than sandboxed; if you accept uploads from
   people you do not control, keep malware scanning on, and note that the

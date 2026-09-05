@@ -108,11 +108,14 @@ class AuthConfigView(APIView):
 
     def get(self, request):
         from .oidc import config as oidc_config
+        from .saml import config as saml_config
 
         sso = oidc_config()
+        saml = saml_config()
         return Response({
             "transport": cookie_auth.transport(),
             "mfa": True,
             "password_min_length": getattr(settings, "PASSWORD_MIN_LENGTH", 12),
             "oidc": {"enabled": sso.enabled, "label": sso.label if sso.enabled else ""},
+            "saml": {"enabled": saml.enabled, "label": saml.label if saml.enabled else ""},
         })

@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .oidc_views import OidcCallbackView, OidcRedeemView, OidcStartView
+from .saml_views import SamlAcsView, SamlMetadataView, SamlStartView
 from .views import (
     MfaBackupCodesView,
     MfaDisableView,
@@ -26,4 +27,8 @@ urlpatterns = [
     path("auth/oidc/start/", OidcStartView.as_view(), name="oidc_start"),
     path("auth/oidc/callback/", OidcCallbackView.as_view(), name="oidc_callback"),
     path("auth/oidc/redeem/", OidcRedeemView.as_view(), name="oidc_redeem"),
+    # Single sign-on (SAML 2.0). Same ticket redemption as OIDC.
+    path("auth/saml/start/", SamlStartView.as_view(), name="saml_start"),
+    path("auth/saml/acs/", SamlAcsView.as_view(), name="saml_acs"),
+    path("auth/saml/metadata/", SamlMetadataView.as_view(), name="saml_metadata"),
 ] + router.urls

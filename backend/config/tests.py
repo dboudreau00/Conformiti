@@ -101,11 +101,37 @@ class DemoDataTests(TestCase):
                 self.assertEqual(Risk.objects.count(), 0)
                 self.assertFalse(demo_accounts_present())
                 self.assertEqual(ReadinessSnapshot.objects.count(), 1)  # only today's point survives
+                from compliance.models import Responsibility
+                from documents.models import FolderPermission
+                from vendors.models import Vendor
+                self.assertEqual(Vendor.objects.count(), 0)
+                self.assertEqual(Responsibility.objects.count(), 0)
+                self.assertFalse(FolderPermission.objects.filter(user__isnull=True).exists(),
+                                 "the seeded role-wide grants are standing access; they must go")
                 # the libraries survive
                 from compliance.models import Control
                 self.assertEqual(Control.objects.count(), 217)
                 call_command("remove_demo_data", "--delete", verbosity=0)
                 self.assertFalse(User.objects.filter(username="mia").exists())
+
+    def test_remove_still_finds_the_data_when_the_demo_accounts_are_already_gone(self):
+        """An operator who deleted the demo users by hand first must not be
+        left with the demo vendors, documents and RACI rows -- those rows
+        lose their creator (SET_NULL) and used to slip through the match."""
+        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        with tempfile.TemporaryDirectory() as media:
+            from django.test import override_settings
+            with override_settings(MEDIA_ROOT=media):
+                call_command("bootstrap_demo", verbosity=0)
+                from documents.models import Document
+                from vendors.models import Vendor
+                User = get_user_model()
+                make_user("realadmin", superuser=True)
+                User.objects.filter(username__in=["admin", "mia", "owen", "aria", "val"]).delete()
+                self.assertGreater(Vendor.objects.count(), 0)
+                call_command("remove_demo_data", verbosity=0)
+                self.assertEqual(Vendor.objects.count(), 0)
+                self.assertEqual(Document.objects.count(), 0)
 
 
 # --------------------------------------------------------------------------- #

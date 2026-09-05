@@ -150,6 +150,10 @@ class VendorViewSet(viewsets.ModelViewSet):
                 raise ValidationError({"rows": f"row {i}: unknown control {control_id}"})
             resp = row.get("responsibility")
             if resp in (None, ""):
+                if str(row.get("provider_statement") or "").strip() or str(row.get("customer_statement") or "").strip():
+                    raise ValidationError({"rows": f"row {i}: a statement needs a responsibility "
+                                                   "(provider, customer, shared or N/A) to belong to; "
+                                                   "pick one or clear the statement"})
                 clear.append(control_id)
                 continue
             if resp not in RESPONSIBILITY_VALUES:

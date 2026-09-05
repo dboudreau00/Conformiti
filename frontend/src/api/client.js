@@ -11,6 +11,7 @@ import axios from "axios";
 // cookie auth, and one less thing to get wrong when the server flips.
 let transport = "header";
 let oidc = { enabled: false, label: "" };
+let saml = { enabled: false, label: "" };
 
 export function authTransport() {
   return transport;
@@ -25,26 +26,36 @@ export function oidcConfig() {
   return oidc;
 }
 
+export function samlConfig() {
+  return saml;
+}
+
 /** Ask the server which transport is live. Safe to call before signing in. */
 export async function loadAuthConfig() {
   try {
     const { data } = await axios.get("/api/auth/config/");
     transport = data.transport === "cookie" ? "cookie" : "header";
     oidc = { enabled: !!data.oidc?.enabled, label: data.oidc?.label || "Single sign-on" };
+    saml = { enabled: !!data.saml?.enabled, label: data.saml?.label || "Sign in with SAML" };
   } catch {
     transport = "header";
     oidc = { enabled: false, label: "" };
+    saml = { enabled: false, label: "" };
   }
   return transport;
 }
 
 /** Finish a single sign-on: swap the one-time ticket from the callback
- *  redirect for tokens, delivered the same way a password login delivers them. */
-export async function redeemSso(ticket) {
-  const { data } = await axios.post("/api/auth/oidc/redeem/", { ticket }, {
+ *  redirect for tokens, delivered the same way a password login delivers them.
+ *  When the server wants a local second factor first it answers
+ *  {mfa_required: true} and keeps the ticket; call again with the code. */
+export async function redeemSso(ticket, otp) {
+  const body = otp ? { ticket, otp } : { ticket };
+  const { data } = await axios.post("/api/auth/oidc/redeem/", body, {
     withCredentials: true,
     headers: cookieMode() ? { "X-CSRFToken": readCookie("csrftoken") || "" } : {},
   });
+  if (data?.mfa_required) return data;
   if (!cookieMode()) {
     localStorage.setItem("access", data.access);
     localStorage.setItem("refresh", data.refresh);

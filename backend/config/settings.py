@@ -566,6 +566,60 @@ OIDC_REQUIRE_VERIFIED_EMAIL = env_bool("OIDC_REQUIRE_VERIFIED_EMAIL", True)
 if OIDC_ISSUER and not OIDC_ISSUER.startswith("https://") and not DEBUG:
     raise ImproperlyConfigured("OIDC_ISSUER must be an https:// URL.")
 
+# --- Single sign-on (SAML 2.0) ---------------------------------------------------
+# Same rules as OIDC: environment only, and the linking/provisioning policy is
+# shared with OIDC unless a SAML_* twin overrides it. The IdP's signing
+# certificate is the trust anchor; there is no metadata auto-fetch on purpose.
+SAML_IDP_ENTITY_ID = os.getenv("SAML_IDP_ENTITY_ID", "").strip()
+SAML_IDP_SSO_URL = os.getenv("SAML_IDP_SSO_URL", "").strip()
+SAML_IDP_CERT = os.getenv("SAML_IDP_CERT", "").strip()
+SAML_IDP_CERT_FILE = os.getenv("SAML_IDP_CERT_FILE", "").strip()
+if not SAML_IDP_CERT and SAML_IDP_CERT_FILE:
+    try:
+        SAML_IDP_CERT = Path(SAML_IDP_CERT_FILE).read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ImproperlyConfigured(f"SAML_IDP_CERT_FILE could not be read: {exc}")
+SAML_SP_ENTITY_ID = os.getenv("SAML_SP_ENTITY_ID", "").strip()
+SAML_ACS_URL = os.getenv("SAML_ACS_URL", "").strip()
+SAML_LABEL = os.getenv("SAML_LABEL", "Sign in with SAML").strip() or "Sign in with SAML"
+SAML_EMAIL_ATTRIBUTE = os.getenv("SAML_EMAIL_ATTRIBUTE", "").strip()
+SAML_ALLOWED_DOMAINS = [
+    d.strip().lower().lstrip("@")
+    for d in os.getenv("SAML_ALLOWED_DOMAINS", os.getenv("OIDC_ALLOWED_DOMAINS", "")).split(",") if d.strip()
+]
+SAML_AUTO_PROVISION = env_bool("SAML_AUTO_PROVISION", OIDC_AUTO_PROVISION)
+SAML_DEFAULT_ROLE = os.getenv("SAML_DEFAULT_ROLE", OIDC_DEFAULT_ROLE).strip() or OIDC_DEFAULT_ROLE
+SAML_LINK_BY_EMAIL = env_bool("SAML_LINK_BY_EMAIL", OIDC_LINK_BY_EMAIL)
+if SAML_IDP_SSO_URL and not SAML_IDP_SSO_URL.startswith("https://") and not DEBUG:
+    raise ImproperlyConfigured("SAML_IDP_SSO_URL must be an https:// URL.")
+
+# --- Step-up on single sign-on -------------------------------------------------------
+#   off          trust the provider's authentication as it is;
+#   if_enrolled  when the provider did not assert a second factor and the
+#                person has a local authenticator enrolled, ask for its code
+#                before the tokens are issued (the default);
+#   required     the provider must assert a second factor or the person must
+#                have a local authenticator; otherwise the sign-in is refused.
+SSO_STEP_UP = os.getenv("SSO_STEP_UP", "if_enrolled").strip().lower()
+if SSO_STEP_UP not in ("off", "if_enrolled", "required"):
+    raise ImproperlyConfigured("SSO_STEP_UP must be off, if_enrolled or required.")
+# What counts as "the provider asserted a second factor": OIDC `amr` values
+# and SAML AuthnContextClassRef / authnmethodsreferences values.
+SSO_MFA_ASSERTIONS = [
+    a.strip() for a in os.getenv(
+        "SSO_MFA_ASSERTIONS",
+        "mfa,otp,hwk,swk,sms,tel,fido,pop,user,pin,"
+        "urn:oasis:names:tc:SAML:2.0:ac:classes:TimeSyncToken,"
+        "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract,"
+        "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorUnregistered,"
+        "urn:oasis:names:tc:SAML:2.0:ac:classes:SmartcardPKI,"
+        "urn:oasis:names:tc:SAML:2.0:ac:classes:X509,"
+        "http://schemas.microsoft.com/claims/multipleauthn,"
+        "http://schemas.microsoft.com/ws/2012/12/authmethod/otp,"
+        "http://schemas.microsoft.com/ws/2012/12/authmethod/fido",
+    ).split(",") if a.strip()
+]
+
 # --- Logging ------------------------------------------------------------------
 # Plain, single-line console logging that docker/systemd/journald can ingest.
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if not DEBUG else "DEBUG").upper()
@@ -584,5 +638,8 @@ LOGGING = {
         # SQL echo is far too chatty even in DEBUG.
         "django.db.backends": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        # signxml logs every canonicalised SAML document at DEBUG -- the whole
+        # assertion, attributes and all -- which has no business in a log.
+        "signxml": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },
 }

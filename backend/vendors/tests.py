@@ -250,6 +250,14 @@ class MatrixTests(APITestBase):
         self.assertEqual((r.data["saved"], r.data["cleared"]), (0, 1))
         self.assertEqual(SharedResponsibility.objects.filter(vendor=self.v).count(), 1)
 
+    def test_a_statement_without_a_responsibility_is_refused_not_dropped(self):
+        r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
+            {"control": self.tree.c1.pk, "responsibility": None,
+             "provider_statement": "AWS patches the hypervisor."}]}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("statement", str(r.data["rows"]))
+        self.assertEqual(SharedResponsibility.objects.count(), 0)
+
     def test_the_grid_validates_before_it_writes(self):
         r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
             {"control": self.tree.c1.pk, "responsibility": "provider"},
@@ -468,6 +476,7 @@ class RaciTests(APITestBase):
         ok = c.post("/api/responsibilities/", {
             "control": self.tree.c1.pk, "user": self.owner.pk, "role": "accountable"}, format="json")
         self.assertEqual(ok.status_code, 201, ok.data)
+        self.assertEqual(Responsibility.objects.get(pk=ok.data["id"]).created_by, self.manager)
         dup = c.post("/api/responsibilities/", {
             "control": self.tree.c1.pk, "user": self.manager.pk, "role": "accountable"}, format="json")
         self.assertEqual(dup.status_code, 400)

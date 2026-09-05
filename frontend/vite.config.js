@@ -19,6 +19,7 @@ const VENDOR = [
   ["react", ["react", "react-dom", "react-router-dom"]],
   ["motion", ["framer-motion"]],
   ["icons", ["lucide-react"]],
+  ["pdf", ["pdfjs-dist"]],
 ];
 
 function manualChunks(id) {

@@ -304,6 +304,24 @@ class OidcFlowTests(APITestBase):
         call_command("link_oidc_identity", "val", "sub-val", "--allow-privileged")
         self.assertTrue(self.sign_in())
 
+    def test_step_up_follows_the_amr_claim(self):
+        from accounts import mfa as mfa_lib
+        from accounts.models import MfaDevice
+
+        secret = mfa_lib.generate_secret()
+        MfaDevice.objects.create(user=self.viewer, secret=secret, enabled=True)
+        # No second factor asserted: the local authenticator is asked for.
+        self.idp.claims["amr"] = ["pwd"]
+        ticket = self.sign_in()
+        self.assertEqual(self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data,
+                         {"mfa_required": True})
+        r = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket, "otp": mfa_lib.totp(secret)}, format="json")
+        self.assertIn("access", r.data)
+        # The provider asserted MFA: straight in.
+        self.idp.claims["amr"] = ["pwd", "mfa"]
+        ticket = self.sign_in()
+        self.assertIn("access", self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data)
+
     def test_non_ascii_state_is_a_clean_refusal(self):
         self.start()
         r = self.callback("état-☃")

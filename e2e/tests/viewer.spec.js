@@ -1,4 +1,4 @@
-import { test, expect, expectBrowserError, open, signIn, DEMO } from "../fixtures.js";
+import { test, expect, open, signIn, DEMO } from "../fixtures.js";
 
 async function openFolder(page, labels) {
   for (const label of labels) {
@@ -24,24 +24,30 @@ test.describe("in-browser document viewer", () => {
     await expect(dialog).toBeHidden();
   });
 
-  test("a PDF streams inline from a blob frame; an image renders natively", async ({ page }) => {
-    // The headless shell Playwright runs has no PDF viewer, so Chromium
-    // aborts the frame's navigation to the blob and reports a failed request.
-    // A headed browser renders it (the README screenshot is taken that way);
-    // the bytes, the type and the digest are asserted here regardless.
-    expectBrowserError(page, /^GET blob:.* — net::ERR_ABORTED$/);
+  test("a PDF is drawn onto canvases by pdf.js; an image renders natively", async ({ page }) => {
     await open(page, "/documents", "Documents");
     await openFolder(page, [/ISO/i, /^A\.8\b/i, /A\.8\.8/i]);
     await page.getByRole("button", { name: "Penetration Test Report", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: /Viewing Penetration Test Report/ });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("PDF", { exact: true })).toBeVisible();
-    const frame = dialog.locator("iframe");
-    // Served from a blob whose type the server set after reading the magic
-    // bytes -- never from the media URL, which forces download and denies framing.
-    await expect(frame).toHaveAttribute("src", /^blob:/);
-    await expect(frame).not.toHaveAttribute("sandbox", /.*/);
-    await page.waitForTimeout(800);
+    // No frame, no plugin: pages are canvases drawn in our own page.
+    await expect(dialog.locator("iframe")).toHaveCount(0);
+    const canvas = dialog.locator("canvas[data-page='1']");
+    await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveAttribute("data-zoom", "1");
+    await expect(dialog.getByText(/1 page · 100%/)).toBeVisible();
+    // Something was actually painted: a rendered page is not a blank canvas.
+    const painted = await canvas.evaluate((c) => {
+      const ctx = c.getContext("2d");
+      const px = ctx.getImageData(0, 0, c.width, c.height).data;
+      let dark = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i] < 128 && px[i + 3] > 0) dark++;
+      return dark;
+    });
+    expect(painted).toBeGreaterThan(50);
+    await dialog.getByRole("button", { name: "Zoom in" }).click();
+    await expect(dialog.getByText(/125%/)).toBeVisible();
     await expect(dialog.getByText(/^[0-9a-f]{64}$/)).toBeVisible();
     await dialog.getByRole("button", { name: "Close viewer" }).click();
     await expect(dialog).toBeHidden();
@@ -56,8 +62,6 @@ test.describe("in-browser document viewer", () => {
     await expect(image.getByRole("button", { name: "Fit", exact: true })).toBeVisible();
     await image.getByRole("button", { name: "Close viewer" }).click();
     await expect(image).toBeHidden();
-    // Give the revoked blob URLs their grace period before the test ends.
-    await page.waitForTimeout(1800);
   });
 
   test("pinned package evidence opens for the auditor and matches the sealed digest", async ({ page }) => {

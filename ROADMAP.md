@@ -29,13 +29,15 @@
   per-item pass/exception/not-tested by the auditor, `samples.csv` in the
   bundle), responsibility matrix export in the vendor's own layout, and a
   bridge-letter reminder when a SOC report lapses.
+- **0.5.0** — SAML 2.0 single sign-on, step-up to a local authenticator on
+  SSO logins, PDFs drawn by pdf.js instead of a plugin frame, and the fix for
+  the duplicate Content-Disposition header that had broken every download
+  through nginx since 0.3.0.
 
-## Next (0.5.0)
+## Next (0.5.1)
 
 | Item | Why |
 |---|---|
-| **SAML 2.0** single sign-on (SP-initiated, signed responses) | the providers that still insist on it; OIDC shipped in 0.4.0 |
-| **Step-up on SSO logins** — a local TOTP prompt when the provider does not assert a second factor, or always when the operator says so | organisations that cannot enforce MFA at the IdP |
 | **Vendor questionnaire sent to the vendor** — a time-boxed link like an audit package grant, answered by them, reviewed by us | 0.4.0 records the answers; the vendor should be able to give them |
 | **WebAuthn / passkeys** as a second factor | phishing-resistant MFA. Deferred from 0.3.0: the design's clone detector disabled the passkey and dropped the account to password-only — a fail-open that has to be fixed before it ships |
 | **PBC request list** with due-date reminders | the other half of the auditor's workflow |

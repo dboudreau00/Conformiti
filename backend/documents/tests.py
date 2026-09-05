@@ -691,6 +691,23 @@ class PreviewTests(APITestBase):
         r = self._preview(doc)
         self.assertEqual(r.status_code, 415)
 
+    def test_a_small_docx_that_expands_into_a_forest_of_tags_is_refused(self):
+        """The zip header's declared sizes can be honest and the part still be
+        a bomb: 3 MB of empty paragraphs is a tree many times that size."""
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        body = b"<w:p/>" * 500_000
+        doc_xml = (f'<?xml version="1.0"?><w:document xmlns:w="{W}"><w:body>'.encode() + body
+                   + b"</w:body></w:document>")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("[Content_Types].xml", "<Types/>")
+            zf.writestr("word/document.xml", doc_xml)
+        self.assertLess(len(buf.getvalue()), 64 * 1024, "the bomb is small on the wire")
+        doc = self._doc("forest.docx", buf.getvalue())
+        r = self._preview(doc)
+        self.assertEqual(r.status_code, 415)
+        self.assertIn("complex", r.data["detail"])
+
     def test_preview_honours_folder_permissions_and_is_audited(self):
         doc = self._doc("report.pdf", PDF)
         self.assertEqual(self._preview(doc, self.auditor).status_code, 404, "no grant, no preview")

@@ -83,7 +83,12 @@ class Command(BaseCommand):
             )
 
         verb = "would" if dry else "will"
-        docs = Document.objects.filter(name__in=[d[1] for d in SAMPLE_DOCS], owner__username="owen")
+        # "Created by a demo account" must also match rows whose creator was
+        # already deleted (SET_NULL) by an earlier --delete run, or a second
+        # run finds nothing and still reports success.
+        demo_or_gone = Q(created_by__username__in=DEMO_USERNAMES) | Q(created_by__isnull=True)
+        docs = Document.objects.filter(name__in=[d[1] for d in SAMPLE_DOCS]).filter(
+            Q(owner__username="owen") | Q(owner__isnull=True))
         risks = Risk.objects.filter(title__in=DEMO_RISKS)
         series = MeetingSeries.objects.filter(name__in=DEMO_SERIES)
         groups = ChampionGroup.objects.filter(name__in=DEMO_GROUPS)
@@ -100,14 +105,22 @@ class Command(BaseCommand):
         # Vendors cascade to their assessments, shared responsibility rows and
         # RACI rows; a risk that named one is kept and simply loses the link.
         from compliance.models import Responsibility
+        from documents.models import FolderPermission
         from vendors.models import Vendor
-        vendors = Vendor.objects.filter(name__in=DEMO_VENDOR_NAMES, created_by__username__in=DEMO_USERNAMES)
-        raci = Responsibility.objects.filter(created_by__username__in=DEMO_USERNAMES)
+        vendors = Vendor.objects.filter(name__in=DEMO_VENDOR_NAMES).filter(demo_or_gone)
+        raci = Responsibility.objects.filter(demo_or_gone)
+        # The two role-wide grants the seeder demonstrates RBAC with; left in
+        # place they are standing access nobody asked for.
+        seeded_grants = FolderPermission.objects.filter(user__isnull=True).filter(
+            Q(role__name="Control Owner", folder__name__startswith="CC6 -", access_level="edit")
+            | Q(role__name="Auditor", folder__is_framework_root=True, folder__name__icontains="27001",
+                access_level="view"))
 
         self.stdout.write(f"Demo users ({'delete' if delete else 'deactivate'}): "
                           f"{', '.join(u.username for u in demo_users) or 'none'}")
         self.stdout.write(f"Sample vendors {verb} be deleted: {vendors.count()}")
         self.stdout.write(f"Seeded RACI rows {verb} be deleted: {raci.count()}")
+        self.stdout.write(f"Seeded folder grants {verb} be deleted: {seeded_grants.count()}")
         self.stdout.write(f"Sample documents {verb} be deleted: {docs.count()}")
         self.stdout.write(f"Sample risks {verb} be deleted: {risks.count()}")
         self.stdout.write(f"Sample meeting series {verb} be deleted: {series.count()}")
@@ -139,6 +152,7 @@ class Command(BaseCommand):
         audit_rows.delete()
         raci.delete()
         vendors.delete()
+        seeded_grants.delete()
 
         for user in demo_users:
             if delete:

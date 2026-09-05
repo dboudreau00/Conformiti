@@ -84,6 +84,9 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
     permission_classes = [CanManageFrameworks]
     filterset_fields = ["control", "user", "vendor", "role", "control__category__framework__key"]
 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
     @action(detail=False, methods=["get"])
     def matrix(self, request):
         """The grid: one row per control, one cell per RACI role.

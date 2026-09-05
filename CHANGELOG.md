@@ -5,6 +5,81 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.5.0] — 2026-09-05
+
+Single sign-on for the providers that insist on SAML, a second factor that
+travels with SSO, a PDF viewer that never runs the PDF, and one production
+bug that had made every download through nginx fail since 0.3.0.
+
+### Added
+
+- **SAML 2.0 single sign-on** (SP-initiated; HTTP-Redirect out, signed
+  HTTP-POST Response back). Configured **from the environment only**, like
+  OIDC: the provider's signing certificate is the sole trust anchor, there
+  is no metadata fetch. Every signature is verified against that certificate
+  with asymmetric algorithms only, and **only the element the signature
+  covers is read** — a Response carrying a second, unsigned assertion yields
+  nothing from it (the wrapping attack). Issuer, audience, destination,
+  recipient, `InResponseTo`, validity window with clock skew and bearer
+  confirmation are all checked; an assertion id is accepted once, from a
+  shared table. The flow state travels in a signed `SameSite=None; Secure`
+  cookie, because the provider's POST back is cross-site. Identity-to-account
+  rules are the OIDC rules (same code, same audit trail, same tickets):
+  verified email links one account, never a privileged one; optional
+  provisioning; domain allow-list. `GET /api/auth/saml/metadata/` gives the
+  provider our SP metadata. 20 offline tests sign responses with a local
+  certificate.
+- **Step-up on single sign-on.** `SSO_STEP_UP`: `if_enrolled` (default) asks
+  for the person's local authenticator code after an SSO sign-in in which the
+  provider did not assert a second factor (OIDC `amr`/`acr`, SAML
+  `AuthnContextClassRef` or `authnmethodsreferences`, against
+  `SSO_MFA_ASSERTIONS`); `required` refuses a sign-in with neither;
+  `off` trusts the provider. The ticket is redeemable only with the code,
+  five wrong codes spend it, and the login screen carries the ticket in
+  state, never in the URL.
+- **PDFs are drawn by pdf.js**, in a worker shipped with this bundle, onto
+  canvases in our own page: no frame, no plugin, no PDF JavaScript ever runs,
+  and the headless browser the test suite drives renders them too. Zoom and
+  paged loading for long documents.
+
+### Fixed
+
+- **Downloads and previews failed in the Docker stack.** nginx's internal
+  media location appended `Content-Disposition: attachment` to the header the
+  API had already set on the X-Accel path; a response with two
+  Content-Disposition headers is refused by Chromium and Firefox, so every
+  evidence download and preview through the SPA failed in production since
+  0.3.0. The nginx header is gone; the API's stands. Found by the 0.4.0
+  review pass, verified against nginx 1.31 and both browsers.
+- Office preview: the decompressed-size gate trusted the zip header. A few
+  kilobytes of valid, highly compressible XML could expand into a tree many
+  times larger than the 40 MB ceiling suggested. Each part is now read in
+  bounded chunks and refused when it exceeds 12 MB or 400,000 tags.
+- Vendors: a statement typed for a control with no responsibility was
+  silently dropped and reported saved; it is now refused, and the grid says
+  which rows need a responsibility before Save is enabled. The walkthrough no
+  longer declares itself finished after a skip; a vendor's website can be
+  cleared.
+- `remove_demo_data` now finds the demo vendors, documents and RACI rows
+  even when the demo accounts were deleted by hand first, and removes the
+  two role-wide folder grants the seeder makes.
+- RACI rows created through the API now record who created them.
+- signxml's DEBUG output (whole assertions) is silenced.
+
+### Changed
+
+- `signxml` and `lxml` are new dependencies (SAML signature verification);
+  `pdfjs-dist` on the frontend.
+- The page CSP gains `'wasm-unsafe-eval'` (pdf.js image decoders), `blob:`
+  in `img-src` and `worker-src 'self'`.
+
+### Upgrade notes
+
+- Apply migrations (`accounts 0004`). Rebuild the images: the nginx change is
+  the one that matters for every deployment, SAML or not.
+
+---
+
 ## [0.4.1] — 2026-09-05
 
 The Type II workpaper, and the two loose ends of the vendor story.

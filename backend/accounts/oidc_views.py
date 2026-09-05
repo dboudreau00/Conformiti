@@ -45,12 +45,14 @@ class OidcCallbackView(APIView):
 
     def get(self, request):
         try:
-            user, how, next_path = oidc.complete(request)
+            user, how, next_path, asserted = oidc.complete(request)
+            step_up = oidc.step_up_needed(user, asserted)
         except oidc.OidcError as exc:
             return _fail(request, exc)
-        ticket = oidc.issue_ticket(request, user)
+        ticket = oidc.issue_ticket(request, user, mfa_pending=step_up)
         oidc.audit(request, user, True,
-                   f"sso sign-in ({how}): {user.get_username()} via {oidc.config().issuer}")
+                   f"sso sign-in ({how}{'; step-up pending' if step_up else ''}): "
+                   f"{user.get_username()} via {oidc.config().issuer}")
         return HttpResponseRedirect(f"/login?sso={quote(ticket, safe='')}&next={quote(next_path, safe='/')}")
 
 
@@ -62,11 +64,16 @@ class OidcRedeemView(APIView):
     throttle_classes = [_LoginThrottle]
 
     def post(self, request):
+        otp = request.data.get("otp")
         try:
-            user = oidc.redeem_ticket(request, request.data.get("ticket"))
+            user = oidc.redeem_ticket(request, request.data.get("ticket"), otp)
+        except oidc.StepUpRequired:
+            return Response({"mfa_required": True})
         except oidc.OidcError as exc:
             oidc.audit(request, None, False, f"sso ticket refused ({exc.code}): {exc.detail}")
             return Response({"detail": exc.message, "code": exc.code}, status=400)
+        if otp is not None:
+            oidc.audit(request, user, True, f"sso step-up: second factor verified for {user.get_username()}")
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)
         update_last_login(None, user)

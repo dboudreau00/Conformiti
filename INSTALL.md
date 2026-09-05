@@ -71,7 +71,7 @@ prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
    or set `SEED_DEMO_DATA=false` and `DJANGO_SUPERUSER_USERNAME` /
    `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first boot.
 4. Confirm: `curl -s https://grc.example.com/api/health/` →
-   `{"status":"ok","version":"0.4.1","database":"ok","demo_accounts":false}`.
+   `{"status":"ok","version":"0.5.0","database":"ok","demo_accounts":false}`.
 5. Back up the `pgdata` and `media` volumes nightly.
 
 ### Single sign-on (OpenID Connect)
@@ -106,8 +106,54 @@ Optional. Nothing changes until all three of the first keys are set.
    (default `Viewer`; a role that can manage users is refused).
 
 Entra ID often omits `email_verified`; set `OIDC_REQUIRE_VERIFIED_EMAIL=false`
-only when the tenant is your own. SSO sign-ins skip local TOTP — enforce MFA
-at the provider.
+only when the tenant is your own.
+
+### Single sign-on (SAML 2.0)
+
+For providers that insist on SAML. Same rules as OIDC, same account linking.
+
+1. In the provider, create a SAML application for Conformiti. Give it the SP
+   metadata from `https://grc.example.com/api/auth/saml/metadata/` (available
+   once step 2 is done), or enter by hand: entity ID
+   `https://grc.example.com/api/auth/saml/metadata/`, ACS URL
+   `https://grc.example.com/api/auth/saml/acs/`, HTTP-POST binding, NameID
+   format email address, and have it send an `email` attribute (plus
+   `givenName`/`sn` if you want names filled in).
+2. Add to `.env` and restart:
+   ```ini
+   SAML_IDP_ENTITY_ID=https://idp.example.com/metadata     # exactly as the provider publishes it
+   SAML_IDP_SSO_URL=https://idp.example.com/sso/saml       # its HTTP-Redirect sign-on URL
+   SAML_IDP_CERT_FILE=/app/secrets/idp.pem                 # its signing certificate (PEM)
+   SAML_LABEL=Sign in with SAML
+   ```
+   Paste the certificate into `SAML_IDP_CERT` instead if you prefer; either
+   way it is the only thing the app trusts — responses signed by anything
+   else are refused. When the provider rotates its certificate, replace it
+   here.
+3. Linking, provisioning and the domain allow-list follow the `OIDC_*`
+   settings unless a `SAML_*` twin overrides them (`SAML_ALLOWED_DOMAINS`,
+   `SAML_AUTO_PROVISION`, `SAML_DEFAULT_ROLE`, `SAML_LINK_BY_EMAIL`).
+   `manage.py link_oidc_identity --issuer <entity id>` pre-links an account
+   to its SAML NameID.
+
+SAML needs TLS: the provider posts back cross-site, and the cookie that
+carries the sign-in state is `SameSite=None; Secure`. Over plain http on a
+developer's box the flow may not complete in every browser.
+
+### Second factor on single sign-on
+
+`SSO_STEP_UP` decides what happens when the provider signed someone in but did
+not say a second factor was used (OIDC `amr`, SAML `AuthnContextClassRef`):
+
+| Value | Effect |
+|---|---|
+| `if_enrolled` (default) | a person with a local authenticator is asked for its code before the tokens are issued; one without is let in |
+| `required` | the provider must assert a second factor, or the person must have a local authenticator; otherwise the sign-in is refused with a message telling them to enrol one by signing in with their password first |
+| `off` | trust the provider |
+
+`SSO_MFA_ASSERTIONS` is the list of values that count as an asserted second
+factor; the default covers the usual OIDC `amr` values and SAML context
+classes, including Entra ID's `multipleauthn`.
 
 Everyday operations:
 

@@ -117,9 +117,8 @@ function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "S
       className="grid gap-3 sm:grid-cols-2"
       onSubmit={(e) => {
         e.preventDefault();
-        const body = { ...v, owner: v.owner ? Number(v.owner) : null };
-        if (!body.website) delete body.website;
-        onSubmit(body);
+        // An empty website is sent as empty, so a bad address can be cleared.
+        onSubmit({ ...v, website: (v.website || "").trim(), owner: v.owner ? Number(v.owner) : null });
       }}
     >
       <Field id={id("name")} label="Vendor name" className="sm:col-span-2">
@@ -434,7 +433,11 @@ function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
   // so the next one slides into the same index. Only a skip advances.
   const [i, setI] = useState(0);
   const [draft, setDraft] = useState({ responsibility: null, provider_statement: "", customer_statement: "" });
-  const row = rows[i];
+  // Skipped items come round again: when the index runs past the end of a
+  // list that still has entries, start over rather than declare it done.
+  const index = rows.length && i >= rows.length ? 0 : i;
+  const row = rows[index];
+  useEffect(() => { if (rows.length && i >= rows.length) setI(0); }, [i, rows.length]);
   useEffect(() => { setDraft({ responsibility: null, provider_statement: "", customer_statement: "" }); }, [row?.control]);
   if (!row) {
     return (
@@ -449,7 +452,7 @@ function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
                 className="rounded-xl border border-accent/40 bg-accent/[0.04] p-5" aria-live="polite"
                 role="region" aria-label="Responsibility prompt">
       <div className="flex items-center justify-between gap-3">
-        <Label>Control {i + 1} of {rows.length} without a statement</Label>
+        <Label>Control {index + 1} of {rows.length} without a statement</Label>
         <Button size="sm" variant="ghost" onClick={onDone}>Exit</Button>
       </div>
       <h3 className="mt-2 text-[15px] font-semibold text-ink">
@@ -645,6 +648,8 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   ), [merged, fw, onlyUnstated, q]);
   const unstated = merged.filter((r) => !r.responsibility && (!fw || r.framework === fw));
   const dirtyCount = Object.keys(edits).length;
+  // A statement with nothing to belong to: the server refuses it, so say so first.
+  const orphaned = merged.filter((r) => r.dirty && !r.responsibility && ((r.provider_statement || "").trim() || (r.customer_statement || "").trim()));
 
   const edit = (control, patch) => setEdits((cur) => {
     const base = data.rows.find((r) => r.control === control) || {};
@@ -773,11 +778,15 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
         </div>
         {canManage ? (
           <div className="flex flex-wrap items-center gap-3 border-t border-line bg-surface-2 px-5 py-3">
-            <Button size="sm" variant="primary" disabled={busy || dirtyCount === 0} onClick={saveEdits}>
+            <Button size="sm" variant="primary" disabled={busy || dirtyCount === 0 || orphaned.length > 0} onClick={saveEdits}>
               {busy ? "Saving…" : dirtyCount ? `Save ${dirtyCount} change(s)` : "Nothing to save"}
             </Button>
             {dirtyCount ? <Button size="sm" variant="ghost" onClick={() => setEdits({})} disabled={busy}>Discard</Button> : null}
-            <Label>Clearing a responsibility removes the row; statements are kept with the row.</Label>
+            {orphaned.length ? (
+              <span className="text-xs text-warning" role="status">
+                {orphaned.map((r) => r.control_id).join(", ")}: pick a responsibility for the statement, or clear it.
+              </span>
+            ) : <Label>Clearing a responsibility removes the row and its statements.</Label>}
           </div>
         ) : null}
       </Panel>
