@@ -157,3 +157,34 @@ test("settings", async ({ page }) => {
   }
   await shot(page, "settings");
 });
+
+// The workspace switcher lives at the foot of Role & access, so this one is
+// captured where it sits rather than from the top of the page — the sidebar
+// and the top bar are both sticky, so the chrome stays in frame.
+test("workspaces", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto("/settings");
+  await settle(page, 1200);
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Role & access", exact: true })
+    .click();
+  const block = page.getByTestId("workspaces");
+  await expect(block).toBeVisible();
+
+  // A fresh install has only Default, and a switcher with nothing to switch
+  // to says nothing. Make the second organisation through the real form.
+  if (!(await block.getByText("northwind-health").count())) {
+    await page.locator("#new-workspace").fill("Northwind Health");
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    // The create seeds the framework library into the new workspace, which
+    // takes appreciably longer than an ordinary request.
+    await expect(block.getByText("northwind-health")).toBeVisible({ timeout: 90_000 });
+  }
+  await settle(page, 800);
+  // To the foot of the page rather than just far enough to reveal the block:
+  // the panel then ends at the bottom of the frame instead of being sliced.
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(OUT, "workspaces.png") });
+});

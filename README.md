@@ -79,6 +79,14 @@ Local development without Docker (SQLite, console email) is one command too:
     <td align="center"><sub>Immutable trail of every change and sign-in</sub></td>
   </tr>
   <tr>
+    <td><img src="assets/screenshots/users.png" alt="People, roles and folder grants" width="440"></td>
+    <td><img src="assets/screenshots/workspaces.png" alt="Workspace switcher under Settings › Role &amp; access" width="440"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Membership, roles, folder grants and who has an authenticator enrolled</sub></td>
+    <td align="center"><sub>One installation serving several organisations, scoped at the ORM and switched by a superuser</sub></td>
+  </tr>
+  <tr>
     <td><img src="assets/screenshots/vendors.png" alt="Vendor register and shared responsibility matrix" width="440"></td>
     <td><img src="assets/screenshots/responsibility-matrix.png" alt="RACI responsibility matrix" width="440"></td>
   </tr>
