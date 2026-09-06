@@ -2,8 +2,18 @@
 from django.conf import settings
 from django.db import models
 
+from accounts.tenancy import TenantModel
 
-class AuditLog(models.Model):
+
+class AuditLog(TenantModel):
+    # An entry about a person belongs to that person's workspace, whatever
+    # was active when it was written (sign-in and SSO run anonymously).
+    # Nullable: a failed sign-in for an unknown username belongs to nobody.
+    tenant_parent = "user"
+    workspace = models.ForeignKey(
+        "accounts.Workspace", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="+", editable=False,
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="audit_entries",

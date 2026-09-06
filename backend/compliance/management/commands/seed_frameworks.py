@@ -12,6 +12,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from accounts import tenancy
 from accounts.models import Role
 from compliance.models import Control, ControlCategory, ControlMapping, Framework
 
@@ -41,14 +42,23 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--with-folders", action="store_true",
                             help="Also create app folders mirroring the control tree.")
+        parser.add_argument("--roles-only", action="store_true",
+                            help="Seed the built-in roles and nothing else.")
+        tenancy.workspace_option(parser)
 
     @transaction.atomic
     def handle(self, *args, **opts):
-        self._seed_roles()
-        self._seed_frameworks()
-        self._seed_crosswalk()
-        if opts["with_folders"]:
-            self._seed_folders()
+        workspace = tenancy.from_option(opts)
+        self.stdout.write(f"Workspace: {workspace.name} ({workspace.slug})")
+        with tenancy.scoped(workspace):
+            self._seed_roles()
+            if opts["roles_only"]:
+                self.stdout.write(self.style.SUCCESS("Roles seeded."))
+                return
+            self._seed_frameworks()
+            self._seed_crosswalk()
+            if opts["with_folders"]:
+                self._seed_folders()
         self.stdout.write(self.style.SUCCESS("Seeding complete."))
 
     # ------------------------------------------------------------------ roles

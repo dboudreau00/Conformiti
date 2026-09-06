@@ -15,6 +15,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from accounts.tenancy import TenantModel
+
 # --- access levels ----------------------------------------------------------
 VIEW, EDIT, MANAGE = "view", "edit", "manage"
 ACCESS_CHOICES = [(VIEW, "View"), (EDIT, "Edit"), (MANAGE, "Manage")]
@@ -51,8 +53,9 @@ def _add_months(d, months):
     return d + timedelta(days=30 * months)
 
 
-class Folder(models.Model):
+class Folder(TenantModel):
     """A node in the document tree. Access is granted per folder and inherited."""
+    tenant_parent = "parent"
     name = models.CharField(max_length=255, validators=[validate_folder_name])
     parent = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
@@ -167,7 +170,9 @@ class Folder(models.Model):
         return ACCESS_RANK[self.effective_access(user)] >= ACCESS_RANK[MANAGE]
 
 
-class FolderPermission(models.Model):
+class FolderPermission(TenantModel):
+    tenant_parent = "folder"
+
     """Grants a role OR a specific user an access level on a folder (inherited)."""
     folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="permissions")
     role = models.ForeignKey(
@@ -197,7 +202,9 @@ def document_upload_path(instance, filename):
     return f"documents/{folder_path}/{filename}"
 
 
-class Document(models.Model):
+class Document(TenantModel):
+    tenant_parent = "folder"
+
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         IN_REVIEW = "in_review", "In review"
@@ -311,7 +318,9 @@ class ScannerStatus(models.Model):
         return row
 
 
-class DocumentVersion(models.Model):
+class DocumentVersion(TenantModel):
+    tenant_parent = "document"
+
     """Immutable snapshot of a prior document file."""
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="versions")
     version = models.PositiveIntegerField()
@@ -327,7 +336,7 @@ class DocumentVersion(models.Model):
         unique_together = ("document", "version")
 
 
-class FormTemplate(models.Model):
+class FormTemplate(TenantModel):
     """A reusable blank form/policy template stored centrally for the org."""
     name = models.CharField(max_length=200)
     category = models.CharField(max_length=100, blank=True, help_text="e.g. Policy, Register, Log")

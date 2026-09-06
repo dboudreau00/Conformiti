@@ -18,6 +18,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from accounts.tenancy import TenantModel
+
 # The questionnaire the product ships. Deliberately short: every question maps
 # to something an auditor will ask about the vendor, and a 200-question sheet
 # nobody finishes is worse than twelve everyone does. Answers are stored on the
@@ -38,7 +40,7 @@ DEFAULT_QUESTIONNAIRE = [
 ]
 
 
-class Vendor(models.Model):
+class Vendor(TenantModel):
     class Tier(models.TextChoices):
         CRITICAL = "critical", "Critical"
         HIGH = "high", "High"
@@ -59,7 +61,7 @@ class Vendor(models.Model):
 
     CADENCE_DAYS = {"quarterly": 91, "semiannual": 182, "annual": 365, "biennial": 730}
 
-    name = models.CharField(max_length=160, unique=True)
+    name = models.CharField(max_length=160)
     # The column layout of the last matrix file they sent us, so the matrix
     # can go back to them in their own shape: {"columns": [{"name", "role"}],
     # "file", "framework", "saved_at"}.
@@ -98,6 +100,9 @@ class Vendor(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "name"], name="uniq_vendor_name_per_workspace"),
+        ]
 
     def __str__(self):
         return self.name
@@ -165,7 +170,9 @@ class Vendor(models.Model):
         return "low"
 
 
-class VendorAssessment(models.Model):
+class VendorAssessment(TenantModel):
+    tenant_parent = "vendor"
+
     """One piece of assurance we hold over a vendor, with its validity window."""
 
     class Kind(models.TextChoices):
@@ -230,7 +237,9 @@ class VendorAssessment(models.Model):
         return bool(self.expires_at and self.expires_at < timezone.localdate())
 
 
-class SharedResponsibility(models.Model):
+class SharedResponsibility(TenantModel):
+    tenant_parent = "vendor"
+
     """One control's split between us and a vendor, with a statement each way.
 
     This is the PCI DSS "responsibility matrix" (v4 Req 12.8.5 / TPSP guidance)
@@ -278,7 +287,9 @@ class SharedResponsibility(models.Model):
         return f"{self.vendor}: {self.control.control_id} = {self.responsibility}"
 
 
-class QuestionnaireInvite(models.Model):
+class QuestionnaireInvite(TenantModel):
+    tenant_parent = "vendor"
+
     """The questionnaire, sent to the vendor to answer themselves.
 
     A time-boxed link, like an audit package grant but for someone with no

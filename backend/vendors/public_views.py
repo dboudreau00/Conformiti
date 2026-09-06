@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
+from accounts import tenancy
+
 from . import questionnaire as q
 
 
@@ -39,24 +41,29 @@ class QuestionnaireView(_Public):
         invite = q.find(token)
         if invite is None:
             return Response({"detail": "This questionnaire link is not valid.", "code": "unknown"}, status=404)
-        return Response(q.public_state(invite, request))
+        with tenancy.scoped(invite.workspace_id):
+            return Response(q.public_state(invite, request))
 
     def put(self, request, token):
         invite = q.find(token)
-        try:
-            q.save_draft(invite, request.data.get("answers"), request)
-        except q.QuestionnaireError as exc:
-            return self._refuse(exc)
+        # The link carries no account: the vendor's rows are filed under the
+        # workspace that sent the questionnaire.
+        with tenancy.scoped(invite.workspace_id if invite else None):
+            try:
+                q.save_draft(invite, request.data.get("answers"), request)
+            except q.QuestionnaireError as exc:
+                return self._refuse(exc)
         return Response({"saved_at": invite.saved_at, "status": invite.status})
 
 
 class QuestionnaireSubmitView(_Public):
     def post(self, request, token):
         invite = q.find(token)
-        try:
-            q.submit(invite, request.data.get("answers"), request.data.get("respondent_name"),
-                     request.data.get("respondent_title", ""), request)
-        except q.QuestionnaireError as exc:
-            return self._refuse(exc)
+        with tenancy.scoped(invite.workspace_id if invite else None):
+            try:
+                q.submit(invite, request.data.get("answers"), request.data.get("respondent_name"),
+                         request.data.get("respondent_title", ""), request)
+            except q.QuestionnaireError as exc:
+                return self._refuse(exc)
         return Response({"status": "submitted", "submitted_at": invite.submitted_at,
                          "vendor": invite.vendor.name})

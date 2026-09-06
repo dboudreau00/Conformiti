@@ -145,6 +145,13 @@ def post_event(event, title, text, *, facts=None, path="", severity="info", sync
     targets = channels()
     if not targets:
         return []
+    # One channel may serve several organisations; say which this is about.
+    from accounts import tenancy
+    from accounts.models import Workspace
+
+    workspace = tenancy.current()
+    if workspace is not None and Workspace.objects.count() > 1:
+        title = f"[{workspace.name}] {title}"
     url = link(path) if path else ""
     jobs = [(name, hook, BUILDERS[name](title, text, facts, url, severity), event) for name, hook in targets]
     run_sync = sync if sync is not None else bool(getattr(settings, "WEBHOOK_SYNC", False))

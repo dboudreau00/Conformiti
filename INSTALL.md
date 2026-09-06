@@ -255,6 +255,29 @@ working `EMAIL_PROVIDER`: each person switches theirs on under the same
 section; the worker sends them at `REVIEW_SCAN_HOUR` + 20 minutes, or run
 `manage.py send_digests` from cron.
 
+### Workspaces
+
+Since 0.9.0 every row belongs to a workspace; a fresh install and every
+upgraded one start with a single workspace, `default`. To host a second
+organisation, sign in as a superuser, open *Settings › Role & access* and
+create it (the built-in roles are seeded, and the framework library unless
+you untick it), switch to it and add its people under *Users*. From the
+shell:
+
+```bash
+docker compose exec backend python manage.py seed_frameworks --with-folders --workspace acme
+docker compose exec backend python manage.py bootstrap_demo --workspace acme
+```
+
+Scheduled jobs walk every active workspace. `SSO_WORKSPACE` names the one
+an auto-provisioned single-sign-on account joins. A workspace is archived
+rather than deleted: its people are refused at sign-in and it drops out of
+every job, and its rows stay where an operator can find them.
+
+**Upgrading to 0.9.0** runs ten migrations that add the column, file every
+existing row under *Default* and make the column required. Take a backup
+first, as always.
+
 ### Sessions: cookies by default
 
 Since 0.6.1 the SPA's tokens travel as HttpOnly cookies (`AUTH_TRANSPORT=cookie`),

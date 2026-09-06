@@ -14,7 +14,7 @@ import {
   ShieldIcon,
   UserIcon,
 } from "lucide-react";
-import api, { fetchAll } from "../api/client.js";
+import api, { chooseWorkspace, fetchAll } from "../api/client.js";
 import { createPasskey, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
 import { ACCENT_PACKS, THEME_PACKS, accentHex, useTheme } from "../theme.js";
 import { useShell } from "../shell.js";
@@ -991,7 +991,118 @@ function AccessSection({ me }) {
         Folder access is granted separately, per role or per user, and inherits down the folder tree. Contact an administrator to change your
         role or folder permissions.
       </p>
+      <WorkspacesBlock me={me} />
     </Panel>
+  );
+}
+
+/* ---------- Workspaces ---------- */
+
+function WorkspacesBlock({ me }) {
+  const [current, setCurrent] = useState(null);
+  const [list, setList] = useState(null);
+  const [name, setName] = useState("");
+  const [withFrameworks, setWithFrameworks] = useState(true);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const superuser = !!me?.is_superuser;
+
+  const load = () => {
+    api.get("/workspaces/current/").then((r) => setCurrent(r.data || null)).catch(() => setCurrent(null));
+    if (superuser) api.get("/workspaces/", { params: { page_size: 100 } }).then((r) => setList(r.data.results || r.data)).catch(() => setList([]));
+  };
+  useEffect(() => { load(); }, [superuser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function switchTo(slug) {
+    chooseWorkspace(slug === "default" ? "" : slug);
+    window.location.assign("/");
+  }
+
+  async function create(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const { data } = await api.post("/workspaces/", { name: name.trim(), with_frameworks: withFrameworks });
+      setName("");
+      setMsg({ ok: true, text: `Workspace “${data.name}” created${withFrameworks ? " with the framework library" : ""}. Switch to it to add its people.` });
+      load();
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "Couldn't create the workspace.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function archive(ws) {
+    if (!window.confirm(`Archive “${ws.name}”? Its people can no longer sign in and it drops out of every scheduled job. Nothing is deleted.`)) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.patch(`/workspaces/${ws.id}/`, { is_active: false });
+      setMsg({ ok: true, text: `“${ws.name}” archived.` });
+      load();
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "Couldn't archive the workspace.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-6 border-t border-line pt-5" data-testid="workspaces">
+      <Label as="p" className="mb-2.5">Workspace</Label>
+      <p className="text-[13px] text-ink">
+        {current ? (
+          <>
+            <span className="font-semibold">{current.name}</span>
+            <span className="ml-2 font-mono text-xs text-muted">{current.slug}</span>
+          </>
+        ) : "…"}
+      </p>
+      <p className="mt-1.5 max-w-[62ch] text-xs leading-snug text-muted">
+        Everything you see — frameworks, documents, risks, vendors, packages, people — belongs to this workspace. Other organisations on the same installation see only their own.
+      </p>
+      {superuser ? (
+        <>
+          <ul className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2">
+            {(list || []).map((ws) => (
+              <li key={ws.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-[13px]">
+                <span className={cn("font-medium", ws.is_active ? "text-ink" : "text-faint line-through")}>{ws.name}</span>
+                <span className="font-mono text-xs text-muted">{ws.slug}</span>
+                <span className="text-xs text-muted">· {ws.users} {ws.users === 1 ? "person" : "people"}</span>
+                <span className="ml-auto flex items-center gap-1.5">
+                  {current?.id === ws.id ? (
+                    <Badge tone="accent">current</Badge>
+                  ) : ws.is_active ? (
+                    <Button size="sm" variant="secondary" onClick={() => switchTo(ws.slug)} disabled={busy}>Switch</Button>
+                  ) : (
+                    <Badge tone="muted">archived</Badge>
+                  )}
+                  {ws.is_active && ws.slug !== "default" && current?.id !== ws.id ? (
+                    <Button size="sm" variant="ghost" onClick={() => archive(ws)} disabled={busy}>Archive</Button>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+            {list && !list.length ? <li className="px-3 py-2 text-xs text-muted">No workspaces.</li> : null}
+          </ul>
+          <form onSubmit={create} className="mt-3 flex flex-wrap items-end gap-2">
+            <Field id="new-workspace" label="New workspace" className="min-w-[220px] flex-1">
+              <input id="new-workspace" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Organisation name" disabled={busy} />
+            </Field>
+            <label className="flex items-center gap-2 pb-2 text-xs text-muted">
+              <input type="checkbox" checked={withFrameworks} onChange={(e) => setWithFrameworks(e.target.checked)} disabled={busy} />
+              Seed the framework library
+            </label>
+            <Button type="submit" size="sm" disabled={busy || !name.trim()}>{busy ? "Working…" : "Create"}</Button>
+          </form>
+          <p className="mt-2 text-xs text-muted">Switching reloads the app in that workspace; sign out to come back to your own.</p>
+        </>
+      ) : null}
+      {msg ? <Notice msg={msg} className="mt-3" /> : null}
+    </div>
   );
 }
 

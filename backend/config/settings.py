@@ -193,6 +193,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Resolves the request's workspace lazily (DRF authenticates inside the
+    # view); must precede the audit middleware, which writes a tenant row.
+    "accounts.tenancy.WorkspaceMiddleware",
     "audit.middleware.AuditLogMiddleware",
 ]
 
@@ -592,6 +595,9 @@ OIDC_ALLOWED_DOMAINS = [
     d.strip().lower().lstrip("@") for d in os.getenv("OIDC_ALLOWED_DOMAINS", "").split(",") if d.strip()
 ]
 OIDC_AUTO_PROVISION = env_bool("OIDC_AUTO_PROVISION", False)
+# Which workspace an auto-provisioned SSO account joins (0.9.0). One IdP
+# per installation for now; multi-workspace SSO mapping is a later item.
+SSO_WORKSPACE = os.getenv("SSO_WORKSPACE", "default").strip() or "default"
 OIDC_DEFAULT_ROLE = os.getenv("OIDC_DEFAULT_ROLE", "Viewer").strip() or "Viewer"
 OIDC_LINK_BY_EMAIL = env_bool("OIDC_LINK_BY_EMAIL", True)
 OIDC_REQUIRE_VERIFIED_EMAIL = env_bool("OIDC_REQUIRE_VERIFIED_EMAIL", True)
@@ -676,6 +682,9 @@ if WEBAUTHN_USER_VERIFICATION not in ("required", "preferred", "discouraged"):
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").strip().rstrip("/")
 # Named in what vendors receive ("a security questionnaire from Acme Ltd").
 ORGANISATION_NAME = os.getenv("ORGANISATION_NAME", "").strip()
+
+# Activates the Default workspace for the whole test run (config/testrunner.py).
+TEST_RUNNER = "config.testrunner.Runner"
 
 # --- Package signing ----------------------------------------------------------------
 # Every sealed manifest is signed (Ed25519, detached) with a key that lives in

@@ -12,6 +12,7 @@ from .views import (
     RoleViewSet,
     UserViewSet,
 )
+from .workspace_views import WorkspaceViewSet
 from .webauthn_views import (
     PasskeyDetailView,
     PasskeyListView,
@@ -22,6 +23,7 @@ from .webauthn_views import (
 router = DefaultRouter()
 router.register("roles", RoleViewSet)
 router.register("users", UserViewSet)
+router.register("workspaces", WorkspaceViewSet, basename="workspace")
 
 urlpatterns = [
     path("auth/mfa/status/", MfaStatusView.as_view(), name="mfa_status"),

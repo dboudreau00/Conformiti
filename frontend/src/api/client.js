@@ -88,7 +88,18 @@ const api = axios.create({ baseURL: "/api", withCredentials: true });
 
 const UNSAFE = ["post", "put", "patch", "delete"];
 
+// A superuser may work in another organisation's workspace; the choice is
+// remembered here and sent on every request. Ignored for everyone else.
+export function chosenWorkspace() {
+  try { return localStorage.getItem("workspace") || ""; } catch { return ""; }
+}
+export function chooseWorkspace(slug) {
+  try { slug ? localStorage.setItem("workspace", slug) : localStorage.removeItem("workspace"); } catch { /* private mode */ }
+}
+
 api.interceptors.request.use((config) => {
+  const workspace = chosenWorkspace();
+  if (workspace) config.headers["X-Workspace"] = workspace;
   if (cookieMode()) {
     // The cookie is attached by the browser; what it cannot forge is this.
     if (UNSAFE.includes((config.method || "get").toLowerCase())) {
@@ -156,6 +167,7 @@ export async function login(username, password, second) {
 function clearSession() {
   localStorage.removeItem("access");
   localStorage.removeItem("refresh");
+  chooseWorkspace("");
 }
 
 /** Revoke server-side, then clear local state. Always resolves — a failed

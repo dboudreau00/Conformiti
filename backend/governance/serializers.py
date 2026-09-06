@@ -4,6 +4,8 @@ import math
 from django.utils import timezone
 from rest_framework import serializers
 
+from accounts.tenancy import CurrentWorkspaceDefault
+
 from .models import (
     AccessReview,
     AccessReviewItem,
@@ -98,6 +100,7 @@ class MeetingMinuteSerializer(serializers.ModelSerializer):
 
 
 class MeetingSeriesSerializer(serializers.ModelSerializer):
+    workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
     held_this_year = serializers.SerializerMethodField()
     expected_to_date = serializers.SerializerMethodField()
@@ -108,6 +111,7 @@ class MeetingSeriesSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "required_per_year", "owner", "owner_name",
             "active", "held_this_year", "expected_to_date", "cadence_status", "created_at",
+            "workspace",
         ]
 
     def _held(self, obj):
@@ -141,12 +145,13 @@ class GroupMemberSerializer(serializers.ModelSerializer):
 
 
 class ChampionGroupSerializer(serializers.ModelSerializer):
+    workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
     member_count = serializers.IntegerField(source="members.count", read_only=True)
 
     class Meta:
         model = ChampionGroup
-        fields = ["id", "name", "purpose", "owner", "owner_name", "member_count", "created_at"]
+        fields = ["id", "name", "purpose", "owner", "owner_name", "member_count", "created_at", "workspace"]
 
 
 # --------------------------------------------------------------------------

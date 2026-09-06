@@ -16,8 +16,10 @@ copy of the values, exactly as ``governance.AccessReviewItem`` already does.
 from django.conf import settings
 from django.db import models
 
+from accounts.tenancy import TenantModel
 
-class EvidencePackage(models.Model):
+
+class EvidencePackage(TenantModel):
     """One disclosure: a scope, an assertion, a seal and a set of recipients."""
 
     class Status(models.TextChoices):
@@ -124,7 +126,7 @@ class EvidencePackage(models.Model):
         return PackageEvidence.objects.filter(package_control__package=self).count()
 
 
-class PackageControl(models.Model):
+class PackageControl(TenantModel):
     """One control's workpaper row.
 
     A control with no evidence still gets a row — that row is often the most
@@ -216,7 +218,7 @@ class PackageControl(models.Model):
         return f"{self.control_ref} in {self.package_id}"
 
 
-class PackageSample(models.Model):
+class PackageSample(TenantModel):
     """One sampled item on a control's workpaper row: the unit a Type II
     operating-effectiveness test is actually performed on.
 
@@ -276,7 +278,7 @@ class PackageSample(models.Model):
         return f"{self.identifier} on {self.package_control_id}"
 
 
-class PackageEvidence(models.Model):
+class PackageEvidence(TenantModel):
     """The chain of custody for one artefact: what it was, which version, how
     big, its digest, and who asserted on what date that it evidences this
     control."""
@@ -330,7 +332,7 @@ class PackageEvidence(models.Model):
         return f"{self.document_name} (v{self.pinned_version})"
 
 
-class PackageGrant(models.Model):
+class PackageGrant(TenantModel):
     """The entire folder-permission bypass is scoped by this row.
 
     Per user, never per role: the Auditor role must not silently pick up every
@@ -395,7 +397,7 @@ class SigningKey(models.Model):
         return f"{self.key_id} ({'retired' if self.retired_at else 'current'})"
 
 
-class PbcRequest(models.Model):
+class PbcRequest(TenantModel):
     """One line of the auditor's request list ("prepared by client").
 
     The package is what the organisation hands over; the request list is what
@@ -487,7 +489,7 @@ class PbcRequest(models.Model):
         return bool(self.is_actionable and self.due_date and self.due_date < timezone.localdate())
 
 
-class PbcItem(models.Model):
+class PbcItem(TenantModel):
     """A document attached in answer to a request, snapshotted as it stood
     (name, version, digest) exactly like pinned package evidence, so the
     answer stays a record even if the document moves on."""

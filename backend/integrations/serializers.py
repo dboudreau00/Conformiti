@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from accounts.tenancy import CurrentWorkspaceDefault
+
 from .models import JiraBoard, JiraIntegration
 
 
@@ -38,6 +40,8 @@ class JiraConfigSerializer(serializers.ModelSerializer):
 
 
 class JiraBoardSerializer(serializers.ModelSerializer):
+    workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
+
     class Meta:
         model = JiraBoard
-        fields = ["id", "board_id", "name", "created_at"]
+        fields = ["id", "board_id", "name", "created_at", "workspace"]

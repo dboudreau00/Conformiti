@@ -176,6 +176,16 @@ Local development without Docker (SQLite, console email) is one command too:
 - Security headers and CSP on by default; uploads size-capped, typed and
   served as sandboxed attachments; SSRF-hardened Jira client.
 
+### Workspaces
+
+One installation can serve several organisations. Everything an organisation
+owns belongs to its **workspace** and every query is scoped to the one the
+signed-in person works in — a person from one organisation cannot list,
+fetch or reference another's rows, and scheduled jobs run once per
+workspace. A single-organisation install has one workspace, *Default*, and
+never notices. A superuser creates workspaces under *Settings › Role &
+access*, switches between them and archives them.
+
 ### Interface
 - Four theme packs (Audit Ledger, Nimbus, Ledger Dark, Obsidian), four accent
   packs and a custom accent colour; keyboard-accessible throughout; a per-user
@@ -360,10 +370,10 @@ conformiti/
 
 ## Roadmap
 
-Highlights from [ROADMAP.md](ROADMAP.md): year-over-year roll-forward between
-packages, backup codes for passkey-only accounts, scanner monitoring, cookie
-transport as the default, automated evidence collection from cloud/SaaS
-integrations, and Slack/Teams notifications.
+Highlights from [ROADMAP.md](ROADMAP.md): per-workspace single sign-on and
+chat channels, automated evidence collection from cloud/SaaS integrations
+once there are accounts to test it against, and further framework seed
+packs (NIST CSF 2.0, HIPAA, CIS Controls v8).
 
 ## License
 

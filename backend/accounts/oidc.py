@@ -444,16 +444,25 @@ def resolve_user(claims, cfg):
             return user, "linked by verified email"
 
     if cfg.auto_provision:
-        role = Role.objects.filter(name__iexact=cfg.default_role).first()
-        if role is None:
-            raise OidcError("role", f"role {cfg.default_role!r} does not exist")
-        if role.can_manage_users:
-            raise OidcError("role", f"default role {role.name!r} can manage users; refusing to provision")
-        given, family = _names(claims)
-        user = User.objects.create_user(
-            username=_unique_username(email), email=email, first_name=given, last_name=family,
-            role=role, is_staff=False, is_superuser=False,
-        )
+        # A provisioned account joins the workspace named by SSO_WORKSPACE,
+        # and its role is looked up there, not across the installation.
+        from . import tenancy
+        from .models import Workspace
+
+        workspace = Workspace.objects.filter(slug=settings.SSO_WORKSPACE, is_active=True).first()
+        if workspace is None:
+            raise OidcError("workspace", f"SSO_WORKSPACE {settings.SSO_WORKSPACE!r} does not exist")
+        with tenancy.scoped(workspace):
+            role = Role.objects.filter(name__iexact=cfg.default_role).first()
+            if role is None:
+                raise OidcError("role", f"role {cfg.default_role!r} does not exist")
+            if role.can_manage_users:
+                raise OidcError("role", f"default role {role.name!r} can manage users; refusing to provision")
+            given, family = _names(claims)
+            user = User.objects.create_user(
+                username=_unique_username(email), email=email, first_name=given, last_name=family,
+                role=role, is_staff=False, is_superuser=False,
+            )
         user.set_unusable_password()
         user.save(update_fields=["password"])
         OidcIdentity.objects.create(user=user, issuer=issuer, subject=subject, email=email,
@@ -540,10 +549,19 @@ def redeem_ticket(request, ticket, otp=None, passkey=None):
 # --------------------------------------------------------------------------- #
 def audit(request, user, ok, detail):
     try:
+        # A refusal with no account behind it (unknown user, garbage response)
+        # is filed under the workspace the IdP serves, so its administrators
+        # see it; an entry with a user follows the user.
+        workspace_id = None
+        if user is None:
+            from .models import Workspace
+
+            workspace_id = Workspace.objects.filter(
+                slug=settings.SSO_WORKSPACE).values_list("pk", flat=True).first()
         AuditLog.objects.create(
             user=user, action="login" if ok else "login_failed", object_type="auth",
             object_id=str(user.pk) if user else "", detail=str(detail)[:255],
-            ip_address=_client_ip(request),
+            ip_address=_client_ip(request), workspace_id=workspace_id,
         )
     except Exception:  # never let bookkeeping break sign-in
         log.exception("Failed to record an SSO event")

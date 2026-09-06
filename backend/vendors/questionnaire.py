@@ -17,6 +17,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from accounts import tenancy
 from audit.middleware import _client_ip
 from audit.models import AuditLog
 
@@ -144,7 +145,7 @@ def create_invite(vendor, request, email, days=None, message=""):
 def _send_invite(invite, link):
     from notifications.email_service import send_templated_email
 
-    org = getattr(settings, "ORGANISATION_NAME", "") or ""
+    org = tenancy.organisation_name()
     subject = f"Security questionnaire from {org or invite.sent_by_name} for {invite.vendor.name}"
     context = {
         "invite": invite, "vendor": invite.vendor, "link": link, "organisation": org,
@@ -178,7 +179,7 @@ def public_state(invite, request=None):
     if invite.status == "open" and invite.opened_at is None:
         invite.opened_at = timezone.now()
         invite.save(update_fields=["opened_at"])
-    org = getattr(settings, "ORGANISATION_NAME", "") or ""
+    org = tenancy.organisation_name()
     return {
         "status": invite.status,
         "vendor": invite.vendor.name,

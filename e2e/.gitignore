@@ -2,7 +2,7 @@ node_modules/
 .auth/
 .report/
 .results/
-.e2e-db.sqlite3
+.e2e-db.sqlite3*
 .e2e-media/
 test-results/
 playwright-report/

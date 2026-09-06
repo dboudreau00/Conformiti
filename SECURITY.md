@@ -5,6 +5,19 @@ of the two security reviews performed on it (0.1.0 and 0.2.0), the residual
 risks you should weigh before hosting real compliance data, and how to report
 a vulnerability.
 
+## Workspace isolation (0.9.0)
+
+Several organisations may share one installation. Isolation is enforced in
+the ORM layer (`accounts/tenancy.py`): every organisation-owned table has a
+`workspace` column and the default manager scopes every query to the
+workspace of the signed-in person, including primary-key lookups (a foreign
+row is a 404) and the querysets behind serializer fields (a foreign foreign
+key is a 400). There is no per-request opt-out short of calling
+`tenancy.unscoped()` by name. A superuser may switch workspaces; nobody
+else's `X-Workspace` header is honoured. Each release's suite includes
+`accounts/tests_tenancy.py`, which lists every collection endpoint from a
+second organisation's point of view.
+
 ## Reporting a vulnerability
 
 Open a private security advisory on GitHub
@@ -281,9 +294,10 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   so there is nothing to serve back; it is manager-only and already bounded by
   a 2 MB cap, a zip-bomb guard and stdlib XML parsing. Stated here rather than
   silently skipped.
-- **Usernames and emails are readable by every signed-in user** (`GET /users/`),
-  because owner and assignee pickers need them. Acceptable for an internal
-  tool; not for a multi-tenant one.
+- **Usernames and emails are readable by every signed-in user of the same
+  workspace** (`GET /users/`), because owner and assignee pickers need them.
+  Since 0.9.0 the list stops at the workspace boundary; within one
+  organisation it is the whole directory.
 - **`DJANGO_DEBUG` still defaults to true for the *local developer* path** so
   a first `./install.sh` is friction-free. The Docker stack defaults to off.
 - **No third-party penetration test has been performed.** The reviews in this

@@ -2,10 +2,12 @@
 from django.conf import settings
 from django.db import models
 
+from accounts.tenancy import TenantModel
 
-class Framework(models.Model):
+
+class Framework(TenantModel):
     """A compliance framework, e.g. SOC 2, ISO 27001, PCI DSS."""
-    key = models.SlugField(max_length=40, unique=True)
+    key = models.SlugField(max_length=40)
     name = models.CharField(max_length=120)
     version = models.CharField(max_length=60, blank=True)
     authority = models.CharField(max_length=120, blank=True)
@@ -13,13 +15,17 @@ class Framework(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "key"], name="uniq_framework_key_per_workspace"),
+        ]
 
     def __str__(self):
         return f"{self.name} {self.version}".strip()
 
 
-class ControlCategory(models.Model):
+class ControlCategory(TenantModel):
     """A grouping of controls within a framework (domain / requirement family)."""
+    tenant_parent = "framework"
     framework = models.ForeignKey(Framework, on_delete=models.CASCADE, related_name="categories")
     key = models.CharField(max_length=40)
     name = models.CharField(max_length=200)
@@ -33,7 +39,9 @@ class ControlCategory(models.Model):
         return self.name
 
 
-class Control(models.Model):
+class Control(TenantModel):
+    tenant_parent = "category"
+
     class Status(models.TextChoices):
         NOT_STARTED = "not_started", "Not started"
         IN_PROGRESS = "in_progress", "In progress"
@@ -79,7 +87,7 @@ class Control(models.Model):
         return f"{self.control_id} - {self.title}"
 
 
-class ControlMapping(models.Model):
+class ControlMapping(TenantModel):
     """
     Links controls across frameworks that address the same underlying theme,
     so a single piece of evidence can satisfy multiple standards.
@@ -94,7 +102,7 @@ class ControlMapping(models.Model):
         return self.theme
 
 
-class ControlEvidence(models.Model):
+class ControlEvidence(TenantModel):
     """
     Links a document (the evidence) to a control it helps satisfy.
 
@@ -103,6 +111,8 @@ class ControlEvidence(models.Model):
     across several frameworks at once. Each link records who made it and why,
     so the mapping itself is an audit artifact.
     """
+    tenant_parent = "control"
+
     control = models.ForeignKey(
         Control, on_delete=models.CASCADE, related_name="evidence_links"
     )
@@ -125,7 +135,7 @@ class ControlEvidence(models.Model):
         return f"{self.control.control_id} <- {self.document.name}"
 
 
-class Responsibility(models.Model):
+class Responsibility(TenantModel):
     """One RACI assignment on a control. The party is a user OR a vendor.
 
     ``Control.owner`` stays as the fast path for "who is accountable"; the
@@ -139,6 +149,8 @@ class Responsibility(models.Model):
         ACCOUNTABLE = "accountable", "Accountable"
         CONSULTED = "consulted", "Consulted"
         INFORMED = "informed", "Informed"
+
+    tenant_parent = "control"
 
     control = models.ForeignKey(Control, on_delete=models.CASCADE, related_name="responsibilities")
     user = models.ForeignKey(

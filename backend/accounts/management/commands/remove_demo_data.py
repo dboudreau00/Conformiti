@@ -25,6 +25,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 
+from accounts import tenancy
 from accounts.management.commands.bootstrap_demo import (
     ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, DEMO_VENDOR_NAMES, SAMPLE_DOCS,
 )
@@ -53,9 +54,14 @@ class Command(BaseCommand):
         parser.add_argument("--delete", action="store_true",
                             help="Delete the demo user accounts instead of deactivating them.")
         parser.add_argument("--dry-run", action="store_true", help="Report what would change.")
+        tenancy.workspace_option(parser)
 
     @transaction.atomic
     def handle(self, *args, **opts):
+        with tenancy.scoped(tenancy.from_option(opts)):
+            self._handle(opts)
+
+    def _handle(self, opts):
         from audit.models import AuditLog
         from calendar_app.models import CalendarEvent
         from documents.models import Document

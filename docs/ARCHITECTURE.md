@@ -37,6 +37,35 @@ NotificationReceipt (user, key)   MfaDevice 1─* MfaBackupCode
 JiraIntegration (singleton), JiraBoard
 ```
 
+## Workspaces (multi-tenancy)
+
+`accounts.Workspace` is the tenant. Every organisation-owned model inherits
+`accounts.tenancy.TenantModel`: a `workspace` foreign key and a manager whose
+querysets carry `WHERE workspace_id = <active>` whenever a workspace is
+active. The active workspace is a context variable:
+
+- `WorkspaceMiddleware` installs a per-request resolver that reads the
+  workspace off the authenticated person the first time a tenant query
+  runs (DRF authenticates inside the view, after middleware, so it has to
+  be lazy). A superuser may name another workspace in `X-Workspace`. The
+  variable is restored when the request ends.
+- Tasks and commands activate one with `tenancy.scoped(ws)` and walk them
+  all with `tenancy.for_each_workspace()`.
+- A row saved without a workspace takes it from its declared parent
+  (`tenant_parent = "folder"`) or from the active workspace, and refuses
+  otherwise (`NoActiveWorkspace`).
+- The filter is re-applied whenever a queryset is chained, so a queryset
+  built at import time (`queryset = Model.objects.all()` on a viewset) is
+  scoped the moment DRF calls `.all()`. Pinning never widens.
+- No active workspace means no filter: right for migrations,
+  `createsuperuser` and jobs that walk every workspace; an API request
+  with nowhere to go is refused (403). `tenancy.unscoped()` is the
+  explicit escape hatch.
+
+Not tenant-scoped: `Workspace` itself, per-person authentication state
+(passkeys, TOTP, backup codes, SSO identities), the signing-key registry,
+the scanner status row, notification receipts and webhook deliveries.
+
 ## RBAC resolution
 
 `Folder.effective_access(user)` returns the highest of:

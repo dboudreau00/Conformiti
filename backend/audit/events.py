@@ -32,12 +32,15 @@ def record_login_attempt(request, response):
     try:
         username = _username_from(request)
         ip = _client_ip(request)
+        # The sign-in request has no workspace of its own; the entry belongs
+        # to the account's workspace so its administrators can see it.
+        user = get_user_model().objects.filter(username=username).first()
+        workspace_id = user.workspace_id if user else None
         if response.status_code == 200:
-            user = get_user_model().objects.filter(username=username).first()
             AuditLog.objects.create(
                 user=user, action=LOGIN_OK, object_type="auth",
                 object_id=str(user.pk) if user else "", detail=f"signed in: {username}",
-                ip_address=ip,
+                ip_address=ip, workspace_id=workspace_id,
             )
             return
         payload = getattr(response, "data", None) or {}
@@ -52,6 +55,7 @@ def record_login_attempt(request, response):
             reason = "invalid credentials"
         AuditLog.objects.create(
             user=None, action=LOGIN_FAILED, object_type="auth", object_id="",
+            workspace_id=workspace_id,
             detail=f"sign-in failed for {username or '<blank>'}: {reason}"[:255],
             ip_address=ip,
         )

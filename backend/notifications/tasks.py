@@ -9,6 +9,7 @@ from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
 
+from accounts import tenancy
 from documents.models import Document
 from .email_service import send_templated_email
 
@@ -265,13 +266,18 @@ def run_digests(dry_run=False, today=None):
     today = today or timezone.localdate()
     base = (getattr(settings, "PUBLIC_URL", "") or "").rstrip("/")
     sent = 0
-    people = User.objects.filter(is_active=True).exclude(email="").exclude(digest=User.Digest.OFF)
+    # A person's tray is computed in their own workspace; platform accounts
+    # with none get no digest.
+    with tenancy.unscoped():
+        people = list(User.objects.filter(is_active=True, workspace__isnull=False, workspace__is_active=True)
+                      .exclude(email="").exclude(digest=User.Digest.OFF))
     for user in people:
         if user.digest == User.Digest.WEEKLY and today.weekday() != 0:
             continue
         if user.digest_sent_at and timezone.localtime(user.digest_sent_at).date() >= today:
             continue
-        items = digest_items(user)
+        with tenancy.scoped(user.workspace_id):
+            items = digest_items(user)
         if not items:
             continue
         groups = [(sev, [i for i in items if i["severity"] == sev]) for sev in SEVERITY_ORDER]
@@ -327,10 +333,20 @@ def post_daily_summary(today=None):
         severity="high" if (pbc or held) else "medium")
 
 
+def run_all_scans(dry_run=False):
+    """The morning pass, once per workspace. Returns per-workspace counts."""
+    result = {}
+    for workspace in tenancy.for_each_workspace():
+        result[workspace.slug] = {
+            "documents": run_review_scan(dry_run=dry_run),
+            "vendors": run_vendor_scan(dry_run=dry_run),
+            "pbc": run_pbc_scan(dry_run=dry_run),
+        }
+        if not dry_run:
+            post_daily_summary()
+    return result
+
+
 @shared_task(name="notifications.tasks.scan_document_reviews")
 def scan_document_reviews():
-    notified = run_review_scan()
-    run_vendor_scan()
-    run_pbc_scan()
-    post_daily_summary()
-    return notified
+    return run_all_scans()

@@ -26,7 +26,7 @@ topology the product does not otherwise support.
 """
 from django.conf import settings
 from django.middleware.csrf import CsrfViewMiddleware, rotate_token
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS", "TRACE")
@@ -142,6 +142,27 @@ class CookieJWTAuthentication(JWTAuthentication):
     A Bearer header always wins, so scripts and integrations are unaffected by
     the transport setting.
     """
+
+    def get_user(self, validated_token):
+        """As SimpleJWT's, but loading the workspace and role in the same
+        query and refusing a person whose workspace has been archived."""
+        from rest_framework_simplejwt.exceptions import InvalidToken
+        from rest_framework_simplejwt.settings import api_settings
+
+        try:
+            user_id = validated_token[api_settings.USER_ID_CLAIM]
+        except KeyError as exc:
+            raise InvalidToken("Token contained no recognizable user identification") from exc
+        try:
+            user = (self.user_model.objects.select_related("workspace", "role")
+                    .get(**{api_settings.USER_ID_FIELD: user_id}))
+        except self.user_model.DoesNotExist as exc:
+            raise AuthenticationFailed("User not found", code="user_not_found") from exc
+        if api_settings.CHECK_USER_IS_ACTIVE and not user.is_active:
+            raise AuthenticationFailed("User is inactive", code="user_inactive")
+        if user.workspace_id and not user.workspace.is_active and not user.is_superuser:
+            raise AuthenticationFailed("This workspace is archived.", code="workspace_archived")
+        return user
 
     def authenticate(self, request):
         header = self.get_header(request)

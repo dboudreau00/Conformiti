@@ -37,6 +37,14 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        if self.request.user.is_superuser:
+            # Installation-level events (a failed sign-in for a username that
+            # exists nowhere) belong to no workspace; the operator sees them.
+            from accounts import tenancy
+
+            with tenancy.unscoped():
+                orphans = AuditLog.objects.filter(workspace__isnull=True)
+            qs = qs | orphans
         days = self.request.query_params.get("days")
         if days:
             try:

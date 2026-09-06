@@ -6,17 +6,22 @@ from django.utils.crypto import get_random_string
 from rest_framework import serializers
 
 from .models import Role
+from .tenancy import CurrentWorkspaceDefault
 
 User = get_user_model()
 
 
 class RoleSerializer(serializers.ModelSerializer):
+    # Names are unique per workspace; the hidden field lets the validator
+    # say so (400) instead of the database (500).
+    workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
+
     class Meta:
         model = Role
         fields = [
             "id", "name", "description", "can_manage_users", "can_manage_frameworks",
             "can_manage_documents", "can_manage_folders", "can_view_all",
-            "is_auditor", "is_system",
+            "is_auditor", "is_system", "workspace",
         ]
         read_only_fields = ["is_system"]
 
@@ -25,6 +30,7 @@ class UserSerializer(serializers.ModelSerializer):
     role_detail = RoleSerializer(source="role", read_only=True)
     full_name = serializers.CharField(source="get_full_name", read_only=True)
     capabilities = serializers.SerializerMethodField()
+    workspace_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -32,11 +38,16 @@ class UserSerializer(serializers.ModelSerializer):
             "id", "username", "email", "first_name", "last_name", "full_name",
             "job_title", "role", "role_detail", "is_active", "capabilities",
             "last_login", "is_superuser", "mfa_enabled", "digest",
+            "workspace", "workspace_detail",
         ]
         # last_login is already non-editable on the model; is_superuser must
         # never be settable through the API (this serializer is read-path only,
         # but declare it anyway as defence in depth).
-        read_only_fields = ["last_login", "is_superuser", "mfa_enabled"]
+        read_only_fields = ["last_login", "is_superuser", "mfa_enabled", "workspace"]
+
+    def get_workspace_detail(self, obj):
+        ws = obj.workspace
+        return {"id": ws.pk, "name": ws.name, "slug": ws.slug} if ws else None
 
     def get_capabilities(self, obj):
         return {
@@ -154,6 +165,8 @@ class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
 
         data = super().validate(attrs)  # authenticates; sets self.user; builds tokens
         user = self.user
+        if user.workspace_id and not user.is_superuser and not user.workspace.is_active:
+            raise AuthenticationFailed("This workspace is archived.", "workspace_archived")
         device = getattr(user, "mfa_device", None)
         totp_on = bool(device and device.enabled)
         if not (totp_on or user.passkeys.exists()):

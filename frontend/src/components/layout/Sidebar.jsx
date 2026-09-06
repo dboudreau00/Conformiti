@@ -19,6 +19,11 @@ export function Sidebar({ onSignOut }) {
     >
       <div className="px-5 py-5">
         <ConformitiLogo size={36} tagline="SOC 2 · ISO 27001 · PCI" />
+        {me?.workspace_detail?.name ? (
+          <p className="mt-3 truncate text-2xs font-medium uppercase tracking-[0.08em] text-faint" title="Workspace" data-testid="workspace-name">
+            {me.workspace_detail.name}
+          </p>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">

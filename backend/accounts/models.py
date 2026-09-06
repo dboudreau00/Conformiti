@@ -5,8 +5,28 @@ from django.db import models
 
 from config.fieldcrypto import EncryptedCharField
 
+from .tenancy import TenantModel, TenantUserManager
 
-class Role(models.Model):
+
+class Workspace(models.Model):
+    """One organisation on this installation. Everything an organisation
+    owns points here (see accounts/tenancy.py); a person belongs to exactly
+    one, a superuser may switch between them. Single-tenant deployments
+    have just the one, called Default."""
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=60, unique=True)
+    is_active = models.BooleanField(
+        default=True, help_text="Archived workspaces refuse sign-in and drop out of every job.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Role(TenantModel):
     """
     A named role with coarse capability flags.
 
@@ -15,7 +35,7 @@ class Role(models.Model):
     role bypass folder restrictions for read access (e.g. Compliance Manager),
     while ``is_auditor`` marks a read-only external role.
     """
-    name = models.CharField(max_length=80, unique=True)
+    name = models.CharField(max_length=80)
     description = models.CharField(max_length=255, blank=True)
 
     can_manage_users = models.BooleanField(default=False)
@@ -28,6 +48,9 @@ class Role(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "name"], name="uniq_role_name_per_workspace"),
+        ]
 
     def __str__(self):
         return self.name
@@ -77,8 +100,16 @@ class SsoAssertion(models.Model):
         return self.assertion_id
 
 
-class User(AbstractUser):
-    """Application user. Every user has an optional single role."""
+class User(AbstractUser, TenantModel):
+    """Application user. Every user has an optional single role and belongs
+    to one workspace; a superuser without one is a platform account that
+    lands in the first workspace and may switch (see accounts/tenancy.py)."""
+    workspace = models.ForeignKey(
+        "accounts.Workspace", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="users", editable=False,
+    )
+    objects = TenantUserManager()
+
     role = models.ForeignKey(
         Role, null=True, blank=True, on_delete=models.SET_NULL, related_name="users"
     )

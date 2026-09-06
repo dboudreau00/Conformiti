@@ -7,6 +7,7 @@ Use --dry-run to see how many reminders would go out without sending them.
 """
 from django.core.management.base import BaseCommand
 
+from accounts import tenancy
 from notifications.tasks import run_pbc_scan, run_review_scan, run_vendor_scan
 
 
@@ -21,12 +22,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry = options["dry_run"]
-        count = run_review_scan(dry_run=dry)
-        verb = "would be notified" if dry else "notified"
-        self.stdout.write(self.style.SUCCESS(f"Review scan complete. Documents {verb}: {count}"))
-        chased = run_vendor_scan(dry_run=dry)
-        verb = "would be chased" if dry else "chased"
-        self.stdout.write(self.style.SUCCESS(f"Vendor scan complete. Bridge letters {verb}: {chased}"))
-        pbc = run_pbc_scan(dry_run=dry)
-        verb = "would be reminded" if dry else "reminded"
-        self.stdout.write(self.style.SUCCESS(f"PBC scan complete. Auditor requests {verb}: {pbc}"))
+        for workspace in tenancy.for_each_workspace():
+            self.stdout.write(f"Workspace: {workspace.name} ({workspace.slug})")
+            count = run_review_scan(dry_run=dry)
+            verb = "would be notified" if dry else "notified"
+            self.stdout.write(self.style.SUCCESS(f"  Review scan complete. Documents {verb}: {count}"))
+            chased = run_vendor_scan(dry_run=dry)
+            verb = "would be chased" if dry else "chased"
+            self.stdout.write(self.style.SUCCESS(f"  Vendor scan complete. Bridge letters {verb}: {chased}"))
+            pbc = run_pbc_scan(dry_run=dry)
+            verb = "would be reminded" if dry else "reminded"
+            self.stdout.write(self.style.SUCCESS(f"  PBC scan complete. Auditor requests {verb}: {pbc}"))

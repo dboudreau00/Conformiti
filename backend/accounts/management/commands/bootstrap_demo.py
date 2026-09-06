@@ -19,6 +19,7 @@ from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from accounts import tenancy
 from accounts.models import Role
 from calendar_app.models import CalendarEvent
 from compliance.models import Control
@@ -123,22 +124,27 @@ def sample_bytes(name, control_id):
 class Command(BaseCommand):
     help = "Create demo users, permissions, documents and calendar events."
 
+    def add_arguments(self, parser):
+        tenancy.workspace_option(parser)
+
     def handle(self, *args, **opts):
-        self._users()
-        self._permissions()
-        self._control_program()
-        self._documents()
-        self._evidence()
-        self._risks()
-        self._vendors()
-        self._events()
-        self._governance()
-        self._access_review()
-        self._evidence_package()
-        self._audit()
-        self._history()
+        workspace = tenancy.from_option(opts)
+        with tenancy.scoped(workspace):
+            self._users()
+            self._permissions()
+            self._control_program()
+            self._documents()
+            self._evidence()
+            self._risks()
+            self._vendors()
+            self._events()
+            self._governance()
+            self._access_review()
+            self._evidence_package()
+            self._audit()
+            self._history()
         self.stdout.write(self.style.SUCCESS(
-            "Demo data ready. Log in as admin / DemoPass123!"
+            f"Demo data ready in workspace {workspace.slug!r}. Log in as admin / DemoPass123!"
         ))
 
     def _users(self):

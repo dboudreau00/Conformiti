@@ -2,8 +2,12 @@
 from django.conf import settings
 from django.db import models
 
+from accounts.tenancy import TenantModel
 
-class CalendarEvent(models.Model):
+
+class CalendarEvent(TenantModel):
+    tenant_parent = "document"
+
     class Type(models.TextChoices):
         REVIEW_DUE = "review_due", "Document review due"
         AUDIT = "audit", "Audit / assessment"

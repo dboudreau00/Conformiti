@@ -7,9 +7,11 @@ is real program history rather than an illustration.
 """
 from django.db import models
 
+from accounts.tenancy import TenantModel
 
-class ReadinessSnapshot(models.Model):
-    date = models.DateField(unique=True, db_index=True)
+
+class ReadinessSnapshot(TenantModel):
+    date = models.DateField(db_index=True)
     total_controls = models.PositiveIntegerField(default=0)
     applicable = models.PositiveIntegerField(default=0)
     implemented = models.PositiveIntegerField(default=0)
@@ -22,6 +24,9 @@ class ReadinessSnapshot(models.Model):
 
     class Meta:
         ordering = ["date"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "date"], name="uniq_snapshot_date_per_workspace"),
+        ]
 
     @property
     def pct(self):

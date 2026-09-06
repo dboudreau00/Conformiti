@@ -17,11 +17,13 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from accounts.tenancy import TenantModel
+
 
 # --------------------------------------------------------------------------- #
 # User access reviews
 # --------------------------------------------------------------------------- #
-class AccessReview(models.Model):
+class AccessReview(TenantModel):
     class Status(models.TextChoices):
         OPEN = "open", "Open"
         COMPLETED = "completed", "Completed"
@@ -43,7 +45,9 @@ class AccessReview(models.Model):
         return self.name
 
 
-class AccessReviewItem(models.Model):
+class AccessReviewItem(TenantModel):
+    tenant_parent = "review"
+
     """One user's row in a review. Fields are snapshotted at creation so the
     audit evidence stays stable even if the account changes later."""
 
@@ -87,8 +91,8 @@ class AccessReviewItem(models.Model):
 # --------------------------------------------------------------------------- #
 # Meeting minutes with a required yearly cadence
 # --------------------------------------------------------------------------- #
-class MeetingSeries(models.Model):
-    name = models.CharField(max_length=160, unique=True)
+class MeetingSeries(TenantModel):
+    name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
     required_per_year = models.PositiveSmallIntegerField(
         default=4, help_text="How many times per year this meeting must be held."
@@ -103,12 +107,17 @@ class MeetingSeries(models.Model):
     class Meta:
         ordering = ["name"]
         verbose_name_plural = "meeting series"
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "name"], name="uniq_series_name_per_workspace"),
+        ]
 
     def __str__(self):
         return self.name
 
 
-class MeetingMinute(models.Model):
+class MeetingMinute(TenantModel):
+    tenant_parent = "series"
+
     series = models.ForeignKey(MeetingSeries, on_delete=models.CASCADE, related_name="minutes")
     date = models.DateField()
     title = models.CharField(max_length=200, blank=True)
@@ -131,8 +140,8 @@ class MeetingMinute(models.Model):
 # --------------------------------------------------------------------------- #
 # Champion groups (inter-departmental owners)
 # --------------------------------------------------------------------------- #
-class ChampionGroup(models.Model):
-    name = models.CharField(max_length=160, unique=True)
+class ChampionGroup(TenantModel):
+    name = models.CharField(max_length=160)
     purpose = models.TextField(blank=True)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -143,12 +152,17 @@ class ChampionGroup(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "name"], name="uniq_group_name_per_workspace"),
+        ]
 
     def __str__(self):
         return self.name
 
 
-class GroupMember(models.Model):
+class GroupMember(TenantModel):
+    tenant_parent = "group"
+
     group = models.ForeignKey(ChampionGroup, on_delete=models.CASCADE, related_name="members")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="champion_memberships"
@@ -165,7 +179,7 @@ class GroupMember(models.Model):
         return f"{self.group.name} · {self.user} ({self.department})"
 
 
-class Risk(models.Model):
+class Risk(TenantModel):
     """
     A risk-register entry: a gap, finding, or exposure with an owner, a
     5x5 likelihood/impact assessment, a treatment decision, and a due date.
@@ -256,7 +270,9 @@ class Risk(models.Model):
         )
 
 
-class RiskNote(models.Model):
+class RiskNote(TenantModel):
+    tenant_parent = "risk"
+
     """A progress / discussion note on a risk (the remediation trail)."""
     risk = models.ForeignKey(Risk, on_delete=models.CASCADE, related_name="notes")
     author = models.ForeignKey(

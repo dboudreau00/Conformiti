@@ -1,9 +1,14 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Role, User, WebAuthnCredential
+from .models import Role, User, WebAuthnCredential, Workspace
 
 admin.site.register(Role)
+
+
+@admin.register(Workspace)
+class WorkspaceAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "is_active", "created_at")
 
 
 @admin.register(WebAuthnCredential)

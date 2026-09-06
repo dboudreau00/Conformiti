@@ -5,6 +5,55 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.0] — 2026-09-06
+
+One installation, several organisations, each seeing only its own.
+
+### Added
+
+- **Workspaces.** Every organisation-owned row — frameworks and controls,
+  folders and documents, risks, vendors, packages and their request lists,
+  reviews, meetings, groups, calendar, Jira, readiness history, the audit
+  trail, roles and people — belongs to a workspace, and every query is
+  scoped to the one the signed-in person works in. Existing installations
+  get a single workspace called *Default* holding everything they have;
+  nothing changes for them.
+- A superuser sees all workspaces under *Settings › Role & access*, creates
+  new ones (with the built-in roles, and optionally the shipped framework
+  library and folder spine), switches between them (`X-Workspace: <slug>`;
+  the SPA remembers the choice) and archives one, which refuses its people
+  at sign-in, ends their existing sessions and drops it out of every
+  scheduled job. Nothing is deleted.
+- `GET/POST /api/workspaces/`, `PATCH /api/workspaces/{id}/`,
+  `GET /api/workspaces/current/`; `workspace` and `workspace_detail` on
+  `/api/users/…`.
+- Scheduled work runs once per workspace: review, vendor and auditor-request
+  scans, the daily chat summary (now prefixed with the workspace name when
+  there is more than one), readiness snapshots; digests are computed in the
+  person's own workspace. `seed_frameworks`, `bootstrap_demo` and
+  `remove_demo_data` take `--workspace <slug>`; `seed_frameworks --roles-only`.
+- `SSO_WORKSPACE`: which workspace an auto-provisioned single-sign-on
+  account joins (default `default`).
+
+### Changed
+
+- Names that were unique across the installation — role, framework key,
+  vendor, meeting series, champion group, Jira board, readiness-snapshot
+  date — are unique per workspace.
+- The login audit entry is written into the account's workspace so its
+  administrators can see it.
+- An account with no workspace (a superuser created with `createsuperuser`)
+  lands in the first active workspace; anyone else in that position is
+  refused with 403.
+
+### Upgrading
+
+Ten migrations, one per app. Each adds the column, moves every row into the
+Default workspace and then makes the column required, inside one
+transaction on PostgreSQL. Budget a few seconds per hundred thousand rows.
+
+---
+
 ## [0.8.0] — 2026-09-05
 
 The tray only helps people who open the app. Now it reaches a channel, and

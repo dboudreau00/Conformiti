@@ -1,6 +1,8 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from accounts.tenancy import CurrentWorkspaceDefault
+
 from .models import (
     DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, SharedResponsibility, Vendor, VendorAssessment,
 )
@@ -90,6 +92,7 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
 
 
 class VendorSerializer(serializers.ModelSerializer):
+    workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
     tier_display = serializers.CharField(source="get_tier_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -108,6 +111,7 @@ class VendorSerializer(serializers.ModelSerializer):
             "owner", "owner_name", "review_cadence", "last_reviewed", "next_review_date",
             "is_review_overdue", "notes", "assurance", "risk_rating", "assessment_count",
             "control_count", "open_risk_count", "matrix_layout", "created_by", "created_at", "updated_at",
+            "workspace",
         ]
         read_only_fields = ["created_by", "next_review_date", "matrix_layout"]
 

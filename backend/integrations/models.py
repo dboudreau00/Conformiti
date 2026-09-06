@@ -5,8 +5,10 @@ from django.db import models
 
 from config.fieldcrypto import EncryptedCharField
 
+from accounts.tenancy import TenantModel
 
-class JiraIntegration(models.Model):
+
+class JiraIntegration(TenantModel):
     """Single-row configuration for the Jira connection. The API token is
     stored in the application database and never returned by the API — use a
     scoped token created for this purpose, not a personal password."""
@@ -25,16 +27,16 @@ class JiraIntegration(models.Model):
 
     @classmethod
     def get_solo(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
-        return obj
+        """The one row of the active workspace, created blank on first use."""
+        return cls.objects.order_by("pk").first() or cls.objects.create()
 
     def __str__(self):
         return self.base_url or "Jira (not configured)"
 
 
-class JiraBoard(models.Model):
+class JiraBoard(TenantModel):
     """A Jira board this workspace tracks (e.g. the security backlog)."""
-    board_id = models.PositiveIntegerField(unique=True, help_text="Numeric board ID from Jira.")
+    board_id = models.PositiveIntegerField(help_text="Numeric board ID from Jira.")
     name = models.CharField(max_length=160)
     added_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -44,6 +46,9 @@ class JiraBoard(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "board_id"], name="uniq_board_per_workspace"),
+        ]
 
     def __str__(self):
         return f"{self.name} (#{self.board_id})"

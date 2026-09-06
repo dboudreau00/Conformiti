@@ -3,6 +3,8 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from . import scoring
+from accounts.tenancy import CurrentWorkspaceDefault
+
 from .models import Control, ControlCategory, ControlEvidence, ControlMapping, Framework
 
 
@@ -168,12 +170,13 @@ class FrameworkSerializer(serializers.ModelSerializer):
     categories = ControlCategorySerializer(many=True, read_only=True)
     control_count = serializers.SerializerMethodField()
     implemented_count = serializers.SerializerMethodField()
+    workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
 
     class Meta:
         model = Framework
         fields = [
             "id", "key", "name", "version", "authority", "description",
-            "categories", "control_count", "implemented_count",
+            "categories", "control_count", "implemented_count", "workspace",
         ]
 
     def get_control_count(self, obj):

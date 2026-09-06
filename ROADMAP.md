@@ -49,12 +49,16 @@
   and withdrawn packages, the auditor's requests and returns, returned
   questionnaires, scanner outages, quarantines, a daily summary) and a
   per-person daily or weekly digest of the tray by email.
+- **0.9.0** — Workspaces: one installation serving several organisations,
+  each seeing only its own; superuser switch, archive, per-workspace jobs
+  and seeding.
 
 ## Next
 
 | Item | Why |
 |---|---|
-| **Multi-tenancy** (0.9.0) | one installation serving several organisations, each seeing only its own |
+| Per-workspace single sign-on | one IdP per organisation rather than one per installation (`SSO_WORKSPACE` today) |
+| Workspace-scoped chat channels | a Slack/Teams webhook per organisation rather than one shared channel with a prefix |
 
 ## Later
 
