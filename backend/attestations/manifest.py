@@ -18,7 +18,11 @@ import re
 # 2 (0.4.1): each control carries its stated population and the sample items
 # listed before sealing. A version-1 manifest still verifies with verify.py;
 # it simply has no "population"/"samples" keys.
-MANIFEST_VERSION = 2
+# 3 (0.6.1): the package names its predecessor ("prior": id, name, sealed_at
+# and manifest digest) when it was rolled forward, so a chain of engagements
+# is verifiable end to end. Absent when there is none. Older manifests still
+# verify unchanged.
+MANIFEST_VERSION = 3
 HASH_ALGORITHM = "sha256"
 
 
@@ -77,7 +81,7 @@ def build_manifest(package, controls):
     package rows — never a live ``User``, ``Document`` or ``Control``. A rename
     or a deleted account after sealing must not change the digest.
     """
-    return {
+    payload = {
         "manifest_version": MANIFEST_VERSION,
         "hash_algorithm": HASH_ALGORITHM,
         "generator": package["generator"],
@@ -108,3 +112,6 @@ def build_manifest(package, controls):
         },
         "controls": controls,
     }
+    if package.get("prior"):
+        payload["package"]["prior"] = package["prior"]
+    return payload

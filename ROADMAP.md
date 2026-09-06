@@ -37,24 +37,24 @@
   time-boxed link, passkeys / security keys (WebAuthn) as a second factor
   with a clone detector that fails closed, and the PBC request list with
   due-date reminders on every audit package.
+- **0.6.1** — roll-forward (next year's package from last year's, with a
+  year-over-year diff and a manifest that names its predecessor), backup
+  codes owned by the account so passkey-only people have them, a watch on
+  the malware scanner with re-scan and quarantine, and cookie transport as
+  the default with `__Host-`/`__Secure-` prefixes.
 
-## Next (0.6.1)
+## Next
 
 | Item | Why |
 |---|---|
-| **Roll-forward**: a prior-package link and a year-over-year scope diff | the column already ships, nullable, so this needs no migration |
-| **Backup codes for passkey-only accounts** | today recovery is a second key, the authenticator app, or an administrator; codes belong to the TOTP device |
-| **Scanner monitoring** — health probe, alerting, `manage.py scan_evidence` | 0.3.0 ships the boundary; this watches it |
-| **Cookie transport as the default**, with `__Host-` cookie prefixes | once it has run in the field for a release |
+| **Detached signatures over the package manifest** (0.7.0) | the bundle proves integrity, not origin; an Ed25519 key kept outside the database, its public key published, and a stdlib verifier in the bundle make origin checkable too |
+| **Slack / Teams notifications and digest emails** (0.8.0) | the tray only helps people who open the app |
+| **Multi-tenancy** (0.9.0) | one installation serving several organisations, each seeing only its own |
 
 ## Later
 
-- Detached signatures over a package manifest, once there is a key-management
-  story worth the name — a signing key sitting in the same database as the
-  evidence would be theatre.
 - Automated evidence collection from cloud/SaaS (AWS, GitHub, Okta, Google
   Workspace) with continuous control tests — and, with it, pulling a
   provider's published responsibility matrix straight into the vendor record.
-- Slack/Teams notifications; digest emails.
+  Parked until there are accounts to test it against properly.
 - Additional frameworks (NIST CSF 2.0, HIPAA, CIS Controls v8) as seed packs.
-- Multi-tenancy.

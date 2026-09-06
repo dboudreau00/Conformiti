@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 64 64" fill="none" role="img" aria-label="Conformiti mark">
+  <path d="M32 3.5 L57 12.8 V32.6 C57 46.9 46.6 55.7 32 60.5 C17.4 55.7 7 46.9 7 32.6 V12.8 Z" fill="#1D6FE0"/>
+  <path d="M32 3.5 L7 12.8 V32.6 C7 46.9 17.4 55.7 32 60.5 Z" fill="#12458F"/>
+  <path d="M19.5 32 L28.5 41 L45.5 22.5" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

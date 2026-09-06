@@ -496,6 +496,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "accounts.tasks.flush_expired_tokens",
         "schedule": crontab(day_of_week="sunday", hour=3, minute=30),
     },
+    # Is clamd still answering? One email when it stops, one when it is back.
+    # Harmless when scanning is off (the task returns at once).
+    "watch-malware-scanner-hourly": {
+        "task": "notifications.tasks.watch_scanner",
+        "schedule": crontab(minute=17),
+    },
 }
 
 
@@ -525,26 +531,34 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
 
 # --- Authentication transport -----------------------------------------------
+# "cookie"  the tokens travel as HttpOnly cookies, so script cannot read them,
+#           and unsafe methods must carry Django's CSRF token. The default
+#           since 0.6.1, after a release in the field;
 # "header"  the SPA keeps the tokens in localStorage and sends Authorization
-#           (the 0.2.x behaviour, and still the default -- flipping it silently
-#           would sign every existing deployment out);
-# "cookie"  the same tokens travel as HttpOnly cookies, so script cannot read
-#           them, and unsafe methods must carry Django's CSRF token.
+#           (the 0.2.x behaviour). Switching signs everyone out once.
 # Both modes accept a Bearer header, so API clients are unaffected either way.
-AUTH_TRANSPORT = os.getenv("AUTH_TRANSPORT", "header").strip().lower()
+AUTH_TRANSPORT = os.getenv("AUTH_TRANSPORT", "cookie").strip().lower()
 if AUTH_TRANSPORT not in ("header", "cookie"):
     raise ImproperlyConfigured(
         f"AUTH_TRANSPORT must be 'header' or 'cookie' (got {AUTH_TRANSPORT!r}). "
         "A typo here would silently fall back to header auth and quietly undo "
         "the hardening it was set for."
     )
-AUTH_COOKIE_ACCESS = os.getenv("AUTH_COOKIE_ACCESS", "conformiti_access")
-AUTH_COOKIE_REFRESH = os.getenv("AUTH_COOKIE_REFRESH", "conformiti_refresh")
+AUTH_COOKIE_SECURE = env_bool("AUTH_COOKIE_SECURE", BEHIND_TLS)
+# Cookie names. Left empty they are derived in accounts/cookie_auth.py: with
+# Secure cookies the access cookie is `__Host-conformiti_access` (bound to
+# this host, Path=/, no Domain -- a subdomain cannot plant one) and the
+# refresh cookie `__Secure-conformiti_refresh` (the __Secure- prefix, so it
+# can keep the narrow path below); over plain http the prefixes are not
+# allowed by browsers and the plain names are used.
+AUTH_COOKIE_ACCESS = os.getenv("AUTH_COOKIE_ACCESS", "").strip()
+AUTH_COOKIE_REFRESH = os.getenv("AUTH_COOKIE_REFRESH", "").strip()
 # Scoped to the endpoint that consumes it, not to /api/auth/ -- that prefix
 # covers nine routes, including the ones that return the TOTP secret and the
 # backup codes.
 AUTH_COOKIE_REFRESH_PATH = "/api/auth/token/"
-AUTH_COOKIE_SECURE = env_bool("AUTH_COOKIE_SECURE", BEHIND_TLS)
+# The CSRF cookie gets the host prefix on the same terms.
+CSRF_COOKIE_NAME = "__Host-csrftoken" if globals().get("CSRF_COOKIE_SECURE") else "csrftoken"
 
 # --- Single sign-on (OpenID Connect) -------------------------------------------
 # Environment only, on purpose: a provider an administrator could configure

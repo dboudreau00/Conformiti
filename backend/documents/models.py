@@ -246,11 +246,30 @@ class Document(models.Model):
     # Tracks reminder lead-days already emailed so we don't send duplicates.
     reminders_sent = models.JSONField(default=list, blank=True)
 
+    # --- malware scanning (documents/monitor.py). "clean" means clean by the
+    # definitions in force at scanned_at; the sweep re-checks stored files
+    # because signatures arrive after files do. A quarantined document stays
+    # on disk for the investigation but no route serves its bytes.
+    class Scan(models.TextChoices):
+        UNSCANNED = "unscanned", "Not scanned"
+        CLEAN = "clean", "Clean"
+        INFECTED = "infected", "Infected"
+        ERROR = "error", "Could not be scanned"
+
+    scan_status = models.CharField(max_length=10, choices=Scan.choices, default=Scan.UNSCANNED)
+    scan_signature = models.CharField(max_length=200, blank=True)
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    quarantined_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-updated_at"]
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_quarantined(self):
+        return self.quarantined_at is not None
 
     def compute_next_review(self):
         """Set next_review_date from last_reviewed + cadence."""
@@ -268,6 +287,28 @@ class Document(models.Model):
         if not self.next_review_date:
             return None
         return (self.next_review_date - timezone.now().date()).days
+
+
+class ScannerStatus(models.Model):
+    """One row: what the malware scanner last said, and whether anyone has
+    been told. Shared by every worker, so an outage is announced once."""
+    reachable = models.BooleanField(default=True)
+    checked_at = models.DateTimeField(null=True, blank=True)
+    last_ok_at = models.DateTimeField(null=True, blank=True)
+    down_since = models.DateTimeField(null=True, blank=True)
+    alerted_down_at = models.DateTimeField(null=True, blank=True)
+    alerted_up_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name_plural = "scanner status"
+
+    def __str__(self):
+        return "scanner " + ("up" if self.reachable else "down")
+
+    @classmethod
+    def load(cls):
+        row, _ = cls.objects.get_or_create(pk=1)
+        return row
 
 
 class DocumentVersion(models.Model):

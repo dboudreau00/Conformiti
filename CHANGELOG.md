@@ -5,6 +5,66 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.6.1] — 2026-09-05
+
+The four items 0.6.0 left on the "next" list: next year's package from last
+year's, backup codes that a passkey-only account holds too, a watch on the
+malware scanner, and cookie transport as the default.
+
+### Added
+
+- **Roll-forward.** *Roll forward* on a sealed or withdrawn package opens
+  next year's draft: the same engagement shape, the same controls
+  re-snapshotted as they stand today with today's visible evidence pinned,
+  and the old package recorded as the predecessor. Conclusions, samples and
+  the request list stay with the year they were made in. Every package with
+  a predecessor gets a **Year over year** panel — scope and controls in and
+  out, evidence replaced (matched by document, compared by digest), last
+  year's exceptions and whether this year has concluded them — computed from
+  the two packages' own snapshots, so it works years later against sealed
+  rows. `GET /api/evidence-packages/{id}/diff/`,
+  `POST /api/evidence-packages/{id}/roll_forward/`; `prior_package` is
+  writable on a draft (must be sealed, must not loop). **Manifest version 3**
+  names the predecessor and its manifest digest, so a chain of engagements
+  verifies end to end; older manifests are unchanged and still verify.
+- **Backup codes belong to the account.** Enrolling a first passkey issues
+  ten backup codes, shown once; a backup code satisfies the second step
+  beside a passkey or the authenticator app, at sign-in and at the SSO
+  step-up; *Regenerate backup codes* works for anyone with a second factor.
+  Enabling the app after a passkey keeps the codes already held. Removing
+  the last factor removes the codes. Existing codes carry over (migration
+  `accounts 0006`).
+- **Scanner monitoring.** `GET /api/health/` reports the malware scanner
+  (`scanning`: enabled, reachable, latency, down since); an hourly task
+  emails the compliance team once when clamd stops answering and once when
+  it is back; administrators and managers see an outage in the tray, with
+  the reminder that uploads are being refused meanwhile. `manage.py
+  scan_evidence` re-scans stored files (`--stale 30` by default, `--all`,
+  `--probe`, `--dry-run`) because signatures arrive after files do: a file
+  that now matches is **quarantined** — kept on disk, refused on every route
+  that serves bytes, badged in the document list, counted in the tray, and
+  recorded in the audit trail; a later clean re-scan releases it. Uploads
+  record their clean verdict; a new version resets it. Settings › About
+  shows the scanner's state.
+
+- **The Conformiti identity.** A shield split along its centreline with one
+  check struck across it, in four colourways with fixed meanings: Governance
+  Blue is the corporate mark (sidebar, sign-in, questionnaire, favicon,
+  README); Assurance Green means controls passing; Risk Red is reserved for
+  findings and alerts; Policy Purple stands for frameworks and attestations.
+  Sources in `assets/brand/` and `frontend/src/brand.js`.
+
+### Changed
+
+- **Cookie transport is the default** (`AUTH_TRANSPORT=cookie`). Over https
+  the access cookie is `__Host-conformiti_access` (Path=/), the refresh
+  cookie `__Secure-conformiti_refresh` on its narrow path, and the CSRF
+  cookie `__Host-csrftoken`; over plain http the plain names remain. Signing
+  out also expires the pre-0.6.1 cookie names. **Upgrading signs everyone
+  out once**; set `AUTH_TRANSPORT=header` to keep the old behaviour.
+
+---
+
 ## [0.6.0] — 2026-09-05
 
 The vendor answers their own questionnaire, passkeys as a second factor with

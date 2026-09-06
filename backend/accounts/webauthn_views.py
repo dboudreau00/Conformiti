@@ -41,6 +41,7 @@ class PasskeyRegisterView(APIView):
     throttle_classes = [_MfaThrottle]
 
     def post(self, request):
+        first_factor = not request.user.mfa_enabled
         try:
             row = passkeys.finish_registration(
                 request.user, request, request.data.get("state"),
@@ -51,8 +52,13 @@ class PasskeyRegisterView(APIView):
                               f"passkey enrolment refused ({exc.code})")
             return Response({"detail": exc.message, "code": exc.code}, status=400)
         record_auth_event(request, request.user, "mfa", f"passkey enrolled: {row.name}")
-        return Response({**passkeys.serialize(row), "factors": passkeys.factors(request.user)},
-                        status=201)
+        # The account's first second factor comes with its recovery codes,
+        # shown once -- exactly as enabling the authenticator app does.
+        codes = None
+        if first_factor and request.user.backup_codes_remaining == 0:
+            codes = request.user.issue_backup_codes()
+        return Response({**passkeys.serialize(row), "factors": passkeys.factors(request.user),
+                         "backup_codes": codes}, status=201)
 
 
 class PasskeyDetailView(APIView):
@@ -85,5 +91,8 @@ class PasskeyDetailView(APIView):
             return Response({"detail": "Password is incorrect."}, status=400)
         name = row.name
         row.delete()
+        if not request.user.mfa_enabled:
+            # No second factor left: the codes have nothing to back up.
+            request.user.backup_codes.all().delete()
         record_auth_event(request, request.user, "mfa", f"passkey removed: {name}")
         return Response({"removed": pk, "factors": passkeys.factors(request.user)})

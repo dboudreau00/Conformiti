@@ -195,6 +195,35 @@ Emails go out through whichever `EMAIL_PROVIDER` is configured; with
 `console` (the local default) the link is printed to the server log and shown
 once on screen instead.
 
+### Watching the malware scanner
+
+With scanning on, `GET /api/health/` reports `scanning.reachable`, the worker
+emails `COMPLIANCE_TEAM_EMAIL` once when clamd stops answering (uploads are
+refused meanwhile) and once when it is back, and the tray tells
+administrators. Signatures arrive after files do, so re-scan what is stored:
+
+```bash
+docker compose exec backend python manage.py scan_evidence --probe      # is clamd answering?
+docker compose exec backend python manage.py scan_evidence              # files not scanned in 30 days
+docker compose exec backend python manage.py scan_evidence --all        # everything
+```
+
+A file that now matches is quarantined: kept on disk, refused on every
+route, badged in the document list, and in the audit trail. Exit code 1 on
+an infection or an unreachable scanner, so cron can alert on it. A monthly
+cron line is enough:
+
+```
+15 3 1 * *  cd /app && python manage.py scan_evidence --stale 30
+```
+
+### Sessions: cookies by default
+
+Since 0.6.1 the SPA's tokens travel as HttpOnly cookies (`AUTH_TRANSPORT=cookie`),
+with `__Host-` / `__Secure-` prefixes over https. Upgrading from 0.6.0 or
+earlier signs everyone out once. Set `AUTH_TRANSPORT=header` to keep tokens in
+`localStorage` as before. API clients using a Bearer header are unaffected.
+
 Everyday operations:
 
 ```bash

@@ -512,7 +512,9 @@ def redeem_ticket(request, ticket, otp=None, passkey=None):
             raise StepUpRequired(user)
         if otp is not None:
             device = getattr(user, "mfa_device", None)
-            ok = device is not None and device.enabled and device.verify(str(otp)[:64])
+            code = str(otp)[:64]
+            ok = ((device is not None and device.enabled and device.verify(code))
+                  or user.verify_backup_code(code))
             why = "wrong code"
         else:
             from . import passkeys

@@ -185,17 +185,26 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
 
 ## Residual risks to weigh for production
 
-- **Tokens in `localStorage` — unless you switch the transport.** The default is
-  still the Authorization header with tokens in `localStorage`, because flipping
-  it silently would sign every existing deployment out. Set
-  `AUTH_TRANSPORT=cookie` and the same tokens travel as `HttpOnly`,
-  `SameSite=Lax` cookies that script cannot read, with Django's CSRF check on
-  unsafe methods. Be clear about the size of the win: XSS can still act as the
-  user while the page is open, because the browser attaches the cookie for it.
-  What it can no longer do is *exfiltrate* a credential that keeps working after
-  the tab closes. Same-origin deployments only, which is what the shipped nginx
-  serves; both modes still accept a Bearer header, so API clients are
-  unaffected. The end-to-end suite runs against both transports in CI.
+- **Cookie transport is the default since 0.6.1.** The tokens travel as
+  `HttpOnly`, `SameSite=Lax` cookies that script cannot read, with Django's
+  CSRF check on unsafe methods; over https the access cookie is
+  `__Host-conformiti_access` (host-bound, `Path=/`, no `Domain`, so a sibling
+  subdomain cannot plant one), the refresh cookie `__Secure-conformiti_refresh`
+  on its narrow `/api/auth/token/` path, and the CSRF cookie
+  `__Host-csrftoken`. Be clear about the size of the win: XSS can still act as
+  the user while the page is open, because the browser attaches the cookie for
+  it. What it can no longer do is *exfiltrate* a credential that keeps working
+  after the tab closes. Same-origin deployments only, which is what the
+  shipped nginx serves. `AUTH_TRANSPORT=header` restores the 0.2.x–0.6.0
+  behaviour (tokens in `localStorage`); switching signs everyone out once, and
+  both modes accept a Bearer header, so API clients are unaffected. The
+  end-to-end suite runs against both transports in CI.
+- **Quarantine keeps the bytes.** A stored document the re-scan flags is
+  refused on every route that serves it (download, preview, versions, pinned
+  package evidence, PBC attachments) but stays on disk for the investigation;
+  deleting it is a person's decision. `manage.py scan_evidence` is only as
+  good as the definitions clamd holds, and a file the scanner could not
+  inspect is recorded as *error*, never as clean.
 - **The field-encryption key is only as protected as where you put it.**
   Encryption at rest defends against a stolen dump or backup, not against an
   attacker who already has the application's key. If the key ring is derived

@@ -189,6 +189,45 @@ def run_pbc_scan(dry_run=False):
     return notified
 
 
+def run_scanner_watch(dry_run=False):
+    """Probe the malware scanner and email the compliance team once when it
+    goes down and once when it comes back. Returns "down", "up", "recovered"
+    or "off" -- what the probe found, not whether mail went out."""
+    from documents import monitor
+    from documents.models import ScannerStatus
+
+    state = monitor.probe(force=True)
+    if not state["enabled"]:
+        return "off"
+    status = ScannerStatus.load()
+    now = timezone.now()
+    if state["reachable"] is False:
+        if status.alerted_down_at is None or (status.down_since and status.alerted_down_at < status.down_since):
+            if not dry_run:
+                send_templated_email(
+                    "[Alert] Malware scanner unreachable — evidence uploads are being refused",
+                    "scanner_alert", {"down": True, "since": status.down_since or now},
+                    [settings.COMPLIANCE_TEAM_EMAIL])
+                status.alerted_down_at = now
+                status.save(update_fields=["alerted_down_at"])
+        return "down"
+    if status.alerted_down_at and (status.alerted_up_at is None or status.alerted_up_at < status.alerted_down_at):
+        if not dry_run:
+            send_templated_email(
+                "[Recovered] Malware scanner is answering again",
+                "scanner_alert", {"down": False, "since": status.last_ok_at or now},
+                [settings.COMPLIANCE_TEAM_EMAIL])
+            status.alerted_up_at = now
+            status.save(update_fields=["alerted_up_at"])
+        return "recovered"
+    return "up"
+
+
+@shared_task(name="notifications.tasks.watch_scanner")
+def watch_scanner():
+    return run_scanner_watch()
+
+
 @shared_task(name="notifications.tasks.scan_document_reviews")
 def scan_document_reviews():
     notified = run_review_scan()

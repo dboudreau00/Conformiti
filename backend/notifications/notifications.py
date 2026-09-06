@@ -229,6 +229,30 @@ def build(user):
 
     caps = user  # capability flags live on the user
 
+    # ---- 4b. The malware scanner, for the people who can do something about
+    # it: an outage refuses every upload, and a quarantined file needs a
+    # decision. Administrators and frameworks managers.
+    if getattr(caps, "can_manage_users", False) or getattr(caps, "can_manage_frameworks", False):
+        from documents import monitor
+        state = monitor.probe()
+        if state["enabled"] and state["reachable"] is False:
+            since = state["down_since"]
+            items.append(_n(
+                "scanner-down", "system", "critical",
+                "Malware scanner unreachable — uploads are being refused",
+                f"clamd has not answered since {since.isoformat(timespec='minutes') if since else 'the last check'}. "
+                "Evidence cannot be filed until it is back.",
+                "/documents", today,
+            ))
+        held = monitor.quarantined().count()
+        if held:
+            items.append(_n(
+                "digest-quarantined", "system", "high",
+                f"{held} document{'s' if held != 1 else ''} in quarantine",
+                "The scanner matched a signature on a stored file; it cannot be opened until "
+                "a re-scan clears it or it is deleted.", "/documents", today,
+            ))
+
     # ---- 5. Manager digest: org-wide risk + evidence posture ----------------
     if getattr(caps, "can_manage_frameworks", False):
         overdue_risks = Risk.objects.filter(

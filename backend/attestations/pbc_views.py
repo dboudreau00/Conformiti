@@ -28,6 +28,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from audit.events import record_package_event
+from documents import monitor
 from documents.access import accessible_folder_ids
 from documents.downloads import serve_stored_file
 
@@ -309,6 +310,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
         item = self.get_object()
         if item.document is None or not item.document.file:
             raise ValidationError({"detail": "This file is no longer available."})
+        monitor.refuse_if_quarantined(item.document)
         package = item.request.package
         self._touch_grant(request, package)
         record_package_event(request, package, "read",
@@ -320,6 +322,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
         item = self.get_object()
         if item.document is None or not item.document.file:
             raise ValidationError({"detail": "This file is no longer available."})
+        monitor.refuse_if_quarantined(item.document)
         package = item.request.package
         self._touch_grant(request, package)
         record_package_event(request, package, "read",

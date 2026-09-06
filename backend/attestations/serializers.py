@@ -240,6 +240,8 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
     evidence_count = serializers.SerializerMethodField()
     live_grants = serializers.SerializerMethodField()
     pbc_summary = serializers.SerializerMethodField()
+    prior_package_name = serializers.CharField(source="prior_package.name", read_only=True, default=None)
+    successors = serializers.SerializerMethodField()
 
     class Meta:
         model = EvidencePackage
@@ -252,6 +254,7 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
             "sealed_by_name", "sealed_at", "manifest_sha256", "manifest_version",
             "manifest_algorithm", "generator",
             "withdrawn_at", "withdrawn_reason",
+            "prior_package", "prior_package_name", "successors",
             "created_by_name", "created_at", "updated_at",
             "control_count", "evidence_count", "live_grants", "pbc_summary",
         ]
@@ -272,6 +275,9 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
             {"username": g.username, "full_name": g.full_name, "expires_at": g.expires_at}
             for g in obj.grants.all() if g.is_live
         ]
+
+    def get_successors(self, obj):
+        return [{"id": s.pk, "name": s.name, "status": s.status} for s in obj.successors.all()]
 
     def get_pbc_summary(self, obj):
         counts = {"total": 0, "open": 0, "provided": 0, "accepted": 0, "returned": 0,

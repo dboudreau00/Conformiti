@@ -80,7 +80,11 @@ class APITestBase(TestCase):
     @classmethod
     def setUpClass(cls):
         cls._media = tempfile.mkdtemp(prefix="conformiti-test-media-")
-        cls._override = override_settings(MEDIA_ROOT=cls._media)
+        # Header transport for the suite: most tests read the tokens out of
+        # the login response. Cookie mode (the shipped default since 0.6.1)
+        # is exercised by the classes that opt into it with override_settings,
+        # which wins over this because it is applied by setUpClass below.
+        cls._override = override_settings(MEDIA_ROOT=cls._media, AUTH_TRANSPORT="header")
         cls._override.enable()
         super().setUpClass()
 

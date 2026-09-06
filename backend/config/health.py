@@ -26,6 +26,26 @@ def demo_accounts_present():
     ).exists()
 
 
+def scanner_state():
+    """The malware scanner as the health endpoint reports it: off, or on and
+    reachable/unreachable. Cached for a minute in documents.monitor, so a
+    load balancer polling this never hammers clamd."""
+    from documents import monitor
+
+    try:
+        state = monitor.probe()
+    except Exception:  # pragma: no cover - health must answer regardless
+        return {"enabled": True, "reachable": False, "checked_at": None, "latency_ms": None,
+                "down_since": None}
+    return {
+        "enabled": state["enabled"],
+        "reachable": state["reachable"],
+        "checked_at": state["checked_at"].isoformat() if state.get("checked_at") else None,
+        "latency_ms": state.get("latency_ms"),
+        "down_since": state["down_since"].isoformat() if state.get("down_since") else None,
+    }
+
+
 class HealthView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -44,5 +64,6 @@ class HealthView(APIView):
             "version": __version__,
             "database": "ok" if db_ok else "unavailable",
             "demo_accounts": demo_accounts_present() if db_ok else None,
+            "scanning": scanner_state() if db_ok else None,
         }
         return Response(body, status=status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)

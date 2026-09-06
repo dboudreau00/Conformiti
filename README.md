@@ -1,11 +1,11 @@
 <div align="center">
 
-# Conformiti
+<img src="assets/brand/logo.svg" alt="Conformiti" width="360">
 
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, documents, risks and access reviews in one audit-ready workspace.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.5.0-2563d8.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.6.1-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -153,11 +153,15 @@ Local development without Docker (SQLite, console email) is one command too:
   sign-out, with actor, record, changed fields and IP.
 
 ### Security and access
-- **TOTP two-factor auth** with backup codes and admin reset; **passkeys and
-  security keys (WebAuthn)** alone or alongside it, with a clone detector
-  that disables the copied key and never drops the account to password-only;
-  **rotating, revocable refresh tokens**; per-client login throttles shared
-  across workers.
+- **TOTP two-factor auth** and **passkeys / security keys (WebAuthn)**, alone
+  or together, with backup codes that belong to the account and a clone
+  detector that disables the copied key and never drops the account to
+  password-only; **HttpOnly cookie sessions** by default with `__Host-`
+  prefixes over https, **rotating, revocable refresh tokens**; per-client
+  login throttles shared across workers.
+- **Malware scanning** of every upload when ClamAV is on, with a health probe,
+  an outage alert, and a re-scan sweep that quarantines a stored file the new
+  definitions match.
 - **Single sign-on over OpenID Connect or SAML 2.0** (Okta, Entra ID, Google
   Workspace, Keycloak…), configured from the environment only, with
   verified-email linking that never touches an administrator account,
@@ -172,6 +176,16 @@ Local development without Docker (SQLite, console email) is one command too:
 - Four theme packs (Audit Ledger, Nimbus, Ledger Dark, Obsidian), four accent
   packs and a custom accent colour; keyboard-accessible throughout; a per-user
   notification tray.
+
+### Identity
+A shield split along its centreline with one check struck across it, in four
+colourways with fixed meanings: **Governance Blue** is the corporate mark;
+**Assurance Green** means controls passing and audit ready; **Risk Red** is
+reserved for findings, escalations and alerts and is never the lockup;
+**Policy Purple** stands for frameworks and attestations. Sources in
+`assets/brand/` and `frontend/src/brand.js`.
+
+<img src="assets/brand/colourways.svg" alt="The four Conformiti colourways" width="640">
 
 ---
 
@@ -296,6 +310,13 @@ sealed into the manifest with the artefact that supports each one. After
 sealing, the auditor adds their own selections and records **pass, exception
 or not tested** per item, with an exception note that is required, not
 optional. The bundle carries the whole workpaper as `samples.csv`.
+
+Next year, **roll the package forward**: the same controls re-snapshotted as
+they stand today with today's evidence pinned, the old package recorded as the
+predecessor, and a **year-over-year** panel showing what entered or left scope,
+which evidence was replaced, and which of last year's exceptions are still
+open. The manifest names its predecessor, so a chain of engagements verifies
+end to end.
 
 The other half of the workflow is the **PBC request list** on the same
 package: what the auditor has asked for. The auditor raises lines from inside

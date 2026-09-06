@@ -4,6 +4,7 @@ import {
   DownloadIcon,
   FileTextIcon,
   LockIcon,
+  RefreshCwIcon,
   UserPlusIcon,
   XIcon,
 } from "lucide-react";
@@ -182,6 +183,19 @@ export default function Packages({ me }) {
       downloadFile(`/evidence-packages/${selectedId}/export/`,
         `${(selected?.name || "evidence-package").replace(/[^\w-]+/g, "-")}.zip`));
 
+  // Next year's draft from this sealed package: same controls re-snapshotted
+  // today, today's visible evidence pinned, this package as predecessor.
+  const rollForward = () => {
+    const name = window.prompt("Name for the new package:", `${selected?.name || "Package"} (roll-forward)`);
+    if (!name) return;
+    return act("roll", async () => {
+      const { data } = await api.post(`/evidence-packages/${selectedId}/roll_forward/`, { name });
+      await loadPackages(data.id);
+      const skipped = (data.skipped || []).length;
+      setMsg({ ok: true, text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}. Review the diff, then seal.` });
+    });
+  };
+
   const conclude = (row, field, value) =>
     act(`row-${row.id}`, async () => {
       const body = { [field]: value };
@@ -335,8 +349,28 @@ export default function Packages({ me }) {
                       Withdraw
                     </Button>
                   ) : null}
+                  {canAssemble && selected.status !== "draft" ? (
+                    <Button size="sm" onClick={rollForward} disabled={busy === "roll"}
+                            icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                      {busy === "roll" ? "Rolling…" : "Roll forward"}
+                    </Button>
+                  ) : null}
                 </div>
               </div>
+              {selected.prior_package ? (
+                <p className="mt-2 text-xs text-muted">
+                  Rolled forward from{" "}
+                  <button type="button" className="link" onClick={() => setSelectedId(selected.prior_package)}>{selected.prior_package_name}</button>
+                </p>
+              ) : null}
+              {(selected.successors || []).length ? (
+                <p className="mt-1 text-xs text-muted">
+                  Rolled forward into{" "}
+                  {selected.successors.map((s, i) => (
+                    <span key={s.id}>{i ? ", " : ""}<button type="button" className="link" onClick={() => setSelectedId(s.id)}>{s.name}</button></span>
+                  ))}
+                </p>
+              ) : null}
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <StatCard label="Controls" value={selected.control_count} />
@@ -424,6 +458,8 @@ export default function Packages({ me }) {
                 </ul>
               )}
             </Panel>
+
+            {selected.prior_package ? <YearOverYear key={`yoy-${selected.id}`} pkg={selected} /> : null}
 
             {/* ------------------------------------------ request list */}
             <PbcList key={selected.id} pkg={selected} controls={rows}
@@ -544,6 +580,78 @@ export default function Packages({ me }) {
     </div>
     <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
     </PanelTransition>
+  );
+}
+
+/** What changed since the predecessor, from the two packages' own snapshots:
+ * scope and controls in and out, evidence replaced, last year's exceptions. */
+function YearOverYear({ pkg }) {
+  const [diff, setDiff] = useState(null);
+  const [err, setErr] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.get(`/evidence-packages/${pkg.id}/diff/`)
+      .then((r) => live && setDiff(r.data))
+      .catch((e) => live && setErr(errorText(e, "Couldn't compare with the predecessor.")));
+    return () => { live = false; };
+  }, [pkg.id]);
+  const t = diff?.totals;
+  return (
+    <Panel className="overflow-hidden" aria-label="Year over year" role="region">
+      <PanelHeader title="Year over year" meta={diff ? `vs ${diff.prior.name}` : ""}>
+        {diff ? (
+          <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen((x) => !x)}>
+            {open ? "Hide detail" : "Show detail"}
+          </Button>
+        ) : null}
+      </PanelHeader>
+      {err ? <p className="px-5 py-3 text-xs text-danger">{err}</p> : !diff ? <Loading /> : (
+        <>
+          <div className="grid gap-3 px-5 py-4 sm:grid-cols-4">
+            <StatCard label="Controls added" value={t.controls_added} tone={t.controls_added ? "info" : undefined} />
+            <StatCard label="Controls dropped" value={t.controls_removed} tone={t.controls_removed ? "warning" : undefined} />
+            <StatCard label="Evidence replaced" value={t.evidence_changed + t.evidence_added}
+                      detail={`${t.evidence_changed} changed · ${t.evidence_added} new · ${t.evidence_removed} gone · ${t.evidence_same} unchanged`} />
+            <StatCard label="Prior exceptions" value={t.prior_exceptions}
+                      detail={t.prior_exceptions ? `${t.prior_exceptions_open} not yet concluded this year` : "None last year"}
+                      tone={t.prior_exceptions_open ? "danger" : t.prior_exceptions ? "success" : undefined} />
+          </div>
+          {(diff.scope.added.length || diff.scope.removed.length) ? (
+            <p className="border-t border-line px-5 py-2 text-xs text-muted">
+              Scope: {diff.scope.added.length ? `added ${diff.scope.added.join(", ")}` : ""}
+              {diff.scope.added.length && diff.scope.removed.length ? " · " : ""}
+              {diff.scope.removed.length ? `dropped ${diff.scope.removed.join(", ")}` : ""}
+            </p>
+          ) : null}
+          {open ? (
+            <ul className="divide-y divide-line border-t border-line">
+              {diff.controls.added.map((c) => (
+                <li key={`a-${c.id}`} className="px-5 py-2 text-xs"><Badge tone="info" mono>new</Badge> <span className="font-mono text-muted">{c.control_ref}</span> {c.title}</li>
+              ))}
+              {diff.controls.removed.map((c) => (
+                <li key={`r-${c.id}`} className="px-5 py-2 text-xs"><Badge tone="warning" mono>dropped</Badge> <span className="font-mono text-muted">{c.control_ref}</span> {c.title}</li>
+              ))}
+              {diff.controls.kept.map((c) => (
+                <li key={`k-${c.id}`} className="px-5 py-2 text-xs">
+                  <span className="font-mono text-muted">{c.control_ref}</span> {c.title}
+                  {c.prior_exception ? <Badge tone="danger" mono className="ml-2">exception last year</Badge> : null}
+                  {c.status_then !== c.status_now ? <span className="ml-2 text-faint">status {c.status_then} → {c.status_now}</span> : null}
+                  {c.evidence.changed.length || c.evidence.added.length || c.evidence.removed.length ? (
+                    <span className="mt-1 block text-faint">
+                      {c.evidence.changed.map((e) => `${e.now.document} v${e.then.version}→v${e.now.version}`)
+                        .concat(c.evidence.added.map((e) => `+ ${e.document}`), c.evidence.removed.map((e) => `− ${e.document}`))
+                        .join(" · ")}
+                    </span>
+                  ) : null}
+                  {c.prior_auditor_note ? <span className="mt-1 block text-muted">Last year: {c.prior_auditor_note}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </Panel>
   );
 }
 

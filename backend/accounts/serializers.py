@@ -163,7 +163,9 @@ class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
         otp = (self.initial_data.get("otp") or "").strip()
         assertion = self.initial_data.get("passkey")
         if otp:
-            if not (totp_on and device.verify(otp)):
+            # An authenticator code, or one of the account's backup codes --
+            # which a passkey-only person also holds.
+            if not ((totp_on and device.verify(otp)) or user.verify_backup_code(otp)):
                 raise AuthenticationFailed("Invalid authentication code.", "mfa_invalid")
             return data
         if assertion is not None:

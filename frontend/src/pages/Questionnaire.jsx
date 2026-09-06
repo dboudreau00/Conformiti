@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
+import { ConformitiMark } from "../components/brand/ConformitiMark.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -25,7 +26,7 @@ const fmt = (iso) => {
 function Header({ vendor, organisation }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-accent font-semibold text-accent-ink" aria-hidden="true">C</div>
+      <ConformitiMark size={36} title="Conformiti" />
       <div className="min-w-0">
         <p className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{organisation || "Conformiti"}</p>
         <Label>Security questionnaire{vendor ? ` · ${vendor}` : ""}</Label>

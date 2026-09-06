@@ -5,6 +5,7 @@ import { NAV_SECTIONS } from "../../nav.js";
 import { useShell } from "../../shell.js";
 import { cn } from "../../utils/cn.js";
 import { Label } from "../ui/Panel.jsx";
+import { ConformitiLogo } from "../brand/ConformitiLogo.jsx";
 import { NavIcon } from "./NavIcon.jsx";
 
 export function Sidebar({ onSignOut }) {
@@ -16,14 +17,8 @@ export function Sidebar({ onSignOut }) {
       aria-label="Primary"
       className="sticky top-0 flex h-screen w-[248px] shrink-0 flex-col border-r border-line bg-surface-2 transition-colors duration-300 ease-out max-md:hidden"
     >
-      <div className="flex items-center gap-3 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-accent font-semibold text-accent-ink shadow-[0_1px_2px_rgb(0_0_0/0.18)]" aria-hidden="true">
-          C
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">Conformiti</p>
-          <Label className="text-faint">SOC 2 · ISO 27001 · PCI</Label>
-        </div>
+      <div className="px-5 py-5">
+        <ConformitiLogo size={36} tagline="SOC 2 · ISO 27001 · PCI" />
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">

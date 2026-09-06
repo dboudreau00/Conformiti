@@ -24,10 +24,11 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from audit.events import record_package_event
 from compliance.models import Control
+from documents import monitor
 from documents.downloads import serve_stored_file
 from documents.models import Document
 
-from . import access, bundle
+from . import access, bundle, rollforward
 from .manifest import canonical_bytes, sha256_hex
 from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant, PackageSample
 from .serializers import (
@@ -75,8 +76,21 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         return access.readable_packages(self.request.user) \
             .select_related("framework").prefetch_related("grants", "scope")
 
+    def _check_prior(self, prior, package=None):
+        """A predecessor must be one the caller can read, no longer a draft,
+        and not lead back to this package."""
+        if prior is None:
+            return
+        if prior not in access.readable_packages(self.request.user):
+            raise ValidationError({"prior_package": "Unknown package."})
+        if prior.status == EvidencePackage.Status.DRAFT:
+            raise ValidationError({"prior_package": "Roll forward from a sealed package, not a draft."})
+        if package is not None and rollforward.would_cycle(package, prior):
+            raise ValidationError({"prior_package": "That would make the package its own predecessor."})
+
     def perform_create(self, serializer):
         user = self.request.user
+        self._check_prior(serializer.validated_data.get("prior_package"))
         package = serializer.save(
             created_by=user,
             created_by_name=(user.get_full_name() or user.get_username())[:200],
@@ -85,8 +99,44 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                              f"opened evidence package {package.pk}: {package.name}")
 
     def perform_update(self, serializer):
-        assert_open(self.get_object())
+        package = self.get_object()
+        assert_open(package)
+        if "prior_package" in serializer.validated_data:
+            self._check_prior(serializer.validated_data.get("prior_package"), package)
         serializer.save()
+
+    # ------------------------------------------------------------ roll-forward
+    @action(detail=True, methods=["post"])
+    def roll_forward(self, request, pk=None):
+        """Open next year's draft from this sealed package: the same controls
+        re-snapshotted today, today's visible evidence pinned, and this package
+        recorded as the predecessor. Conclusions and samples are not copied."""
+        prior = self.get_object()
+        if not access.can_assemble(request.user):
+            raise PermissionDenied("You need the frameworks capability to roll a package forward.")
+        try:
+            package, skipped = rollforward.roll_forward(
+                prior, request.user, name=str(request.data.get("name") or "").strip() or None,
+                engagement=request.data.get("engagement"))
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)})
+        record_package_event(request, package, "create",
+                             f"rolled package {prior.pk} forward into {package.pk}: {package.name}")
+        data = EvidencePackageSerializer(package, context={"request": request}).data
+        data["skipped"] = skipped
+        return Response(data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"])
+    def diff(self, request, pk=None):
+        """The year-over-year comparison with the predecessor, from the two
+        packages' own snapshots."""
+        package = self.get_object()
+        result = rollforward.diff(package)
+        if result is None:
+            raise ValidationError({"detail": "This package has no predecessor."})
+        if package.prior_package not in access.readable_packages(request.user):
+            raise PermissionDenied("You cannot read the predecessor package.")
+        return Response(result)
 
     def perform_destroy(self, instance):
         # A sealed package is a record of a disclosure. Withdraw it instead.
@@ -526,6 +576,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         row = self.get_object()
         if row.document is None or not row.document.file:
             raise ValidationError({"detail": "This evidence file is no longer available."})
+        monitor.refuse_if_quarantined(row.document)
         package = row.package_control.package
         grant = access.live_grant(request.user, package)
         if grant is not None:
@@ -548,6 +599,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         row = self.get_object()
         if row.document is None or not row.document.file:
             raise ValidationError({"detail": "This evidence file is no longer available."})
+        monitor.refuse_if_quarantined(row.document)
         package = row.package_control.package
         grant = access.live_grant(request.user, package)
         if grant is not None:

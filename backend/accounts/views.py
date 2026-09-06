@@ -123,6 +123,7 @@ class UserViewSet(viewsets.ModelViewSet):
         # remaining key was flagged as cloned.
         removed = target.passkeys.count()
         target.passkeys.all().delete()
+        target.backup_codes.all().delete()
         from audit.events import record_auth_event
         record_auth_event(request, target, "mfa",
                           f"MFA reset by {request.user.get_username()}: authenticator "
@@ -217,9 +218,7 @@ class MfaStatusView(APIView):
         return Response({
             "enabled": bool(device and device.enabled),
             "pending": bool(device and not device.enabled),
-            "backup_codes_remaining": (
-                device.backup_codes.filter(used_at__isnull=True).count() if device and device.enabled else 0
-            ),
+            "backup_codes_remaining": request.user.backup_codes_remaining,
             "passkeys": request.user.passkeys.count(),
             "passkeys_suspect": factors["passkey_suspect"],
             # Whether signing in takes a second factor at all.
@@ -242,7 +241,6 @@ class MfaSetupView(APIView):
             device.secret = secret
             device.confirmed_at = None
             device.save(update_fields=["secret", "confirmed_at"])
-            device.backup_codes.all().delete()
         else:
             device = MfaDevice.objects.create(user=request.user, secret=secret)
         account = request.user.email or request.user.get_username()
@@ -271,9 +269,14 @@ class MfaVerifyView(APIView):
         device.enabled = True
         device.confirmed_at = timezone.now()
         device.save(update_fields=["enabled", "confirmed_at"])
-        codes = mfa_lib.generate_backup_codes()
-        device.set_backup_codes(codes)
-        return Response({"enabled": True, "backup_codes": codes})
+        # Codes belong to the account: a person who already holds unused ones
+        # (from a passkey enrolment) keeps them rather than having them
+        # silently replaced.
+        codes = None
+        if request.user.backup_codes_remaining == 0:
+            codes = request.user.issue_backup_codes()
+        return Response({"enabled": True, "backup_codes": codes,
+                         "backup_codes_remaining": request.user.backup_codes_remaining})
 
 
 class MfaDisableView(APIView):
@@ -288,20 +291,22 @@ class MfaDisableView(APIView):
         device = getattr(request.user, "mfa_device", None)
         if device:
             device.delete()
+        # With no second factor left, backup codes have nothing to back up.
+        if not request.user.passkeys.exists():
+            request.user.backup_codes.all().delete()
         return Response({"enabled": False})
 
 
 class MfaBackupCodesView(APIView):
-    """Regenerate backup codes (invalidates the old set). Password-gated."""
+    """Regenerate backup codes (invalidates the old set). Password-gated, and
+    open to anyone with a second factor -- authenticator app or passkey."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
     def post(self, request):
-        device = getattr(request.user, "mfa_device", None)
-        if not (device and device.enabled):
-            return Response({"detail": "Enable MFA first."}, status=400)
+        if not request.user.mfa_enabled:
+            return Response({"detail": "Enrol an authenticator app or a passkey first."}, status=400)
         if not request.user.check_password(request.data.get("password") or ""):
             return Response({"detail": "Password is incorrect."}, status=400)
-        codes = mfa_lib.generate_backup_codes()
-        device.set_backup_codes(codes)
+        codes = request.user.issue_backup_codes()
         return Response({"backup_codes": codes})

@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+  <body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2933; line-height: 1.5; max-width: 640px; margin: 0 auto; padding: 24px;">
+    {% if down %}
+    <p>The malware scanner behind Conformiti <strong>stopped answering</strong> at {{ since }}.</p>
+    <p>While it is unreachable every evidence upload is refused (scanning fails closed), so people cannot file documents until it is back. Check the clamav container or daemon:</p>
+    <pre style="background: #f5f7fa; padding: 12px; border-radius: 8px;">docker compose ps clamav
+docker compose logs clamav</pre>
+    <p style="color: #52606d; font-size: 14px;">This message is sent once per outage; a follow-up confirms recovery.</p>
+    {% else %}
+    <p>The malware scanner is <strong>answering again</strong> (as of {{ since }}). Uploads are accepted once more.</p>
+    {% endif %}
+    <p style="color: #7b8794; font-size: 12px; margin-top: 24px;">&mdash; Conformiti</p>
+  </body>
+</html>

@@ -322,8 +322,8 @@ def check_css(files):
         src = read(f)
         if "app.css" in src:
             err("css", f"{os.path.relpath(f, ROOT)} still imports app.css")
-        if os.path.basename(f) in ("theme.js",):
-            continue  # swatch data, not styling
+        if os.path.basename(f) in ("theme.js", "brand.js") or os.sep + "brand" + os.sep in f:
+            continue  # swatch data and the identity's fixed colourways, not styling
         for m in re.finditer(r"#[0-9a-fA-F]{6}\b", src):
             hard.setdefault(os.path.relpath(f, ROOT), 0)
             hard[os.path.relpath(f, ROOT)] += 1

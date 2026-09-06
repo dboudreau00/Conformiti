@@ -103,6 +103,7 @@ class DocumentSerializer(serializers.ModelSerializer):
     # `download_url`, which the API authorises and records.
     file = serializers.FileField(write_only=True)
     download_url = serializers.SerializerMethodField()
+    quarantined = serializers.BooleanField(source="is_quarantined", read_only=True)
 
     class Meta:
         model = Document
@@ -111,9 +112,11 @@ class DocumentSerializer(serializers.ModelSerializer):
             "control", "control_id", "owner", "owner_name", "status",
             "review_cadence", "last_reviewed", "next_review_date",
             "is_overdue", "days_until_review", "version",
+            "scan_status", "scan_signature", "scanned_at", "quarantined",
             "created_by", "created_at", "updated_at", "satisfies",
         ]
-        read_only_fields = ["version", "created_by", "next_review_date"]
+        read_only_fields = ["version", "created_by", "next_review_date",
+                            "scan_status", "scan_signature", "scanned_at"]
 
     def get_download_url(self, obj):
         return f"/documents/{obj.pk}/download/" if obj.file else None

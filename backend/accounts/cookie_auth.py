@@ -40,18 +40,37 @@ def cookie_mode():
     return transport() == "cookie"
 
 
+def _secure():
+    return bool(getattr(settings, "AUTH_COOKIE_SECURE", not settings.DEBUG))
+
+
 def access_cookie_name():
-    return getattr(settings, "AUTH_COOKIE_ACCESS", "conformiti_access")
+    """`__Host-` when the cookie is Secure: bound to this exact host, Path=/,
+    no Domain, so nothing on a sibling subdomain can plant or replace it.
+    Browsers refuse the prefix over plain http, hence the plain fallback."""
+    configured = getattr(settings, "AUTH_COOKIE_ACCESS", "") or ""
+    if configured:
+        return configured
+    return "__Host-conformiti_access" if _secure() else "conformiti_access"
 
 
 def refresh_cookie_name():
-    return getattr(settings, "AUTH_COOKIE_REFRESH", "conformiti_refresh")
+    """`__Secure-` rather than `__Host-`: the host prefix would force Path=/,
+    and the refresh token's narrow path is worth more than the prefix."""
+    configured = getattr(settings, "AUTH_COOKIE_REFRESH", "") or ""
+    if configured:
+        return configured
+    return "__Secure-conformiti_refresh" if _secure() else "conformiti_refresh"
+
+
+def access_cookie_path():
+    return "/" if access_cookie_name().startswith("__Host-") else "/api/"
 
 
 def _cookie_kwargs():
     return {
         "httponly": True,
-        "secure": bool(getattr(settings, "AUTH_COOKIE_SECURE", not settings.DEBUG)),
+        "secure": _secure(),
         # Pinned, not configurable: see the module docstring.
         "samesite": "Lax",
     }
@@ -62,7 +81,7 @@ def set_auth_cookies(response, access=None, refresh=None):
     common = _cookie_kwargs()
     if access is not None:
         response.set_cookie(
-            access_cookie_name(), access, path="/api/",
+            access_cookie_name(), access, path=access_cookie_path(),
             max_age=int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds()),
             **common,
         )
@@ -87,12 +106,14 @@ def clear_auth_cookies(response):
     Secure+HttpOnly cookie with one that lacks those attributes.
     """
     common = _cookie_kwargs()
-    response.set_cookie(access_cookie_name(), "", path="/api/", max_age=0, **common)
-    response.set_cookie(
-        refresh_cookie_name(), "",
-        path=getattr(settings, "AUTH_COOKIE_REFRESH_PATH", "/api/auth/token/"),
-        max_age=0, **common,
-    )
+    refresh_path = getattr(settings, "AUTH_COOKIE_REFRESH_PATH", "/api/auth/token/")
+    response.set_cookie(access_cookie_name(), "", path=access_cookie_path(), max_age=0, **common)
+    response.set_cookie(refresh_cookie_name(), "", path=refresh_path, max_age=0, **common)
+    # Cookies set by a release before the prefixed names, so a sign-out after
+    # an upgrade leaves nothing behind under the old names.
+    for legacy, path in (("conformiti_access", "/api/"), ("conformiti_refresh", refresh_path)):
+        if legacy not in (access_cookie_name(), refresh_cookie_name()):
+            response.set_cookie(legacy, "", path=path, max_age=0, **common)
     return response
 
 

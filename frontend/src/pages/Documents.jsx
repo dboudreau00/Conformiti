@@ -692,8 +692,9 @@ export default function Documents({ me }) {
                                       {d.folder_path}{d.control_id ? ` · ${d.control_id}` : ""}
                                     </span>
                                   </span>
-                                  <span>
+                                  <span className="flex flex-col items-start gap-1">
                                     <Badge tone={status.tone} dot>{status.label}</Badge>
+                                    {d.quarantined ? <Badge tone="danger" mono title={d.scan_signature}>quarantined</Badge> : null}
                                   </span>
                                   <span className="flex flex-col items-start gap-1">
                                     <span className="tabular font-mono text-xs" style={{ color: toneVar(dueTone(days)) }}>

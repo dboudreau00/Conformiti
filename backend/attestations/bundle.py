@@ -128,6 +128,12 @@ def package_payload(package):
         "created_by": package.created_by_name,
         "created_at": _iso(package.created_at),
         "generator": GENERATOR,
+        "prior": ({
+            "id": package.prior_package.pk,
+            "name": package.prior_package.name,
+            "sealed_at": _iso(package.prior_package.sealed_at),
+            "manifest_sha256": package.prior_package.manifest_sha256,
+        } if package.prior_package_id else None),
     }
 
 
@@ -300,6 +306,9 @@ def readme_text(package, digest, summary):
         f"Assembled by     {package.created_by_name} on {_iso(package.created_at)}",
         f"Sealed by        {package.sealed_by_name} on {_iso(package.sealed_at)}",
         f"Exported         {timezone.now().isoformat()}",
+        *([f"Predecessor      {package.prior_package.name} "
+           f"(manifest sha256 {package.prior_package.manifest_sha256 or '-'})"]
+          if package.prior_package_id else []),
         "",
         f"Controls         {summary['controls']}",
         f"Evidence files   {summary['items']}",

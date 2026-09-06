@@ -225,6 +225,9 @@ def factors(user):
         "totp": user.totp_enabled,
         "passkey": usable > 0,
         "passkey_suspect": total - usable,
+        # Recovery codes belong to the account, so a passkey-only person can
+        # still type one when the key is lost.
+        "backup_codes": user.backup_codes_remaining > 0,
     }
 
 

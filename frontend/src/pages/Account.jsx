@@ -443,11 +443,13 @@ function MfaBlock() {
     setBusy(true);
     try {
       const { data } = await api.post("/auth/mfa/verify/", { code: code.trim() });
-      setCodes(data.backup_codes);
+      setCodes(data.backup_codes || null);
       setSetup(null);
       setCode("");
       loadStatus();
-      setMsg({ ok: true, text: "Two-factor authentication is on." });
+      setMsg({ ok: true, text: data.backup_codes
+        ? "Two-factor authentication is on."
+        : `Two-factor authentication is on. Your existing ${data.backup_codes_remaining} backup codes still work.` });
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "That code isn't valid.") });
     } finally {
@@ -523,7 +525,8 @@ function MfaBlock() {
               </span>
             </span>
             <Badge tone={status.enabled ? "success" : "muted"} dot>
-              {status.enabled ? `On · ${remaining} backup ${remaining === 1 ? "code" : "codes"} left` : "Off"}
+              {status.enabled ? `On · ${remaining} backup ${remaining === 1 ? "code" : "codes"} left`
+                : status.second_factor ? `Off · ${remaining} backup ${remaining === 1 ? "code" : "codes"} left (passkey)` : "Off"}
             </Badge>
             {!status.enabled && !setup ? (
               <Button size="sm" variant="primary" onClick={begin} disabled={busy}>
@@ -576,8 +579,8 @@ function MfaBlock() {
         </form>
       ) : null}
 
-      {/* Enabled → manage */}
-      {status?.enabled && !codes ? (
+      {/* A second factor of either kind → manage backup codes; the app → turn off */}
+      {status?.second_factor && !codes ? (
         <div className="mt-4 max-w-[640px]">
           <Field id="mfa-password" label="Confirm your password to make changes">
             <input
@@ -593,10 +596,15 @@ function MfaBlock() {
             <Button onClick={regen} disabled={busy || !password} icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
               Regenerate backup codes
             </Button>
-            <Button variant="danger" onClick={disable} disabled={busy || !password}>
-              Turn off
-            </Button>
+            {status.enabled ? (
+              <Button variant="danger" onClick={disable} disabled={busy || !password}>
+                Turn off
+              </Button>
+            ) : null}
           </div>
+          {!status.enabled ? (
+            <p className="mt-2 text-xs text-muted">Backup codes belong to your account: they work beside your passkeys too.</p>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -615,6 +623,7 @@ function PasskeysBlock() {
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [codes, setCodes] = useState(null); // backup codes issued with the first factor
   const supported = passkeysSupported();
 
   function load() {
@@ -632,10 +641,13 @@ function PasskeysBlock() {
     try {
       const { data } = await api.post("/auth/webauthn/register/options/");
       const credential = await createPasskey(data.options);
-      await api.post("/auth/webauthn/register/", { state: data.state, name: name.trim(), credential });
+      const done = await api.post("/auth/webauthn/register/", { state: data.state, name: name.trim(), credential });
       setName("");
+      setCodes(done.data?.backup_codes || null);
       load();
-      setMsg({ ok: true, text: "Passkey enrolled. Signing in now takes your password and this key." });
+      setMsg({ ok: true, text: done.data?.backup_codes
+        ? "Passkey enrolled. Save the backup codes below: they are the way back in if you lose this key."
+        : "Passkey enrolled. Signing in now takes your password and this key." });
     } catch (err) {
       setMsg({ ok: false, text: passkeyErrorText(err) });
     } finally {
@@ -717,6 +729,7 @@ function PasskeysBlock() {
         </>
       )}
       <Notice msg={msg} className="mt-4 max-w-[640px]" />
+      {codes ? <BackupCodes codes={codes} /> : null}
       {state && supported && rows.length < (state.max || 10) ? (
         <form onSubmit={add} noValidate className="mt-4 flex max-w-[640px] flex-wrap items-end gap-2">
           <Field id="passkey-name" label="Name for the new key" className="min-w-[220px] flex-1">
@@ -738,7 +751,7 @@ function PasskeysBlock() {
                    value={password} onChange={(e) => setPassword(e.target.value)} />
           </Field>
           <p className="mt-2 text-xs text-muted">
-            Recovery if you lose this key: a second passkey, the authenticator app with its backup codes, or an administrator's reset. Enrol one of those before you rely on a single key.
+            Recovery if you lose this key: your backup codes (issued with your first factor; regenerate them under the authenticator block), a second passkey, the authenticator app, or an administrator's reset.
           </p>
         </div>
       ) : null}
@@ -915,10 +928,17 @@ function AboutSection() {
     };
   }, []);
 
+  const scanning = health?.scanning;
+  const scannerLabel = !scanning || !scanning.enabled
+    ? "Off"
+    : scanning.reachable
+      ? `On · answering${scanning.latency_ms != null ? ` in ${scanning.latency_ms} ms` : ""}`
+      : `On · UNREACHABLE${scanning.down_since ? ` since ${String(scanning.down_since).slice(0, 16).replace("T", " ")}` : ""}`;
   const rows = [
     ["Version", health?.version ? `v${health.version}` : "—"],
     ["Frameworks", frameworks ? `${frameworks.length} loaded` : "…"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
+    ["Malware scanning", scannerLabel],
     ["Licence", "MIT"],
   ];
 

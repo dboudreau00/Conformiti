@@ -233,7 +233,8 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertEqual((status["passkeys"], status["second_factor"], status["enabled"]), (1, True, False))
 
         r = self.challenge("mia")
-        self.assertEqual(r.data["factors"], {"totp": False, "passkey": True, "passkey_suspect": 0})
+        self.assertEqual(r.data["factors"],
+                         {"totp": False, "passkey": True, "passkey_suspect": 0, "backup_codes": True})
         options = r.data["passkey"]["options"]
         self.assertEqual(options["rpId"], RP_ID)
         self.assertEqual(options["allowCredentials"][0]["id"], wa.b64url_encode(auth.credential_id))
@@ -321,7 +322,8 @@ class EnrolAndLoginTests(PasskeyTestBase):
         MfaDevice.objects.create(user=self.owner, secret=secret, enabled=True)
         auth, _ = self.enrol(self.owner)
         r = self.challenge("owen")
-        self.assertEqual(r.data["factors"], {"totp": True, "passkey": True, "passkey_suspect": 0})
+        self.assertEqual(r.data["factors"],
+                         {"totp": True, "passkey": True, "passkey_suspect": 0, "backup_codes": False})
         self.assertEqual(self.login_with("owen", auth).status_code, 200)
         code = APIClient().post("/api/auth/token/", {"username": "owen", "password": PASSWORD,
                                                      "otp": mfa_lib.totp(secret)}, format="json")
@@ -420,7 +422,9 @@ class CloneTests(PasskeyTestBase):
         # The account still demands a second factor -- the password alone is
         # a challenge with nothing usable on offer, never a sign-in.
         r = self.challenge("owen")
-        self.assertEqual(r.data["factors"], {"totp": False, "passkey": False, "passkey_suspect": 1})
+        # The codes issued with the key are the way back in; the key is not.
+        self.assertEqual(r.data["factors"],
+                         {"totp": False, "passkey": False, "passkey_suspect": 1, "backup_codes": True})
         self.assertNotIn("passkey", r.data)
         self.assertNotIn("access", r.data)
         # The real key, even with a good counter, is refused while suspect.
@@ -463,6 +467,64 @@ class CloneTests(PasskeyTestBase):
         fresh, r = self.enrol(self.owner, name="Replacement")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(self.login_with("owen", fresh).status_code, 200)
+
+
+# --------------------------------------------------------------------------- #
+# Backup codes belong to the account, so a passkey-only person has them
+# --------------------------------------------------------------------------- #
+class BackupCodeTests(PasskeyTestBase):
+    def test_the_first_passkey_comes_with_backup_codes_that_sign_in(self):
+        auth, r = self.enrol(self.owner)
+        codes = r.data["backup_codes"]
+        self.assertEqual(len(codes), 10)
+        self.assertTrue(r.data["factors"]["backup_codes"])
+        # A second key does not reissue them.
+        _, again = self.enrol(self.owner, name="Second")
+        self.assertIsNone(again.data["backup_codes"])
+        challenge = self.challenge("owen")
+        self.assertEqual((challenge.data["factors"]["totp"], challenge.data["factors"]["backup_codes"]),
+                         (False, True))
+        # A backup code is accepted as the `otp`, once.
+        from django.core.cache import cache
+        cache.clear()
+        ok = APIClient().post("/api/auth/token/", {"username": "owen", "password": PASSWORD,
+                                                   "otp": codes[0]}, format="json")
+        self.assertEqual(ok.status_code, 200, ok.data)
+        cache.clear()
+        again = APIClient().post("/api/auth/token/", {"username": "owen", "password": PASSWORD,
+                                                      "otp": codes[0]}, format="json")
+        self.assertEqual(again.status_code, 401)
+        status = self.client_for(self.owner).get("/api/auth/mfa/status/").data
+        self.assertEqual((status["enabled"], status["backup_codes_remaining"]), (False, 9))
+
+    def test_codes_regenerate_with_the_password_and_go_with_the_last_factor(self):
+        auth, r = self.enrol(self.owner)
+        c = self.client_for(self.owner)
+        self.assertEqual(c.post("/api/auth/mfa/backup-codes/", {"password": "wrong"}, format="json").status_code, 400)
+        fresh = c.post("/api/auth/mfa/backup-codes/", {"password": PASSWORD}, format="json")
+        self.assertEqual(fresh.status_code, 200)
+        self.assertEqual(len(fresh.data["backup_codes"]), 10)
+        self.assertNotEqual(set(fresh.data["backup_codes"]), set(r.data["backup_codes"]))
+        # Removing the only factor removes the codes: nothing to back up.
+        c.delete(f"/api/auth/webauthn/{r.data['id']}/", {"password": PASSWORD}, format="json")
+        self.assertEqual(self.owner.backup_codes_remaining, 0)
+        self.assertEqual(self.client_for(self.viewer).post("/api/auth/mfa/backup-codes/",
+                                                            {"password": PASSWORD}, format="json").status_code, 400)
+
+    def test_enrolling_the_app_after_a_passkey_keeps_the_existing_codes(self):
+        _, r = self.enrol(self.owner)
+        c = self.client_for(self.owner)
+        setup = c.post("/api/auth/mfa/setup/").data
+        verify = c.post("/api/auth/mfa/verify/", {"code": mfa_lib.totp(setup["secret"])}, format="json")
+        self.assertEqual(verify.status_code, 200, verify.data)
+        self.assertIsNone(verify.data["backup_codes"])
+        self.assertEqual(verify.data["backup_codes_remaining"], 10)
+        # And the passkey's codes still sign in beside the app.
+        from django.core.cache import cache
+        cache.clear()
+        ok = APIClient().post("/api/auth/token/", {"username": "owen", "password": PASSWORD,
+                                                   "otp": r.data["backup_codes"][3]}, format="json")
+        self.assertEqual(ok.status_code, 200)
 
 
 # --------------------------------------------------------------------------- #

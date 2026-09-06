@@ -63,7 +63,7 @@ export async function redeemSso(ticket, second) {
   const body = withSecondFactor({ ticket }, second);
   const { data } = await axios.post("/api/auth/oidc/redeem/", body, {
     withCredentials: true,
-    headers: cookieMode() ? { "X-CSRFToken": readCookie("csrftoken") || "" } : {},
+    headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {},
   });
   if (data?.mfa_required) return data;
   if (!cookieMode()) {
@@ -78,6 +78,12 @@ function readCookie(name) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+/** Django's CSRF cookie: `__Host-csrftoken` when the site is served over
+ *  https (the host-bound prefix), plain `csrftoken` otherwise. */
+function csrfToken() {
+  return readCookie("__Host-csrftoken") || readCookie("csrftoken") || "";
+}
+
 const api = axios.create({ baseURL: "/api", withCredentials: true });
 
 const UNSAFE = ["post", "put", "patch", "delete"];
@@ -86,7 +92,7 @@ api.interceptors.request.use((config) => {
   if (cookieMode()) {
     // The cookie is attached by the browser; what it cannot forge is this.
     if (UNSAFE.includes((config.method || "get").toLowerCase())) {
-      const csrf = readCookie("csrftoken");
+      const csrf = csrfToken();
       if (csrf) config.headers["X-CSRFToken"] = csrf;
     }
     return config;
@@ -113,7 +119,7 @@ api.interceptors.response.use(
             "/api/auth/token/refresh/",
             cookieMode() ? {} : { refresh },
             { withCredentials: true,
-              headers: cookieMode() ? { "X-CSRFToken": readCookie("csrftoken") || "" } : {} }
+              headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {} }
           );
           const { data } = await refreshing;
           refreshing = null;
@@ -138,7 +144,7 @@ export async function login(username, password, second) {
   const body = withSecondFactor({ username, password }, second);
   const { data } = await axios.post("/api/auth/token/", body, {
     withCredentials: true,
-    headers: cookieMode() ? { "X-CSRFToken": readCookie("csrftoken") || "" } : {},
+    headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {},
   });
   if (!cookieMode()) {
     localStorage.setItem("access", data.access);

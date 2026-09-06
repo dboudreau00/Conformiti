@@ -336,10 +336,13 @@ class MfaSecretAtRestTests(APITestBase):
         are deliberately left unencrypted."""
         self.device.enabled = True
         self.device.save()
-        self.device.set_backup_codes(["abcd-1234"])
+        self.owner.set_backup_codes(["abcd-1234"])
         with override_settings(FIELD_ENCRYPTION_KEYS=["a-totally-different-key-000000000000"]):
-            device = MfaDevice.objects.get(pk=self.device.pk)
-            self.assertTrue(device.verify("abcd-1234"))
+            r = APIClient().post("/api/auth/token/",
+                                 {"username": self.owner.username, "password": PASSWORD,
+                                  "otp": "abcd-1234"}, format="json")
+            self.assertEqual(r.status_code, 200, r.data)
+            self.assertFalse(self.owner.verify_backup_code("abcd-1234"))   # single use
 
     def test_enrolment_and_verification_work_end_to_end(self):
         """The whole point: encryption must be invisible to the feature."""
@@ -501,17 +504,23 @@ class CookieAuthTests(APITestBase):
         self.assertEqual(r.data["transport"], "cookie")
 
 
-class HeaderModeRegressionTests(APITestBase):
-    """The default transport is unchanged, because flipping it silently would
-    sign every existing deployment out."""
+class TransportDefaultTests(APITestBase):
+    """Cookie transport is the default since 0.6.1 (the suite itself runs
+    header mode from testutils so older tests keep reading tokens). Header
+    mode stays available and behaves as it always did."""
 
-    def test_the_default_returns_tokens_and_sets_no_auth_cookies(self):
+    def test_the_shipped_default_is_cookie(self):
+        from config import settings as raw
+        self.assertEqual(raw.AUTH_TRANSPORT, "cookie")
+
+    def test_header_mode_returns_tokens_and_sets_no_auth_cookies(self):
         r = APIClient().post("/api/auth/token/",
                              {"username": "mia", "password": PASSWORD}, format="json")
         self.assertEqual(r.status_code, 200)
         self.assertIn("access", r.data)
         self.assertIn("refresh", r.data)
         self.assertNotIn("conformiti_access", r.cookies)
+        self.assertEqual(APIClient().get("/api/auth/config/").data["transport"], "header")
 
     def test_a_leftover_cookie_does_not_authenticate_in_header_mode(self):
         with override_settings(AUTH_TRANSPORT="cookie", AUTH_COOKIE_SECURE=False):
@@ -522,5 +531,25 @@ class HeaderModeRegressionTests(APITestBase):
         client.cookies["conformiti_access"] = access
         self.assertEqual(client.get("/api/users/me/").status_code, 401)
 
-    def test_the_config_endpoint_reports_the_header_transport(self):
-        self.assertEqual(APIClient().get("/api/auth/config/").data["transport"], "header")
+    def test_secure_cookies_carry_the_host_and_secure_prefixes(self):
+        """Over https the access cookie is host-bound (Path=/, no Domain) and
+        the refresh cookie keeps its narrow path under the __Secure- prefix."""
+        with override_settings(AUTH_TRANSPORT="cookie", AUTH_COOKIE_SECURE=True):
+            r = APIClient().post("/api/auth/token/",
+                                 {"username": "mia", "password": PASSWORD}, format="json", secure=True)
+            self.assertEqual(r.status_code, 200)
+            self.assertNotIn("access", r.data)
+            access = r.cookies["__Host-conformiti_access"]
+            refresh = r.cookies["__Secure-conformiti_refresh"]
+            self.assertEqual((access["path"], bool(access["secure"]), bool(access["httponly"])),
+                             ("/", True, True))
+            self.assertEqual((refresh["path"], bool(refresh["secure"])), ("/api/auth/token/", True))
+            self.assertNotIn("conformiti_access", r.cookies)
+            # Signing out expires the prefixed names and the pre-0.6.1 ones.
+            client = APIClient()
+            client.cookies["__Host-conformiti_access"] = access.value
+            out = client.post("/api/auth/session/clear/", {}, format="json", secure=True)
+            self.assertEqual(out.status_code, 200)
+            for name in ("__Host-conformiti_access", "__Secure-conformiti_refresh",
+                         "conformiti_access", "conformiti_refresh"):
+                self.assertEqual(out.cookies[name]["max-age"], 0, name)

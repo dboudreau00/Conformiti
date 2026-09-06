@@ -1,0 +1,10 @@
+{% if down %}The malware scanner behind Conformiti stopped answering at {{ since }}.
+
+While it is unreachable every evidence upload is refused (scanning fails closed), so people cannot file documents until it is back. Check the clamav container or daemon:
+
+  docker compose ps clamav
+  docker compose logs clamav
+
+This message is sent once per outage; a follow-up confirms recovery.{% else %}The malware scanner is answering again (as of {{ since }}). Uploads are accepted once more.{% endif %}
+
+-- Conformiti

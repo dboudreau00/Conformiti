@@ -4,8 +4,9 @@ import { motion } from "framer-motion";
 import axios from "axios";
 import { login, oidcConfig, redeemSso, samlConfig } from "../api/client.js";
 import { getAssertion, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
+import { ConformitiLogo } from "../components/brand/ConformitiLogo.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { Label, Panel } from "../components/ui/Panel.jsx";
+import { Panel } from "../components/ui/Panel.jsx";
 
 // What the server's sso_error codes mean to a person. Anything unlisted is a
 // plain refusal; the audit log has the specifics.
@@ -25,7 +26,7 @@ const SSO_ERRORS = {
   mfa_required: "This server requires a second factor for single sign-on. Sign in with your password once and enrol an authenticator, or have your identity provider assert one.",
 };
 
-const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0 };
+const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0, backup_codes: false };
 
 export default function Login({ onDone }) {
   const nav = useNavigate();
@@ -195,8 +196,11 @@ export default function Login({ onDone }) {
     }
   }
 
-  // Nothing usable: every passkey is suspect and there is no authenticator app.
-  const lockedOut = mfaStep && !factors.totp && !factors.passkey && factors.passkey_suspect > 0;
+  // Something typed can satisfy the step: an authenticator code, or a backup
+  // code -- which a passkey-only account holds too.
+  const codeWorks = factors.totp || factors.backup_codes;
+  // Nothing usable: every passkey is suspect, no app, no codes left.
+  const lockedOut = mfaStep && !codeWorks && !factors.passkey && factors.passkey_suspect > 0;
   const showCode = mfaStep && !lockedOut && (method === "code" || !factors.passkey);
   const showPasskey = mfaStep && !lockedOut && factors.passkey && method === "passkey";
 
@@ -204,7 +208,11 @@ export default function Login({ onDone }) {
   let intro = "Continuous compliance for SOC 2, ISO 27001 and PCI DSS.";
   if (lockedOut) {
     intro = "Your only passkey was disabled because it may have been cloned, and there is no "
-      + "authenticator app on this account. Ask an administrator to reset your second factor.";
+      + "authenticator app or backup code left on this account. Ask an administrator to reset your second factor.";
+  } else if (mfaStep && showCode && !factors.totp) {
+    intro = ssoTicket
+      ? "Your identity provider signed you in, but did not assert a second factor. Enter one of your backup codes."
+      : "Enter one of your backup codes.";
   } else if (showPasskey) {
     intro = ssoTicket
       ? "Your identity provider signed you in, but did not assert a second factor. Confirm with your passkey."
@@ -220,13 +228,7 @@ export default function Login({ onDone }) {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }} className="w-full max-w-[400px]">
         <Panel as="div" className="p-6">
           <form onSubmit={submit} noValidate>
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-accent font-semibold text-accent-ink" aria-hidden="true">C</div>
-              <div>
-                <p className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Conformiti</p>
-                <Label>SOC 2 · ISO 27001 · PCI</Label>
-              </div>
-            </div>
+            <ConformitiLogo size={40} tagline="SOC 2 · ISO 27001 · PCI" />
             <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
             <p className="mt-1 text-[13px] leading-snug text-muted">{intro}</p>
             {err ? <div className="notice notice-err mt-4" role="alert">{err}</div> : null}
@@ -269,20 +271,20 @@ export default function Login({ onDone }) {
                 {busy ? "Signing in…" : mfaStep ? "Verify" : "Sign in"}
               </Button>
             ) : null}
-            {mfaStep && !lockedOut && factors.passkey && factors.totp ? (
+            {mfaStep && !lockedOut && factors.passkey && codeWorks ? (
               <button type="button" className="link mt-3 block" disabled={busy}
                       onClick={() => { setErr(""); setMethod(method === "passkey" ? "code" : "passkey"); }}>
-                {method === "passkey" ? "Use a code instead" : "Use a passkey instead"}
+                {method === "passkey" ? (factors.totp ? "Use a code instead" : "Use a backup code instead") : "Use a passkey instead"}
               </button>
             ) : null}
-            {mfaStep && !lockedOut && factors.passkey && !canPasskey && !factors.totp ? (
+            {mfaStep && !lockedOut && factors.passkey && !canPasskey && !codeWorks ? (
               <p className="mt-3 text-xs text-muted">This browser cannot use passkeys. Sign in from a browser that can, or ask an administrator to reset your second factor.</p>
             ) : null}
             {(sso.enabled || samlSso.enabled) && !mfaStep ? (
               <>
                 <div className="my-4 flex items-center gap-3" aria-hidden="true">
                   <span className="h-px flex-1 bg-line" />
-                  <Label>or</Label>
+                  <span className="font-mono text-2xs uppercase tracking-label text-faint">or</span>
                   <span className="h-px flex-1 bg-line" />
                 </div>
                 {sso.enabled ? (

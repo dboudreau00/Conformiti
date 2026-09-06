@@ -6,10 +6,10 @@
 |---|---|
 | `accounts` | Custom `User`, `Role` (capability flags), RBAC permission classes, TOTP MFA + backup codes, passkeys (`webauthn.py` protocol + `passkeys.py` glue, `WebAuthnCredential`/`WebAuthnChallenge`), OIDC + SAML single sign-on, sign-out (token revocation), demo-data retirement, blacklist pruning task |
 | `compliance` | `Framework`, `ControlCategory`, `Control`, `ControlMapping` (crosswalk), `ControlEvidence` (evidence ↔ control links), seed + on-disk folder tree, controls CSV export |
-| `documents` | `Folder` (self-parent tree with cycle guard), `FolderPermission`, `Document`, `DocumentVersion`, `FormTemplate`, upload validation |
+| `documents` | `Folder` (self-parent tree with cycle guard), `FolderPermission`, `Document` (+ scan verdict / quarantine), `DocumentVersion`, `FormTemplate`, upload validation, clamd client (`clamav.py`), scanning boundary (`scanning.py`) and the scanner watch + re-scan sweep (`monitor.py`, `manage.py scan_evidence`, `ScannerStatus`) |
 | `governance` | `Risk` + `RiskNote` (+ CSV/XLSX importer), `AccessReview` + snapshot items, `MeetingSeries` + minutes, `ChampionGroup` + members |
 | `vendors` | `Vendor` (tier, posture, computed risk rating), `VendorAssessment` (reports, AOCs, questionnaires, filed documents), `SharedResponsibility` (per-vendor matrix) + the CSV/XLSX recogniser (`matrix.py`), `QuestionnaireInvite` + the public token endpoints (`questionnaire.py`, `public_views.py`) |
-| `attestations` | `EvidencePackage` → `PackageControl` → `PackageEvidence` / `PackageSample` snapshots, `PackageGrant` (the folder-permission bypass, `access.py`), manifest + bundle, `PbcRequest` / `PbcItem` (the auditor's request list, `pbc_views.py`) |
+| `attestations` | `EvidencePackage` → `PackageControl` → `PackageEvidence` / `PackageSample` snapshots, `PackageGrant` (the folder-permission bypass, `access.py`), manifest + bundle, `PbcRequest` / `PbcItem` (the auditor's request list, `pbc_views.py`), roll-forward + year-over-year diff (`rollforward.py`) |
 | `notifications` | review-reminder scan (Celery task / management command), email transports (console, SMTP, mailbox, SES), derived per-user in-app feed + receipts |
 | `audit` | `AuditLog`, request middleware (mutations with field names), explicit auth events, read-only viewer API |
 | `analytics` | dashboard summary endpoint, `ReadinessSnapshot` history + trend |

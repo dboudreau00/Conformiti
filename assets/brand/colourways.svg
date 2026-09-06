@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="150" viewBox="0 0 640 150" role="img" aria-label="Conformiti colourways: Assurance Green, Governance Blue, Risk Red, Policy Purple">
+  <defs>
+    <path id="s" d="M32 3.5 L57 12.8 V32.6 C57 46.9 46.6 55.7 32 60.5 C17.4 55.7 7 46.9 7 32.6 V12.8 Z"/>
+    <path id="l" d="M32 3.5 L7 12.8 V32.6 C7 46.9 17.4 55.7 32 60.5 Z"/>
+    <path id="c" d="M19.5 32 L28.5 41 L45.5 22.5"/>
+  </defs>
+  <g font-family="Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <g transform="translate(0 0)">
+      <rect x="10" y="10" width="140" height="90" rx="14" fill="#E9F7F1"/>
+      <g transform="translate(48 23)"><use href="#s" fill="#0E9F6E"/><use href="#l" fill="#08704D"/><use href="#c" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>
+      <text x="80" y="122" font-size="13" font-weight="600" fill="#171B22">Assurance Green</text>
+      <text x="80" y="140" font-size="11" fill="#52606D">controls passing, audit ready</text>
+    </g>
+    <g transform="translate(160 0)">
+      <rect x="10" y="10" width="140" height="90" rx="14" fill="#EAF1FD"/>
+      <g transform="translate(48 23)"><use href="#s" fill="#1D6FE0"/><use href="#l" fill="#12458F"/><use href="#c" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>
+      <text x="80" y="122" font-size="13" font-weight="600" fill="#171B22">Governance Blue</text>
+      <text x="80" y="140" font-size="11" fill="#52606D">the corporate mark</text>
+    </g>
+    <g transform="translate(320 0)">
+      <rect x="10" y="10" width="140" height="90" rx="14" fill="#FCECEC"/>
+      <g transform="translate(48 23)"><use href="#s" fill="#D93A3A"/><use href="#l" fill="#8F2020"/><use href="#c" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>
+      <text x="80" y="122" font-size="13" font-weight="600" fill="#171B22">Risk Red</text>
+      <text x="80" y="140" font-size="11" fill="#52606D">findings, escalations, alerts</text>
+    </g>
+    <g transform="translate(480 0)">
+      <rect x="10" y="10" width="140" height="90" rx="14" fill="#F1EBFD"/>
+      <g transform="translate(48 23)"><use href="#s" fill="#6D3BE4"/><use href="#l" fill="#42208F"/><use href="#c" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>
+      <text x="80" y="122" font-size="13" font-weight="600" fill="#171B22">Policy Purple</text>
+      <text x="80" y="140" font-size="11" fill="#52606D">frameworks and attestations</text>
+    </g>
+  </g>
+</svg>

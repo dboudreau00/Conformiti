@@ -80,7 +80,7 @@ class SampleTests(PackageTestBase):
         self.list_item(identifier="u-1077", population_ref="row 19")
         self.seal()
         manifest = json.loads(self.package.manifest_json)
-        self.assertEqual(manifest["manifest_version"], 2)
+        self.assertEqual(manifest["manifest_version"], 3)
         self.assertEqual(manifest["totals"]["samples"], 2)
         control = manifest["controls"][0]
         self.assertEqual(control["population"], {"size": 42, "source": "HR report", "sampling_method": "random"})

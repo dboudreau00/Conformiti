@@ -133,6 +133,46 @@ class User(AbstractUser):
     def usable_passkeys(self):
         return self.passkeys.filter(suspect_at__isnull=True)
 
+    # --- backup codes: the recovery factor, owned by the account rather than
+    # by the authenticator app since 0.6.1, so a passkey-only person has them
+    # too. Stored as salted hashes; single use.
+    def set_backup_codes(self, codes):
+        from django.contrib.auth.hashers import make_password
+        from . import mfa as mfa_lib
+
+        self.backup_codes.all().delete()
+        MfaBackupCode.objects.bulk_create([
+            MfaBackupCode(user=self, code_hash=make_password(mfa_lib.normalize_backup_code(c)))
+            for c in codes
+        ])
+
+    def issue_backup_codes(self):
+        from . import mfa as mfa_lib
+
+        codes = mfa_lib.generate_backup_codes()
+        self.set_backup_codes(codes)
+        return codes
+
+    def verify_backup_code(self, code):
+        """Consume an unused backup code. False for anything else."""
+        from django.contrib.auth.hashers import check_password
+        from django.utils import timezone
+        from . import mfa as mfa_lib
+
+        normalized = mfa_lib.normalize_backup_code(code)
+        if not normalized:
+            return False
+        for backup in self.backup_codes.filter(used_at__isnull=True):
+            if check_password(normalized, backup.code_hash):
+                backup.used_at = timezone.now()
+                backup.save(update_fields=["used_at"])
+                return True
+        return False
+
+    @property
+    def backup_codes_remaining(self):
+        return self.backup_codes.filter(used_at__isnull=True).count()
+
 
 class WebAuthnCredential(models.Model):
     """One passkey or security key enrolled as a second factor.
@@ -221,9 +261,9 @@ class MfaDevice(models.Model):
         return f"MFA({self.user_id}, {'on' if self.enabled else 'pending'})"
 
     def verify(self, code):
-        """Accept a current TOTP code or an unused backup code (consuming it).
-        Updates last_used_at on success."""
-        from django.contrib.auth.hashers import check_password
+        """Accept a current TOTP code (a backup code is the account's, not
+        the device's: see ``User.verify_backup_code``). Updates last_used_at
+        on success."""
         from django.utils import timezone
         from . import mfa as mfa_lib
 
@@ -232,31 +272,14 @@ class MfaDevice(models.Model):
             self.last_used_at = timezone.now()
             self.save(update_fields=["last_used_at"])
             return True
-
-        normalized = mfa_lib.normalize_backup_code(code)
-        for backup in self.backup_codes.filter(used_at__isnull=True):
-            if check_password(normalized, backup.code_hash):
-                backup.used_at = timezone.now()
-                backup.save(update_fields=["used_at"])
-                self.last_used_at = timezone.now()
-                self.save(update_fields=["last_used_at"])
-                return True
         return False
-
-    def set_backup_codes(self, codes):
-        """Replace all recovery codes with hashes of the given plaintext codes."""
-        from django.contrib.auth.hashers import make_password
-        from . import mfa as mfa_lib
-
-        self.backup_codes.all().delete()
-        MfaBackupCode.objects.bulk_create([
-            MfaBackupCode(device=self, code_hash=make_password(mfa_lib.normalize_backup_code(c)))
-            for c in codes
-        ])
 
 
 class MfaBackupCode(models.Model):
     """A single-use recovery code (stored only as a hash).
+
+    Owned by the account, not by the authenticator app: it is the way back
+    in when the app is lost OR when the only passkey is lost or flagged.
 
     Deliberately NOT encrypted like MfaDevice.secret. These are already salted
     PBKDF2 hashes, so there is nothing to protect — and leaving them readable
@@ -264,7 +287,8 @@ class MfaBackupCode(models.Model):
     whose TOTP secret can no longer be decrypted can still sign in with a
     backup code, and an administrator can reset their enrollment.
     """
-    device = models.ForeignKey(MfaDevice, on_delete=models.CASCADE, related_name="backup_codes")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="backup_codes")
     code_hash = models.CharField(max_length=256)
     used_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

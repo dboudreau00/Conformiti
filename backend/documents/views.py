@@ -16,6 +16,7 @@ from .models import (
     FormTemplate,
 )
 from .access import accessible_folder_ids
+from . import monitor
 from .downloads import serve_inline, serve_stored_file
 from . import preview as preview_lib
 from .scanning import scan_or_raise
@@ -193,6 +194,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         )
         doc.compute_next_review()
         doc.save(update_fields=["next_review_date"])
+        monitor.mark_clean(doc)
 
     def perform_update(self, serializer):
         # Moving a document via PATCH must also require edit on the destination,
@@ -252,7 +254,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
         doc.version += 1
         doc.status = Document.Status.DRAFT
         doc.reminders_sent = []
+        # A new file is a new scan subject: clear any quarantine the old
+        # version carried, and record the clean result when scanning is on.
+        doc.quarantined_at = None
+        doc.scan_status = Document.Scan.UNSCANNED
+        doc.scan_signature = ""
         doc.save()
+        monitor.mark_clean(doc)
         return Response(DocumentSerializer(doc, context={"request": request}).data)
 
     @action(detail=True, methods=["get"])
@@ -264,7 +272,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         authorised. Recorded in the audit trail: who read which evidence is
         exactly the kind of question this product exists to answer.
         """
-        doc = self.get_object()
+        doc = monitor.refuse_if_quarantined(self.get_object())
         record_evidence_read(request, doc)
         return serve_stored_file(doc.file, doc.name)
 
@@ -276,13 +284,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
         come back as structured JSON the app renders itself. Same authorisation
         as download, and recorded as a read the same way.
         """
-        doc = self.get_object()
+        doc = monitor.refuse_if_quarantined(self.get_object())
         return preview_response(request, doc.file, doc.name, doc)
 
     @action(detail=True, methods=["get"], url_path=r"versions/(?P<version_pk>[^/.]+)/download")
     def download_version(self, request, pk=None, version_pk=None):
         """Stream an archived version. Same authorisation as the live file."""
-        doc = self.get_object()
+        doc = monitor.refuse_if_quarantined(self.get_object())
         try:
             version = doc.versions.get(pk=version_pk)
         except DocumentVersion.DoesNotExist:
