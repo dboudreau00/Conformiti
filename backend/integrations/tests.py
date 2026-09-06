@@ -57,7 +57,7 @@ class JiraTokenAtRestTests(APITestBase):
             "base_url": "https://team.atlassian.net", "email": "a@b.co",
             "api_token": "s3cr3t-token", "enabled": True,
         }, format="json")
-        raw = JiraIntegration.objects.filter(pk=1).values_list("api_token", flat=True).first()
+        raw = JiraIntegration.objects.order_by("pk").values_list("api_token", flat=True).first()
         self.assertTrue(raw.startswith("fc1$"))
         self.assertNotIn("s3cr3t-token", raw)
         self.assertEqual(JiraIntegration.get_solo().api_token, "s3cr3t-token")
@@ -71,10 +71,10 @@ class JiraTokenAtRestTests(APITestBase):
         """
         a = self.client_for(self.admin)
         a.patch("/api/integrations/jira/config/", {"api_token": "keep-me"}, format="json")
-        before = JiraIntegration.objects.filter(pk=1).values_list("api_token", flat=True).first()
+        before = JiraIntegration.objects.order_by("pk").values_list("api_token", flat=True).first()
         r = a.patch("/api/integrations/jira/config/", {"enabled": True}, format="json")
         self.assertTrue(r.data["has_token"])
-        after = JiraIntegration.objects.filter(pk=1).values_list("api_token", flat=True).first()
+        after = JiraIntegration.objects.order_by("pk").values_list("api_token", flat=True).first()
         self.assertTrue(after.startswith("fc1$"))
         self.assertNotEqual(after, before, "each save should use a fresh nonce")
         self.assertEqual(JiraIntegration.get_solo().api_token, "keep-me")
@@ -91,13 +91,13 @@ class JiraTokenAtRestTests(APITestBase):
         """Editing the base URL under a wrong key must not shred the token."""
         a = self.client_for(self.admin)
         a.patch("/api/integrations/jira/config/", {"api_token": "recoverable"}, format="json")
-        before = JiraIntegration.objects.filter(pk=1).values_list("api_token", flat=True).first()
+        before = JiraIntegration.objects.order_by("pk").values_list("api_token", flat=True).first()
         with override_settings(FIELD_ENCRYPTION_KEYS=["another-unrelated-key-00000000000000"]):
             r = a.patch("/api/integrations/jira/config/",
                         {"base_url": "https://other.atlassian.net"}, format="json")
             self.assertEqual(r.status_code, 200)
         self.assertEqual(
-            JiraIntegration.objects.filter(pk=1).values_list("api_token", flat=True).first(), before)
+            JiraIntegration.objects.order_by("pk").values_list("api_token", flat=True).first(), before)
         self.assertEqual(JiraIntegration.get_solo().api_token, "recoverable")
 
     def test_the_admin_change_form_does_not_render_the_token(self):
