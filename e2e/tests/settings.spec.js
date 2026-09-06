@@ -39,6 +39,21 @@ test.describe("account settings", () => {
     await section(page, "Role & access").click();
     await expect(page.getByRole("main")).toContainText("Administrator");
   });
+
+  test("the digest preference saves and survives a reload", async ({ page }) => {
+    await section(page, "Notifications").click();
+    const cadence = page.locator("#digest-cadence");
+    await expect(cadence).toBeVisible();
+    await cadence.selectOption("daily");
+    await expect(page.getByText(/daily digest of your tray/)).toBeVisible();
+    await expect(page.getByText(/Slack not configured/)).toBeVisible();
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await section(page, "Notifications").click();
+    await expect(page.locator("#digest-cadence")).toHaveValue("daily");
+    await page.locator("#digest-cadence").selectOption("off");
+    await expect(page.getByText("Digest emails are off.")).toBeVisible();
+  });
 });
 
 test.describe("appearance", () => {

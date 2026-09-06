@@ -21,3 +21,21 @@ class NotificationReceipt(models.Model):
 
     def __str__(self):
         return f"{self.user_id}:{self.key}"
+
+
+class WebhookDelivery(models.Model):
+    """One attempt to post an event to Slack or Teams, so an operator can
+    see whether the channel is receiving. Pruned to the newest few hundred."""
+    event = models.CharField(max_length=40)
+    channel = models.CharField(max_length=10)
+    ok = models.BooleanField(default=False)
+    response_code = models.PositiveSmallIntegerField(null=True, blank=True)
+    error = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name_plural = "webhook deliveries"
+
+    def __str__(self):
+        return f"{self.channel} {self.event} {'ok' if self.ok else 'failed'}"

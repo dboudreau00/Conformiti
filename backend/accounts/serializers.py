@@ -31,7 +31,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id", "username", "email", "first_name", "last_name", "full_name",
             "job_title", "role", "role_detail", "is_active", "capabilities",
-            "last_login", "is_superuser", "mfa_enabled",
+            "last_login", "is_superuser", "mfa_enabled", "digest",
         ]
         # last_login is already non-editable on the model; is_superuser must
         # never be settable through the API (this serializer is read-path only,
@@ -93,7 +93,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email", "job_title"]
+        fields = ["first_name", "last_name", "email", "job_title", "digest"]
 
 
 class PasswordChangeSerializer(serializers.Serializer):

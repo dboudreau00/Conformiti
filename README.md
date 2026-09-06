@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, documents, risks and access reviews in one audit-ready workspace.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.7.0-1D6FE0.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.8.0-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -151,6 +151,10 @@ Local development without Docker (SQLite, console email) is one command too:
   optional **Jira** board visibility.
 - **Immutable audit trail** — every change, sign-in, failed sign-in and
   sign-out, with actor, record, changed fields and IP.
+- **Slack / Teams and digest emails** — sealed and issued packages, the
+  auditor's requests and returns, returned questionnaires, scanner outages,
+  quarantines and a daily summary posted by webhook; each person can have
+  their own tray emailed daily or weekly.
 
 ### Security and access
 - **TOTP two-factor auth** and **passkeys / security keys (WebAuthn)**, alone

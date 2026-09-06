@@ -236,6 +236,25 @@ The old key file is kept beside the new one, its public key stays published
 as retired, and every package already sealed keeps verifying under the key it
 carries. `SIGNING_ENABLED=false` seals packages unsigned, as before 0.7.0.
 
+### Slack, Teams and digest emails
+
+Create an incoming webhook in Slack (an app with *Incoming Webhooks*) or
+Teams (the channel's *Workflows › Post to a channel when a webhook request is
+received*), and set:
+
+```ini
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/…
+TEAMS_WEBHOOK_URL=https://….logic.azure.com/…
+PUBLIC_URL=https://grc.example.com        # so each post links back
+# NOTIFY_EVENTS=package.sealed,pbc.returned,scanner.down   # default: everything
+```
+
+An administrator can send a test message from *Settings › Notifications* and
+see the last deliveries there. Digest emails need no configuration beyond a
+working `EMAIL_PROVIDER`: each person switches theirs on under the same
+section; the worker sends them at `REVIEW_SCAN_HOUR` + 20 minutes, or run
+`manage.py send_digests` from cron.
+
 ### Sessions: cookies by default
 
 Since 0.6.1 the SPA's tokens travel as HttpOnly cookies (`AUTH_TRANSPORT=cookie`),

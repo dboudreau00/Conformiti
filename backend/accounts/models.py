@@ -84,6 +84,15 @@ class User(AbstractUser):
     )
     job_title = models.CharField(max_length=120, blank=True)
 
+    # --- the emailed digest of this person's own tray (notifications/tasks.py)
+    class Digest(models.TextChoices):
+        OFF = "off", "Off"
+        DAILY = "daily", "Daily"
+        WEEKLY = "weekly", "Weekly (Monday)"
+
+    digest = models.CharField(max_length=8, choices=Digest.choices, default=Digest.OFF)
+    digest_sent_at = models.DateTimeField(null=True, blank=True)
+
     # --- capability helpers (safe when role is None) -----------------------
     def _cap(self, flag):
         return self.is_superuser or bool(self.role and getattr(self.role, flag))

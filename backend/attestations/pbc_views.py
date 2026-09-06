@@ -31,6 +31,7 @@ from audit.events import record_package_event
 from documents import monitor
 from documents.access import accessible_folder_ids
 from documents.downloads import serve_stored_file
+from notifications import webhooks
 
 from . import access
 from .models import EvidencePackage, PackageGrant, PbcItem, PbcRequest
@@ -97,6 +98,13 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
                     raise
         record_package_event(self.request, package, "create",
                              f"{req.reference} raised by the {side}: {req.title[:120]}")
+        if side == PbcRequest.Side.AUDITOR:
+            webhooks.post_event(
+                "pbc.raised", f"Auditor request {req.reference}: {req.title}",
+                f"Raised by {req.requested_by_name} in {package.name}."
+                f"{' Due ' + req.due_date.isoformat() + '.' if req.due_date else ''}",
+                facts=[("Assigned to", req.assignee_name or "nobody yet"), ("Control", req.control_ref or "—")],
+                path="/packages", severity="medium")
 
     # ------------------------------------------------------------- update
     EDITABLE = {"title", "description", "package_control", "priority", "due_date", "assignee"}
@@ -198,6 +206,11 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         req.save()
         record_package_event(request, req.package, "update",
                              f"{req.reference} returned by {_name(request.user)}: {note[:100]}")
+        webhooks.post_event(
+            "pbc.returned", f"Returned by the auditor: {req.reference} {req.title}",
+            f"{_name(request.user)} returned the answer in {req.package.name}: {note[:300]}",
+            facts=[("Assigned to", req.assignee_name or "nobody yet")],
+            path="/packages", severity="high")
         return Response(self.get_serializer(req).data)
 
     @action(detail=True, methods=["post"])

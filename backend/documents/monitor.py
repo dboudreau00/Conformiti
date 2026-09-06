@@ -115,6 +115,13 @@ def scan_document(document, user=None):
         if newly:
             _record(document, "delete",
                     f"QUARANTINED '{document.name}' v{document.version}: scanner matched {exc.signature}", user)
+            from notifications import webhooks
+            webhooks.post_event(
+                "document.quarantined", f"File quarantined: {document.name}",
+                f"The malware scanner matched {exc.signature} on a stored file (v{document.version}). "
+                "It is kept for investigation and refused on every route.",
+                facts=[("Folder", document.folder.path if document.folder_id else "—")],
+                path="/documents", severity="critical")
         return document.scan_status
     except clamav.LimitsExceededError as exc:
         document.scan_status = Document.Scan.ERROR

@@ -429,6 +429,17 @@ EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "console" if DEBUG else "ses")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "compliance@example.com")
 COMPLIANCE_TEAM_EMAIL = os.getenv("COMPLIANCE_TEAM_EMAIL", DEFAULT_FROM_EMAIL)
 
+# --- Slack / Microsoft Teams ------------------------------------------------------
+# Incoming-webhook URLs (https only), configured here and nowhere else. Leave
+# both unset and nothing is posted. NOTIFY_EVENTS narrows what goes out
+# (comma-separated keys from notifications/webhooks.py, default all).
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+TEAMS_WEBHOOK_URL = os.getenv("TEAMS_WEBHOOK_URL", "").strip()
+NOTIFY_EVENTS = [e.strip() for e in os.getenv("NOTIFY_EVENTS", "").split(",") if e.strip()]
+WEBHOOK_TIMEOUT = env_int("WEBHOOK_TIMEOUT", 5)
+# Posts leave the request path on a thread; the test suite sets this to post inline.
+WEBHOOK_SYNC = env_bool("WEBHOOK_SYNC", False)
+
 # SES
 AWS_SES_REGION = os.getenv("AWS_SES_REGION", os.getenv("AWS_REGION", "us-east-1"))
 AWS_SES_CONFIGURATION_SET = os.getenv("AWS_SES_CONFIGURATION_SET", "")
@@ -501,6 +512,11 @@ CELERY_BEAT_SCHEDULE = {
     "watch-malware-scanner-hourly": {
         "task": "notifications.tasks.watch_scanner",
         "schedule": crontab(minute=17),
+    },
+    # The emailed digests, after the review scan has refreshed the trays.
+    "send-notification-digests-daily": {
+        "task": "notifications.tasks.send_digests",
+        "schedule": crontab(hour=env_int("REVIEW_SCAN_HOUR", 6), minute=20),
     },
 }
 

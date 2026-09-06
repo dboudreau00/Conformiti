@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from audit.events import record_package_event
 from compliance.models import Control
 from documents import monitor
+from notifications import webhooks
 from documents.downloads import serve_stored_file
 from documents.models import Document
 
@@ -252,6 +253,13 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             f"with {package.evidence_count} item(s)"
             f"{f', signed key={signed_by}' if signed_by else ', unsigned'}: {package.name[:50]}",
         )
+        webhooks.post_event(
+            "package.sealed", f"Package sealed: {package.name}",
+            f"{package.get_assurance_type_display()} · {package.controls.count()} control(s), "
+            f"{package.evidence_count} evidence file(s). Sealed by {package.sealed_by_name}.",
+            facts=[("Manifest sha256", package.manifest_sha256[:16] + "…"),
+                   ("Signing key", signed_by or "unsigned")],
+            path="/packages", severity="info")
         return Response(EvidencePackageSerializer(package).data)
 
     @action(detail=True, methods=["get"])
@@ -291,6 +299,11 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         package.save()
         record_package_event(request, package, "withdraw",
                              f"withdrew package {package.pk}, revoking {revoked} grant(s)")
+        webhooks.post_event(
+            "package.withdrawn", f"Package withdrawn: {package.name}",
+            f"{revoked} grant(s) revoked by {package.withdrawn_by_name if hasattr(package, 'withdrawn_by_name') else request.user.get_username()}."
+            f"{' Reason: ' + package.withdrawn_reason if package.withdrawn_reason else ''}",
+            path="/packages", severity="medium")
         return Response(EvidencePackageSerializer(package).data)
 
     # ------------------------------------------------------------------ verify
@@ -720,6 +733,11 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
         record_package_event(self.request, package, "create",
                              f"issued package {package.pk} to {grant.username} "
                              f"until {expires.date().isoformat()}")
+        webhooks.post_event(
+            "package.issued", f"Package issued: {package.name}",
+            f"Issued to {grant.full_name or grant.username} by {grant.granted_by_name} "
+            f"until {expires.date().isoformat()}.",
+            path="/packages", severity="info")
 
     def perform_destroy(self, instance):
         """Revoking is a fact, not an absence: the row stays, marked revoked."""

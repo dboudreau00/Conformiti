@@ -5,6 +5,33 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.0] — 2026-09-05
+
+The tray only helps people who open the app. Now it reaches a channel, and
+an inbox.
+
+### Added
+
+- **Slack and Microsoft Teams**, by incoming webhook. Set `SLACK_WEBHOOK_URL`
+  and/or `TEAMS_WEBHOOK_URL` (https only, configured by an operator and
+  nowhere else) and the moments that matter are posted: a package sealed,
+  issued or withdrawn; the auditor raising a request or returning an answer;
+  a vendor's questionnaire coming back; the malware scanner going quiet or
+  recovering; a file quarantined; and a **daily summary** of what is
+  outstanding across the workspace. Slack gets Block Kit, Teams an Adaptive
+  Card, each with a link back when `PUBLIC_URL` is set. `NOTIFY_EVENTS`
+  narrows the list. Posts leave the request on a thread and never block a
+  seal on a chat outage; every attempt is recorded and the last few are
+  shown to administrators under *Settings › Notifications*, beside a *Send
+  a test message* button. Built on `urllib`; no dependency added.
+- **Digest emails.** Each person chooses *Off*, *Daily* or *Weekly (Monday)*
+  under *Settings › Notifications* and receives their own tray — the same
+  items, minus what they dismissed, grouped by severity with links — after
+  the morning scan. Nothing is sent when the tray is empty, and never more
+  than once a day. `manage.py send_digests` for cron deployments.
+
+---
+
 ## [0.7.0] — 2026-09-05
 
 The signature the bundle was missing, with the key-management story that

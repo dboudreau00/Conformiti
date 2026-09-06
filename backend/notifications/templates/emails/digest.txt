@@ -1,0 +1,12 @@
+Hello {{ user.first_name|default:user.username }},
+
+Your {{ cadence }} Conformiti digest for {{ today }}: {{ count }} item{{ count|pluralize }} in your tray.
+{% for severity, rows in groups %}
+{{ severity|upper }}
+{% for item in rows %}  - {{ item.title }}
+    {{ item.detail }}{% if base and item.to %}
+    {{ base }}{{ item.to }}{% endif %}
+{% endfor %}{% endfor %}
+Change how often this arrives under Settings > Notifications.
+
+-- Conformiti

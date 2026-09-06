@@ -10,7 +10,7 @@
 | `governance` | `Risk` + `RiskNote` (+ CSV/XLSX importer), `AccessReview` + snapshot items, `MeetingSeries` + minutes, `ChampionGroup` + members |
 | `vendors` | `Vendor` (tier, posture, computed risk rating), `VendorAssessment` (reports, AOCs, questionnaires, filed documents), `SharedResponsibility` (per-vendor matrix) + the CSV/XLSX recogniser (`matrix.py`), `QuestionnaireInvite` + the public token endpoints (`questionnaire.py`, `public_views.py`) |
 | `attestations` | `EvidencePackage` → `PackageControl` → `PackageEvidence` / `PackageSample` snapshots, `PackageGrant` (the folder-permission bypass, `access.py`), manifest + bundle, `PbcRequest` / `PbcItem` (the auditor's request list, `pbc_views.py`), roll-forward + year-over-year diff (`rollforward.py`), detached Ed25519 manifest signatures from a file-held key + `SigningKey` registry (`signing.py`, `manage.py rotate_signing_key`), stdlib verifier shipped in every bundle (`verifier.py`) |
-| `notifications` | review-reminder scan (Celery task / management command), email transports (console, SMTP, mailbox, SES), derived per-user in-app feed + receipts |
+| `notifications` | review/vendor/PBC reminder scans + scanner watch (Celery tasks / management commands), email transports (console, SMTP, mailbox, SES), derived per-user in-app feed + receipts, per-person digest emails (`send_digests`), Slack/Teams incoming webhooks with a delivery log (`webhooks.py`, `WebhookDelivery`) |
 | `audit` | `AuditLog`, request middleware (mutations with field names), explicit auth events, read-only viewer API |
 | `analytics` | dashboard summary endpoint, `ReadinessSnapshot` history + trend |
 | `calendar_app` | `CalendarEvent` + merged review/audit/task feed |

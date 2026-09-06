@@ -776,7 +776,94 @@ function SecuritySection() {
 
 /* ---------- Notifications ---------- */
 
-function NotificationsSection({ me, onGoProfile }) {
+/** The emailed digest of the person's own tray, and the chat channels the
+ * deployment posts to (configured by an operator; an administrator can send
+ * a test message and see the last deliveries). */
+function ChannelsBlock({ me, onUpdate }) {
+  const [info, setInfo] = useState(null);
+  const [digest, setDigest] = useState(me?.digest || "off");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const admin = !!(me?.is_superuser || me?.capabilities?.manage_users);
+
+  const load = () => api.get("/notifications/channels/").then((r) => { setInfo(r.data); setDigest(r.data.digest); }).catch(() => setInfo({ slack: false, teams: false, events: [] }));
+  useEffect(() => { load(); }, []);
+
+  async function saveDigest(value) {
+    setDigest(value);
+    setMsg(null);
+    setBusy(true);
+    try {
+      const { data } = await api.patch("/users/me/", { digest: value });
+      onUpdate?.(data);
+      setMsg({ ok: true, text: value === "off" ? "Digest emails are off." : `You'll get a ${value} digest of your tray by email.` });
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't save the preference.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const { data } = await api.post("/notifications/channels/", {});
+      const failed = (data.results || []).filter((r) => !r.ok);
+      setMsg(failed.length
+        ? { ok: false, text: `Delivery failed for ${failed.map((r) => `${r.channel} (${r.error || r.response_code})`).join(", ")}.` }
+        : { ok: true, text: `Test message delivered to ${data.attempted.join(" and ")}.` });
+      load();
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't send the test message.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const choices = info?.digest_choices || [{ id: "off", label: "Off" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly (Monday)" }];
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-1 px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
+        <span className="text-[13px] font-medium text-ink">Digest of your tray</span>
+        <span className="text-[13px] leading-snug text-muted">
+          <select id="digest-cadence" className="input sm:max-w-[240px]" value={digest} disabled={busy} aria-label="Digest cadence"
+                  onChange={(e) => saveDigest(e.target.value)}>
+            {choices.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <span className="mt-1.5 block text-xs">Everything in your notification tray, by email, at the morning scan. Nothing is sent when the tray is empty.</span>
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-1 border-t border-line px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
+        <span className="text-[13px] font-medium text-ink">Chat channels</span>
+        <span className="text-[13px] leading-snug text-muted">
+          {!info ? "…" : (
+            <>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <Badge tone={info.slack ? "success" : "muted"} dot>Slack {info.slack ? "configured" : "not configured"}</Badge>
+                <Badge tone={info.teams ? "success" : "muted"} dot>Teams {info.teams ? "configured" : "not configured"}</Badge>
+                {admin && (info.slack || info.teams) ? (
+                  <Button size="sm" onClick={sendTest} disabled={busy}>{busy ? "Sending…" : "Send a test message"}</Button>
+                ) : null}
+              </span>
+              <span className="mt-1.5 block text-xs">
+                Sealed and issued packages, the auditor's returns and requests, returned questionnaires, scanner outages, quarantined files and a daily summary are posted to the channels an operator configures with SLACK_WEBHOOK_URL / TEAMS_WEBHOOK_URL.
+              </span>
+              {admin && info.deliveries?.length ? (
+                <span className="mt-2 block font-mono text-2xs text-faint">
+                  Last deliveries: {info.deliveries.slice(0, 5).map((d) => `${d.channel} ${d.event} ${d.ok ? "ok" : `failed${d.error ? ` (${d.error})` : ""}`}`).join(" · ")}
+                </span>
+              ) : null}
+            </>
+          )}
+        </span>
+      </div>
+      {msg ? <div className="px-5 pb-3"><Notice msg={msg} /></div> : null}
+    </>
+  );
+}
+
+function NotificationsSection({ me, onGoProfile, onUpdate }) {
   if (!me) {
     return (
       <Panel>
@@ -807,7 +894,7 @@ function NotificationsSection({ me, onGoProfile }) {
   ];
   return (
     <Panel className="overflow-hidden">
-      <PanelHeader title="Notifications" meta="Review reminders" />
+      <PanelHeader title="Notifications" meta="Reminders, digests and chat" />
       <ul className="divide-y divide-line">
         {rows.map((r, i) => (
           <motion.li
@@ -822,8 +909,11 @@ function NotificationsSection({ me, onGoProfile }) {
           </motion.li>
         ))}
       </ul>
+      <div className="border-t border-line">
+        <ChannelsBlock me={me} onUpdate={onUpdate} />
+      </div>
       <p className="border-t border-line px-5 py-3 text-xs text-muted">
-        Reminders are configured per deployment by an administrator; there are no per-user toggles yet.
+        Review reminders are configured per deployment by an administrator; the digest is yours to switch on.
       </p>
     </Panel>
   );
@@ -1079,7 +1169,7 @@ export default function Account({ me, onUpdate }) {
               {section === "profile" ? <ProfileSection me={me} onUpdate={onUpdate} /> : null}
               {section === "appearance" ? <AppearanceSection /> : null}
               {section === "security" ? <SecuritySection /> : null}
-              {section === "notifications" ? <NotificationsSection me={me} onGoProfile={() => setSection("profile")} /> : null}
+              {section === "notifications" ? <NotificationsSection me={me} onUpdate={onUpdate} onGoProfile={() => setSection("profile")} /> : null}
               {section === "access" ? <AccessSection me={me} /> : null}
               {section === "about" ? <AboutSection /> : null}
             </motion.div>

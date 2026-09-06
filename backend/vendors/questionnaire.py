@@ -258,6 +258,14 @@ def submit(invite, answers, respondent_name, respondent_title="", request=None):
            f"questionnaire for {invite.vendor.name} submitted by {name} <{invite.sent_to}>: "
            f"{answered} answered -> assessment {assessment.pk}")
     _notify_returned(invite, assessment, answered)
+    from notifications import webhooks
+    webhooks.post_event(
+        "questionnaire.returned", f"Questionnaire returned by {invite.vendor.name}",
+        f"{name} answered {answered} of {len(DEFAULT_QUESTIONNAIRE)} questions; filed as a pending "
+        "assessment for review.",
+        facts=[("Vendor tier", invite.vendor.get_tier_display()),
+               ("Answered 'No'", sum(1 for a in clean.values() if a.get("answer") == "no"))],
+        path=f"/vendors?vendor={invite.vendor_id}&tab=questionnaire", severity="medium")
     return assessment
 
 

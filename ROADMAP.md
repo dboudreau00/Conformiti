@@ -45,12 +45,15 @@
 - **0.7.0** — detached Ed25519 signatures over every sealed manifest, from a
   key kept in a file outside the database, with the public key published,
   a standard-library verifier in the bundle, and key rotation.
+- **0.8.0** — Slack and Microsoft Teams by incoming webhook (sealed, issued
+  and withdrawn packages, the auditor's requests and returns, returned
+  questionnaires, scanner outages, quarantines, a daily summary) and a
+  per-person daily or weekly digest of the tray by email.
 
 ## Next
 
 | Item | Why |
 |---|---|
-| **Slack / Teams notifications and digest emails** (0.8.0) | the tray only helps people who open the app |
 | **Multi-tenancy** (0.9.0) | one installation serving several organisations, each seeing only its own |
 
 ## Later

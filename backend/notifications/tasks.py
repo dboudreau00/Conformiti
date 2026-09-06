@@ -201,6 +201,8 @@ def run_scanner_watch(dry_run=False):
         return "off"
     status = ScannerStatus.load()
     now = timezone.now()
+    from . import webhooks
+
     if state["reachable"] is False:
         if status.alerted_down_at is None or (status.down_since and status.alerted_down_at < status.down_since):
             if not dry_run:
@@ -208,6 +210,10 @@ def run_scanner_watch(dry_run=False):
                     "[Alert] Malware scanner unreachable — evidence uploads are being refused",
                     "scanner_alert", {"down": True, "since": status.down_since or now},
                     [settings.COMPLIANCE_TEAM_EMAIL])
+                webhooks.post_event("scanner.down", "Malware scanner unreachable",
+                                    "clamd stopped answering; evidence uploads are being refused until it is back.",
+                                    facts=[("Down since", (status.down_since or now).isoformat(timespec="minutes"))],
+                                    path="/documents", severity="critical")
                 status.alerted_down_at = now
                 status.save(update_fields=["alerted_down_at"])
         return "down"
@@ -217,6 +223,8 @@ def run_scanner_watch(dry_run=False):
                 "[Recovered] Malware scanner is answering again",
                 "scanner_alert", {"down": False, "since": status.last_ok_at or now},
                 [settings.COMPLIANCE_TEAM_EMAIL])
+            webhooks.post_event("scanner.up", "Malware scanner is answering again",
+                                "Uploads are accepted once more.", path="/documents", severity="info")
             status.alerted_up_at = now
             status.save(update_fields=["alerted_up_at"])
         return "recovered"
@@ -228,9 +236,101 @@ def watch_scanner():
     return run_scanner_watch()
 
 
+# --------------------------------------------------------------------------- #
+# Digests: a person's own tray, by email, daily or weekly
+# --------------------------------------------------------------------------- #
+SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
+
+
+def digest_items(user):
+    """The tray as the person would see it: computed now, dismissed items
+    left out."""
+    from .models import NotificationReceipt
+    from .notifications import build
+
+    items = build(user)
+    dismissed = set(NotificationReceipt.objects.filter(
+        user=user, key__in=[i["key"] for i in items], dismissed_at__isnull=False,
+    ).values_list("key", flat=True))
+    return [i for i in items if i["key"] not in dismissed]
+
+
+def run_digests(dry_run=False, today=None):
+    """Email each person who asked for one the items in their tray. Daily
+    means every day; weekly means Mondays. One per day at most, and none
+    when the tray is empty. Returns the number sent."""
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    today = today or timezone.localdate()
+    base = (getattr(settings, "PUBLIC_URL", "") or "").rstrip("/")
+    sent = 0
+    people = User.objects.filter(is_active=True).exclude(email="").exclude(digest=User.Digest.OFF)
+    for user in people:
+        if user.digest == User.Digest.WEEKLY and today.weekday() != 0:
+            continue
+        if user.digest_sent_at and timezone.localtime(user.digest_sent_at).date() >= today:
+            continue
+        items = digest_items(user)
+        if not items:
+            continue
+        groups = [(sev, [i for i in items if i["severity"] == sev]) for sev in SEVERITY_ORDER]
+        groups = [(sev, rows) for sev, rows in groups if rows]
+        context = {
+            "user": user, "items": items, "groups": groups, "count": len(items),
+            "base": base, "cadence": user.get_digest_display().lower(), "today": today,
+        }
+        subject = f"[Conformiti] {len(items)} item{'s' if len(items) != 1 else ''} need your attention"
+        try:
+            if not dry_run:
+                send_templated_email(subject, "digest", context, [user.email])
+                user.digest_sent_at = timezone.now()
+                user.save(update_fields=["digest_sent_at"])
+        except Exception:
+            logger.exception("Digest for %s failed; will retry next run", user.pk)
+            continue
+        sent += 1
+    return sent
+
+
+@shared_task(name="notifications.tasks.send_digests")
+def send_digests():
+    return run_digests()
+
+
+# --------------------------------------------------------------------------- #
+# The daily summary to Slack / Teams
+# --------------------------------------------------------------------------- #
+def post_daily_summary(today=None):
+    """One chat message a day with the organisation-wide counts that need
+    someone's attention. Nothing is posted when nothing is outstanding."""
+    from attestations.models import EvidencePackage, PbcRequest
+    from documents import monitor
+    from governance.models import Risk
+    from . import webhooks
+
+    today = today or timezone.localdate()
+    docs = Document.objects.filter(next_review_date__lt=today).count()
+    risks = Risk.objects.filter(status__in=[Risk.Status.OPEN, Risk.Status.MITIGATING],
+                                due_date__lt=today).count()
+    pbc = PbcRequest.objects.filter(status__in=PbcRequest.ACTIONABLE, due_date__lt=today).exclude(
+        package__status=EvidencePackage.Status.WITHDRAWN).count()
+    held = monitor.quarantined().count()
+    if not (docs or risks or pbc or held):
+        return []
+    facts = [("Documents overdue for review", docs), ("Risks past their due date", risks),
+             ("Auditor requests overdue", pbc), ("Files in quarantine", held)]
+    return webhooks.post_event(
+        "digest.daily", f"Conformiti daily summary — {today.isoformat()}",
+        "Outstanding across the workspace this morning.",
+        facts=[(k, v) for k, v in facts if v], path="/",
+        severity="high" if (pbc or held) else "medium")
+
+
 @shared_task(name="notifications.tasks.scan_document_reviews")
 def scan_document_reviews():
     notified = run_review_scan()
     run_vendor_scan()
     run_pbc_scan()
+    post_daily_summary()
     return notified

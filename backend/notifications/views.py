@@ -4,8 +4,50 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import NotificationReceipt
+from .models import NotificationReceipt, WebhookDelivery
 from .notifications import build
+
+
+class ChannelsView(APIView):
+    """Which chat channels this deployment posts to (configured by an
+    operator, never from here), and -- for administrators -- the last few
+    delivery attempts and a test post."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from . import webhooks
+
+        names = [name for name, _ in webhooks.channels()]
+        body = {
+            "slack": "slack" in names, "teams": "teams" in names,
+            "events": [{"event": e, "label": label, "enabled": webhooks.allowed(e)}
+                       for e, label in webhooks.EVENTS.items() if e != "test"],
+            "digest": request.user.digest,
+            "digest_choices": [{"id": c, "label": label} for c, label in request.user.Digest.choices],
+        }
+        if request.user.is_superuser or request.user.can_manage_users:
+            body["deliveries"] = [{
+                "event": d.event, "channel": d.channel, "ok": d.ok, "response_code": d.response_code,
+                "error": d.error, "at": d.created_at,
+            } for d in WebhookDelivery.objects.all()[:10]]
+        return Response(body)
+
+    def post(self, request):
+        """Send a test message to every configured channel, synchronously, so
+        the administrator sees the outcome at once."""
+        from . import webhooks
+
+        if not (request.user.is_superuser or request.user.can_manage_users):
+            return Response({"detail": "Only an administrator can send a test message."}, status=403)
+        attempted = webhooks.post_event(
+            "test", "Conformiti test message",
+            f"Sent by {request.user.get_full_name() or request.user.get_username()} from Settings › Notifications.",
+            path="/settings", sync=True)
+        if not attempted:
+            return Response({"detail": "No Slack or Teams webhook is configured on this server."}, status=400)
+        results = [{"channel": d.channel, "ok": d.ok, "response_code": d.response_code, "error": d.error}
+                   for d in WebhookDelivery.objects.filter(event="test")[:len(attempted)]]
+        return Response({"attempted": attempted, "results": results})
 
 
 class NotificationListView(APIView):

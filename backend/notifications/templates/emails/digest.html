@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2933; line-height: 1.5; max-width: 640px; margin: 0 auto; padding: 24px;">
+    <p>Hello {{ user.first_name|default:user.username }},</p>
+    <p>Your {{ cadence }} Conformiti digest for <strong>{{ today }}</strong>: <strong>{{ count }}</strong> item{{ count|pluralize }} in your tray.</p>
+    {% for severity, rows in groups %}
+    <h3 style="font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: {% if severity == 'critical' or severity == 'high' %}#b42318{% elif severity == 'medium' %}#b54708{% else %}#52606d{% endif %}; margin: 20px 0 6px;">{{ severity }}</h3>
+    <ul style="padding-left: 18px; margin: 0;">
+      {% for item in rows %}
+      <li style="margin-bottom: 8px;">
+        {% if base and item.to %}<a href="{{ base }}{{ item.to }}" style="color: #1D6FE0; text-decoration: none; font-weight: 600;">{{ item.title }}</a>{% else %}<strong>{{ item.title }}</strong>{% endif %}
+        <br><span style="color: #52606d; font-size: 14px;">{{ item.detail }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+    <p style="color: #7b8794; font-size: 12px; margin-top: 24px;">Change how often this arrives under Settings &rsaquo; Notifications. &mdash; Conformiti</p>
+  </body>
+</html>
