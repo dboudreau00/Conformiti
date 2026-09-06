@@ -391,11 +391,28 @@ export default function Packages({ me }) {
                 <div className="mt-4 rounded-xl border border-line bg-surface-2 p-3">
                   <Label as="p">Manifest digest (SHA-256)</Label>
                   <p className="mt-1 break-all font-mono text-2xs text-ink">{selected.manifest_sha256}</p>
-                  <p className="mt-1.5 text-xs text-muted">
-                    Publish this to the auditor separately. It is what lets them prove the bundle
-                    they hold is the one you sealed. The bundle carries no signature, so this
-                    digest and the audit-trail entry beside it are the binding to a moment.
-                  </p>
+                  {selected.signing_key_id ? (
+                    <>
+                      <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+                        <Badge tone={integrity?.signature === "invalid" ? "danger" : "success"} dot>
+                          {integrity?.signature === "invalid" ? "Signature does not verify" : "Signed"}
+                        </Badge>
+                        <span>Ed25519, signing key <span className="font-mono text-ink">{selected.signing_key_id}</span></span>
+                      </p>
+                      <p className="mt-1.5 text-xs text-muted">
+                        The bundle carries the signature and the public key; the shipped verify.py
+                        checks it offline. Give the auditor the key fingerprint from Settings › About
+                        out of band, so they can tell your key from a forger's.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1.5 text-xs text-muted">
+                      Publish this to the auditor separately. It is what lets them prove the bundle
+                      they hold is the one you sealed. This package carries no signature (the
+                      installation had no signing key when it was sealed), so this digest and the
+                      audit-trail entry beside it are the binding to a moment.
+                    </p>
+                  )}
                 </div>
               ) : null}
 

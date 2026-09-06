@@ -217,6 +217,25 @@ cron line is enough:
 15 3 1 * *  cd /app && python manage.py scan_evidence --stale 30
 ```
 
+### Package signing
+
+Every sealed package manifest is signed with an Ed25519 key kept in a file
+the compose stack generates on first use in the `secrets` volume
+(`/app/secrets/package_signing_key`, 0600). Nothing to configure; **back the
+volume up** with the database. The public key and its fingerprint are under
+*Settings › About* and at `GET /api/signing-keys/` — hand the fingerprint to
+your auditors out of band so they can tell your key from a forger's. To use
+a key you manage elsewhere, set `SIGNING_KEY` (PEM, or a base64 32-byte
+seed). To rotate:
+
+```bash
+docker compose exec backend python manage.py rotate_signing_key --label FY27
+```
+
+The old key file is kept beside the new one, its public key stays published
+as retired, and every package already sealed keeps verifying under the key it
+carries. `SIGNING_ENABLED=false` seals packages unsigned, as before 0.7.0.
+
 ### Sessions: cookies by default
 
 Since 0.6.1 the SPA's tokens travel as HttpOnly cookies (`AUTH_TRANSPORT=cookie`),

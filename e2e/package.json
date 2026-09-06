@@ -1,6 +1,6 @@
 {
   "name": "conformiti-e2e",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "End-to-end browser tests. Kept out of frontend/ so Playwright never enters the application's dependency tree or its npm audit.",

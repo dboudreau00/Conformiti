@@ -5,6 +5,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.7.0] — 2026-09-05
+
+The signature the bundle was missing, with the key-management story that
+was the reason for leaving it out.
+
+### Added
+
+- **Detached signatures over the sealed manifest.** Every seal signs
+  `manifest.json` (Ed25519) with a key that lives in a **file, never in the
+  database**: `SIGNING_KEY_FILE`, generated at 0600 on first use — in the
+  compose stack inside the `secrets` volume beside the Django secret key —
+  or the key itself in `SIGNING_KEY`. The bundle carries `manifest.sig` and
+  `signing-key.pub`; `verify.py` now checks the signature with an Ed25519
+  implementation of its own (RFC 8032, standard library only, tested
+  against the RFC vectors and the `cryptography` library), and prints the
+  key fingerprint to compare with the one the organisation published;
+  `openssl pkeyutl` agrees, and the README in the bundle says how. The
+  public key is published at `GET /api/signing-keys/` (current and retired,
+  with dates) and under Settings › About; each package remembers the key
+  that signed it, so a package sealed under a rotated-out key keeps
+  verifying. `GET /api/evidence-packages/{id}/signature/` and the existing
+  `verify` action report the signature's state; the seal entry in the audit
+  trail names the key. `manage.py rotate_signing_key` writes a new key,
+  keeps the old file beside it, and marks the old public key retired. With
+  no key configured (`SIGNING_ENABLED=false`, or neither location set)
+  packages seal unsigned exactly as before, and every screen and bundle
+  says so.
+
+### Changed
+
+- The package screen shows "Signed · Ed25519 · key …" (or that the package
+  carries no signature); the integrity check fails on a signature that
+  does not verify, whatever the file digests say.
+
+---
+
 ## [0.6.1] — 2026-09-05
 
 The four items 0.6.0 left on the "next" list: next year's package from last

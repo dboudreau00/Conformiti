@@ -253,6 +253,7 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
             "assertion", "asserted_by_name", "asserted_at",
             "sealed_by_name", "sealed_at", "manifest_sha256", "manifest_version",
             "manifest_algorithm", "generator",
+            "manifest_signature", "signing_key_id", "signing_public_key",
             "withdrawn_at", "withdrawn_reason",
             "prior_package", "prior_package_name", "successors",
             "created_by_name", "created_at", "updated_at",
@@ -261,6 +262,7 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "status", "asserted_by_name", "asserted_at", "sealed_by_name", "sealed_at",
             "manifest_sha256", "manifest_version", "manifest_algorithm", "generator",
+            "manifest_signature", "signing_key_id", "signing_public_key",
             "withdrawn_at", "withdrawn_reason", "created_by_name",
         ]
 

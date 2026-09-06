@@ -18,9 +18,10 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
 from audit.events import record_package_event
 from compliance.models import Control
@@ -28,7 +29,7 @@ from documents import monitor
 from documents.downloads import serve_stored_file
 from documents.models import Document
 
-from . import access, bundle, rollforward
+from . import access, bundle, rollforward, signing
 from .manifest import canonical_bytes, sha256_hex
 from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGrant, PackageSample
 from .serializers import (
@@ -240,15 +241,37 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             package.save(update_fields=[
                 "manifest_json", "manifest_sha256", "manifest_version", "manifest_algorithm",
             ])
+            # The detached signature, when the installation has a key.
+            signed_by = signing.sign_package(package)
 
         # Digest first: AuditLog.detail is capped at 255 characters and the
         # digest is the only thing in the row that binds it to these bytes.
         record_package_event(
             request, package, "seal",
             f"sha256={package.manifest_sha256} sealed package {package.pk} "
-            f"with {package.evidence_count} item(s): {package.name[:60]}",
+            f"with {package.evidence_count} item(s)"
+            f"{f', signed key={signed_by}' if signed_by else ', unsigned'}: {package.name[:50]}",
         )
         return Response(EvidencePackageSerializer(package).data)
+
+    @action(detail=True, methods=["get"])
+    def signature(self, request, pk=None):
+        """The detached signature and the key that made it, for anyone who
+        can read the package -- the auditor fetches this to compare with
+        the bundle they hold."""
+        package = self.get_object()
+        if not package.manifest_signature:
+            return Response({"signed": False, "algorithm": signing.ALGORITHM,
+                             "manifest_sha256": package.manifest_sha256})
+        return Response({
+            "signed": True, "algorithm": signing.ALGORITHM,
+            "manifest_sha256": package.manifest_sha256,
+            "signature": package.manifest_signature,
+            "key_id": package.signing_key_id,
+            "public_key": package.signing_public_key,
+            "fingerprint": signing.fingerprint(package.signing_public_key),
+            "status": signing.signature_status(package),
+        })
 
     @action(detail=True, methods=["post"])
     def withdraw(self, request, pk=None):
@@ -276,13 +299,16 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         """Re-hash the live files and compare with what was sealed."""
         package = self.get_object()
         drifted = verify_pins(package)
+        sig = signing.signature_status(package) if package.manifest_json else "unsigned"
         return Response({
             "package": package.pk,
             "status": package.status,
             "manifest_sha256": package.manifest_sha256,
             "items": package.evidence_count,
-            "ok": not drifted,
+            "ok": not drifted and sig != "invalid",
             "discrepancies": drifted,
+            "signature": sig,
+            "signing_key_id": package.signing_key_id,
         })
 
     @action(detail=True, methods=["get"])
@@ -324,6 +350,27 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             else f"discrepancies={summary['altered'] + summary['missing']}"
         )
         return response
+
+
+class SigningKeysView(APIView):
+    """The installation's package-signing public keys: the current one and
+    every retired one. Public on purpose -- a public key is for publishing,
+    and an auditor comparing a bundle's key with this list is the point."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .models import SigningKey
+
+        current = signing.current_key_info(create=False)
+        keys = [{
+            "key_id": k.key_id, "public_key": k.public_key,
+            "fingerprint": signing.fingerprint(k.public_key), "label": k.label,
+            "created_at": k.created_at, "retired_at": k.retired_at,
+            "current": k.key_id == current.get("key_id"),
+        } for k in SigningKey.objects.all()]
+        return Response({"algorithm": signing.ALGORITHM, "enabled": current["enabled"],
+                         "current": current if current.get("key_id") else None, "keys": keys})
 
 
 class PackageControlViewSet(viewsets.ModelViewSet):

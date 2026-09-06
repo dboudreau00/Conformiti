@@ -3,4 +3,4 @@
 Read by the health endpoint, the entrypoint banner and the docs tooling.
 Bump this together with CHANGELOG.md.
 """
-__version__ = "0.6.1"
+__version__ = "0.7.0"

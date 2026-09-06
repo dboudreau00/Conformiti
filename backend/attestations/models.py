@@ -78,6 +78,13 @@ class EvidencePackage(models.Model):
     # Stored verbatim so an archived package stays verifiable without this code.
     manifest_json = models.TextField(blank=True)
     generator = models.CharField(max_length=60, blank=True)
+    # --- detached signature over manifest_json (attestations/signing.py).
+    # The public key travels with the package so a signature made under a
+    # rotated-out key still verifies; the private key is never in this
+    # database. Blank when the installation had no signing key at seal.
+    manifest_signature = models.CharField(max_length=128, blank=True)
+    signing_key_id = models.CharField(max_length=16, blank=True, db_index=True)
+    signing_public_key = models.CharField(max_length=64, blank=True)
 
     # --- withdrawal ---
     withdrawn_by = models.ForeignKey(
@@ -369,6 +376,23 @@ class PackageGrant(models.Model):
     def is_live(self):
         from django.utils import timezone
         return self.revoked_at is None and self.expires_at > timezone.now()
+
+
+class SigningKey(models.Model):
+    """A public key this installation has signed packages with: the current
+    one and every retired one, so the published list matches what any
+    bundle in circulation carries. Public material only."""
+    key_id = models.CharField(max_length=16, unique=True)
+    public_key = models.CharField(max_length=64, help_text="Raw Ed25519 public key, base64.")
+    label = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    retired_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.key_id} ({'retired' if self.retired_at else 'current'})"
 
 
 class PbcRequest(models.Model):

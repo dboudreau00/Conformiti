@@ -348,15 +348,26 @@ def readme_text(package, digest, summary):
         "   client -- it is read-only, stdlib-only, and extracts nothing:",
         "     python3 verify.py .",
         "",
+        *(_signature_lines(package)),
         "WHAT THIS DOES AND DOES NOT PROVE",
         "---------------------------------",
-        "The digests prove the files in this bundle are the files that were",
-        "sealed. They do NOT prove who produced them: this bundle carries no",
-        "cryptographic signature, so anyone able to rewrite the bundle could",
-        "rewrite manifest.json, SHA256SUMS and MANIFEST.sha256 consistently.",
-        "The binding to a moment is the seal entry in the organisation's audit",
-        "trail, which records this digest, and the digest you were given out of",
-        "band. Compare them.",
+        *([
+            "The digests prove the files in this bundle are the files that were",
+            "sealed; the signature proves the manifest was signed by the holder of",
+            "the organisation's signing key at the time of sealing. Compare the key",
+            "fingerprint above with the one the organisation published. What the",
+            "signature cannot prove is that the key was never stolen: the seal entry",
+            "in the organisation's audit trail, which records this digest, is the",
+            "other half of the binding.",
+        ] if package.manifest_signature else [
+            "The digests prove the files in this bundle are the files that were",
+            "sealed. They do NOT prove who produced them: this bundle carries no",
+            "cryptographic signature, so anyone able to rewrite the bundle could",
+            "rewrite manifest.json, SHA256SUMS and MANIFEST.sha256 consistently.",
+            "The binding to a moment is the seal entry in the organisation's audit",
+            "trail, which records this digest, and the digest you were given out of",
+            "band. Compare them.",
+        ]),
         "",
         "Access to the live package expires; this bundle does not. Treat it as",
         "the confidential material it is.",
@@ -367,6 +378,29 @@ def readme_text(package, digest, summary):
         "",
     ]
     return ("\n".join(lines)).encode("utf-8")
+
+
+def _signature_lines(package):
+    if not package.manifest_signature:
+        return []
+    from . import signing
+
+    return [
+        "SIGNATURE",
+        "---------",
+        "manifest.json is signed (Ed25519, detached) with the organisation's",
+        f"signing key {package.signing_key_id}. Its fingerprint (sha256 of the raw key):",
+        f"  {signing.fingerprint(package.signing_public_key)}",
+        "The key is in signing-key.pub and the signature in manifest.sig.",
+        "verify.py checks it with nothing installed; openssl agrees:",
+        "     base64 -d manifest.sig > manifest.sig.bin",
+        "     openssl pkeyutl -verify -pubin -inkey signing-key.pub -rawin \\",
+        "        -in manifest.json -sigfile manifest.sig.bin",
+        "The organisation publishes the fingerprint at Settings > About and at",
+        "GET /api/signing-keys/ on their installation; better still, get it",
+        "from them out of band and compare.",
+        "",
+    ]
 
 
 def write_bundle(package, fh):
@@ -447,6 +481,11 @@ def write_bundle(package, fh):
         digest = mf.sha256_hex(manifest_bytes)
         write("manifest.json", manifest_bytes)
         write("MANIFEST.sha256", f"{digest}  manifest.json\n".encode("utf-8"))
+        if package.manifest_signature:
+            from . import signing
+            write("manifest.sig", (package.manifest_signature + "\n").encode("ascii"))
+            write("signing-key.pub",
+                  signing.public_pem(signing.public_from_b64(package.signing_public_key)).encode("ascii"))
 
         write("controls.csv", controls_csv(package))
         write("evidence.csv", evidence_csv(package, actual))

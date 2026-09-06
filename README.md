@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, documents, risks and access reviews in one audit-ready workspace.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.6.1-1D6FE0.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.7.0-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -326,9 +326,13 @@ documents and marking it *provided*; the auditor accepts it or returns it with
 a note. A control owner with no package access still sees and answers the
 lines assigned to them.
 
-> The bundle proves **integrity, not origin**: it carries no signature, so the
-> digest in the audit trail and the copy you publish out of band are what bind
-> it to a moment.
+> The bundle proves **integrity and, since 0.7.0, origin**: every sealed
+> manifest is signed (Ed25519) with a key kept in a file outside the database,
+> the bundle carries the signature and the public key, `verify.py` checks it
+> offline, and the key fingerprint is published under Settings › About and at
+> `/api/signing-keys/` for the auditor to compare. What no signature can prove
+> is that the key was never stolen: the seal entry in the audit trail and the
+> digest you publish out of band are the other half of the binding.
 
 ![Audit packages](assets/screenshots/audit-packages.png)
 

@@ -46,6 +46,19 @@ def scanner_state():
     }
 
 
+def signing_state():
+    """The package-signing key as published: enabled, key id, fingerprint.
+    The key is created on first call when a file location is configured."""
+    from attestations import signing
+
+    try:
+        info = signing.current_key_info(create=True)
+    except Exception:  # pragma: no cover - health must answer regardless
+        return {"enabled": True, "key_id": None, "fingerprint": None, "error": "unavailable"}
+    return {"enabled": info["enabled"], "algorithm": info["algorithm"], "key_id": info["key_id"],
+            "fingerprint": info["fingerprint"], "error": info.get("error")}
+
+
 class HealthView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -65,5 +78,6 @@ class HealthView(APIView):
             "database": "ok" if db_ok else "unavailable",
             "demo_accounts": demo_accounts_present() if db_ok else None,
             "scanning": scanner_state() if db_ok else None,
+            "signing": signing_state(),
         }
         return Response(body, status=status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)

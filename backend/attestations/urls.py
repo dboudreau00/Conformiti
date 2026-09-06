@@ -1,3 +1,4 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .pbc_views import PbcItemViewSet, PbcRequestViewSet
@@ -7,6 +8,7 @@ from .views import (
     PackageEvidenceViewSet,
     PackageGrantViewSet,
     PackageSampleViewSet,
+    SigningKeysView,
 )
 
 router = DefaultRouter()
@@ -18,4 +20,7 @@ router.register("package-grants", PackageGrantViewSet, basename="package-grant")
 router.register("pbc-requests", PbcRequestViewSet, basename="pbc-request")
 router.register("pbc-items", PbcItemViewSet, basename="pbc-item")
 
-urlpatterns = router.urls
+urlpatterns = [
+    # The package-signing public keys, for anyone comparing a bundle's key.
+    path("signing-keys/", SigningKeysView.as_view(), name="signing_keys"),
+] + router.urls

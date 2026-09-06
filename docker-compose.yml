@@ -29,6 +29,10 @@ x-backend-env: &backend-env
   # ring makes enrolled authenticators unreadable (backup codes still work).
   DJANGO_FIELD_ENCRYPTION_KEY: ${CONFORMITI_FIELD_ENCRYPTION_KEY:-}
   DJANGO_FIELD_ENCRYPTION_KEY_FILE: /app/secrets/django_field_encryption_key
+  # The Ed25519 key that signs sealed package manifests. Generated on first
+  # use into the `secrets` volume; never in the database. Back it up with
+  # the volume and rotate with `manage.py rotate_signing_key`.
+  SIGNING_KEY_FILE: /app/secrets/package_signing_key
   # Malware scanning. CONFORMITI_SCANNING rather than CLAMAV_ENABLED for the
   # same reason as DEBUG above: ./.env is shared with the LOCAL installer, and
   # CLAMAV_ENABLED=true there would make every local upload 503 against a

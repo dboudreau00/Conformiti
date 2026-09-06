@@ -939,6 +939,10 @@ function AboutSection() {
     ["Frameworks", frameworks ? `${frameworks.length} loaded` : "…"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
     ["Malware scanning", scannerLabel],
+    ["Package signing", health?.signing?.key_id
+      ? `Ed25519 · key ${health.signing.key_id}`
+      : health?.signing?.enabled === false ? "Off" : "No key configured"],
+    ...(health?.signing?.fingerprint ? [["Signing key fingerprint", `sha256:${health.signing.fingerprint}`]] : []),
     ["Licence", "MIT"],
   ];
 

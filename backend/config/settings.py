@@ -661,6 +661,18 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "").strip().rstrip("/")
 # Named in what vendors receive ("a security questionnaire from Acme Ltd").
 ORGANISATION_NAME = os.getenv("ORGANISATION_NAME", "").strip()
 
+# --- Package signing ----------------------------------------------------------------
+# Every sealed manifest is signed (Ed25519, detached) with a key that lives in
+# a FILE, never in the database: SIGNING_KEY_FILE is generated at 0600 on
+# first use (the compose stack keeps it in the `secrets` volume beside the
+# Django secret key), or SIGNING_KEY carries the key itself (PEM, or a base64
+# 32-byte seed). Unset both and packages seal unsigned, as before 0.7.0.
+# Back the key up with the secrets volume; rotate with
+# `manage.py rotate_signing_key`.
+SIGNING_ENABLED = env_bool("SIGNING_ENABLED", True)
+SIGNING_KEY = os.getenv("SIGNING_KEY", "")
+SIGNING_KEY_FILE = os.getenv("SIGNING_KEY_FILE", str(BASE_DIR / ".package-signing-key")).strip()
+
 # --- Logging ------------------------------------------------------------------
 # Plain, single-line console logging that docker/systemd/journald can ingest.
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if not DEBUG else "DEBUG").upper()

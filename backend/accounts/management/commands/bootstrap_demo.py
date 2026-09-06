@@ -662,6 +662,8 @@ class Command(BaseCommand):
         package.save(update_fields=[
             "manifest_json", "manifest_sha256", "manifest_version", "manifest_algorithm",
         ])
+        from attestations import signing
+        signing.sign_package(package)
 
         # One row already concluded, so the workpaper is not uniformly blank.
         first = package.controls.order_by("ordinal").first()

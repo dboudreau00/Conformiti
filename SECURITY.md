@@ -227,13 +227,21 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   (never per role), time-boxed, revocable in one click, and re-evaluated on
   every request, so deactivating or demoting the account closes it immediately.
   Every file that leaves is recorded before it leaves.
-- **A sealed package proves integrity, not origin.** The manifest digest shows
-  the bundle is byte-for-byte what was sealed. It carries no cryptographic
-  signature, so anyone who could rewrite the bundle could rewrite the manifest
-  and its checksums consistently. The binding to a moment is the `seal` entry in
-  the audit trail, which records the digest, plus publishing that digest to the
-  auditor out of band. The product says so in the bundle's README and on the
-  package screen; do not describe a package as *signed* or *certified*.
+- **A sealed package is signed, and the signature is only as good as the
+  key.** Since 0.7.0 every manifest is signed (Ed25519, detached) with a key
+  that lives in a file (`SIGNING_KEY_FILE`, 0600, in the `secrets` volume)
+  or the environment — never in the database, so a dump, a backup or a SQL
+  injection yields the evidence and every digest but not the key. The
+  public key is published (`/api/signing-keys/`, Settings › About), the
+  bundle carries it, and the shipped `verify.py` checks the signature with
+  the standard library alone. What the signature proves: the manifest was
+  signed by whoever held the key at sealing. What it cannot prove: that the
+  key was never copied — protect the secrets volume as you would the Django
+  secret key, rotate with `manage.py rotate_signing_key` if in doubt (old
+  packages keep verifying under the key they carry), and keep publishing
+  the digest out of band; the `seal` entry in the audit trail is the other
+  half of the binding. A package sealed with no key configured is unsigned,
+  and every screen and the bundle's README say so.
 - **An SSO login still rests on the identity provider.** Step-up asks for a
   local authenticator only when one is enrolled (or, with
   `SSO_STEP_UP=required`, refuses otherwise); a person with no local

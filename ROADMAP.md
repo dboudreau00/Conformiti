@@ -42,12 +42,14 @@
   codes owned by the account so passkey-only people have them, a watch on
   the malware scanner with re-scan and quarantine, and cookie transport as
   the default with `__Host-`/`__Secure-` prefixes.
+- **0.7.0** — detached Ed25519 signatures over every sealed manifest, from a
+  key kept in a file outside the database, with the public key published,
+  a standard-library verifier in the bundle, and key rotation.
 
 ## Next
 
 | Item | Why |
 |---|---|
-| **Detached signatures over the package manifest** (0.7.0) | the bundle proves integrity, not origin; an Ed25519 key kept outside the database, its public key published, and a stdlib verifier in the bundle make origin checkable too |
 | **Slack / Teams notifications and digest emails** (0.8.0) | the tray only helps people who open the app |
 | **Multi-tenancy** (0.9.0) | one installation serving several organisations, each seeing only its own |
 

@@ -6,11 +6,13 @@ test.describe("audit packages", () => {
     await expect(page.getByRole("button", { name: /SOC 2 Type II fieldwork/ })).toBeVisible();
     await expect(page.getByText("Sealed").first()).toBeVisible();
 
-    // The digest is the whole point of sealing: it has to be on screen, and the
-    // page must be honest that it is not a signature.
+    // The digest is the whole point of sealing: it has to be on screen, with
+    // the signature made by the installation's key (the seed signs), or the
+    // honest note that there is none.
     const digest = page.getByText(/^[0-9a-f]{64}$/);
     await expect(digest).toBeVisible();
-    await expect(page.getByText(/carries no signature/i)).toBeVisible();
+    await expect(page.getByText(/Ed25519, signing key|carries no signature/i)).toBeVisible();
+    await expect(page.getByText("Signed", { exact: true })).toBeVisible();
 
     await expect(page.getByText("Management assertion")).toBeVisible();
     await expect(page.getByText("Aria Auditor").first()).toBeVisible();
