@@ -19,8 +19,8 @@ verification.
 |---|---|---|---|---|
 | Critical | 3 | | Fixed in 0.9.1 | 14 |
 | High | 25 | | Fixed in 0.9.2 | 21 |
-| Medium | 12 | | Partly fixed | 3 |
-| Low | 10 | | Open | 12 |
+| Medium | 12 | | Fixed in 0.9.3 | 4 |
+| Low | 10 | | Partly fixed / open | 11 |
 
 Several findings are the same defect reached from two dimensions; they are
 listed separately because they were found and verified separately. What each
@@ -42,9 +42,9 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 | 2 | PATCH /api/package-samples/{id}/ with only `package_control` runs no authorization check at all, letting an issued aud… | `backend/attestations/views.py:557-580` | fixed 0.9.1 |
 | 3 | Audit rows are stamped from `user.workspace_id`, so a superuser working under X-Workspace files another tenant's docum… | `backend/audit/models.py:8-16` | fixed 0.9.2 |
 | 4 | A superuser's writes inside a switched workspace are audited into their own workspace, so the tenant's audit trail — a… | `backend/audit/models.py:12` | fixed 0.9.2 |
-| 5 | One installation-wide Ed25519 signing key plus a manifest with no tenant identity: any workspace can seal a bundle tha… | `backend/attestations/models.py:383` | partly 0.9.2 |
+| 5 | One installation-wide Ed25519 signing key plus a manifest with no tenant identity: any workspace can seal a bundle tha… | `backend/attestations/models.py:383` | fixed 0.9.3 |
 | 6 | Every per-IP throttle (login, MFA, refresh, questionnaire, anon) is keyed on an attacker-controlled X-Forwarded-For he… | `backend/config/settings.py:369-400` | fixed 0.9.1 |
-| 7 | The Django admin login bypasses MFA, the login throttle and the 0.9.0 archived-workspace refusal — and the resulting s… | `backend/config/urls.py:85` | open |
+| 7 | The Django admin login bypasses MFA, the login throttle and the 0.9.0 archived-workspace refusal — and the resulting s… | `backend/config/urls.py:85` | fixed 0.9.3 |
 | 8 | SSO account resolution runs with no active workspace: SSO_WORKSPACE gates only provisioning, so one IdP signs people i… | `backend/accounts/oidc.py:433` | fixed 0.9.2 |
 | 9 | A revoked, expired or withdrawn package grant does not stop the external auditor reading evidence bytes: the PBC assig… | `backend/attestations/access.py:118-121` | fixed 0.9.2 |
 | 10 | The issued auditor can write the organisation-only `management_response` and silently mutate sealed sampling metadata,… | `backend/attestations/views.py:409-441` | fixed 0.9.1 |
@@ -59,8 +59,8 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 | 19 | A sealed, signed package can gain evidence rows after sealing, and /verify/ still reports ok:true | `backend/attestations/views.py:618-623` | fixed 0.9.2 |
 | 20 | An external auditor keeps reading PBC attachment bytes forever after the grant is revoked or expires, by self-assignin… | `backend/attestations/access.py:112-121` | fixed 0.9.2 |
 | 21 | Meeting-minute files and form templates are downloadable by every authenticated account, including an external auditor… | `backend/governance/views.py:196-201` | fixed 0.9.2 |
-| 22 | The Ed25519 signature covers only manifest.json — the auditor's conclusions in controls.csv/samples.csv are unsigned, … | `backend/attestations/bundle.py:490-505` | open |
-| 23 | One installation-wide signing key signs every workspace's packages, and the signed manifest names no organisation — on… | `backend/attestations/signing.py:88-116` | partly 0.9.2 |
+| 22 | The Ed25519 signature covers only manifest.json — the auditor's conclusions in controls.csv/samples.csv are unsigned, … | `backend/attestations/bundle.py:490-505` | fixed 0.9.3 |
+| 23 | One installation-wide signing key signs every workspace's packages, and the signed manifest names no organisation — on… | `backend/attestations/signing.py:88-116` | fixed 0.9.3 |
 | 24 | The sidebar's workspace label shows the superuser's home workspace, not the workspace they are actually reading and wr… | `backend/accounts/serializers.py:48-50` | fixed 0.9.2 |
 | 25 | A write refused with 403 has already been committed: the issued auditor can forge the organisation's management respon… | `backend/attestations/views.py:418-436` | fixed 0.9.1 |
 
@@ -110,14 +110,17 @@ One verifier of three disagreed. Worth a second look rather than a fix on this e
 
 ## What is still open
 
-The Ed25519 signature covers `manifest.json` only, so the auditor's
-conclusions in `controls.csv` and `samples.csv` sit outside it and `verify.py`
-still reports VALID after they are rewritten. One signing key serves every
-workspace — 0.9.2 puts the organisation's name inside the signed bytes, but a
-per-tenant key is the real fix. The Django admin login bypasses MFA, the login
-throttle and the archived-workspace refusal, and its session authenticates the
-whole API. The shipped Auditor role still reads more of a workspace than
+The three highest-severity items are closed in 0.9.3: the signature now covers
+the whole bundle by way of a second signature over `SHA256SUMS`, each
+workspace signs with its own derived key, and the Django admin demands the
+second factor while its session no longer authenticates the API.
+
+What remains: the shipped Auditor role still reads more of a workspace than
 "granted folders" implies, though minutes and blank templates are now closed
-to it. TOTP codes remain replayable inside their 90-second window, sealing is
-a check-then-act with no row lock, and in-app signature verification trusts
-the public key stored beside the signature.
+to it. TOTP codes are replayable inside their 90-second window. Sealing is a
+check-then-act with no row lock. In-app signature verification trusts the
+public key stored beside the signature, so it reports "signed" for a row an
+attacker with database write access re-signed — the offline verifier and the
+published fingerprint are the real check, and they are unaffected. Reminder
+email goes to one installation-wide address. The remaining low findings are
+listed above.

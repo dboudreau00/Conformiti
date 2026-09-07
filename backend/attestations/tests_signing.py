@@ -86,7 +86,9 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         # Registered as the current key, and published.
         row = SigningKey.objects.get()
         self.assertEqual((row.key_id, row.retired_at), (self.package.signing_key_id, None))
-        pub = APIClient().get("/api/signing-keys/").data
+        # Each workspace signs with its own derived key (0.9.3), so the
+        # published list is asked for by organisation.
+        pub = APIClient().get("/api/signing-keys/", {"workspace": "default"}).data
         self.assertEqual(pub["current"]["key_id"], row.key_id)
         self.assertEqual(pub["keys"][0]["fingerprint"], signing.fingerprint(row.public_key))
         # The seal entry says so.
@@ -173,7 +175,7 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         r = self.manager_client.post(f"/api/evidence-packages/{other.pk}/seal/",
                                      {"assertion": ASSERTION}, format="json")
         self.assertEqual(r.data["signing_key_id"], new_id)
-        listed = APIClient().get("/api/signing-keys/").data
+        listed = APIClient().get("/api/signing-keys/", {"workspace": "default"}).data
         self.assertEqual(listed["current"]["key_id"], new_id)
         self.assertEqual({k["key_id"]: k["current"] for k in listed["keys"]}, {old_id: False, new_id: True})
         show = StringIO()
@@ -187,9 +189,16 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         self.assertEqual(body["fingerprint"][:16], body["key_id"])
 
     def test_a_key_from_the_environment_is_used_as_is(self):
+        from accounts import tenancy
         from cryptography.hazmat.primitives.asymmetric import ed25519
+
         seed = os.urandom(32)
-        expected = signing.key_id(ed25519.Ed25519PrivateKey.from_private_bytes(seed).public_key())
+        root = ed25519.Ed25519PrivateKey.from_private_bytes(seed)
+        # SIGNING_KEY is the installation root; what signs a package is the
+        # key derived from it for that package's workspace.
+        expected = signing.key_id(
+            signing.derive_workspace_key(root, tenancy.current().slug).public_key())
+        self.assertNotEqual(expected, signing.key_id(root.public_key()))
         with override_settings(SIGNING_KEY=base64.b64encode(seed).decode()):
             self.seal()
         self.assertEqual(self.package.signing_key_id, expected)

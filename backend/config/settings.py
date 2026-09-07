@@ -206,7 +206,10 @@ ASGI_APPLICATION = "config.asgi.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Searched before the apps', so backend/templates/admin/login.html
+        # overrides the admin's own sign-in form (which asks for a password
+        # and nothing else). See accounts.admin.MfaAdminAuthenticationForm.
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {"context_processors": [
             "django.template.context_processors.request",
@@ -367,11 +370,18 @@ CONTROL_TEST_INTERVAL_DAYS = env_int("CONTROL_TEST_INTERVAL_DAYS", 365)
 
 # --- DRF / auth -------------------------------------------------------------
 REST_FRAMEWORK = {
+    # Reads the access cookie when AUTH_TRANSPORT=cookie, and otherwise
+    # behaves exactly like JWTAuthentication. A Bearer header always wins.
+    #
+    # SessionAuthentication is DEBUG-only on purpose: it exists for the
+    # browsable API, which is itself DEBUG-only (see DEFAULT_RENDERER_CLASSES).
+    # In production it meant a Django admin session -- obtained through a login
+    # form that asks for a password and nothing else -- authenticated every
+    # /api/ endpoint as well.
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        # Reads the access cookie when AUTH_TRANSPORT=cookie, and otherwise
-        # behaves exactly like JWTAuthentication. A Bearer header always wins.
-        "accounts.cookie_auth.CookieJWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
+        ["accounts.cookie_auth.CookieJWTAuthentication",
+         "rest_framework.authentication.SessionAuthentication"]
+        if DEBUG else ["accounts.cookie_auth.CookieJWTAuthentication"]
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": (

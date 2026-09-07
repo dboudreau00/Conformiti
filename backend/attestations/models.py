@@ -381,9 +381,19 @@ class PackageGrant(TenantModel):
 
 
 class SigningKey(models.Model):
-    """A public key this installation has signed packages with: the current
-    one and every retired one, so the published list matches what any
-    bundle in circulation carries. Public material only."""
+    """A public key packages have been signed with: the current one and every
+    retired one, so the published list matches what any bundle in circulation
+    carries. Public material only.
+
+    Not a TenantModel: an auditor fetches this list unauthenticated, with no
+    workspace active, and rows predating per-workspace keys have none. The
+    column records which organisation a key belongs to and the API filters
+    on it explicitly.
+    """
+    workspace = models.ForeignKey(
+        "accounts.Workspace", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="signing_keys",
+    )
     key_id = models.CharField(max_length=16, unique=True)
     public_key = models.CharField(max_length=64, help_text="Raw Ed25519 public key, base64.")
     label = models.CharField(max_length=120, blank=True)

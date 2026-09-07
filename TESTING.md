@@ -10,7 +10,7 @@ walkthrough with exact expected values from the seeded demo data.
 ```
 
 Runs, in order: `tools/validate.py` (17 static checks), `manage.py check`,
-`makemigrations --check`, the backend suite (**452 tests**, ~11 min on SQLite),
+`makemigrations --check`, the backend suite (**467 tests**, ~11 min on SQLite),
 and a production frontend build. CI runs the same plus the PostgreSQL job,
 `npm audit`, the Docker boot check and the Playwright end-to-end suite.
 Details: [VALIDATION.md](VALIDATION.md).

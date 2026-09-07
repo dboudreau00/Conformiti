@@ -131,3 +131,144 @@ class ManifestIdentityTests(PackageTestBase):
         manifest = json.loads(self.package.manifest_json)
         self.assertEqual(manifest["manifest_version"], 4)
         self.assertEqual(manifest["package"]["workspace"]["slug"], "default")
+
+
+class BundleSignatureCoverageTests(PackageTestBase):
+    """The signature has to cover what the auditor actually reads.
+
+    manifest.sig is made at seal and covers manifest.json alone; the
+    conclusions land in controls.csv and samples.csv afterwards. Rewriting
+    those used to leave verify.py printing VALID.
+    """
+
+    def export(self):
+        import io as _io
+        import zipfile
+
+        r = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/export/")
+        self.assertEqual(r.status_code, 200, r.status_code)
+        return zipfile.ZipFile(_io.BytesIO(b"".join(r.streaming_content)
+                                           if r.streaming else r.content))
+
+    def setUp(self):
+        super().setUp()
+        self.add_control()
+        self.seal()
+
+    def test_the_bundle_carries_a_signature_over_its_file_list(self):
+        zf = self.export()
+        names = set(zf.namelist())
+        self.assertIn("SHA256SUMS", names)
+        self.assertIn("SHA256SUMS.sig", names)
+        self.assertIn("sums-key.pub", names)
+        # Everything the auditor reads is inside SHA256SUMS, so signing it
+        # covers them transitively.
+        listed = {line.split("  ", 1)[1]
+                  for line in zf.read("SHA256SUMS").decode().splitlines() if line.strip()}
+        for member in ("manifest.json", "controls.csv", "samples.csv", "trail.csv"):
+            self.assertIn(member, listed)
+
+    def test_rewriting_the_conclusions_is_caught(self):
+        import base64
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        zf = self.export()
+        with tempfile.TemporaryDirectory() as tmp:
+            zf.extractall(tmp)
+            root = Path(tmp)
+            # A clean bundle verifies.
+            ok = subprocess.run([sys.executable, "verify.py", "."], cwd=root,
+                                capture_output=True, text=True, timeout=300)
+            self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+            self.assertIn("over SHA256SUMS", ok.stdout)
+
+            # Rewrite the auditor's workpaper and regenerate the file list to
+            # match — the whole point of signing SHA256SUMS is that this fails.
+            import hashlib
+
+            controls = root / "controls.csv"
+            controls.write_bytes(controls.read_bytes() + b"\nforged,row\n")
+            sums = root / "SHA256SUMS"
+            rebuilt = []
+            for line in sums.read_text().splitlines():
+                if not line.strip():
+                    continue
+                _digest, name = line.split("  ", 1)
+                target = root / name
+                new = hashlib.sha256(target.read_bytes()).hexdigest() if target.is_file() else _digest
+                rebuilt.append(f"{new}  {name}")
+            sums.write_text("\n".join(rebuilt) + "\n")
+
+            bad = subprocess.run([sys.executable, "verify.py", "."], cwd=root,
+                                 capture_output=True, text=True, timeout=300)
+            self.assertEqual(bad.returncode, 1, bad.stdout + bad.stderr)
+            self.assertIn("SHA256SUMS SIGNATURE DOES NOT VERIFY", bad.stdout)
+
+    def test_a_file_added_to_the_bundle_is_reported(self):
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        zf = self.export()
+        with tempfile.TemporaryDirectory() as tmp:
+            zf.extractall(tmp)
+            (Path(tmp) / "extra-evidence.txt").write_text("slipped in")
+            r = subprocess.run([sys.executable, "verify.py", "."], cwd=tmp,
+                               capture_output=True, text=True, timeout=300)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("not listed in SHA256SUMS", r.stdout)
+
+
+class PerWorkspaceKeyTests(PackageTestBase):
+    """Each organisation signs with its own key, so the fingerprint an auditor
+    is told to expect identifies the client, not the installation."""
+
+    def test_two_workspaces_sign_with_different_keys(self):
+        from accounts import tenancy
+        from accounts.models import Workspace
+
+        from . import signing
+
+        root = signing.load_private_key(create=True)
+        self.assertIsNotNone(root, "the test settings should configure a signing key")
+
+        beta = Workspace.objects.create(name="Beta Ltd", slug="beta-keys")
+        with tenancy.scoped(tenancy.current()):
+            here = signing.current_key_info(create=True)["key_id"]
+        with tenancy.scoped(beta):
+            there = signing.current_key_info(create=True)["key_id"]
+        self.assertTrue(here and there)
+        self.assertNotEqual(here, there, "each workspace needs its own key")
+
+        # Derivation is deterministic: the same workspace always gets the same
+        # key, so a published fingerprint stays valid across restarts.
+        with tenancy.scoped(beta):
+            self.assertEqual(signing.current_key_info(create=True)["key_id"], there)
+
+    def test_a_sealed_package_is_signed_by_its_own_workspace_key(self):
+        from accounts import tenancy
+
+        from . import signing
+
+        self.add_control()
+        self.seal()
+        self.package.refresh_from_db()
+        self.assertTrue(self.package.signing_key_id)
+        with tenancy.scoped(tenancy.current()):
+            self.assertEqual(self.package.signing_key_id,
+                             signing.current_key_info(create=True)["key_id"])
+        self.assertEqual(signing.signature_status(self.package), "valid")
+
+    def test_the_published_key_list_can_be_asked_for_one_organisation(self):
+        self.add_control()
+        self.seal()
+        r = self.client_for(self.manager).get("/api/signing-keys/", {"workspace": "default"})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["workspace"], "default")
+        self.assertTrue(any(k["current"] for k in r.data["keys"]))
+        self.assertEqual(self.client_for(self.manager).get(
+            "/api/signing-keys/", {"workspace": "nope"}).status_code, 404)

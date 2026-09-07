@@ -399,6 +399,10 @@ def _signature_lines(package):
         f"signing key {package.signing_key_id}. Its fingerprint (sha256 of the raw key):",
         f"  {signing.fingerprint(package.signing_public_key)}",
         "The key is in signing-key.pub and the signature in manifest.sig.",
+        "SHA256SUMS carries its own signature (SHA256SUMS.sig, key in",
+        "sums-key.pub) made when this bundle was exported. That one covers",
+        "every file listed in it -- including controls.csv and samples.csv,",
+        "which hold the conclusions recorded after the seal.",
         "verify.py checks it with nothing installed; openssl agrees:",
         "     base64 -d manifest.sig > manifest.sig.bin",
         "     openssl pkeyutl -verify -pubin -inkey signing-key.pub -rawin \\",
@@ -521,6 +525,21 @@ def write_bundle(package, fh):
             f"{members[name]}  {name}\n" for name in sorted(members)
         ).encode("utf-8")
         zf.writestr(zipfile.ZipInfo("SHA256SUMS", date_time=stamp), checksums)
+
+        # ...and then sign SHA256SUMS, which is what puts the rest of the
+        # bundle inside a signature. The manifest signature is made at seal and
+        # covers only manifest.json; the workpaper the auditor actually reads
+        # -- controls.csv, samples.csv, trail.csv -- is written now, after
+        # their conclusions were recorded, so it needs its own.
+        from . import signing
+
+        sums_signature = signing.sign_bytes(checksums)
+        if sums_signature is not None:
+            signature_b64, _kid, public_b64 = sums_signature
+            zf.writestr(zipfile.ZipInfo("SHA256SUMS.sig", date_time=stamp),
+                        (signature_b64 + "\n").encode("ascii"))
+            zf.writestr(zipfile.ZipInfo("sums-key.pub", date_time=stamp),
+                        signing.public_pem(signing.public_from_b64(public_b64)).encode("ascii"))
 
     summary["manifest_sha256"] = digest
     return summary

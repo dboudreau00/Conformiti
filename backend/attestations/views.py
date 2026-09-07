@@ -373,16 +373,32 @@ class SigningKeysView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
+        from accounts import tenancy
+        from accounts.models import Workspace
+
         from .models import SigningKey
 
-        current = signing.current_key_info(create=False)
-        keys = [{
-            "key_id": k.key_id, "public_key": k.public_key,
-            "fingerprint": signing.fingerprint(k.public_key), "label": k.label,
-            "created_at": k.created_at, "retired_at": k.retired_at,
-            "current": k.key_id == current.get("key_id"),
-        } for k in SigningKey.objects.all()]
+        # Unauthenticated, so no workspace resolves from the caller. A named
+        # organisation is asked for by slug; without one this answers for the
+        # installation, which is what a single-workspace deployment wants.
+        slug = (request.query_params.get("workspace") or "").strip()
+        workspace = Workspace.objects.filter(slug=slug).first() if slug else None
+        if slug and workspace is None:
+            return Response({"detail": "Unknown workspace."}, status=status.HTTP_404_NOT_FOUND)
+
+        with tenancy.scoped(workspace):
+            current = signing.current_key_info(create=False)
+            rows = SigningKey.objects.filter(workspace=workspace) if workspace \
+                else SigningKey.objects.all()
+            keys = [{
+                "key_id": k.key_id, "public_key": k.public_key,
+                "fingerprint": signing.fingerprint(k.public_key), "label": k.label,
+                "workspace": k.workspace.slug if k.workspace_id else None,
+                "created_at": k.created_at, "retired_at": k.retired_at,
+                "current": k.key_id == current.get("key_id"),
+            } for k in rows]
         return Response({"algorithm": signing.ALGORITHM, "enabled": current["enabled"],
+                         "workspace": workspace.slug if workspace else None,
                          "current": current if current.get("key_id") else None, "keys": keys})
 
 

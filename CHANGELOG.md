@@ -5,6 +5,52 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.3] — 2026-09-07
+
+The three findings the review rated highest and 0.9.2 left open. All of them
+concern what a bundle proves and who can get in.
+
+### Fixed — security
+
+- **The signature covered `manifest.json` and nothing else.** The auditor's
+  conclusions live in `controls.csv` and `samples.csv`, which are written
+  after the seal — so they sat outside the signature entirely, and `verify.py`
+  still printed *signature: VALID … the bundle is theirs and unchanged* after
+  they were rewritten. The export now also signs `SHA256SUMS`, which names
+  every other member, so the whole bundle is covered transitively: alter any
+  file and its checksum no longer matches; regenerate `SHA256SUMS` to hide
+  that and its own signature breaks. `verify.py` checks the second signature,
+  reports it separately, refuses files that `SHA256SUMS` does not list, and no
+  longer claims origin for a bundle that carries only the manifest signature.
+- **One Ed25519 key signed every workspace's packages**, so on a shared
+  installation one organisation could produce a bundle that verified under
+  exactly the fingerprint another organisation had published — the fingerprint
+  identified the installation, not the client. Each workspace now signs with
+  its own key, derived from the installation key with HKDF-SHA256 over the
+  workspace slug. There is still one secret to protect and rotate, the
+  derivation is deterministic, and `GET /api/signing-keys/?workspace=<slug>`
+  publishes the fingerprint for a named organisation.
+- **The Django admin login bypassed everything the API enforces.** It asked
+  for a password and nothing else — no second factor, no rate limit, no
+  archived-workspace refusal — and the session it created authenticated the
+  whole API through `SessionAuthentication`. The admin sign-in now demands the
+  authenticator code (or a backup code) from any account with a factor
+  enrolled, refuses an archived workspace, and is rate-limited per client;
+  and outside `DEBUG` an admin session is no longer an API credential.
+
+### Upgrading
+
+One migration (`attestations 0006`), which records which workspace a signing
+key belongs to. **Packages sealed before this release keep verifying** — the
+key that signed them travels inside the bundle — but new packages are signed
+with a per-workspace key, so the fingerprint you publish changes. Re-publish
+it from *Settings › About* or `/api/signing-keys/?workspace=<slug>`.
+
+Administrators with an authenticator enrolled now need their code to reach
+`/admin/`. An account with no second factor is unaffected.
+
+---
+
 ## [0.9.2] — 2026-09-07
 
 The rest of the adversarial review's confirmed findings. Twenty-one more are

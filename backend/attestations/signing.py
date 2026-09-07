@@ -35,8 +35,9 @@ import os
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -119,6 +120,41 @@ def load_private_key(create=True):
 # --------------------------------------------------------------------------- #
 # Public-key encodings
 # --------------------------------------------------------------------------- #
+# Bumping this changes every workspace's derived key, so it is versioned
+# rather than tweaked.
+_DERIVATION_INFO = b"conformiti/workspace-package-signing/v1/"
+
+
+def derive_workspace_key(root_key, slug):
+    """The signing key for one workspace, derived from the installation key.
+
+    One key for the whole installation meant a bundle from one organisation
+    verified identically to a bundle from another -- the published fingerprint
+    named the installation, not the client. Deriving keeps a single secret to
+    protect and rotate while giving each organisation its own identity.
+    """
+    seed = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=None,
+        info=_DERIVATION_INFO + slug.encode("utf-8"),
+    ).derive(root_key.private_bytes_raw())
+    return ed25519.Ed25519PrivateKey.from_private_bytes(seed)
+
+
+def active_private_key(create=True):
+    """The key that signs for the workspace this call is running in.
+
+    Falls back to the installation key when no workspace is active, which is
+    what management commands and the health endpoint see.
+    """
+    root = load_private_key(create=create)
+    if root is None:
+        return None
+    from accounts import tenancy
+
+    workspace = tenancy.current()
+    return derive_workspace_key(root, workspace.slug) if workspace is not None else root
+
+
 def public_raw(public_key):
     return public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
 
@@ -152,8 +188,12 @@ def public_from_b64(text):
 # Signing and verifying
 # --------------------------------------------------------------------------- #
 def sign_bytes(raw):
-    """``(signature_b64, key_id, public_key_b64)`` or None when unsigned."""
-    key = load_private_key()
+    """``(signature_b64, key_id, public_key_b64)`` or None when unsigned.
+
+    Signs with the active workspace's key, so a bundle carries the identity of
+    the organisation that produced it.
+    """
+    key = active_private_key()
     if key is None:
         return None
     pub = key.public_key()
@@ -173,12 +213,20 @@ def register_key(public_key_b64):
     current is retired as of now (a rotation made without the command)."""
     from .models import SigningKey
 
+    from accounts import tenancy
+
+    workspace_id = tenancy.current_id()
     kid = key_id(public_key_b64)
-    row, _ = SigningKey.objects.get_or_create(key_id=kid, defaults={"public_key": public_key_b64})
-    if row.retired_at is not None:
+    row, _ = SigningKey.objects.get_or_create(
+        key_id=kid, defaults={"public_key": public_key_b64, "workspace_id": workspace_id})
+    if row.retired_at is not None or row.workspace_id != workspace_id:
         row.retired_at = None
-        row.save(update_fields=["retired_at"])
-    SigningKey.objects.filter(retired_at__isnull=True).exclude(key_id=kid).update(retired_at=timezone.now())
+        row.workspace_id = workspace_id
+        row.save(update_fields=["retired_at", "workspace"])
+    # Only this workspace's other keys are retired: each organisation has its
+    # own current key, and retiring theirs would misreport the published list.
+    (SigningKey.objects.filter(retired_at__isnull=True, workspace_id=workspace_id)
+     .exclude(key_id=kid).update(retired_at=timezone.now()))
     return row
 
 
@@ -208,9 +256,10 @@ def signature_status(package):
 
 
 def current_key_info(create=True):
-    """What the health endpoint and the settings screen show."""
+    """What the health endpoint and the settings screen show: the key that
+    would sign for the workspace this call runs in."""
     try:
-        key = load_private_key(create=create)
+        key = active_private_key(create=create)
     except ImproperlyConfigured as exc:
         return {"enabled": enabled(), "algorithm": ALGORITHM, "key_id": None, "fingerprint": None,
                 "public_key": None, "error": str(exc)}

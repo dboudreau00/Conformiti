@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, vendors, risk and access reviews in one audit-ready system, ending in a sealed package your assessor can verify without you.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.9.2-1D6FE0.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.9.3-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -907,7 +907,7 @@ locally:
 | Gate | What it proves |
 |---|---|
 | `tools/validate.py` — **17 static checks** | App and route wiring, the API contract between the SPA and the backend, that every model change has a shipped migration, theme packs, tests and CI present. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
-| `manage.py test` — **452 tests across 27 modules** | Workspace isolation, auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder dedupe, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against RFC 8032 vectors |
+| `manage.py test` — **467 tests across 29 modules** | Workspace isolation, auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder dedupe, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against RFC 8032 vectors |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 / 3.14 on SQLite, plus PostgreSQL 16 |
 | Frontend | A production build that must succeed, plus `npm audit --audit-level=high` |
 | Docker | Both images build; the API image boots and answers `/api/health/` |

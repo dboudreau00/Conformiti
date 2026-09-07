@@ -187,6 +187,56 @@ def check_signature(root, problems):
     return "invalid", fingerprint(public_key)
 
 
+# Written after SHA256SUMS, so they cannot appear inside it.
+NOT_IN_SUMS = ("SHA256SUMS", "SHA256SUMS.sig", "sums-key.pub")
+
+
+def check_sums_signature(root, problems):
+    """The signature over SHA256SUMS, which is what covers the rest of the
+    bundle. manifest.sig is made at seal and covers manifest.json alone; the
+    conclusions the auditor recorded afterwards live in controls.csv and
+    samples.csv, and are inside this one.
+
+    Returns 'valid', 'invalid', 'unsigned' or 'unusable'.
+    """
+    sig_path = os.path.join(root, "SHA256SUMS.sig")
+    key_path = os.path.join(root, "sums-key.pub")
+    if not os.path.isfile(sig_path):
+        return "unsigned", None
+    if not os.path.isfile(key_path):
+        problems.append("SHA256SUMS.sig is present but sums-key.pub is missing")
+        return "unusable", None
+    try:
+        with open(sig_path, encoding="utf-8") as fh:
+            signature = base64.b64decode(fh.read().strip())
+        with open(key_path, encoding="utf-8") as fh:
+            public_key = read_public_key(fh.read())
+        with open(os.path.join(root, "SHA256SUMS"), "rb") as fh:
+            sums = fh.read()
+    except (OSError, ValueError) as exc:
+        problems.append(f"SHA256SUMS signature material unreadable: {exc}")
+        return "unusable", None
+    if ed25519_verify(public_key, sums, signature):
+        return "valid", fingerprint(public_key)
+    problems.append("SHA256SUMS SIGNATURE DOES NOT VERIFY: the file list was rewritten after export")
+    return "invalid", fingerprint(public_key)
+
+
+def check_for_extra_files(root, listed, problems):
+    """Anything in the bundle that SHA256SUMS does not name.
+
+    Without this, a file could simply be ADDED -- every listed hash still
+    matches and nothing looks wrong.
+    """
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            full = os.path.join(base, name)
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            if rel in NOT_IN_SUMS or rel in listed:
+                continue
+            problems.append(f"not listed in SHA256SUMS: {rel}")
+
+
 def main(root):
     problems, checked = [], 0
 
@@ -217,6 +267,7 @@ def main(root):
         print("FAIL: SHA256SUMS is missing.")
         return 2
 
+    listed = set()
     with open(sums_path, encoding="utf-8") as fh:
         for line in fh:
             line = line.rstrip("\n")
@@ -226,6 +277,7 @@ def main(root):
             if unsafe(name):
                 problems.append(f"refused unsafe path in SHA256SUMS: {name!r}")
                 continue
+            listed.add(name)
             target = os.path.join(root, name)
             if not os.path.isfile(target):
                 problems.append(f"missing: {name}")
@@ -233,6 +285,8 @@ def main(root):
             checked += 1
             if sha256_file(target) != expected:
                 problems.append(f"ALTERED since export: {name}")
+
+    check_for_extra_files(root, listed, problems)
 
     # The manifest records what was sealed; SHA256SUMS records what is in the
     # bundle. Comparing the two is how "sealed but since altered" is caught.
@@ -255,6 +309,7 @@ def main(root):
                 )
 
     signature, key_fp = check_signature(root, problems)
+    sums_signature, sums_fp = check_sums_signature(root, problems)
 
     package = manifest.get("package", {})
     print(f"package      : {package.get('name', '?')}")
@@ -269,9 +324,15 @@ def main(root):
     if signature == "unsigned":
         print("signature    : none (compare the manifest digest with the one published to you)")
     else:
-        print(f"signature    : {signature.upper()} (Ed25519)")
+        print(f"signature    : {signature.upper()} (Ed25519, over manifest.json)")
         if key_fp:
             print(f"signing key  : {key_fp[:16]}  fingerprint sha256:{key_fp}")
+    if sums_signature == "unsigned":
+        print("bundle sig   : none (only manifest.json is covered by a signature)")
+    else:
+        print(f"bundle sig   : {sums_signature.upper()} (Ed25519, over SHA256SUMS)")
+        if sums_fp and sums_fp != key_fp:
+            print(f"exported by  : {sums_fp[:16]}  fingerprint sha256:{sums_fp}")
 
     if problems:
         print(f"\nFAIL — {len(problems)} problem(s):")
@@ -280,9 +341,17 @@ def main(root):
         return 1
 
     print("\nOK — every file matches both the bundle checksums and the sealed manifest.")
-    if signature == "valid":
-        print("The manifest is signed. Compare the signing key fingerprint above with the one")
+    if signature == "valid" and sums_signature == "valid":
+        print("Both signatures verify: the sealed manifest, and the file list covering every")
+        print("other member — including controls.csv and samples.csv, which hold the")
+        print("conclusions recorded after the seal. Compare the fingerprint above with the one")
         print("the organisation published; if they match, the bundle is theirs and unchanged.")
+    elif signature == "valid":
+        print("The sealed manifest is signed and verifies. NOTE: this bundle carries no")
+        print("signature over SHA256SUMS, so the files written after sealing — controls.csv,")
+        print("samples.csv and trail.csv, which carry the auditor's conclusions — are covered")
+        print("by checksums only. Their contents are consistent with this bundle, but nothing")
+        print("proves the bundle itself was exported by the organisation.")
     else:
         print("This proves the contents are unchanged. It does not prove their origin:")
         print("compare the manifest digest above with the one published to you separately.")
