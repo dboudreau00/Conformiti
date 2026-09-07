@@ -426,6 +426,17 @@ def write_bundle(package, fh):
 
         # Evidence first: writing streams the bytes and gives us the digests
         # every later member reports on.
+        # The export is the one byte route that never asked. Every other one
+        # calls monitor.refuse_if_quarantined first, so a file the scanner
+        # matched after sealing would have been handed to the external auditor
+        # inside the ZIP. Refuse the whole export and name the file: the
+        # organisation has to deal with it before the bundle leaves.
+        from documents import monitor as _monitor
+
+        for row in rows:
+            if row.document is not None:
+                _monitor.refuse_if_quarantined(row.document)
+
         for row in rows:
             if not row.member_path:
                 continue

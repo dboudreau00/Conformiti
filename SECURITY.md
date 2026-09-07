@@ -15,8 +15,10 @@ row is a 404) and the querysets behind serializer fields (a foreign foreign
 key is a 400). There is no per-request opt-out short of calling
 `tenancy.unscoped()` by name. A superuser may switch workspaces; nobody
 else's `X-Workspace` header is honoured. Each release's suite includes
-`accounts/tests_tenancy.py`, which lists every collection endpoint from a
-second organisation's point of view.
+`accounts/tests_tenancy.py`, which stands a second organisation beside the
+first and checks the collection lists, by-id fetches, cross-workspace
+references, the header, the archive rules and the scheduled jobs from its
+point of view.
 
 ## Reporting a vulnerability
 

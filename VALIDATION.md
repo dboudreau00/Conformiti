@@ -15,7 +15,7 @@ is installed. Exits non-zero on any error. 17 checks:
 | # | Check |
 |---|---|
 | 1 | Every backend `.py` parses |
-| 2 | App wiring: all 9 local apps installed and routed; every app with models ships `migrations/0001_initial.py`; **no install path runs `makemigrations`** |
+| 2 | App wiring: all 11 local apps installed and routed; every app with models ships `migrations/0001_initial.py`; **no install path runs `makemigrations`** |
 | 3 | Every DRF ViewSet is registered in a router |
 | 4 | JSX/JS structural validity (full tag-tree parse) |
 | 5 | Shell wiring: every page imported and routed in `App.jsx`, every `nav.js` link has a Route and a title/caption, every page is a `PanelTransition` page |
@@ -30,10 +30,11 @@ is installed. Exits non-zero on any error. 17 checks:
 | 14 | Review-reminder wiring: beat task → registered task, Celery app import, cron command, templates, provider branches, model fields |
 | 15 | Tests + CI: every app has a `tests.py`, the CI workflow and `LICENSE` exist |
 | 16 | Compose isolation: the Docker stack cannot inherit `DJANGO_DEBUG` or a signing key from a local development `.env` |
+| 17 | Malware scanning: the clamd protocol cases, the EICAR fixture, and the upload limits agreed between clamd and nginx |
 
 ## 2. Backend test suite — `python manage.py test`
 
-215 tests, ~3 min on SQLite (also run against PostgreSQL 16 in CI). Coverage by
+452 tests, ~11 min on SQLite (also run against PostgreSQL 16 in CI). Coverage by
 theme:
 
 - **Authentication:** token pair, bad password, inactive user, per-client
@@ -72,7 +73,7 @@ theme:
 
 ## 3. Frontend and containers
 
-- `npm run build` (Vite 7) must succeed; `npm audit --audit-level=high` must be
+- `npm run build` (Vite 8) must succeed; `npm audit --audit-level=high` must be
   clean.
 - Both Docker images build; the API image boots standalone and answers
   `/api/health/` (SQLite, no services) — the same endpoint the compose
@@ -80,9 +81,9 @@ theme:
 
 ## What is still manual
 
-- The end-to-end browser walkthrough in [TESTING.md](TESTING.md) (every
-  route, two roles, light and dark packs). There are no browser-driven tests in
-  CI yet.
+- The exploratory browser walkthrough in [TESTING.md](TESTING.md) (every
+  route, two roles, light and dark packs). The scripted Playwright suite does
+  run in CI, on both auth transports — see [e2e/README.md](e2e/README.md).
 - Real email delivery (`manage.py test_mailbox --to you@…`) and the Jira
   integration need real accounts.
 - Load testing.

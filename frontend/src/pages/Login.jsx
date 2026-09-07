@@ -307,8 +307,11 @@ export default function Login({ onDone }) {
               </button>
             ) : health?.demo_accounts ? (
               <p className="mt-4 text-center text-xs text-muted">
-                Demo accounts: <span className="font-mono text-ink">admin</span> / <span className="font-mono text-ink">DemoPass123!</span>
-                <span className="block text-2xs text-faint">also mia · owen · aria · val</span>
+                This installation still has its seeded demo accounts.
+                <span className="block text-2xs text-faint">
+                  The password is in the installation notes. Retire them with
+                  <span className="font-mono"> manage.py remove_demo_data</span> before real use.
+                </span>
               </p>
             ) : null}
           </form>

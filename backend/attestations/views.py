@@ -415,30 +415,40 @@ class PackageControlViewSet(viewsets.ModelViewSet):
         touching_conclusions = bool(auditor_fields & set(data))
         touching_response = "management_response" in data
 
-        if touching_conclusions:
-            grant = access.live_grant(user, row.package)
-            if grant is None:
-                raise PermissionDenied(
-                    "Only the auditor this package was issued to can record a conclusion."
-                )
-            stamp(row, user, "concluded")
-            serializer.save(concluded_by=row.concluded_by,
-                            concluded_by_name=row.concluded_by_name,
-                            concluded_at=row.concluded_at)
-        if touching_response:
-            if not access.can_assemble(user):
-                raise PermissionDenied(
-                    "The management response is written by the assessed organisation."
-                )
-            stamp(row, user, "responded")
-            serializer.save(responded_by=row.responded_by,
-                            responded_by_name=row.responded_by_name,
-                            responded_at=row.responded_at)
-        if not (touching_conclusions or touching_response):
+        # Everything a package snapshots into its signed manifest -- control
+        # text, status, owner -- is anything that is neither a conclusion nor
+        # the management response.
+        snapshot_fields = set(data) - auditor_fields - {"management_response"}
+
+        # Authorise the WHOLE request before writing any of it. These checks
+        # used to live inside three branches that each saved, so a PATCH could
+        # commit one field and then be refused for another, and a snapshot
+        # field smuggled alongside a conclusion never met assert_open.
+        if touching_conclusions and access.live_grant(user, row.package) is None:
+            raise PermissionDenied(
+                "Only the auditor this package was issued to can record a conclusion."
+            )
+        if touching_response and not access.can_assemble(user):
+            raise PermissionDenied(
+                "The management response is written by the assessed organisation."
+            )
+        if snapshot_fields:
             if not access.can_assemble(user):
                 raise PermissionDenied("You cannot change this row.")
             assert_open(row.package)
-            serializer.save()
+
+        extra = {}
+        if touching_conclusions:
+            stamp(row, user, "concluded")
+            extra.update(concluded_by=row.concluded_by,
+                         concluded_by_name=row.concluded_by_name,
+                         concluded_at=row.concluded_at)
+        if touching_response:
+            stamp(row, user, "responded")
+            extra.update(responded_by=row.responded_by,
+                         responded_by_name=row.responded_by_name,
+                         responded_at=row.responded_at)
+        serializer.save(**extra)
 
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
@@ -549,6 +559,11 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         touching_item = bool(self.ITEM_FIELDS & set(data))
         if package.status == EvidencePackage.Status.WITHDRAWN:
             assert_open(package)
+        # A body carrying neither a result nor an item field reached save()
+        # without meeting any check; anyone who could read the package could
+        # rewrite its sampling rows.
+        if not (touching_result or touching_item) and not access.can_assemble(user):
+            raise PermissionDenied("You cannot change this package.")
         extra = {}
         if touching_result:
             if access.live_grant(user, package) is None:
@@ -620,6 +635,18 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You cannot change this package.")
         assert_open(row.package_control.package)
+        # What a row points AT is fixed once pinned. Re-pointing skipped the
+        # folder-permission check that pinning performs, and moving a row to
+        # another control could add evidence to an already-sealed package.
+        data = serializer.validated_data
+        moved = data.get("package_control")
+        if moved is not None and moved.pk != row.package_control_id:
+            raise ValidationError(
+                {"package_control": "Pin a new artefact instead of moving this one."})
+        repointed = data.get("document")
+        if repointed is not None and repointed.pk != row.document_id:
+            raise ValidationError(
+                {"document": "Pin a new artefact instead of re-pointing this one."})
         serializer.save()
 
     def perform_destroy(self, instance):

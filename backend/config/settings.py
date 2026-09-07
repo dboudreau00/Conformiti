@@ -381,6 +381,11 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    # How many reverse proxies sit in front of the API. DRF uses this to pick
+    # the right hop out of X-Forwarded-For; left unset it trusts the WHOLE
+    # header, so an attacker varying it gets a fresh throttle bucket per
+    # request and every limit below becomes decorative. 1 = the shipped nginx.
+    "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
     # Throttling: limit anonymous traffic globally; the login endpoint adds a
     # tighter scoped limit (see config/urls.py) to blunt password brute-forcing.
     # Authenticated users are not globally throttled so the SPA stays responsive.

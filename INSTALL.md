@@ -261,8 +261,8 @@ Since 0.9.0 every row belongs to a workspace; a fresh install and every
 upgraded one start with a single workspace, `default`. To host a second
 organisation, sign in as a superuser, open *Settings › Role & access* and
 create it (the built-in roles are seeded, and the framework library unless
-you untick it), switch to it and add its people under *Users*. From the
-shell:
+you untick it), switch to it and add its people under *Users*. A workspace can
+only be created there; once it exists, seed and populate it from the shell:
 
 ```bash
 docker compose exec backend python manage.py seed_frameworks --with-folders --workspace acme

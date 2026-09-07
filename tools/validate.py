@@ -61,7 +61,11 @@ def apps_with_models():
     out = []
     for app in LOCAL_APPS:
         p = os.path.join(BACKEND, app, "models.py")
-        if os.path.exists(p) and re.search(r"class \w+\(.*models\.Model", read(p)):
+        # Model bases: plain models.Model, the tenant base (0.9.0) and the
+        # swapped user model. Matching only "models.Model" silently dropped
+        # seven apps out of this check when the tenancy refactor landed.
+        if os.path.exists(p) and re.search(
+                r"class \w+\(.*(?:models\.Model|TenantModel|AbstractUser)", read(p)):
             out.append(app)
     return out
 

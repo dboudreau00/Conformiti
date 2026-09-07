@@ -32,9 +32,9 @@ Folder (self-parent tree; framework/category/control FKs on seeded nodes)
 Risk 1─* RiskNote                AccessReview 1─* AccessReviewItem (snapshot)
 MeetingSeries 1─* MeetingMinute  ChampionGroup 1─* GroupMember
 CalendarEvent → optional Document / Control / assignee
-AuditLog → optional User          ReadinessSnapshot (one per day)
+AuditLog → optional User          ReadinessSnapshot (one per day, per workspace)
 NotificationReceipt (user, key)   MfaDevice 1─* MfaBackupCode
-JiraIntegration (singleton), JiraBoard
+JiraIntegration (one per workspace), JiraBoard
 ```
 
 ## Workspaces (multi-tenancy)
@@ -125,7 +125,7 @@ events are written explicitly by `audit.events`.
 
 ## Frontend
 
-React 18 SPA (Vite 7). `App.jsx` mounts the shell (`Sidebar`, `TopBar`,
+React 19 SPA (Vite 8). `App.jsx` mounts the shell (`Sidebar`, `TopBar`,
 `ShellContext` with the signed-in user, health record and live badge counts)
 and routes; every page is a `PanelTransition` panel built from the primitives
 in `components/ui` and `components/charts`. Styling is Tailwind over the token

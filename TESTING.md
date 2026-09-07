@@ -9,10 +9,11 @@ walkthrough with exact expected values from the seeded demo data.
 ./install.sh --test            # Windows: .\install.ps1 -Test
 ```
 
-Runs, in order: `tools/validate.py` (16 static checks), `manage.py check`,
-`makemigrations --check`, the backend suite (**215 tests**, ~2.5 min on SQLite),
+Runs, in order: `tools/validate.py` (17 static checks), `manage.py check`,
+`makemigrations --check`, the backend suite (**452 tests**, ~11 min on SQLite),
 and a production frontend build. CI runs the same plus the PostgreSQL job,
-`npm audit` and the Docker boot check. Details: [VALIDATION.md](VALIDATION.md).
+`npm audit`, the Docker boot check and the Playwright end-to-end suite.
+Details: [VALIDATION.md](VALIDATION.md).
 
 To run one module or test:
 

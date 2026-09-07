@@ -5,6 +5,67 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.1] — 2026-09-07
+
+A full adversarial review of the 0.9.0 tree, and the fixes it earned. Sixteen
+independent reviewers attacked the product across separate dimensions; every
+candidate finding was then attacked by three more with different lenses, and
+only those that survived are recorded. The complete set — including what is
+still open — is in [REVIEW_090.md](REVIEW_090.md).
+
+### Fixed — security
+
+- **Rate limiting was decorative.** Django REST Framework identifies a client
+  by the whole `X-Forwarded-For` header unless `NUM_PROXIES` is set, and the
+  shipped nginx appends to that header rather than replacing it. Varying one
+  header bought a fresh bucket per request, so the login, MFA, refresh,
+  questionnaire and anonymous limits could all be stepped around, and there is
+  no account lockout behind them. `NUM_PROXIES` now defaults to 1 and is
+  documented in `.env.example`; set it to 0 if the API is exposed directly.
+- **A sealed package's manifest fields were still writable.** The three
+  branches of the package-control update each authorised and then saved
+  separately, so a snapshotted field smuggled alongside an auditor's
+  conclusion never met the sealed-package check, and a request refused with
+  403 had already committed its first write. The whole request is now
+  authorised before any of it is written, and saved once.
+- **A pinned artefact could be re-pointed.** `PATCH /api/package-evidence/{id}/`
+  accepted a new `document` or `package_control`, which skipped the folder
+  permission check that pinning performs and could move a row into a package
+  that was already sealed — which `/verify/` still reported as intact. Both
+  fields are now fixed once pinned.
+- **Sampling rows could be rewritten by anyone who could read the package.**
+  A body carrying neither a result nor an item field reached `save()` without
+  meeting any permission check.
+- **A document's bytes could be replaced by a plain `PATCH`**, with no
+  folder-edit check, no malware scan, no archived version and no version
+  bump — leaving the previous *clean* verdict attached to bytes nobody had
+  scanned. The field is refused; replacing evidence goes through
+  `new_version`, which does all four.
+- **Quarantined bytes stayed reachable.** Uploading a new version archived the
+  quarantined file as a `DocumentVersion`, which is a download route of its
+  own and is never re-scanned. Quarantined bytes are no longer archived.
+- **The audit-package export was the one byte route that never asked.** Every
+  other route calls `refuse_if_quarantined` first; the ZIP did not, so a file
+  the scanner matched after sealing was handed to the external auditor. The
+  export now refuses and names the file.
+- **Folder ownership was a self-service promotion.** `owner` was writable with
+  *edit*, and the owner counts as a manager — which carries the folder's
+  access map and a cascading delete. Changing the owner now needs *manage*.
+- **The login screen printed a working superuser password** to anonymous
+  visitors whenever the demo accounts were still seeded. It now says the
+  accounts exist and how to retire them, and nothing else.
+
+### Known and open
+
+`REVIEW_090.md` records 50 confirmed findings; the nine above are fixed. The
+rest are open and ordered by severity — the largest remaining themes are the
+Ed25519 signature covering only `manifest.json` rather than the whole bundle,
+one signing key shared across workspaces, single sign-on resolving accounts
+with no workspace active, and the shipped Docker stack seeding a superuser
+with a published password by default.
+
+---
+
 ## [0.9.0] — 2026-09-06
 
 One installation, several organisations, each seeing only its own.

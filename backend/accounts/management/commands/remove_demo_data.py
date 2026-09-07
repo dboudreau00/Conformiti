@@ -58,10 +58,11 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **opts):
-        with tenancy.scoped(tenancy.from_option(opts)):
-            self._handle(opts)
+        workspace = tenancy.from_option(opts)
+        with tenancy.scoped(workspace):
+            self._handle(opts, workspace)
 
-    def _handle(self, opts):
+    def _handle(self, opts, workspace):
         from audit.models import AuditLog
         from calendar_app.models import CalendarEvent
         from documents.models import Document
@@ -76,13 +77,19 @@ class Command(BaseCommand):
             User.objects.filter(username__in=DEMO_USERNAMES, email__endswith="@example.com")
         )
         # Guard: the org must keep at least one active superuser/administrator
-        # that is NOT one of the demo accounts.
-        survivors = (
-            User.objects.filter(is_active=True)
-            .filter(Q(is_superuser=True) | Q(role__can_manage_users=True))
-            .exclude(pk__in=[u.pk for u in demo_users])
-        )
-        if demo_users and not survivors.exists():
+        # that is NOT one of the demo accounts. Looked up unscoped on purpose:
+        # `createsuperuser` runs with no workspace active and so leaves a
+        # platform account attached to none, and that account is exactly the
+        # one an operator creates before retiring the demo users.
+        with tenancy.unscoped():
+            survivors = (
+                User.objects.filter(is_active=True)
+                .filter(Q(is_superuser=True) | Q(role__can_manage_users=True))
+                .filter(Q(workspace=workspace) | Q(workspace__isnull=True, is_superuser=True))
+                .exclude(pk__in=[u.pk for u in demo_users])
+            )
+            has_survivor = survivors.exists()
+        if demo_users and not has_survivor:
             raise CommandError(
                 "Refusing: no administrator other than the demo accounts exists. "
                 "Create your own first (python manage.py createsuperuser), then re-run."

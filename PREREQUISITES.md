@@ -17,9 +17,9 @@ SES) so review reminders reach owners, and a backup of the `pgdata` and
 
 ## Local development path
 
-- **Python 3.11, 3.12 or 3.13** with `venv` and `pip`
+- **Python 3.11 – 3.14** with `venv` and `pip`
   (Ubuntu: `sudo apt install python3-venv python3-pip`).
-- **Node.js 20.19+ or 22+** with npm 10+ (Vite 7 requires it).
+- **Node.js 20.19+ or 22.12+** with npm 10+ (Vite 8 requires it).
 - Free local ports **8000** (Django) and **5173** (Vite).
 - macOS 13+, any recent Linux, or Windows 10/11 (PowerShell 5.1 or 7).
 

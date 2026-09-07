@@ -77,6 +77,11 @@ class FolderViewSet(viewsets.ModelViewSet):
         if "name" in serializer.validated_data and folder.is_seeded \
                 and serializer.validated_data["name"] != folder.name:
             raise PermissionDenied("Framework folders are named from the control library and cannot be renamed.")
+        # The owner IS a manager (Folder.can_manage), so handing ownership to
+        # yourself with only edit access would be a self-service promotion.
+        new_owner = serializer.validated_data.get("owner", folder.owner)
+        if (new_owner.id if new_owner else None) != folder.owner_id and not folder.can_manage(user):
+            raise PermissionDenied("You need manage access on a folder to change its owner.")
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -197,6 +202,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
         monitor.mark_clean(doc)
 
     def perform_update(self, serializer):
+        # Replacing the bytes is what `new_version` is for: it takes edit on
+        # the folder, scans the upload, archives the old file and bumps the
+        # version. A plain PATCH did none of that and left the stale scan
+        # verdict in place, so the field is refused here.
+        if "file" in serializer.validated_data:
+            raise ValidationError(
+                {"file": "Upload a new version instead: POST /documents/{id}/new_version/."})
         # Moving a document via PATCH must also require edit on the destination,
         # matching the dedicated `move` action (otherwise a doc could be planted
         # in a folder the user can't edit).
@@ -245,7 +257,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             raise ValidationError({"file": exc.detail})
         scan_or_raise(new_file, request)
-        if doc.file:
+        # Never archive quarantined bytes: DocumentVersion is a download route
+        # of its own and archived files are not re-scanned, so keeping them
+        # would leave the infected copy reachable after the "fix".
+        if doc.file and not doc.quarantined_at:
             DocumentVersion.objects.create(
                 document=doc, version=doc.version, file=doc.file,
                 note=str(request.data.get("note", ""))[:255], uploaded_by=request.user,

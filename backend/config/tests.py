@@ -114,6 +114,27 @@ class DemoDataTests(TestCase):
                 call_command("remove_demo_data", "--delete", verbosity=0)
                 self.assertFalse(User.objects.filter(username="mia").exists())
 
+    def test_a_superuser_with_no_workspace_counts_as_the_surviving_administrator(self):
+        """The sequence the README documents: `createsuperuser`, then
+        `remove_demo_data`. `createsuperuser` runs with no workspace active, so
+        the account it makes belongs to none — and the guard, which runs inside
+        one workspace, must still see it or the documented path dead-ends."""
+        from accounts import tenancy
+
+        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        with tempfile.TemporaryDirectory() as media:
+            with override_settings(MEDIA_ROOT=media):
+                call_command("bootstrap_demo", verbosity=0)
+                User = get_user_model()
+                platform = make_user("realadmin", superuser=True)
+                # What createsuperuser leaves behind: no workspace at all.
+                User.objects.filter(pk=platform.pk).update(workspace=None)
+                with tenancy.unscoped():
+                    self.assertIsNone(User.objects.get(pk=platform.pk).workspace_id)
+
+                call_command("remove_demo_data", verbosity=0)  # must not raise
+                self.assertFalse(User.objects.get(username="admin").is_active)
+
     def test_remove_still_finds_the_data_when_the_demo_accounts_are_already_gone(self):
         """An operator who deleted the demo users by hand first must not be
         left with the demo vendors, documents and RACI rows -- those rows
