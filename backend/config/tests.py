@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from io import StringIO
 
@@ -59,7 +60,11 @@ class SecretKeyBootTests(SimpleTestCase):
             self.assertEqual(key_file.read_text().strip(), first)  # stable across boots
 
 
+@mock.patch.dict(os.environ, {"DEMO_PASSWORD": "DemoPass123!"})
 class DemoDataTests(TestCase):
+    """bootstrap_demo generates a password unless DEMO_PASSWORD names one;
+    these tests pin it so the assertions below are stable."""
+
     def test_bootstrap_then_remove(self):
         call_command("seed_frameworks", "--with-folders", verbosity=0)
         with tempfile.TemporaryDirectory() as media:
@@ -67,6 +72,8 @@ class DemoDataTests(TestCase):
             with override_settings(MEDIA_ROOT=media):
                 call_command("bootstrap_demo", verbosity=0)
                 User = get_user_model()
+                # bootstrap_demo generates a password unless DEMO_PASSWORD
+                # names one; this suite pins it so the assertion is stable.
                 self.assertTrue(User.objects.get(username="admin").check_password("DemoPass123!"))
                 from documents.models import Document
                 from governance.models import Risk

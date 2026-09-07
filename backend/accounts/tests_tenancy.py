@@ -104,14 +104,22 @@ class ManagerScopingTests(TwoWorkspaces):
             entry = AuditLog.objects.create(action="probe", object_type="test")
             about_bea = AuditLog.objects.create(action="probe", object_type="test", user=self.b_admin)
         self.assertIsNone(entry.workspace_id)  # nullable models may have none
-        self.assertEqual(about_bea.workspace_id, self.beta.pk)  # an entry about a person follows them
+        # Since 0.9.2 an entry belongs to the workspace the action HAPPENED
+        # in, not to the actor: a superuser switched into another tenant is
+        # acting on that tenant, and its administrators have to see it. With
+        # nothing active and nothing passed, there is no workspace to record.
+        self.assertIsNone(about_bea.workspace_id)
+        with tenancy.scoped(self.beta):
+            in_beta = AuditLog.objects.create(action="probe", object_type="test", user=self.admin)
+        self.assertEqual(in_beta.workspace_id, self.beta.pk)
         self.assertFalse(Risk.objects.filter(title="orphan").exists())
         # The operator sees installation-level entries; a workspace administrator does not.
         r = self.client_for(self.admin).get("/api/audit-log/", {"action": "probe"})
         self.assertIn(entry.pk, self.ids(r))
-        self.assertNotIn(about_bea.pk, self.ids(r))
+        self.assertIn(about_bea.pk, self.ids(r))   # no workspace: an operator-level row
+        self.assertNotIn(in_beta.pk, self.ids(r))  # Beta's row is Beta's
         r = self.client_for(self.b_manager).get("/api/audit-log/", {"action": "probe"})
-        self.assertEqual(self.ids(r), {about_bea.pk})
+        self.assertEqual(self.ids(r), {in_beta.pk})
 
     def test_bulk_create_fills_the_workspace(self):
         with tenancy.scoped(self.beta):

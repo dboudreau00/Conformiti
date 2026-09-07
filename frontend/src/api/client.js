@@ -152,6 +152,9 @@ api.interceptors.response.use(
 );
 
 export async function login(username, password, second) {
+  // A different person may be signing in on this browser: drop the previous
+  // principal's tokens and workspace choice before the request goes out.
+  clearSession();
   const body = withSecondFactor({ username, password }, second);
   const { data } = await axios.post("/api/auth/token/", body, {
     withCredentials: true,

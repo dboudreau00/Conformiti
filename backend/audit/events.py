@@ -80,11 +80,15 @@ def record_auth_event(request, user, action, detail):
     ``/api/auth/`` prefix is excluded from the request middleware (it carries
     credentials), so these are written explicitly, never with a value."""
     try:
+        known = user is not None and getattr(user, "pk", None)
         AuditLog.objects.create(
-            user=user if (user is not None and getattr(user, "pk", None)) else None,
+            user=user if known else None,
             action=str(action)[:20], object_type="auth",
-            object_id=str(user.pk) if (user is not None and getattr(user, "pk", None)) else "",
+            object_id=str(user.pk) if known else "",
             detail=str(detail)[:255], ip_address=_client_ip(request) if request is not None else None,
+            # /api/auth/ runs before a workspace is resolved, so the entry is
+            # filed under the account it is about.
+            workspace_id=(user.workspace_id if known else None),
         )
     except Exception:
         logger.exception("Failed to record an authentication event")

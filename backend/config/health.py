@@ -55,8 +55,11 @@ def signing_state():
         info = signing.current_key_info(create=True)
     except Exception:  # pragma: no cover - health must answer regardless
         return {"enabled": True, "key_id": None, "fingerprint": None, "error": "unavailable"}
+    # Never echo the configuration error itself: it names the path of the
+    # private key, and this endpoint answers unauthenticated callers.
     return {"enabled": info["enabled"], "algorithm": info["algorithm"], "key_id": info["key_id"],
-            "fingerprint": info["fingerprint"], "error": info.get("error")}
+            "fingerprint": info["fingerprint"],
+            "error": "misconfigured" if info.get("error") else None}
 
 
 class HealthView(APIView):

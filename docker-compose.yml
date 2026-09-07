@@ -7,7 +7,8 @@
 # volume, Redis-backed rate limits, API/admin reachable only through nginx).
 # Most keys in .env override these defaults — see .env.example — but DEBUG and
 # the signing key do not, on purpose (see the note on DJANGO_DEBUG below). The
-# demo dataset (login admin / DemoPass123!) is seeded unless SEED_DEMO_DATA=false.
+# demo dataset is seeded unless SEED_DEMO_DATA=false; the sign-in password is
+# generated on first boot and printed once — docker compose logs backend.
 
 x-backend-env: &backend-env
   # DEBUG and the signing key are deliberately NOT read from DJANGO_DEBUG /

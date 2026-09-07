@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, vendors, risk and access reviews in one audit-ready system, ending in a sealed package your assessor can verify without you.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.9.1-1D6FE0.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.9.2-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -76,7 +76,12 @@ git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
 docker compose up -d --build
 ```
 
-Open **http://localhost:8080** and sign in as `admin` / `DemoPass123!`.
+Open **http://localhost:8080** and sign in as `admin`. The password is
+generated on first boot and printed once:
+
+```bash
+docker compose logs backend | grep "Sign in as"
+```
 
 That is the whole install: PostgreSQL, Redis, the API, the reminder worker and
 nginx come up with production-safe defaults — `DEBUG` off, a unique secret key
@@ -98,7 +103,7 @@ Local development without Docker — SQLite, console email, nothing left running
 ```
 
 > **Before any real data goes in**, retire the demo accounts. The five demo
-> personas share one published password.
+> personas share one password and none of them has a second factor.
 >
 > ```bash
 > docker compose exec backend python manage.py createsuperuser
@@ -490,7 +495,7 @@ access still sees and answers the lines assigned to them.**
 |---|---|---|
 | 1 | `docker compose up -d --build` | The stack comes up with production-safe defaults |
 | 2 | `manage.py createsuperuser` | A real administrator that is not a demo persona |
-| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | The demo accounts share a published password |
+| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | The demo accounts share one password and have no second factor |
 | 4 | Set `SEED_DEMO_DATA=false` | So it never comes back on a rebuild |
 | 5 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. `PUBLIC_URL` is what vendor-questionnaire links are built from |
 | 6 | Put TLS in front and set `BEHIND_TLS=true` | Secure cookies, HTTPS redirect, `__Host-` prefixes — the prefix only works over https |
@@ -619,7 +624,7 @@ handful of queries and scopes every list, tree, feed, evidence count and
 analytics figure.
 
 Demo accounts (retire them): `admin`, `mia`, `owen`, `aria`, `val` — all
-`DemoPass123!`.
+the password printed when the demo data was seeded.
 
 ---
 

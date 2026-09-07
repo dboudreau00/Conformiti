@@ -31,6 +31,7 @@ class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source="get_full_name", read_only=True)
     capabilities = serializers.SerializerMethodField()
     workspace_detail = serializers.SerializerMethodField()
+    active_workspace = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -38,7 +39,7 @@ class UserSerializer(serializers.ModelSerializer):
             "id", "username", "email", "first_name", "last_name", "full_name",
             "job_title", "role", "role_detail", "is_active", "capabilities",
             "last_login", "is_superuser", "mfa_enabled", "digest",
-            "workspace", "workspace_detail",
+            "workspace", "workspace_detail", "active_workspace",
         ]
         # last_login is already non-editable on the model; is_superuser must
         # never be settable through the API (this serializer is read-path only,
@@ -48,6 +49,19 @@ class UserSerializer(serializers.ModelSerializer):
     def get_workspace_detail(self, obj):
         ws = obj.workspace
         return {"id": ws.pk, "name": ws.name, "slug": ws.slug} if ws else None
+
+    def get_active_workspace(self, obj):
+        """The workspace this REQUEST is working in, which is not the account's
+        own when a superuser has switched. The shell shows this one; showing
+        the home workspace instead meant a switched superuser saw the wrong
+        organisation's name over another organisation's data."""
+        from accounts import tenancy
+
+        ws = tenancy.current()
+        if ws is None:
+            return None
+        return {"id": ws.pk, "name": ws.name, "slug": ws.slug,
+                "switched": ws.pk != obj.workspace_id}
 
     def get_capabilities(self, obj):
         return {
@@ -62,6 +76,22 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserWriteSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    def validate_username(self, value):
+        """`username` is unique across the installation, but the validator DRF
+        builds for it is workspace-pinned, so a name taken in another tenant
+        used to pass here and fail at the database as a 500 -- telling the
+        caller that person has an account somewhere on this installation.
+        Checked unscoped, and reported without saying where."""
+        from accounts import tenancy
+
+        qs = User.objects.filter(username__iexact=value)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        with tenancy.unscoped():
+            if qs.exists():
+                raise serializers.ValidationError("That username is not available.")
+        return value
 
     class Meta:
         model = User
@@ -126,9 +156,15 @@ class PasswordChangeSerializer(serializers.Serializer):
         return value
 
     def save(self, **kwargs):
+        from accounts.session_views import _blacklist_all
+
         user = self.context["request"].user
         user.set_password(self.validated_data["new_password"])
         user.save(update_fields=["password"])
+        # A password change that leaves the old sessions alive is not a
+        # password change: every refresh token issued before now is revoked,
+        # so a stolen one cannot renew itself indefinitely.
+        _blacklist_all(user)
         return user
 
 

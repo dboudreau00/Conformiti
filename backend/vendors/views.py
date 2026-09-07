@@ -236,7 +236,7 @@ class VendorViewSet(viewsets.ModelViewSet):
                 'attachment; filename="responsibility-matrix-' + slug + '-their-layout.csv"')
             rows = [r for r in data["rows"] if r["responsibility"]]
             header, lines = matrix_lib.render_layout(vendor.matrix_layout, rows)
-            writer.writerow(header)
+            writer.writerow(csv_safe(header))
             for line in lines:
                 writer.writerow(csv_safe(line))
             return response

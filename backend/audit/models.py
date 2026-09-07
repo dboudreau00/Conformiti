@@ -6,10 +6,12 @@ from accounts.tenancy import TenantModel
 
 
 class AuditLog(TenantModel):
-    # An entry about a person belongs to that person's workspace, whatever
-    # was active when it was written (sign-in and SSO run anonymously).
-    # Nullable: a failed sign-in for an unknown username belongs to nobody.
-    tenant_parent = "user"
+    # An entry belongs to the workspace the action HAPPENED IN, which is the
+    # active one -- not the actor's own. A superuser switched into another
+    # tenant is acting on that tenant, and its administrators have to see it.
+    # The few paths that run with no workspace active (sign-in, SSO) pass the
+    # workspace explicitly; nullable covers a failed sign-in for a username
+    # that exists nowhere.
     workspace = models.ForeignKey(
         "accounts.Workspace", null=True, blank=True, on_delete=models.CASCADE,
         related_name="+", editable=False,

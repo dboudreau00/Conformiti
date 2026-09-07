@@ -112,9 +112,28 @@ def _read_csv(data):
     return rows
 
 
+# Excel's own maximum is XFD (16384). A register wider than this is a
+# malformed or hostile file, and the row builder allocates one slot per
+# column, so an unbounded index is an allocation primitive.
+MAX_COLS = 512
+
+
+def _bounded_read(zf, name):
+    """Read one archive member with a hard ceiling on the DECOMPRESSED size.
+
+    ZipExtFile.read(n) passes n to the decompressor as max_length, so nothing
+    larger than the ceiling is ever allocated -- unlike zf.read(name), which
+    trusts the header and expands whatever is actually inside."""
+    with zf.open(name) as fh:
+        raw = fh.read(MAX_UNZIPPED_BYTES + 1)
+    if len(raw) > MAX_UNZIPPED_BYTES:
+        raise ValueError("Spreadsheet is too large to import.")
+    return raw
+
+
 def _col_index(ref):
     """'B7' -> 1 (zero-based column index from a cell reference)."""
-    letters = "".join(ch for ch in ref if ch.isalpha()).upper()
+    letters = "".join(ch for ch in ref if ch.isalpha()).upper()[:3]
     idx = 0
     for ch in letters:
         idx = idx * 26 + (ord(ch) - 64)
@@ -144,6 +163,8 @@ def _read_xlsx(data):
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         raise ValueError("Not a valid .xlsx file.")
+    # A cheap early-out only: file_size is what the archive CLAIMS, so it is
+    # not a bound. The real ceiling is enforced per member by _bounded_read.
     if sum(i.file_size for i in zf.infolist()) > MAX_UNZIPPED_BYTES:
         raise ValueError("Spreadsheet is too large to import.")
 
@@ -159,12 +180,14 @@ def _read_xlsx(data):
     try:
         shared = []
         if "xl/sharedStrings.xml" in zf.namelist():
-            root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+            root = ET.fromstring(_bounded_read(zf, "xl/sharedStrings.xml"))
             for si in root.iter(f"{_XLSX_NS}si"):
                 shared.append("".join(node.text or "" for node in si.iter(f"{_XLSX_NS}t")))
 
-        root = ET.fromstring(zf.read(sheet_names[0]))
+        root = ET.fromstring(_bounded_read(zf, sheet_names[0]))
     except ET.ParseError:
+        raise ValueError("The .xlsx file is corrupt or unreadable.")
+    except zipfile.BadZipFile:
         raise ValueError("The .xlsx file is corrupt or unreadable.")
     rows = []
     for row_el in root.iter(f"{_XLSX_NS}row"):
@@ -174,6 +197,8 @@ def _read_xlsx(data):
             ref = cell.get("r")
             idx = _col_index(ref) if ref else fallback
             fallback = idx + 1
+            if idx >= MAX_COLS:
+                continue
             cells[idx] = _cell_text(cell, shared).strip()
         if cells:
             width = max(cells) + 1

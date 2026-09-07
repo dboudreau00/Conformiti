@@ -128,6 +128,11 @@ class PackageSampleSerializer(serializers.ModelSerializer):
 
 
 class PackageEvidenceSerializer(serializers.ModelSerializer):
+    # `package_control` is chosen when the artefact is pinned and never moves:
+    # re-parenting a row was a way to put evidence inside a sealed package.
+    package_control = serializers.PrimaryKeyRelatedField(
+        queryset=PackageControl.objects.all(), write_only=False)
+
     download_url = serializers.SerializerMethodField()
     integrity = serializers.SerializerMethodField()
 

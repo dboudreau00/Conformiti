@@ -128,6 +128,13 @@ def package_payload(package):
         "created_by": package.created_by_name,
         "created_at": _iso(package.created_at),
         "generator": GENERATOR,
+        # Which organisation this package belongs to. One signing key serves
+        # the installation, so without this a bundle from one workspace
+        # verifies identically to a bundle from another.
+        "workspace": ({
+            "slug": package.workspace.slug,
+            "name": package.workspace.name,
+        } if package.workspace_id else None),
         "prior": ({
             "id": package.prior_package.pk,
             "name": package.prior_package.name,

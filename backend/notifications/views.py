@@ -25,7 +25,10 @@ class ChannelsView(APIView):
             "digest": request.user.digest,
             "digest_choices": [{"id": c, "label": label} for c, label in request.user.Digest.choices],
         }
-        if request.user.is_superuser or request.user.can_manage_users:
+        # The delivery log is installation-wide -- WebhookDelivery is not a
+        # tenant model, and the webhook itself is configured by an operator --
+        # so a workspace administrator must not see other organisations' rows.
+        if request.user.is_superuser:
             body["deliveries"] = [{
                 "event": d.event, "channel": d.channel, "ok": d.ok, "response_code": d.response_code,
                 "error": d.error, "at": d.created_at,

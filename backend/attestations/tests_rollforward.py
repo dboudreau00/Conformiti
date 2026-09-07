@@ -81,7 +81,7 @@ class RollForwardTests(PackageTestBase):
                                      {"assertion": ASSERTION}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         manifest = json.loads(EvidencePackage.objects.get(pk=new_id).manifest_json)
-        self.assertEqual(manifest["manifest_version"], 3)
+        self.assertEqual(manifest["manifest_version"], 4)
         self.assertEqual(manifest["package"]["prior"]["id"], self.package.pk)
         self.assertEqual(manifest["package"]["prior"]["manifest_sha256"], self.package.manifest_sha256)
         # Last year's manifest has no such key and is untouched.

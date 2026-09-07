@@ -112,7 +112,8 @@ if ($Docker) {
   Write-Host "  Admin    http://localhost:$Port/admin/"
   Write-Host "  Health   http://localhost:$Port/api/health/"
   if ($demo -eq "true") {
-    Write-Host "  Sign in  admin / DemoPass123!   (also mia, owen, aria, val - same password)"
+    Write-Host "  Sign in  admin   (also mia, owen, aria, val - same password)"
+    Write-Host "  The password was printed above when the demo data was seeded."
     Write-Host "  Before real use: docker compose exec backend python manage.py remove_demo_data" -ForegroundColor Yellow
   } else {
     Write-Host "  Create your first account: docker compose exec backend python manage.py createsuperuser"
@@ -209,7 +210,10 @@ if ($demo -eq "true") {
 
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
-if ($demo -eq "true") { Write-Host "  Sign in:  admin / DemoPass123!   (also mia, owen, aria, val - same password)" }
+if ($demo -eq "true") {
+  Write-Host "  Sign in:  admin   (also mia, owen, aria, val - same password)"
+  Write-Host "  Password: docker compose logs backend | Select-String 'Sign in as'"
+}
 Write-Host "  Tests:    .\install.ps1 -Test"
 Write-Host "  Mailer:   cd backend; ..\.venv\Scripts\python.exe manage.py send_review_reminders --dry-run"
 Write-Host ""

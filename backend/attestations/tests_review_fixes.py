@@ -117,3 +117,17 @@ class EvidenceByteTests(PackageTestBase):
         self.assertEqual(r.status_code, 403, r.data)
         folder.refresh_from_db()
         self.assertNotEqual(folder.owner_id, self.owner.pk)
+
+
+class ManifestIdentityTests(PackageTestBase):
+    """One signing key serves the installation, so the signed bytes have to
+    say which organisation produced the bundle."""
+
+    def test_the_sealed_manifest_names_the_workspace(self):
+        import json
+
+        self.add_control()
+        self.seal()
+        manifest = json.loads(self.package.manifest_json)
+        self.assertEqual(manifest["manifest_version"], 4)
+        self.assertEqual(manifest["package"]["workspace"]["slug"], "default")

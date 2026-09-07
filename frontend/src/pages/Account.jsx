@@ -1014,7 +1014,9 @@ function WorkspacesBlock({ me }) {
   useEffect(() => { load(); }, [superuser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function switchTo(slug) {
-    chooseWorkspace(slug === "default" ? "" : slug);
+    // Always send the slug. Blanking it for "default" meant a superuser whose
+    // own workspace was something else silently stayed where they were.
+    chooseWorkspace(slug);
     window.location.assign("/");
   }
 

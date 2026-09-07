@@ -124,7 +124,14 @@ class FolderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def permissions(self, request, pk=None):
+        """Who can reach this folder. The map is as sensitive as the folder,
+        so it takes manage -- matching FolderPermissionViewSet, which already
+        scopes the same rows that way."""
         folder = self.get_object()
+        user = request.user
+        if not (user.can_manage_folders or user.can_view_all or user.is_superuser
+                or folder.can_manage(user)):
+            raise PermissionDenied("You need manage access on a folder to see who can reach it.")
         perms = FolderPermission.objects.filter(folder=folder).select_related("role", "user")
         return Response(FolderPermissionSerializer(perms, many=True).data)
 
@@ -347,6 +354,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
 
 class FormTemplateViewSet(viewsets.ModelViewSet):
+    # Blank templates are internal working material; an external auditor
+    # reads the package they were issued and nothing else.
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.none() if self.request.user.is_auditor else qs
+
     """Central library of reusable blank forms/policy templates."""
     queryset = FormTemplate.objects.all()
     serializer_class = FormTemplateSerializer

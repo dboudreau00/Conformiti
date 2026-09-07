@@ -28,11 +28,12 @@ prints `App http://localhost:8080` with the demo credentials.
 
 ## Part B — Sign in (1 min)
 
-🖱 Sign in as `mia` / `DemoPass123!` (the login page shows the demo hint only
+🖱 Sign in as `mia`, using the password the demo seeding printed (the login
+page shows the demo hint only
 while demo accounts exist). ✓ The Dashboard loads; the sidebar shows Workspace
 and Governance sections with live badges (controls in progress, open risks).
 
-Demo accounts, all `DemoPass123!`: `admin` (superuser) · `mia` (Compliance
+Demo accounts, all sharing that one password: `admin` (superuser) · `mia` (Compliance
 Manager) · `owen` (Control Owner) · `aria` (Auditor) · `val` (Viewer).
 
 ## Part C — Every function

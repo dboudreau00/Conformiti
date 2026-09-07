@@ -128,7 +128,8 @@ ${GREEN}${BOLD}Conformiti is running.${RESET}
   ${BOLD}Health${RESET}   http://localhost:${PORT}/api/health/
 BANNER
   if [ "$DEMO" = "true" ]; then
-    printf "%s\n" "  ${BOLD}Sign in${RESET}  admin / DemoPass123!   ${DIM}(also mia, owen, aria, val — same password)${RESET}"
+    printf "%s\n" "  ${BOLD}Sign in${RESET}  admin   ${DIM}(also mia, owen, aria, val — same password)${RESET}"
+    printf "%s\n" "  ${DIM}The password was printed above when the demo data was seeded.${RESET}"
     printf "%s\n" "  ${YEL}Before real use:${RESET} docker compose exec backend python manage.py remove_demo_data"
   else
     printf "%s\n" "  Create your first account: docker compose exec backend python manage.py createsuperuser"
@@ -224,7 +225,8 @@ cat <<BANNER
 ${GREEN}${BOLD}Setup complete.${RESET}
 BANNER
 if [ "$DEMO" = "true" ]; then
-  printf "%s\n" "  ${BOLD}Sign in${RESET}   admin / DemoPass123!   ${DIM}(also mia, owen, aria, val — same password)${RESET}"
+  printf "%s\n" "  ${BOLD}Sign in${RESET}   admin   ${DIM}(also mia, owen, aria, val — same password)${RESET}"
+  printf "%s\n" "  ${DIM}Password: docker compose logs backend | grep \"Sign in as\"${RESET}"
 fi
 cat <<BANNER
   ${BOLD}Tests${RESET}     ./install.sh --test

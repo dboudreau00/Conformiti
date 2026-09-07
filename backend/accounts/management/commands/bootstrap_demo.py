@@ -143,9 +143,38 @@ class Command(BaseCommand):
             self._evidence_package()
             self._audit()
             self._history()
-        self.stdout.write(self.style.SUCCESS(
-            f"Demo data ready in workspace {workspace.slug!r}. Log in as admin / DemoPass123!"
-        ))
+        if self._password_shown:
+            self.stdout.write(self.style.SUCCESS(
+                f"Demo data ready in workspace {workspace.slug!r}.\n"
+                f"  Sign in as  admin  /  {self.demo_password()}\n"
+                f"  The other demo accounts (mia, owen, aria, val) share it.\n"
+                f"  This password is shown once. Retire these accounts before real "
+                f"use: manage.py remove_demo_data"
+            ))
+        else:
+            self.stdout.write(self.style.SUCCESS(
+                f"Demo data refreshed in workspace {workspace.slug!r}; "
+                f"existing accounts kept their password."
+            ))
+
+    def demo_password(self):
+        """The password the demo accounts are created with.
+
+        `DEMO_PASSWORD` when an operator sets one (the test suites and the
+        end-to-end run do); otherwise a fresh random one per installation,
+        printed once. A constant here is a published credential on every
+        deployment that ever ran `docker compose up`.
+        """
+        if self._password is None:
+            import os
+            import secrets
+
+            self._password = os.getenv("DEMO_PASSWORD") or (
+                "demo-" + secrets.token_urlsafe(12))
+        return self._password
+
+    _password = None
+    _password_shown = False
 
     def _users(self):
         for username, first, last, role_name, is_super in DEMO_USERS:
@@ -159,8 +188,9 @@ class Command(BaseCommand):
                 ),
             )
             if created:
-                user.set_password("DemoPass123!")
+                user.set_password(self.demo_password())
                 user.save()
+                self._password_shown = True
         self.stdout.write(f"  Users: {User.objects.count()}")
 
     def _permissions(self):

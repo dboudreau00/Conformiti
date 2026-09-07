@@ -48,7 +48,7 @@ import jwt
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from audit.middleware import _client_ip
@@ -385,14 +385,36 @@ def _names(claims):
 
 
 def _unique_username(base):
+    """`username` is unique across the INSTALLATION (AbstractUser), so the
+    probe has to be too. Run workspace-pinned it happily returns a name that
+    is already taken next door, and create_user dies on the constraint."""
+    from . import tenancy
+
     User = get_user_model()
     base = (base or "sso-user")[:140]
     candidate = base
     n = 1
-    while User.objects.filter(username__iexact=candidate).exists():
-        n += 1
-        candidate = f"{base}-{n}"
+    with tenancy.unscoped():
+        while User.objects.filter(username__iexact=candidate).exists():
+            n += 1
+            candidate = f"{base}-{n}"
     return candidate
+
+
+def sso_workspace():
+    """The one workspace this installation's identity provider serves.
+
+    One IdP per installation is the current design (see SSO_WORKSPACE); until
+    that changes, every SSO decision -- linking, matching and provisioning --
+    has to happen inside this workspace, or a single provider signs people
+    into whichever tenant happens to hold a matching row.
+    """
+    from .models import Workspace
+
+    workspace = Workspace.objects.filter(slug=settings.SSO_WORKSPACE, is_active=True).first()
+    if workspace is None:
+        raise OidcError("workspace", f"SSO_WORKSPACE {settings.SSO_WORKSPACE!r} does not exist")
+    return workspace
 
 
 @transaction.atomic
@@ -418,6 +440,12 @@ def resolve_user(claims, cfg):
         identity.last_login_at = timezone.now()
         if email and identity.email != email:
             identity.email = email
+        # OidcIdentity is installation-wide, so a link made before the
+        # workspace existed -- or against another tenant entirely -- would
+        # otherwise still sign this person in here.
+        if identity.user.workspace_id and identity.user.workspace_id != sso_workspace().pk:
+            raise OidcError("workspace",
+                            f"{identity.user.get_username()} belongs to another workspace")
         identity.save(update_fields=["last_login_at", "email"])
         return identity.user, "linked identity"
 
@@ -430,7 +458,11 @@ def resolve_user(claims, cfg):
         raise OidcError("domain", f"{domain} is not an allowed domain")
 
     if cfg.link_by_email:
-        matches = list(User.objects.filter(email__iexact=email)[:2])
+        # Scoped: an email match must not reach across tenants.
+        from . import tenancy
+
+        with tenancy.scoped(sso_workspace()):
+            matches = list(User.objects.filter(email__iexact=email)[:2])
         if len(matches) > 1:
             raise OidcError("ambiguous_email")
         if len(matches) == 1:
@@ -449,20 +481,25 @@ def resolve_user(claims, cfg):
         from . import tenancy
         from .models import Workspace
 
-        workspace = Workspace.objects.filter(slug=settings.SSO_WORKSPACE, is_active=True).first()
-        if workspace is None:
-            raise OidcError("workspace", f"SSO_WORKSPACE {settings.SSO_WORKSPACE!r} does not exist")
+        workspace = sso_workspace()
+        given, family = _names(claims)
+        # Computed OUTSIDE the tenant scope: usernames are installation-wide.
+        username = _unique_username(email)
         with tenancy.scoped(workspace):
             role = Role.objects.filter(name__iexact=cfg.default_role).first()
             if role is None:
                 raise OidcError("role", f"role {cfg.default_role!r} does not exist")
             if role.can_manage_users:
                 raise OidcError("role", f"default role {role.name!r} can manage users; refusing to provision")
-            given, family = _names(claims)
-            user = User.objects.create_user(
-                username=_unique_username(email), email=email, first_name=given, last_name=family,
-                role=role, is_staff=False, is_superuser=False,
-            )
+            try:
+                user = User.objects.create_user(
+                    username=username, email=email, first_name=given, last_name=family,
+                    role=role, is_staff=False, is_superuser=False,
+                )
+            except IntegrityError:
+                # Lost a race for the name: a clean refusal with an audit row
+                # beats a 500 out of the sign-in path.
+                raise OidcError("denied", "could not allocate a username")
         user.set_unusable_password()
         user.save(update_fields=["password"])
         OidcIdentity.objects.create(user=user, issuer=issuer, subject=subject, email=email,
@@ -549,13 +586,15 @@ def redeem_ticket(request, ticket, otp=None, passkey=None):
 # --------------------------------------------------------------------------- #
 def audit(request, user, ok, detail):
     try:
-        # A refusal with no account behind it (unknown user, garbage response)
-        # is filed under the workspace the IdP serves, so its administrators
-        # see it; an entry with a user follows the user.
-        workspace_id = None
-        if user is None:
-            from .models import Workspace
+        # Sign-in runs with no workspace active, so the row is stamped here.
+        # An entry with an account behind it is filed under that account's
+        # workspace; a refusal with no account (unknown subject, garbage
+        # response) goes to the workspace the IdP serves, whose
+        # administrators are the people who need to see it.
+        from .models import Workspace
 
+        workspace_id = user.workspace_id if user is not None else None
+        if workspace_id is None:
             workspace_id = Workspace.objects.filter(
                 slug=settings.SSO_WORKSPACE).values_list("pk", flat=True).first()
         AuditLog.objects.create(

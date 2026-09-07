@@ -45,6 +45,9 @@ const E2E_ENV = {
   // Both transports are exercised: this run uses whichever E2E_TRANSPORT
   // says, and the CI job runs the suite twice.
   AUTH_TRANSPORT: process.env.E2E_TRANSPORT || "header",
+  // The demo seed generates a password unless one is given; the fixtures
+  // in fixtures.js sign in with this one.
+  DEMO_PASSWORD: "DemoPass123!",
   AUTH_COOKIE_SECURE: "false",
 };
 

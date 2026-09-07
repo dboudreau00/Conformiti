@@ -76,9 +76,11 @@ def _record(document, action, detail, user=None):
     from audit.models import AuditLog
 
     try:
+        # The sweep runs with no workspace active; the document names the
+        # tenant this event belongs to.
         AuditLog.objects.create(
             user=user, action=action, object_type="documents", object_id=str(document.pk),
-            detail=str(detail)[:255],
+            detail=str(detail)[:255], workspace_id=document.workspace_id,
         )
     except Exception:  # pragma: no cover - never block the scan on bookkeeping
         logger.exception("Failed to record a scan event")

@@ -25,7 +25,8 @@ cd backend
 
 ## Manual walkthrough (~30 min)
 
-All demo accounts use `DemoPass123!`. Seeded documents (owner Owen Owner):
+All demo accounts share the password the seeding step printed; set
+`DEMO_PASSWORD` before seeding to pin it. Seeded documents (owner Owen Owner):
 
 | Document | Review due |
 |---|---|

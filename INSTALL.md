@@ -18,7 +18,9 @@ cd Conformiti
 docker compose up -d --build
 ```
 
-Then open **http://localhost:8080** and sign in as `admin` / `DemoPass123!`.
+Then open **http://localhost:8080** and sign in as `admin`. The demo password
+is generated on first boot and printed once — `docker compose logs backend |
+grep "Sign in as"` — or set `DEMO_PASSWORD` before the first start to choose it.
 
 What happens on first boot:
 
@@ -309,7 +311,8 @@ dependencies, applies migrations, seeds the libraries and demo data, and starts
 the API on **:8000** and the Vite dev server on **:5173**. Every step is
 exit-code checked; a failing step stops the installer.
 
-Open **http://localhost:5173**. Demo accounts (all `DemoPass123!`):
+Open **http://localhost:5173**. Demo accounts (all sharing the password the
+seeding step printed):
 
 | Username | Role |
 |---|---|

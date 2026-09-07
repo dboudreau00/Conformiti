@@ -116,6 +116,12 @@ def readable_pbc_requests(user):
 
     if not (user and user.is_authenticated):
         return PbcRequest.objects.none()
+    if user.is_auditor:
+        # An external auditor reads the request list through their GRANT and
+        # nothing else. The assignee arm exists for the organisation's own
+        # people; left open to an auditor it outlived revocation and expiry,
+        # and they could put themselves on a line to keep it.
+        return PbcRequest.objects.filter(package__in=readable_packages(user)).distinct()
     return PbcRequest.objects.filter(
         Q(package__in=readable_packages(user)) | Q(assignee=user)
     ).distinct()

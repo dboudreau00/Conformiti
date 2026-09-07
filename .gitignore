@@ -28,3 +28,7 @@ Thumbs.db
 backend/.field-encryption-key
 # The package-signing key generated beside the database on first use (local path).
 backend/.package-signing-key*
+
+# Commercial planning notes — never publish
+docs/PAID_FEATURES.md
+PAID_FEATURES.md

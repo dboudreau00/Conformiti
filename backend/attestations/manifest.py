@@ -22,7 +22,7 @@ import re
 # and manifest digest) when it was rolled forward, so a chain of engagements
 # is verifiable end to end. Absent when there is none. Older manifests still
 # verify unchanged.
-MANIFEST_VERSION = 3
+MANIFEST_VERSION = 4
 HASH_ALGORITHM = "sha256"
 
 
@@ -104,6 +104,10 @@ def build_manifest(package, controls):
             "sealed_at": package["sealed_at"],
             "created_by": package["created_by"],
             "created_at": package["created_at"],
+            # v4: the organisation the package belongs to, inside the signed
+            # bytes. One key serves the installation, so the fingerprint alone
+            # does not say which tenant produced a bundle.
+            "workspace": package.get("workspace"),
         },
         "totals": {
             "controls": len(controls),

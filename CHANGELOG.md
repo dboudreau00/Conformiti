@@ -5,6 +5,81 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.2] — 2026-09-07
+
+The rest of the adversarial review's confirmed findings. Twenty-one more are
+fixed here; [REVIEW_090.md](REVIEW_090.md) now carries the whole set with its
+status, and names the twelve still open.
+
+### Fixed — security
+
+- **The demo dataset no longer ships a password.** Every fresh boot seeded
+  five accounts — one of them a superuser — with a constant printed in the
+  README, the compose header, `.env.example` and both installers. The dataset
+  stays, because the one-command demo is the point; the password is now
+  generated per installation and printed once by the seeding step. Set
+  `DEMO_PASSWORD` to choose it.
+- **Single sign-on resolved accounts with no workspace active**, so
+  `SSO_WORKSPACE` gated only provisioning and one identity provider could sign
+  a person into whichever tenant happened to hold a matching identity or
+  email. Linking, matching and provisioning now all happen inside that
+  workspace, and an identity whose account belongs to another one is refused.
+- **The audit trail followed the actor, not the action.** A superuser working
+  under `X-Workspace` filed the tenant's document and package names into their
+  own workspace's log and left nothing in the tenant's — including the
+  audit-trail extract inside the sealed bundle. Entries are now stamped with
+  the workspace the action happened in; sign-in and single sign-on, which run
+  before a workspace is resolved, pass it explicitly.
+- **A revoked or expired grant did not close the auditor's last door.** The
+  request-list route admits whoever a line is assigned to, which exists so an
+  internal control owner can answer without package access — but an external
+  auditor reaching it kept reading attachment bytes after revocation, and
+  could assign a line to themselves. Auditors now read the request list
+  through their grant and nothing else.
+- **Meeting minutes and blank templates were downloadable by any authenticated
+  account**, including an external auditor with a package grant, with no
+  folder check. Both are closed to auditors.
+- **A sealed package could still gain evidence rows**, because the row's
+  parent was writable — and `/verify/` reported the result as intact.
+- **The sealed manifest now names the organisation.** One Ed25519 key serves
+  the whole installation, so without it a bundle from one workspace verified
+  identically to a bundle from another. Manifest version 4. A per-workspace
+  key is still the real fix and remains open.
+- **The shell showed the wrong workspace.** A switched superuser saw their own
+  organisation's name over another organisation's data; it now shows the
+  active workspace, and says so when it is not theirs.
+- **A cross-workspace username oracle.** The uniqueness check DRF builds is
+  workspace-scoped while the constraint is installation-wide, so a name taken
+  in another tenant returned 500 rather than 400 — a clean yes/no on whether
+  a named person has an account elsewhere on the installation. The same
+  mismatch made single-sign-on provisioning die on the constraint.
+- **Changing a password revoked nothing.** A stolen refresh token kept working
+  and renewed itself. Password changes and administrator MFA resets now
+  revoke every outstanding token.
+- **The webhook delivery log is installation-wide**, so every tenant's
+  administrator was reading every other tenant's. Restricted to a superuser.
+- **Two spreadsheet-import limits were advisory.** The zip guard trusted the
+  archive's declared sizes and then read without a ceiling, and an unbounded
+  column reference allocated one slot per column. Both are bounded now.
+- **Formula injection returned** in the one export that goes back to a third
+  party: the vendor's own column headings were written unescaped.
+- **A sign-in did not clear the previous session's workspace choice**, and the
+  health endpoint echoed a configuration error that names the signing key's
+  path. The folder access map now needs *manage* to read, matching the
+  viewset that serves the same rows.
+
+### Known and open
+
+Twelve findings remain, listed with their status in
+[REVIEW_090.md](REVIEW_090.md). The significant ones: the signature covers
+`manifest.json` only, so the auditor's conclusions sit outside it; one signing
+key still serves every workspace; the Django admin login bypasses MFA, the
+login throttle and the archived-workspace refusal; the Auditor role still
+reads more of a workspace than its description implies; and TOTP codes are
+replayable within their window.
+
+---
+
 ## [0.9.1] — 2026-09-07
 
 A full adversarial review of the 0.9.0 tree, and the fixes it earned. Sixteen

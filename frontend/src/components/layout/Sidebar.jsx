@@ -19,9 +19,19 @@ export function Sidebar({ onSignOut }) {
     >
       <div className="px-5 py-5">
         <ConformitiLogo size={36} tagline="SOC 2 · ISO 27001 · PCI" />
-        {me?.workspace_detail?.name ? (
-          <p className="mt-3 truncate text-2xs font-medium uppercase tracking-[0.08em] text-faint" title="Workspace" data-testid="workspace-name">
-            {me.workspace_detail.name}
+        {(me?.active_workspace || me?.workspace_detail)?.name ? (
+          <p
+            className={cn(
+              "mt-3 truncate text-2xs font-medium uppercase tracking-[0.08em]",
+              me?.active_workspace?.switched ? "text-warning" : "text-faint"
+            )}
+            title={me?.active_workspace?.switched
+              ? `Switched into ${me.active_workspace.slug} — not your own workspace`
+              : "Workspace"}
+            data-testid="workspace-name"
+          >
+            {me?.active_workspace?.switched ? "Viewing " : ""}
+            {(me?.active_workspace || me?.workspace_detail).name}
           </p>
         ) : null}
       </div>

@@ -195,8 +195,15 @@ class MeetingMinuteViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
-        """Minutes are read through the API so no storage path is published."""
+        """Minutes are read through the API so no storage path is published.
+
+        These are internal governance records, not package evidence: an
+        external auditor has no route to them, grant or no grant."""
+        from rest_framework.exceptions import PermissionDenied
+
         from documents.downloads import serve_stored_file
+        if request.user.is_auditor:
+            raise PermissionDenied("Meeting minutes are not part of an audit package.")
         minute = self.get_object()
         return serve_stored_file(minute.file, f"{minute.title or 'minutes'}")
 

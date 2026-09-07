@@ -5,7 +5,7 @@ Retire the demo dataset before going live.
     python manage.py remove_demo_data --delete   # also delete the demo user accounts
     python manage.py remove_demo_data --dry-run  # report only
 
-The seeded accounts share one published password (DemoPass123!), so they must
+The seeded accounts share one password generated at seed time, so they must
 never survive into a real deployment. This command:
 
   * deactivates (or, with --delete, removes) the five demo users — but never

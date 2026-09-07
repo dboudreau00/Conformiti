@@ -42,6 +42,8 @@ python manage.py seed_frameworks --with-folders
 case "${SEED_DEMO_DATA:-true}" in
   1|true|TRUE|yes|on)
     log "Seeding demo dataset (SEED_DEMO_DATA=true)"
+    # bootstrap_demo prints the generated sign-in password on first boot.
+    # Set DEMO_PASSWORD to choose it, or SEED_DEMO_DATA=false to skip.
     python manage.py bootstrap_demo
     ;;
   *)
