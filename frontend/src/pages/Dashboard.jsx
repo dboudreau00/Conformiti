@@ -67,9 +67,14 @@ export default function Dashboard({ me }) {
     setVersion((v) => v + 1);
   }, []);
 
+  // Waits for `me`. The dashboard reads the whole programme, which an external
+  // auditor may not: the shell sends them to /packages instead, but only once
+  // it knows who they are. Firing on mount put two 403s on their console every
+  // time they signed in -- and would have loaded a screen they cannot fill.
   useEffect(() => {
+    if (!me) return;
     load();
-  }, [load]);
+  }, [load, me]);
 
   const readiness = summary?.readiness;
   const controls = summary?.controls;

@@ -1152,12 +1152,17 @@ function WorkspacesBlock({ me }) {
 /* ---------- About ---------- */
 
 function AboutSection() {
-  const { health } = useShell();
+  const { me, health } = useShell();
+  // The control library belongs to the organisation, not to the engagement:
+  // an external auditor is refused /frameworks/, so do not ask for it and put
+  // a 403 on their console. They see the rest of the panel.
+  const auditor = !!me?.capabilities?.auditor;
   const [frameworks, setFrameworks] = useState(null);
   const [err, setErr] = useState(null);
 
   useEffect(() => {
     let alive = true;
+    if (auditor) { setFrameworks([]); return undefined; }
     fetchAll("/frameworks/")
       .then((list) => {
         if (alive) setFrameworks(list);
@@ -1170,7 +1175,7 @@ function AboutSection() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [auditor]);
 
   const scanning = health?.scanning;
   const scannerLabel = !scanning || !scanning.enabled
@@ -1180,7 +1185,7 @@ function AboutSection() {
       : `On · UNREACHABLE${scanning.down_since ? ` since ${String(scanning.down_since).slice(0, 16).replace("T", " ")}` : ""}`;
   const rows = [
     ["Version", health?.version ? `v${health.version}` : "—"],
-    ["Frameworks", frameworks ? `${frameworks.length} loaded` : "…"],
+    ["Frameworks", auditor ? "—" : frameworks ? `${frameworks.length} loaded` : "…"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
     ["Malware scanning", scannerLabel],
     ["Package signing", health?.signing?.key_id
