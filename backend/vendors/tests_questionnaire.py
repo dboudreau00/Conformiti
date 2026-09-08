@@ -214,3 +214,45 @@ class VendorSideTests(APITestBase):
             r = self.client_for(self.manager).post(
                 f"/api/vendors/{self.vendor.pk}/questionnaire/send/", {}, format="json")
         self.assertTrue(re.match(r"^http://testserver/questionnaire/[A-Za-z0-9_-]{40,}$", r.data["link"]), r.data["link"])
+
+
+@override_settings(EMAIL_PROVIDER="console", ORGANISATION_NAME="Acme Ltd",
+                   PUBLIC_URL="https://grc.acme.example")
+class OneLiveLinkTests(APITestBase):
+    """Low 10: "one live link per vendor" was enforced by revoking whatever
+    was visible and then inserting -- a read-modify-write with nothing to
+    lock. Two sends arriving together each revoked what they could see and
+    each created a link, leaving two answerable at once."""
+
+    def send(self, vendor, **body):
+        return self.client_for(self.manager).post(
+            f"/api/vendors/{vendor.pk}/questionnaire/send/", body, format="json")
+
+    def live(self, vendor):
+        return QuestionnaireInvite.objects.filter(
+            vendor=vendor, submitted_at__isnull=True, revoked_at__isnull=True,
+            expires_at__gt=timezone.now()).count()
+
+    def test_a_second_send_supersedes_the_first(self):
+        v = _vendor(owner=self.owner)
+        self.assertEqual(self.send(v).status_code, 201)
+        self.assertEqual(self.send(v).status_code, 201)
+        self.assertEqual(self.live(v), 1)
+        self.assertEqual(QuestionnaireInvite.objects.filter(vendor=v).count(), 2)
+
+    def test_the_vendor_row_is_held_while_the_swap_happens(self):
+        """The serialising lock itself: without it the two statements above
+        interleave. SQLite takes a database-wide write lock instead, so this
+        is only meaningful on a backend with row locks."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        if not connection.features.has_select_for_update:
+            self.skipTest("this backend has no row-level lock to take")
+        v = _vendor(owner=self.owner)
+        with CaptureQueriesContext(connection) as queries:
+            self.assertEqual(self.send(v).status_code, 201)
+        self.assertTrue(
+            any("FOR UPDATE" in q["sql"].upper() and '"vendors_vendor"' in q["sql"].lower()
+                for q in queries.captured_queries),
+            "the vendor row was not locked before its live links were swapped")

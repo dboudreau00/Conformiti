@@ -27,7 +27,8 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Workspace
-        fields = ["id", "name", "slug", "is_active", "created_at", "users", "with_frameworks"]
+        fields = ["id", "name", "slug", "is_active", "notification_email", "created_at",
+                  "users", "with_frameworks"]
         read_only_fields = ["created_at"]
         extra_kwargs = {"slug": {"required": False}}
 

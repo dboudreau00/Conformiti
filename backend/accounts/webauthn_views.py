@@ -10,6 +10,34 @@ from .models import WebAuthnCredential
 from .views import _MfaThrottle
 
 
+def reauthenticated(request):
+    """Has the caller just proved the account is theirs?
+
+    Removing a passkey takes the account password; adding one used to take
+    nothing, so a hijacked session could quietly enrol the attacker's own key
+    and keep the account for good. Enrolment now asks for the same proof --
+    the password, or a code from a factor already enrolled, which is what an
+    account signed in through an identity provider has instead.
+
+    An account with neither (no usable password, no second factor) has
+    nothing to prove with and nothing yet to protect: that is the first
+    enrolment, and it is allowed.
+    """
+    user = request.user
+    password = request.data.get("password") or ""
+    otp = str(request.data.get("otp") or "").strip()
+    has_password = user.has_usable_password()
+    if has_password and password and user.check_password(password):
+        return True
+    if otp and user.mfa_enabled:
+        device = getattr(user, "mfa_device", None)
+        if device is not None and device.enabled and device.verify(otp):
+            return True
+        if user.verify_backup_code(otp):
+            return True
+    return not (has_password or user.mfa_enabled)
+
+
 class PasskeyListView(APIView):
     """GET: the caller's passkeys. POST: nothing -- enrolment is two steps
     (``/register/options/`` then ``/register/``)."""
@@ -30,6 +58,11 @@ class PasskeyRegisterOptionsView(APIView):
     throttle_classes = [_MfaThrottle]
 
     def post(self, request):
+        # Asked for here rather than at /register/, so nobody is sent to their
+        # authenticator only to be turned away after touching it.
+        if not reauthenticated(request):
+            return Response({"detail": "Confirm your password to add a passkey.",
+                             "code": "reauth_required"}, status=403)
         try:
             return Response(passkeys.begin_registration(request.user, request))
         except passkeys.PasskeyRefused as exc:

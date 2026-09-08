@@ -20,7 +20,8 @@ verification.
 | Critical | 3 | | Fixed in 0.9.1 | 14 |
 | High | 25 | | Fixed in 0.9.2 | 21 |
 | Medium | 12 | | Fixed in 0.9.3 | 4 |
-| Low | 10 | | Partly fixed / open | 11 |
+| Low | 10 | | Fixed in 0.9.4 | 11 |
+| | | | **Still open** | **0** |
 
 Several findings are the same defect reached from two dimensions; they are
 listed separately because they were found and verified separately. What each
@@ -50,7 +51,7 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 | 10 | The issued auditor can write the organisation-only `management_response` and silently mutate sealed sampling metadata,… | `backend/attestations/views.py:409-441` | fixed 0.9.1 |
 | 11 | `Folder.owner` is writable by anyone with EDIT, and owner means MANAGE — a self-service edit→manage escalation that un… | `backend/documents/views.py:60-80` | fixed 0.9.1 |
 | 12 | `PATCH /api/documents/{id}/` replaces the stored evidence bytes with no folder-edit check, no AV scan, no archived ver… | `backend/documents/views.py:199-208` | fixed 0.9.1 |
-| 13 | The shipped "Auditor" role — described as "sees only granted folders" — is a full-program reader of the whole workspac… | `backend/accounts/permissions.py:9-14` | partly 0.9.2 |
+| 13 | The shipped "Auditor" role — described as "sees only granted folders" — is a full-program reader of the whole workspac… | `backend/accounts/permissions.py:9-14` | fixed 0.9.4 |
 | 14 | Every rate limit in the product is keyed on an attacker-supplied X-Forwarded-For header, and there is no account locko… | `backend/config/urls.py:29 and :62` | fixed 0.9.1 |
 | 15 | PATCH /api/documents/{id}/ swaps the stored evidence file with no malware scan, no version snapshot, and leaves the st… | `backend/documents/views.py:199-208` | fixed 0.9.1 |
 | 16 | Uploading a new version silently releases a quarantined document, and the quarantined bytes stay downloadable through … | `backend/documents/views.py:248-262 and 290-299` | fixed 0.9.1 |
@@ -71,30 +72,30 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 | 1 | Cross-workspace username oracle: DRF's uniqueness check on User.username is workspace-pinned but the DB constraint is … | `backend/accounts/models.py:111` | fixed 0.9.2 |
 | 2 | Any tenant administrator reads every other organisation's webhook delivery log via GET /api/notifications/channels/ | `backend/notifications/views.py:28-32` | fixed 0.9.2 |
 | 3 | Changing a password (or resetting a user's MFA) revokes nothing: a stolen refresh token keeps working and renews itsel… | `backend/accounts/serializers.py:128-132` | fixed 0.9.2 |
-| 4 | A TOTP code is accepted repeatedly for up to 90 seconds — no used-code or counter store, so an intercepted code is rep… | `backend/accounts/models.py:303-315` | open |
+| 4 | A TOTP code is accepted repeatedly for up to 90 seconds — no used-code or counter store, so an intercepted code is rep… | `backend/accounts/models.py:303-315` | fixed 0.9.4 |
 | 5 | SSO auto-provisioning probes username uniqueness workspace-scoped against a globally-unique column, so provisioning di… | `backend/accounts/oidc.py:463` | fixed 0.9.2 |
 | 6 | XLSX importer's zip-bomb guard trusts the archive's declared sizes, then decompresses unbounded — 300 KB of upload all… | `backend/governance/risk_import.py:142-168` | fixed 0.9.2 |
-| 7 | In-app signature verification trusts the public key stored in the same database row, so a database-write attacker can … | `backend/attestations/signing.py:201-207` | open |
+| 7 | In-app signature verification trusts the public key stored in the same database row, so a database-write attacker can … | `backend/attestations/signing.py:201-207` | fixed 0.9.4 |
 | 8 | Unbounded XLSX column index in the stdlib importer turns a ~300-byte upload into a multi-gigabyte allocation (worker O… | `backend/governance/risk_import.py:115-121` | fixed 0.9.2 |
 | 9 | Vendor-supplied column headings are written into the responsibility-matrix CSV export without csv_safe, reopening form… | `backend/vendors/views.py:239` | fixed 0.9.2 |
 | 10 | The switched-workspace choice survives a change of user in the same browser: login() never clears it | `frontend/src/api/client.js:154-165` | fixed 0.9.2 |
-| 11 | Sealing is a check-then-act with no row lock: evidence pinned concurrently lands inside a sealed package but outside i… | `backend/attestations/views.py:204-205 and 227` | open |
+| 11 | Sealing is a check-then-act with no row lock: evidence pinned concurrently lands inside a sealed package but outside i… | `backend/attestations/views.py:204-205 and 227` | fixed 0.9.4 |
 | 12 | Quarantine and release events written by the `scan_evidence` sweep land with workspace = NULL and are invisible to eve… | `backend/documents/monitor.py:75-84` | fixed 0.9.2 |
 
 ## Low
 
 | # | Finding | Where | Status |
 |---|---|---|---|
-| 1 | Every workspace's document, vendor and auditor-request detail is emailed to one installation-wide COMPLIANCE_TEAM_EMAI… | `backend/notifications/tasks.py:25, :100, :140` | open |
-| 2 | TenantQuerySet._pin() permanently skips the workspace filter on any queryset that was sliced while no workspace was ac… | `backend/accounts/tenancy.py:263-270` | open |
-| 3 | Enrolling a passkey needs no password re-authentication, while removing one does — a hijacked session can plant an att… | `backend/accounts/webauthn_views.py:39-61 and :86-97` | open |
-| 4 | Default SSO_MFA_ASSERTIONS accepts amr values that are not second factors, letting a single-factor IdP login satisfy S… | `backend/config/settings.py:649` | open |
+| 1 | Every workspace's document, vendor and auditor-request detail is emailed to one installation-wide COMPLIANCE_TEAM_EMAI… | `backend/notifications/tasks.py:25, :100, :140` | fixed 0.9.4 |
+| 2 | TenantQuerySet._pin() permanently skips the workspace filter on any queryset that was sliced while no workspace was ac… | `backend/accounts/tenancy.py:263-270` | fixed 0.9.4 |
+| 3 | Enrolling a passkey needs no password re-authentication, while removing one does — a hijacked session can plant an att… | `backend/accounts/webauthn_views.py:39-61 and :86-97` | fixed 0.9.4 |
+| 4 | Default SSO_MFA_ASSERTIONS accepts amr values that are not second factors, letting a single-factor IdP login satisfy S… | `backend/config/settings.py:649` | fixed 0.9.4 |
 | 5 | `GET /api/folders/{id}/permissions/` discloses a folder's full access map to anyone with VIEW, contradicting the manag… | `backend/documents/views.py:120-124` | fixed 0.9.2 |
 | 6 | The unauthenticated health endpoint discloses the filesystem path of the Ed25519 package-signing private key when it i… | `backend/config/health.py:54-59 and :81` | fixed 0.9.2 |
 | 7 | Switching to the workspace whose slug is literally "default" silently lands the superuser in their own workspace instead | `frontend/src/pages/Account.jsx:1016-1019` | fixed 0.9.2 |
-| 8 | Every page of a self-hosted compliance product, including the anonymous login screen and the public vendor questionnai… | `frontend/index.html:10-15` | open |
-| 9 | MFA backup codes are single-use only in Python: an unlocked read-modify-write lets one code authenticate two concurren… | `backend/accounts/models.py:195-209` | open |
-| 10 | "One live questionnaire link per vendor" is enforced by an UPDATE with nothing to lock, so two concurrent sends leave … | `backend/vendors/questionnaire.py:123-135` | open |
+| 8 | Every page of a self-hosted compliance product, including the anonymous login screen and the public vendor questionnai… | `frontend/index.html:10-15` | fixed 0.9.4 |
+| 9 | MFA backup codes are single-use only in Python: an unlocked read-modify-write lets one code authenticate two concurren… | `backend/accounts/models.py:195-209` | fixed 0.9.4 |
+| 10 | "One live questionnaire link per vendor" is enforced by an UPDATE with nothing to lock, so two concurrent sends leave … | `backend/vendors/questionnaire.py:123-135` | fixed 0.9.4 |
 
 
 ## Contested
@@ -108,19 +109,27 @@ One verifier of three disagreed. Worth a second look rather than a fix on this e
 - **[medium]** Upgrading re-seeds the shipped control library into the `default` workspace only; every other tenant is silently froze…
 
 
-## What is still open
+## Where it ended up
 
-The three highest-severity items are closed in 0.9.3: the signature now covers
-the whole bundle by way of a second signature over `SHA256SUMS`, each
-workspace signs with its own derived key, and the Django admin demands the
-second factor while its session no longer authenticates the API.
+All fifty confirmed findings are fixed. The last eleven closed in 0.9.4: the
+Auditor role is scoped to the engagement instead of reading the whole
+programme, TOTP codes and backup codes are each spent once, sealing holds the
+package row while it snapshots it, in-app signature verification checks the
+published key rather than the one stored beside the signature, a sliced
+queryset can no longer escape its workspace, passkey enrolment takes the same
+proof removing one does, reminders go to the organisation that owns them, the
+questionnaire link is swapped under a lock, the SSO step-up no longer accepts
+a presence test as a second factor, and no page fetches anything from a third
+party.
 
-What remains: the shipped Auditor role still reads more of a workspace than
-"granted folders" implies, though minutes and blank templates are now closed
-to it. TOTP codes are replayable inside their 90-second window. Sealing is a
-check-then-act with no row lock. In-app signature verification trusts the
-public key stored beside the signature, so it reports "signed" for a row an
-attacker with database write access re-signed — the offline verifier and the
-published fingerprint are the real check, and they are unaffected. Reminder
-email goes to one installation-wide address. The remaining low findings are
-listed above.
+Two things an external auditor may still read are deliberate, not oversights:
+the **audit log** and **access reviews**. Both are audit artefacts — produced
+to be inspected, and the reason the role exists. They are workspace-wide
+rather than package-scoped, which is worth knowing when granting the role; a
+client who wants an auditor confined to one engagement's trail should issue
+the package and withhold the account.
+
+The five contested findings above were not fixed on this evidence. Three of
+them (the SAML `Destination` check, `verify.py`'s unsigned verdict, and
+control-library re-seeding for non-default workspaces) are worth a second look
+in their own right rather than as review findings.

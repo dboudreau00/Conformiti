@@ -383,7 +383,15 @@ REST_FRAMEWORK = {
          "rest_framework.authentication.SessionAuthentication"]
         if DEBUG else ["accounts.cookie_auth.CookieJWTAuthentication"]
     ),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    # Signed in AND not an external auditor. A view that sets its own
+    # permission_classes replaces this pair entirely, which is how the
+    # engagement's own routes (packages, granted folders, the trail) let the
+    # auditor back in; everything else refuses them by saying nothing at all.
+    # accounts/tests_auditor_surface.py walks the routers and holds the line.
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+        "accounts.permissions.NotExternalAuditor",
+    ),
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
@@ -658,10 +666,18 @@ if SSO_STEP_UP not in ("off", "if_enrolled", "required"):
     raise ImproperlyConfigured("SSO_STEP_UP must be off, if_enrolled or required.")
 # What counts as "the provider asserted a second factor": OIDC `amr` values
 # and SAML AuthnContextClassRef / authnmethodsreferences values.
+#
+# RFC 8176 registers several values that are not second factors, and two of
+# them used to be in this default. `user` is a user-presence test -- a touch,
+# proving somebody is at the keyboard and nothing more -- and `pin` is a
+# knowledge factor an IdP may well be using as the *first* one. A provider
+# returning either satisfied the step-up requirement without a second factor
+# ever being presented. Add them back deliberately if a particular IdP means
+# something stronger by them.
 SSO_MFA_ASSERTIONS = [
     a.strip() for a in os.getenv(
         "SSO_MFA_ASSERTIONS",
-        "mfa,otp,hwk,swk,sms,tel,fido,pop,user,pin,"
+        "mfa,otp,hwk,swk,sms,tel,fido,pop,"
         "urn:oasis:names:tc:SAML:2.0:ac:classes:TimeSyncToken,"
         "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract,"
         "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorUnregistered,"

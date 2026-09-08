@@ -46,7 +46,7 @@ come from those snapshots.
 | **Administrator** | everything, including users, roles, access reviews, integrations |
 | **Compliance Manager** | frameworks and control statuses, all folders and documents, risks, meetings, calendar; sees the whole tree |
 | **Control Owner** | edit documents in folders granted to them; update risks they own; add minutes |
-| **Auditor** | read-only: audit log, access reviews, and folders granted to them |
+| **Auditor** | the outside party: packages issued to them, the folders granted with those packages, their own request list, access reviews and the audit log — and nothing else of the programme |
 | **Viewer** | read-only in folders granted to them |
 
 Capabilities are enforced by the API; the interface only shows write controls
@@ -162,8 +162,10 @@ also listed on this page even if you cannot see the package itself.
 - **Security** — change password; enable two-factor (setup key or `otpauth://`
   URI for any authenticator app, one-time backup codes), regenerate codes or
   turn it off (password required); enrol **passkeys or security keys**, which
-  then satisfy the second step instead of a code. A key flagged as possibly
-  cloned is disabled — remove it with your password and enrol a fresh one.
+  then satisfy the second step instead of a code. Adding and removing a key
+  both take your password — changing which keys can sign you in is itself a
+  security change. A key flagged as possibly cloned is disabled — remove it
+  with your password and enrol a fresh one.
 - **Notifications** — how reminders reach you.
 - **Role & access** — your capabilities.
 - **About** — version, frameworks loaded, whether demo data is present.

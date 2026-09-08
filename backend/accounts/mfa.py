@@ -51,21 +51,32 @@ def totp(secret, at=None, period=PERIOD, digits=DIGITS, algo=ALGO):
     return hotp(secret, int(at // period), digits, algo)
 
 
-def verify(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=ALGO, window=1):
-    """Constant-time check of a submitted code, allowing +/- `window` steps of
-    clock drift (so a code valid in the adjacent 30s window still passes)."""
+def matched_counter(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=ALGO, window=1):
+    """The time step a submitted code matches, or None if none does.
+
+    Constant-time, allowing +/- `window` steps of clock drift (so a code valid
+    in the adjacent 30s window still passes). The step is returned rather than
+    a bare yes so the caller can refuse a code it has already accepted: a TOTP
+    is valid for its whole window, and with nothing recorded an intercepted
+    code works again until it expires (see ``MfaDevice.verify``).
+    """
     if at is None:
         at = time.time()
     code = (code or "").strip().replace(" ", "")
     if not (code.isdigit() and len(code) == digits):
-        return False
+        return None
     counter = int(at // period)
-    ok = False
+    found = None
     for drift in range(-window, window + 1):
         # compare_digest on every candidate (no early exit) to avoid timing leaks
         if hmac.compare_digest(hotp(secret, counter + drift, digits, algo), code):
-            ok = True
-    return ok
+            found = counter + drift
+    return found
+
+
+def verify(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=ALGO, window=1):
+    """Does the code match at all? Replay is the caller's business."""
+    return matched_counter(secret, code, at, period, digits, algo, window) is not None
 
 
 def otpauth_uri(secret, account, issuer="Conformiti"):

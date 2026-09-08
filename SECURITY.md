@@ -111,9 +111,11 @@ issues for vulnerabilities. You will get an acknowledgement within a week.
 - **Transport/headers:** `nosniff`, `X-Frame-Options: DENY`, referrer policy and
   a Permissions-Policy are always on; the shipped nginx sends a
   Content-Security-Policy (`script-src 'self'`); uploads are served as
-  attachments inside a sandboxing CSP. With `DJANGO_DEBUG=false` and
-  `BEHIND_TLS=true` (the default off DEBUG), HTTPS redirect, secure cookies and
-  optional HSTS engage.
+  attachments inside a sandboxing CSP. Nothing is loaded from a third party at
+  page load — no font, script or stylesheet from a CDN — so the login screen
+  and the public vendor questionnaire tell nobody the address of your
+  installation. With `DJANGO_DEBUG=false` and `BEHIND_TLS=true` (the default
+  off DEBUG), HTTPS redirect, secure cookies and optional HSTS engage.
 - **Abuse resistance:** per-client login (8/min) and MFA (10/min) throttles and
   a global anonymous throttle, with counters in Redis in the compose stack so
   the limit is shared across workers.

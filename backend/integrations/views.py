@@ -6,6 +6,8 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthentic
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import is_external_auditor
+
 from .jira import JiraError, board_issues, verify
 from .models import JiraBoard, JiraIntegration
 from .serializers import JiraBoardSerializer, JiraConfigSerializer
@@ -20,7 +22,7 @@ class CanManageIntegrations(BasePermission):
 class ManageOrReadOnly(BasePermission):
     def has_permission(self, request, view):
         u = request.user
-        if not (u and u.is_authenticated):
+        if not (u and u.is_authenticated) or is_external_auditor(u):
             return False
         return True if request.method in SAFE_METHODS else u.can_manage_users
 

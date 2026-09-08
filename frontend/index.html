@@ -7,12 +7,12 @@
     <!-- The Conformiti mark (shield and check), Governance Blue. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Conformiti</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <!-- No webfont is fetched. Every page of a self-hosted compliance product
+         is served from the organisation's own network, and that includes the
+         anonymous login screen and the vendor questionnaire link sent outside
+         the company: a font request tells a third party the address of the
+         installation, who is visiting it and when. Typography falls back to
+         the platform's own UI faces (see tailwind.config.js). -->
     <!-- Applies the saved theme/accent before first paint (kept external for CSP). -->
     <script src="/theme-init.js"></script>
   </head>

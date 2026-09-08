@@ -21,7 +21,7 @@ from accounts import tenancy
 from audit.middleware import _client_ip
 from audit.models import AuditLog
 
-from .models import DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, VendorAssessment
+from .models import DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, Vendor, VendorAssessment
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,11 @@ def create_invite(vendor, request, email, days=None, message=""):
     user = request.user
     with transaction.atomic():
         # One live link per vendor: a second send supersedes the first, so a
-        # forwarded old link cannot be answered alongside the new one.
+        # forwarded old link cannot be answered alongside the new one. The
+        # vendor row is taken first because the revoke-then-create below has
+        # nothing of its own to lock: two sends arriving together each revoked
+        # what they could see and each created a link, leaving two live.
+        Vendor.objects.select_for_update().filter(pk=vendor.pk).first()
         QuestionnaireInvite.objects.filter(
             vendor=vendor, submitted_at__isnull=True, revoked_at__isnull=True,
             expires_at__gt=timezone.now(),
@@ -272,6 +276,7 @@ def submit(invite, answers, respondent_name, respondent_title="", request=None):
 
 def _notify_returned(invite, assessment, answered):
     from notifications.email_service import send_templated_email
+    from notifications.tasks import compliance_inbox
 
     vendor = invite.vendor
     recipients = []
@@ -279,7 +284,7 @@ def _notify_returned(invite, assessment, answered):
         recipients.append(vendor.owner.email)
     if invite.sent_by and invite.sent_by.email:
         recipients.append(invite.sent_by.email)
-    recipients.append(settings.COMPLIANCE_TEAM_EMAIL)
+    recipients.append(compliance_inbox())
     context = {
         "vendor": vendor, "invite": invite, "assessment": assessment, "answered": answered,
         "total": len(DEFAULT_QUESTIONNAIRE),

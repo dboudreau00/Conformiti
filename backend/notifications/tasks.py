@@ -18,11 +18,26 @@ logger = logging.getLogger(__name__)
 OVERDUE = -1  # sentinel stored in Document.reminders_sent
 
 
+def compliance_inbox():
+    """Where this organisation's reminders and alerts go.
+
+    Every scan runs inside one workspace at a time (``for_each_workspace``),
+    and the subject lines carry document names, vendor names and auditor
+    requests. Sending them all to one installation-wide address published
+    every tenant's business to whoever runs the box, so a workspace names its
+    own; the setting remains the fallback, and is the whole answer for a
+    single-organisation install.
+    """
+    workspace = tenancy.current()
+    own = (getattr(workspace, "notification_email", "") or "").strip() if workspace else ""
+    return own or settings.COMPLIANCE_TEAM_EMAIL
+
+
 def _notify(document, days, overdue, window=None):
     recipients = []
     if document.owner and document.owner.email:
         recipients.append(document.owner.email)
-    recipients.append(settings.COMPLIANCE_TEAM_EMAIL)
+    recipients.append(compliance_inbox())
 
     if overdue:
         subject = f"[Overdue] Review overdue: {document.name}"
@@ -97,7 +112,7 @@ def _notify_bridge(vendor, report):
     recipients = []
     if vendor.owner and vendor.owner.email:
         recipients.append(vendor.owner.email)
-    recipients.append(settings.COMPLIANCE_TEAM_EMAIL)
+    recipients.append(compliance_inbox())
     subject = f"[Action] Bridge letter needed from {vendor.name}"
     context = {
         "vendor": vendor, "report": report,
@@ -137,7 +152,7 @@ def _notify_pbc(req, days, overdue, window=None):
     recipients = []
     if req.assignee and req.assignee.email:
         recipients.append(req.assignee.email)
-    recipients.append(settings.COMPLIANCE_TEAM_EMAIL)
+    recipients.append(compliance_inbox())
     if overdue:
         subject = f"[Overdue] Auditor request {req.reference} overdue: {req.title}"
     else:
@@ -210,7 +225,7 @@ def run_scanner_watch(dry_run=False):
                 send_templated_email(
                     "[Alert] Malware scanner unreachable — evidence uploads are being refused",
                     "scanner_alert", {"down": True, "since": status.down_since or now},
-                    [settings.COMPLIANCE_TEAM_EMAIL])
+                    [compliance_inbox()])
                 webhooks.post_event("scanner.down", "Malware scanner unreachable",
                                     "clamd stopped answering; evidence uploads are being refused until it is back.",
                                     facts=[("Down since", (status.down_since or now).isoformat(timespec="minutes"))],
@@ -223,7 +238,7 @@ def run_scanner_watch(dry_run=False):
             send_templated_email(
                 "[Recovered] Malware scanner is answering again",
                 "scanner_alert", {"down": False, "since": status.last_ok_at or now},
-                [settings.COMPLIANCE_TEAM_EMAIL])
+                [compliance_inbox()])
             webhooks.post_event("scanner.up", "Malware scanner is answering again",
                                 "Uploads are accepted once more.", path="/documents", severity="info")
             status.alerted_up_at = now

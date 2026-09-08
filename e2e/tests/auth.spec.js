@@ -66,7 +66,10 @@ test.describe("authentication", () => {
       await page.goto("/login");
       await page.evaluate(() => localStorage.clear());
       await signIn(page, DEMO[persona]);
-      await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+      // The dashboard reads the whole programme, which an external auditor
+      // may not: they land on the packages issued to them instead.
+      const landing = persona === "auditor" ? "Audit packages" : "Dashboard";
+      await expect(page.getByRole("heading", { name: landing })).toBeVisible();
       await page.getByRole("button", { name: "Sign out" }).first().click();
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     }

@@ -45,6 +45,15 @@ logger = logging.getLogger(__name__)
 DEFAULT_SLUG = "default"
 HEADER = "HTTP_X_WORKSPACE"
 
+
+class UnscopedRead(RuntimeError):
+    """A tenant queryset was about to run without its workspace condition.
+
+    Raised rather than returned quietly: the alternative is answering with
+    every organisation's rows, and a loud failure in one report beats a silent
+    disclosure in all of them.
+    """
+
 # Holds an int (workspace id), a _RequestResolver, or None.
 _active = contextvars.ContextVar("conformiti.workspace", default=None)
 
@@ -261,13 +270,44 @@ class TenantQuerySet(models.QuerySet):
         return super()._chain()._pin()
 
     def _pin(self):
-        if self._tenant or self.query.is_sliced or self.query.combinator:
+        if self._tenant:
             return self
         if current_id() is None:
             return self  # nothing active: migrations, createsuperuser, jobs that walk every workspace
+        if self.query.is_sliced or self.query.combinator:
+            # A LIMIT or a UNION is already fixed, so the workspace condition
+            # can no longer be added -- and returning quietly would hand back
+            # every organisation's rows. Managers pin before anything can be
+            # sliced, so getting here means the queryset was built with no
+            # workspace active and is being read inside one.
+            raise UnscopedRead(
+                "This queryset was built with no workspace active and cannot be "
+                "scoped now that one is. Build it inside the workspace, or read "
+                "it deliberately inside tenancy.unscoped()."
+            )
         self._tenant = True
         self.query.add_q(models.Q(workspace_id=ActiveWorkspace()))
         return self
+
+    # _chain() covers everything that derives a new queryset, but a queryset
+    # can also be built in one scope and read in another with nothing derived
+    # in between. These are the four ways a TenantQuerySet reaches the
+    # database, and each pins on the way past.
+    def _fetch_all(self):
+        self._pin()
+        super()._fetch_all()
+
+    def count(self):
+        self._pin()
+        return super().count()
+
+    def exists(self):
+        self._pin()
+        return super().exists()
+
+    def aggregate(self, *args, **kwargs):
+        self._pin()
+        return super().aggregate(*args, **kwargs)
 
     def bulk_create(self, objs, *args, **kwargs):
         for obj in objs:

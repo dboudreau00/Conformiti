@@ -22,6 +22,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import NotExternalAuditor
 from compliance.models import Control, ControlEvidence, Framework
 from governance.models import Risk
 from documents.access import accessible_folder_ids
@@ -42,7 +43,9 @@ def _counts_by(qs, field, keys):
 
 
 class AnalyticsSummaryView(APIView):
-    permission_classes = [IsAuthenticated]
+    # Readiness, coverage and ownership for the whole organisation: the
+    # programme, not the engagement.
+    permission_classes = [IsAuthenticated, NotExternalAuditor]
 
     def get(self, request):
         today = timezone.localdate()

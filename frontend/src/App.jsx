@@ -72,6 +72,7 @@ function Protected({ me, setMe }) {
   // Sidebar badges: controls in progress, live risks, open access reviews.
   const refreshCounts = useCallback(() => {
     if (!me) return;
+    if (me?.capabilities?.auditor) return;  // refused, and rightly
     api.get("/analytics/summary/").then((r) => {
       const s = r.data;
       setCounts((c) => ({ ...c, controls: s.controls?.by_status?.in_progress || 0, risks: s.risks?.open || 0 }));
@@ -109,7 +110,12 @@ function Protected({ me, setMe }) {
             <ErrorBoundary>
               <AnimatePresence mode="wait" initial={false}>
                 <Routes location={location} key={location.pathname}>
-                  <Route path="/" element={<Dashboard me={me} />} />
+                  {/* The dashboard reads the whole programme (analytics,
+                      frameworks), which an external auditor may not: send
+                      them to the packages issued to them instead. */}
+                  <Route path="/" element={me?.capabilities?.auditor
+                    ? <Navigate to="/packages" replace />
+                    : <Dashboard me={me} />} />
                   <Route path="/analytics" element={<Analytics me={me} />} />
                   <Route path="/controls" element={<Controls me={me} />} />
                   <Route path="/documents" element={<Documents me={me} />} />

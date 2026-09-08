@@ -17,6 +17,12 @@ class Workspace(models.Model):
     slug = models.SlugField(max_length=60, unique=True)
     is_active = models.BooleanField(
         default=True, help_text="Archived workspaces refuse sign-in and drop out of every job.")
+    # Reminders name this organisation's documents, vendors and auditor
+    # requests, so they cannot all go to one installation-wide mailbox.
+    notification_email = models.EmailField(
+        blank=True,
+        help_text="Where this organisation's reminders and alerts go. "
+                  "Blank falls back to the installation's COMPLIANCE_TEAM_EMAIL.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -204,9 +210,15 @@ class User(AbstractUser, TenantModel):
             return False
         for backup in self.backup_codes.filter(used_at__isnull=True):
             if check_password(normalized, backup.code_hash):
-                backup.used_at = timezone.now()
-                backup.save(update_fields=["used_at"])
-                return True
+                # Claim it with a conditional UPDATE rather than reading it,
+                # setting used_at and saving: two sign-ins arriving together
+                # both saw it unused, and the unlocked read-modify-write let
+                # one code authenticate both. Whoever's UPDATE matches the
+                # still-null row wins; the loser is told the code is spent.
+                claimed = MfaBackupCode.objects.filter(
+                    pk=backup.pk, used_at__isnull=True,
+                ).update(used_at=timezone.now())
+                return bool(claimed)
         return False
 
     @property
@@ -296,23 +308,39 @@ class MfaDevice(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
+    # The last TOTP time step this device authenticated with. A code stays
+    # valid for its whole 30s window plus a step of drift either way, so
+    # without a record of what was spent the same six digits work again for
+    # up to 90 seconds -- long enough for anyone who read them over a
+    # shoulder, out of a phishing form, or off a proxied login page.
+    last_counter = models.PositiveBigIntegerField(default=0)
 
     def __str__(self):
         return f"MFA({self.user_id}, {'on' if self.enabled else 'pending'})"
 
     def verify(self, code):
-        """Accept a current TOTP code (a backup code is the account's, not
-        the device's: see ``User.verify_backup_code``). Updates last_used_at
-        on success."""
+        """Accept a current, unspent TOTP code (a backup code is the account's,
+        not the device's: see ``User.verify_backup_code``).
+
+        Each code is accepted once. The time step it matches has to be later
+        than the last one this device used, so replaying the same code -- or
+        an earlier one still inside the drift window -- is refused. The claim
+        is a single conditional UPDATE, which also settles two requests
+        presenting the same code at the same moment.
+        """
         from django.utils import timezone
         from . import mfa as mfa_lib
 
         code = (code or "").strip()
-        if mfa_lib.verify(self.secret, code):
-            self.last_used_at = timezone.now()
-            self.save(update_fields=["last_used_at"])
-            return True
-        return False
+        step = mfa_lib.matched_counter(self.secret, code)
+        if step is None:
+            return False
+        claimed = MfaDevice.objects.filter(pk=self.pk, last_counter__lt=step).update(
+            last_counter=step, last_used_at=timezone.now())
+        if not claimed:
+            return False
+        self.last_counter = step
+        return True
 
 
 class MfaBackupCode(models.Model):

@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.response import Response
 
+from accounts.permissions import is_external_auditor
 from documents.models import FolderPermission
 
 from .models import (
@@ -32,7 +33,12 @@ from .serializers import (
 # Permissions
 # --------------------------------------------------------------------------- #
 class AccessAuditPermission(BasePermission):
-    """Access reviews contain account data: managers run them, auditors may read."""
+    """Access reviews contain account data: managers run them, auditors may read.
+
+    One of the two places an external auditor is let in on purpose (the other
+    is the audit log): a periodic access review is an audit artefact, produced
+    to be inspected. Everything else in governance is refused below.
+    """
 
     def has_permission(self, request, view):
         u = request.user
@@ -44,9 +50,13 @@ class AccessAuditPermission(BasePermission):
 
 
 class ManageDocumentsOrReadOnly(BasePermission):
+    """Meeting cadence and minutes: the organisation's own governance record,
+    not an external auditor's to browse (they receive what is put in a
+    package)."""
+
     def has_permission(self, request, view):
         u = request.user
-        if not (u and u.is_authenticated):
+        if not (u and u.is_authenticated) or is_external_auditor(u):
             return False
         return True if request.method in SAFE_METHODS else u.can_manage_documents
 
@@ -54,7 +64,7 @@ class ManageDocumentsOrReadOnly(BasePermission):
 class ManageUsersOrReadOnly(BasePermission):
     def has_permission(self, request, view):
         u = request.user
-        if not (u and u.is_authenticated):
+        if not (u and u.is_authenticated) or is_external_auditor(u):
             return False
         return True if request.method in SAFE_METHODS else u.can_manage_users
 
@@ -247,7 +257,10 @@ class RiskPermission(BasePermission):
 
     def has_permission(self, request, view):
         user = request.user
-        if not (user and user.is_authenticated):
+        if not (user and user.is_authenticated) or is_external_auditor(user):
+            # The register is programme-wide context for the people running
+            # the programme. An outside auditor gets the findings that reach
+            # a package, not the organisation's whole book of open risk.
             return False
         if request.method in SAFE_METHODS:
             return True

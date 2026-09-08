@@ -231,7 +231,11 @@ def check_app_wiring():
     nav = read(os.path.join(FRONTEND, "nav.js"))
     pages = {os.path.basename(p)[:-4] for p in glob.glob(os.path.join(FRONTEND, "pages", "*.jsx"))}
     imported = set(re.findall(r'import (\w+) from "\./pages/(?:\w+)\.jsx"', app))
-    routed = set(re.findall(r"element=\{<(\w+)[\s/>]", app))
+    # Anything rendered inside <Routes> counts, not just `element={<Page/>}`:
+    # a route may pick its element (an auditor is sent past the dashboard).
+    routed = set()
+    for block in re.findall(r"<Routes[^>]*>(.*?)</Routes>", app, re.S):
+        routed |= set(re.findall(r"<(\w+)[\s/>]", block))
     for page in pages - {"Login"}:
         if page not in imported:
             err("app", f"pages/{page}.jsx exists but is not imported in App.jsx")
@@ -407,6 +411,36 @@ def check_deploy():
     for key in sorted(used - documented):
         warn("deploy", f"settings reads env '{key}' but .env.example doesn't mention it")
     print(f" 10. deploy artifacts: compose/entrypoint present, {len(used)} env keys cross-checked")
+
+
+# ===========================================================================
+# 18. Nothing is fetched from a third party at page load
+# ===========================================================================
+def check_no_offsite_assets():
+    """A self-hosted compliance product must not phone anywhere on page load.
+
+    The anonymous login screen and the public vendor questionnaire are the
+    ones that matter: a font, script or stylesheet from a CDN tells that CDN
+    the address of the installation, and who is visiting it and when. The
+    shipped CSP has to keep saying so too, or the next <link> goes unnoticed.
+    """
+    checked = 0
+    for rel in ("index.html", "nginx.conf"):
+        path = os.path.join(ROOT, "frontend", rel)
+        if not os.path.exists(path):
+            err("offsite", f"frontend/{rel} missing")
+            continue
+        checked += 1
+        text = read(path)
+        for host in ("fonts.googleapis.com", "fonts.gstatic.com", "cdn.jsdelivr.net",
+                     "cdnjs.cloudflare.com", "unpkg.com", "code.jquery.com",
+                     "ajax.googleapis.com", "use.typekit.net"):
+            if host in text:
+                err("offsite", f"frontend/{rel} references {host}; every asset ships in the bundle")
+    html = read(os.path.join(ROOT, "frontend", "index.html"))
+    for url in re.findall(r'(?:href|src)="(https?://[^"]+)"', html):
+        err("offsite", f"index.html loads {url} at page load")
+    print(f" 18. offsite assets: {checked} file(s) checked, nothing loaded from a third party")
 
 
 # ===========================================================================
@@ -647,6 +681,7 @@ def main():
     check_tests_and_ci()
     check_compose_debug_isolation()
     check_malware_scanning()
+    check_no_offsite_assets()
 
     print()
     for w in warnings:

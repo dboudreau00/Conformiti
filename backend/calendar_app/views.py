@@ -6,6 +6,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from accounts.permissions import is_external_auditor
 from documents.access import accessible_folder_ids
 from documents.models import Document
 from .models import CalendarEvent
@@ -15,13 +16,17 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 class ManageCalendarOrReadOnly(BasePermission):
-    """Any authenticated user can read the calendar; only users who manage
-    documents may create, edit, or delete events (prevents read-only Viewers
-    or Auditors from tampering with everyone's shared calendar)."""
+    """Any member of the organisation can read the calendar; only users who
+    manage documents may create, edit, or delete events (prevents read-only
+    Viewers from tampering with everyone's shared calendar).
+
+    An external auditor is not a member: the shared calendar names meetings,
+    people and dates that are none of their engagement.
+    """
 
     def has_permission(self, request, view):
         u = request.user
-        if not (u and u.is_authenticated):
+        if not (u and u.is_authenticated) or is_external_auditor(u):
             return False
         return True if request.method in SAFE_METHODS else u.can_manage_documents
 

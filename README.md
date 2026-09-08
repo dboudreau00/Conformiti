@@ -604,6 +604,16 @@ defaults; `.env` overrides them. Every key is documented in
 
 Custom roles are defined from the same capability flags.
 
+**The Auditor role is scoped to the engagement.** It is the one role held by
+someone outside the organisation, so reads are refused by default rather than
+granted by default: an auditor reaches the packages issued to them, the
+workpaper rows and evidence in those packages, their own request list, the
+folders granted with the package, the access reviews and the audit log — and
+nothing else. The risk register, the vendor file, the control library, the
+responsibility matrix, the meeting minutes, the calendar, the user directory
+and the analytics summary all answer `403`. Someone inside the company who
+needs a read-only view of the programme wants the **Viewer** role instead.
+
 **Effective folder access** — `Folder.effective_access(user)` returns the
 highest of:
 

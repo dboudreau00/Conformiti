@@ -69,9 +69,12 @@ class EvidenceMappingTests(APITestBase):
         self.assertEqual(ControlEvidence.objects.get(pk=r.data["id"]).linked_by, self.viewer)
         # duplicate link -> 400, not 500
         self.assertEqual(self.client_for(self.viewer).post("/api/control-evidence/", payload, format="json").status_code, 400)
-        # an auditor is capped at view even with a manage grant: sees the link, cannot remove it
+        # An external auditor is refused this route outright, grant or no
+        # grant: it maps every control in the programme to its evidence, and
+        # their remit is the package issued to them (accounts/permissions.py,
+        # and accounts/tests_auditor_surface.py for the whole surface).
         grant(self.tree.ctrl1, user=self.auditor, level=EDIT)
-        self.assertEqual(self.client_for(self.auditor).get(f"/api/control-evidence/{r.data['id']}/").status_code, 200)
+        self.assertEqual(self.client_for(self.auditor).get(f"/api/control-evidence/{r.data['id']}/").status_code, 403)
         self.assertEqual(self.client_for(self.auditor).delete(f"/api/control-evidence/{r.data['id']}/").status_code, 403)
         self.assertEqual(self.client_for(self.manager).delete(f"/api/control-evidence/{r.data['id']}/").status_code, 204)
         # links are immutable

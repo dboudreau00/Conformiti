@@ -5,6 +5,108 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.4] — 2026-09-08
+
+The eleven findings the adversarial review left open. Nothing is outstanding
+from it now; [REVIEW_090.md](REVIEW_090.md) carries the whole set with its
+status.
+
+### Fixed — security
+
+- **The "Auditor" role read the whole programme.** It is described as a
+  read-only outside party who sees granted folders, but every permission class
+  in the product granted reads to *any* authenticated account — and an
+  external auditor is an authenticated account. The risk register, the vendor
+  file, the control library, the user directory, the responsibility matrix,
+  the meeting minutes and the shared calendar were all open to someone invited
+  to look at one engagement. Reads are now refused by default: the DRF default
+  permission is "signed in and not an external auditor", so a viewset that
+  says nothing refuses them, and the routes that make up an audit — the
+  packages issued to them, the folders granted with them, their request list,
+  the access reviews and the trail — let them back in explicitly. The shipped
+  role description now says what the code enforces, and the sidebar no longer
+  offers pages the API refuses.
+- **A TOTP code was replayable for up to 90 seconds.** A code is valid for its
+  own 30-second window plus a step of drift either way, and nothing recorded
+  which had been spent — so six digits read over a shoulder, lifted from a
+  phishing form or replayed off a proxied login page worked again until they
+  expired. Each authenticator now records the last time step it accepted and
+  refuses that one and anything earlier — including the code that switched
+  the factor on, which used to remain usable for a sign-in straight
+  afterwards. The claim is a single conditional `UPDATE`, so two requests
+  presenting the same code at the same moment are settled in the database
+  rather than in Python.
+- **Sealing was a check-then-act with no row lock.** It read "this package is
+  open", then snapshotted what was pinned, with nothing holding the row in
+  between: evidence pinned in the gap landed inside the package but outside
+  the manifest — a bundle whose signature covers less than it contains, which
+  is the one thing a signed manifest exists to rule out. Sealing now re-reads
+  the package under `SELECT … FOR UPDATE`, and pinning and unpinning take the
+  same lock, so they queue instead of interleaving.
+- **In-app signature verification trusted the key stored beside the
+  signature.** The manifest, the signature and the public key all live in one
+  row, so verifying them against each other only proved the row was
+  self-consistent: anyone who could write to that table could re-sign a
+  doctored manifest with a key of their own and still be told *valid*. The
+  check now uses the registered public key for that key id, and requires the
+  key to belong to the organisation whose package it is. (The verdict that
+  decides anything remains `verify.py` inside the bundle, run against the
+  published fingerprint; it never sees this database.)
+- **A backup code could authenticate two sign-ins at once.** It was read,
+  checked and marked used in three steps with nothing between them. It is now
+  claimed with a conditional `UPDATE` on the still-unused row.
+- **Enrolling a passkey asked for nothing**, while removing one asked for the
+  account password — so a hijacked session could not strip a factor but could
+  quietly add the attacker's own key and keep the account for good. Enrolment
+  now takes the same proof, before the ceremony starts: the password, or a
+  code from a factor already enrolled (which is what an account signed in
+  through an identity provider has instead).
+- **`SSO_MFA_ASSERTIONS` accepted two values that are not second factors.**
+  `amr=user` is a presence test — somebody touched the key — and `amr=pin` may
+  well be the provider's *first* factor. Either satisfied the step-up
+  requirement without a second factor being presented. Both are out of the
+  default; add them back deliberately if your IdP means something stronger.
+- **A sliced queryset could escape its workspace.** `TenantQuerySet._pin()`
+  skipped any query that was already sliced, so one built with no workspace
+  active and read inside one came back without the workspace condition —
+  every organisation's rows, silently. It now raises `tenancy.UnscopedRead`
+  instead, and pins on every path that reaches the database, not only on the
+  ones that derive a new queryset.
+- **Two concurrent questionnaire sends left two live links.** "One live link
+  per vendor" was a revoke followed by an insert with nothing to lock. The
+  vendor row is now held while the swap happens.
+- **Every organisation's reminders went to one address.** Review, vendor and
+  auditor-request emails all went to the installation-wide
+  `COMPLIANCE_TEAM_EMAIL`, and their subject lines carry document names,
+  vendor names and request references — so a shared installation published
+  every tenant's business to whoever ran the mailbox. A workspace now names
+  its own address; the setting remains the fallback and is the whole answer
+  for a single-organisation install.
+- **Every page fetched a webfont from Google**, including the anonymous login
+  screen and the vendor questionnaire link sent outside the company — telling
+  a third party the address of a self-hosted compliance installation, who was
+  visiting it and when. No font is fetched now; typography falls back to the
+  platform's own faces, and the shipped CSP drops both `fonts.*` entries, so
+  nothing off-origin is loadable at all. A validator check keeps it that way.
+
+### Upgrading
+
+One migration (`accounts 0009`): the last TOTP step a device used, and a
+per-workspace notification address.
+
+Administrators should re-run `manage.py seed_frameworks --roles-only` to pick
+up the corrected "Auditor" role description; the capability flags are
+unchanged. If your organisation relies on an auditor account reading the risk
+register or the vendor file, give that person a Viewer role instead — the
+Auditor role is now scoped to the engagement.
+
+Set a workspace's own reminder address under *Workspaces* (or leave it blank
+to keep using `COMPLIANCE_TEAM_EMAIL`). If you had set `SSO_MFA_ASSERTIONS`
+explicitly, it is unaffected; if you relied on the default and your provider
+returns only `amr=user` or `amr=pin`, step-up will now ask for a local factor.
+
+---
+
 ## [0.9.3] — 2026-09-07
 
 The three findings the review rated highest and 0.9.2 left open. All of them

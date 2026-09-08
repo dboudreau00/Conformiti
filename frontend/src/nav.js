@@ -34,6 +34,21 @@ export const NAV_SECTIONS = [
   },
 ];
 
+// An external auditor is a guest of one engagement, not a member of the
+// organisation. The API refuses them the risk register, the vendor file, the
+// control library, the user directory, the calendar and the rest (see
+// accounts/permissions.py), so the nav must not offer it either. These are
+// the ids that remain: the packages issued to them, the evidence in the
+// folders granted with them, the access reviews and the trail.
+const AUDITOR_NAV = new Set(["documents", "packages", "user-audit", "audit-log", "settings"]);
+
+export function navSections(me) {
+  if (!me?.capabilities?.auditor) return NAV_SECTIONS;
+  return NAV_SECTIONS
+    .map((section) => ({ ...section, items: section.items.filter((i) => AUDITOR_NAV.has(i.id)) }))
+    .filter((section) => section.items.length > 0);
+}
+
 export const NAV_LOOKUP = {
   "/": { title: "Dashboard", caption: "Compliance posture across SOC 2, ISO 27001 and PCI DSS" },
   "/analytics": { title: "Analytics", caption: "Readiness, coverage and ownership breakdowns" },

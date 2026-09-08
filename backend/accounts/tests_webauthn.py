@@ -115,7 +115,9 @@ class PasskeyTestBase(APITestBase):
     def enrol(self, user, authenticator=None, name="Laptop", **create_kw):
         auth = authenticator or FakeAuthenticator()
         c = self.client_for(user)
-        opts = c.post("/api/auth/webauthn/register/options/")
+        # Enrolment is a change to the account's factors, so it takes the
+        # password -- the same proof removing a key takes.
+        opts = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json")
         self.assertEqual(opts.status_code, 200, opts.data)
         r = c.post("/api/auth/webauthn/register/", {
             "state": opts.data["state"], "name": name,
@@ -265,7 +267,7 @@ class EnrolAndLoginTests(PasskeyTestBase):
 
     def test_registration_options_carry_the_right_shape(self):
         c = self.client_for(self.owner)
-        opts = c.post("/api/auth/webauthn/register/options/").data["options"]
+        opts = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json").data["options"]
         self.assertEqual(opts["rp"], {"id": RP_ID, "name": "Conformiti"})
         self.assertEqual([p["alg"] for p in opts["pubKeyCredParams"]], [-7, -257, -8])
         self.assertEqual(opts["attestation"], "none")
@@ -275,7 +277,7 @@ class EnrolAndLoginTests(PasskeyTestBase):
     def test_a_challenge_answers_once_and_expires(self):
         auth = FakeAuthenticator()
         c = self.client_for(self.owner)
-        opts = c.post("/api/auth/webauthn/register/options/").data
+        opts = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json").data
         cred = auth.create(opts["options"])
         self.assertEqual(c.post("/api/auth/webauthn/register/",
                                 {"state": opts["state"], "credential": cred}, format="json").status_code, 201)
@@ -284,7 +286,7 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data["code"], "state")
         # A wrong state is the same refusal, and an expired one is swept.
-        opts = c.post("/api/auth/webauthn/register/options/").data
+        opts = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json").data
         WebAuthnChallenge.objects.update(expires_at=WebAuthnChallenge.objects.first().expires_at - mfa_lib_delta(600))
         r = c.post("/api/auth/webauthn/register/", {"state": opts["state"], "credential": auth.create(opts["options"])}, format="json")
         self.assertEqual(r.status_code, 400)
@@ -346,9 +348,44 @@ class EnrolAndLoginTests(PasskeyTestBase):
             with mock_max(passkeys, 2):
                 _, ok = self.enrol(self.owner, name="Second")
                 self.assertEqual(ok.status_code, 201)
-                r = self.client_for(self.owner).post("/api/auth/webauthn/register/options/")
+                r = self.client_for(self.owner).post(
+                    "/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json")
                 self.assertEqual(r.status_code, 400)
                 self.assertEqual(r.data["code"], "limit")
+
+    def test_enrolling_a_passkey_takes_the_account_password(self):
+        """A hijacked session could add the attacker's own key and keep the
+        account for good: removing a factor asked for the password, adding one
+        asked for nothing."""
+        c = self.client_for(self.owner)
+        r = c.post("/api/auth/webauthn/register/options/")
+        self.assertEqual(r.status_code, 403, r.data)
+        self.assertEqual(r.data["code"], "reauth_required")
+        self.assertEqual(WebAuthnChallenge.objects.count(), 0)  # no ceremony started
+
+        r = c.post("/api/auth/webauthn/register/options/", {"password": "wrong"}, format="json")
+        self.assertEqual(r.status_code, 403, r.data)
+
+        r = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+
+    def test_a_code_from_an_enrolled_factor_stands_in_for_the_password(self):
+        """An account signed in through an identity provider has no local
+        password to confirm with, but does have a factor."""
+        from accounts.models import MfaDevice
+        from accounts import mfa as mfa_lib
+
+        user = self.owner
+        secret = mfa_lib.generate_secret()
+        MfaDevice.objects.create(user=user, secret=secret, enabled=True)
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+
+        c = self.client_for(user)
+        self.assertEqual(c.post("/api/auth/webauthn/register/options/").status_code, 403)
+        r = c.post("/api/auth/webauthn/register/options/",
+                   {"otp": mfa_lib.totp(secret)}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
 
     @override_settings(WEBAUTHN_USER_VERIFICATION="required")
     def test_user_verification_can_be_required(self):

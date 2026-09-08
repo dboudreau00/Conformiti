@@ -185,7 +185,9 @@ class DisclosureBoundaryTests(PackageTestBase):
         self.assertEqual(c.get(f"/api/documents/{self.doc.pk}/download/").status_code, 404)
         self.assertEqual(c.get("/api/documents/").data["count"], 0)
         self.assertEqual(c.get("/api/folders/tree/").data, [])
-        self.assertEqual(c.get("/api/control-evidence/").data["count"], 0)
+        # Refused outright rather than answered with an empty list: the
+        # control-evidence map is the organisation's, not the engagement's.
+        self.assertEqual(c.get("/api/control-evidence/").status_code, 403)
 
     def test_a_reader_of_one_package_cannot_read_another(self):
         other = EvidencePackage.objects.create(name="Someone else's", created_by=self.manager)

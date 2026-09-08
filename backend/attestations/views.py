@@ -64,6 +64,24 @@ def assert_open(package):
         )
 
 
+def lock_open(package):
+    """Take the package row for update, then re-check that it is still open.
+
+    Sealing snapshots what is pinned at that instant; pinning changes it.
+    Checking `is_open` and then acting on the answer is a race: evidence
+    pinned between the seal's check and its snapshot lands inside the package
+    but outside the manifest the auditor verifies -- the one thing a signed
+    manifest exists to rule out. Every write that changes what the manifest
+    would say goes through here, so they queue behind each other instead of
+    interleaving.
+
+    Returns the locked row. Call inside ``transaction.atomic()``.
+    """
+    row = EvidencePackage.objects.select_for_update().get(pk=package.pk)
+    assert_open(row)
+    return row
+
+
 class PackageWorkThrottle(ScopedRateThrottle):
     scope = "package_work"
 
@@ -174,6 +192,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         visible = accessible_folder_ids(request.user)
 
         with transaction.atomic():
+            package = lock_open(package)
             for control in controls:
                 if control.pk in existing:
                     continue
@@ -212,19 +231,23 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                 f"Write a management assertion of at least {MIN_ASSERTION} characters. "
                 "It is the statement the auditor relies on."
             )})
-        if not package.controls.exists():
-            raise ValidationError({"detail": "Add at least one control before sealing."})
-
-        drifted = verify_pins(package)
-        if drifted:
-            return Response(
-                {"detail": "Some pinned evidence no longer matches what was pinned. "
-                           "Refresh or unpin it, then seal.",
-                 "drifted": drifted},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         with transaction.atomic():
+            # From here the package is held for update, so a pin arriving at
+            # the same moment waits for the snapshot rather than landing
+            # between the drift check and the manifest.
+            package = lock_open(package)
+            if not package.controls.exists():
+                raise ValidationError({"detail": "Add at least one control before sealing."})
+
+            drifted = verify_pins(package)
+            if drifted:
+                return Response(
+                    {"detail": "Some pinned evidence no longer matches what was pinned. "
+                               "Refresh or unpin it, then seal.",
+                     "drifted": drifted},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             package.assertion = assertion
             stamp(package, request.user, "asserted")
             stamp(package, request.user, "sealed")
@@ -469,8 +492,11 @@ class PackageControlViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You cannot change this package.")
-        assert_open(instance.package)
-        instance.delete()
+        # Same lock as sealing: a control removed while the manifest is being
+        # built would leave the bundle listing a row it no longer contains.
+        with transaction.atomic():
+            lock_open(instance.package)
+            instance.delete()
 
     @action(detail=True, methods=["post"])
     def promote(self, request, pk=None):
@@ -636,14 +662,15 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         document = serializer.validated_data.get("document")
         if row.package not in access.readable_packages(self.request.user):
             raise PermissionDenied("Unknown package.")
-        assert_open(row.package)
         if document is None:
             raise ValidationError({"document": "A document is required."})
         access.assert_pinnable(self.request.user, document)
-        pinned = pin_document(row, document, self.request.user,
-                              link=document.control_links.filter(control=row.control).first(),
-                              **{k: serializer.validated_data.get(k) for k in
-                                 ("covers_from", "covers_to", "is_population", "evidence_note")})
+        with transaction.atomic():
+            lock_open(row.package)
+            pinned = pin_document(row, document, self.request.user,
+                                  link=document.control_links.filter(control=row.control).first(),
+                                  **{k: serializer.validated_data.get(k) for k in
+                                     ("covers_from", "covers_to", "is_population", "evidence_note")})
         serializer.instance = pinned
 
     def perform_update(self, serializer):
@@ -668,8 +695,9 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You cannot change this package.")
-        assert_open(instance.package_control.package)
-        instance.delete()
+        with transaction.atomic():
+            lock_open(instance.package_control.package)
+            instance.delete()
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):

@@ -247,11 +247,36 @@ def sign_package(package):
 
 
 def signature_status(package):
-    """'valid', 'invalid' or 'unsigned' for the stored manifest and signature."""
+    """'valid', 'invalid' or 'unsigned' for the stored manifest and signature.
+
+    Checked against the *registered* public key for the package's key id, not
+    against the copy stored on the package row. The manifest, the signature
+    and that copy all live in the same table, so anyone who can write to it
+    could re-sign a doctored manifest with a key of their own and still be
+    told "valid" -- the row would simply be self-consistent. The published
+    key list is the reference, and the key has to belong to the organisation
+    whose package this is.
+
+    This is the in-app convenience check. The one that decides anything is
+    ``verify.py`` inside the bundle, run against the fingerprint the
+    organisation published; it never sees this database at all.
+    """
+    from .models import SigningKey
+
     if not package.manifest_signature:
         return "unsigned"
+    known = SigningKey.objects.filter(key_id=package.signing_key_id).first()
+    if known is None:
+        return "invalid"  # signed by a key this installation never published
+    # Keys recorded before per-workspace signing (0.9.3) carry no workspace
+    # and stay acceptable; a key belonging to another organisation does not.
+    if known.workspace_id is not None and package.workspace_id is not None \
+            and known.workspace_id != package.workspace_id:
+        return "invalid"
+    if (known.public_key or "") != (package.signing_public_key or ""):
+        return "invalid"
     ok = verify_bytes((package.manifest_json or "").encode("utf-8"),
-                      package.manifest_signature, package.signing_public_key)
+                      package.manifest_signature, known.public_key)
     return "valid" if ok else "invalid"
 
 

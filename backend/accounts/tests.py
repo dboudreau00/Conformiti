@@ -1,6 +1,8 @@
 """Authentication, MFA, token lifecycle and user-administration guards."""
 from rest_framework.test import APIClient
 
+import time
+
 from accounts import mfa as mfa_lib
 from accounts.models import MfaDevice, Role
 from audit.models import AuditLog
@@ -115,10 +117,16 @@ class MfaTests(APITestBase):
         # wrong code
         r = anon.post("/api/auth/token/", {"username": "mia", "password": PASSWORD, "otp": "000000"}, format="json")
         self.assertEqual(r.status_code, 401)
-        # right code
-        r = anon.post("/api/auth/token/", {"username": "mia", "password": PASSWORD, "otp": mfa_lib.totp(secret)}, format="json")
+        # right code. The next one, not the one that just enabled the device:
+        # a code is spent when it is accepted, so enrolling with it does not
+        # leave it usable for a sign-in straight afterwards.
+        fresh = mfa_lib.totp(secret, at=time.time() + mfa_lib.PERIOD)
+        r = anon.post("/api/auth/token/", {"username": "mia", "password": PASSWORD, "otp": fresh}, format="json")
         self.assertEqual(r.status_code, 200)
         self.assertIn("access", r.data)
+        # And that one is spent in its turn: a code authenticates once.
+        r = anon.post("/api/auth/token/", {"username": "mia", "password": PASSWORD, "otp": fresh}, format="json")
+        self.assertEqual(r.status_code, 401)
         # backup code works exactly once
         r = anon.post("/api/auth/token/", {"username": "mia", "password": PASSWORD, "otp": codes[0]}, format="json")
         self.assertEqual(r.status_code, 200)

@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { LogOutIcon } from "lucide-react";
-import { NAV_SECTIONS } from "../../nav.js";
+import { navSections } from "../../nav.js";
 import { useShell } from "../../shell.js";
 import { cn } from "../../utils/cn.js";
 import { Label } from "../ui/Panel.jsx";
@@ -37,7 +37,7 @@ export function Sidebar({ onSignOut }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">
-        {NAV_SECTIONS.map((section) => (
+        {navSections(me).map((section) => (
           <div key={section.id} className="mb-5">
             <Label className="mb-2 block px-2">{section.label}</Label>
             <ul className="space-y-0.5">
@@ -103,7 +103,8 @@ export function Sidebar({ onSignOut }) {
 /** Compact horizontal nav for narrow screens (the sidebar is hidden below md). */
 export function MobileNav({ onSignOut }) {
   const { pathname } = useLocation();
-  const items = NAV_SECTIONS.flatMap((s) => s.items);
+  const { me } = useShell();
+  const items = navSections(me).flatMap((s) => s.items);
   return (
     <nav aria-label="Primary (compact)" className="flex items-center gap-1 overflow-x-auto border-b border-line bg-surface-2 px-3 py-2 md:hidden">
       {items.map((item) => (

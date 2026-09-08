@@ -612,10 +612,11 @@ function MfaBlock() {
 }
 
 /** Passkeys and security keys as a second factor. Enrolling one is a browser
- * ceremony (the server issues a challenge, the authenticator signs it);
- * removing one takes the account password, so a hijacked session cannot
- * quietly strip a factor. A key the server has flagged as possibly cloned is
- * shown as such and can only be removed. */
+ * ceremony (the server issues a challenge, the authenticator signs it).
+ * Adding and removing both take the account password, so a hijacked session
+ * can neither strip a factor nor quietly plant the attacker's own key and
+ * keep the account. A key the server has flagged as possibly cloned is shown
+ * as such and can only be removed. */
 function PasskeysBlock() {
   const [state, setState] = useState(null); // {results, factors, rp_id, max}
   const [loadErr, setLoadErr] = useState(null);
@@ -639,10 +640,13 @@ function PasskeysBlock() {
     setMsg(null);
     setBusy(true);
     try {
-      const { data } = await api.post("/auth/webauthn/register/options/");
+      // Asked for before the ceremony starts, so nobody touches their
+      // authenticator only to be turned away afterwards.
+      const { data } = await api.post("/auth/webauthn/register/options/", { password });
       const credential = await createPasskey(data.options);
       const done = await api.post("/auth/webauthn/register/", { state: data.state, name: name.trim(), credential });
       setName("");
+      setPassword("");
       setCodes(done.data?.backup_codes || null);
       load();
       setMsg({ ok: true, text: done.data?.backup_codes
@@ -744,15 +748,20 @@ function PasskeysBlock() {
       ) : state && !supported ? (
         <p className="mt-3 max-w-[640px] text-xs text-muted">This browser cannot enrol passkeys (it needs a secure https address and a modern browser).</p>
       ) : null}
-      {rows.length ? (
+      {state ? (
         <div className="mt-4 max-w-[640px]">
-          <Field id="passkey-password" label="Confirm your password to remove a key">
+          <Field id="passkey-password" label="Confirm your password to add or remove a key">
             <input id="passkey-password" type="password" autoComplete="current-password" className="input sm:max-w-[312px]"
                    value={password} onChange={(e) => setPassword(e.target.value)} />
           </Field>
           <p className="mt-2 text-xs text-muted">
-            Recovery if you lose this key: your backup codes (issued with your first factor; regenerate them under the authenticator block), a second passkey, the authenticator app, or an administrator's reset.
+            Changing which keys can sign you in is itself a security change, so it takes your password either way.
           </p>
+          {rows.length ? (
+            <p className="mt-2 text-xs text-muted">
+              Recovery if you lose this key: your backup codes (issued with your first factor; regenerate them under the authenticator block), a second passkey, the authenticator app, or an administrator's reset.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -1005,10 +1014,13 @@ function WorkspacesBlock({ me }) {
   const [withFrameworks, setWithFrameworks] = useState(true);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [inbox, setInbox] = useState("");
   const superuser = !!me?.is_superuser;
 
   const load = () => {
-    api.get("/workspaces/current/").then((r) => setCurrent(r.data || null)).catch(() => setCurrent(null));
+    api.get("/workspaces/current/")
+      .then((r) => { setCurrent(r.data || null); setInbox(r.data?.notification_email || ""); })
+      .catch(() => setCurrent(null));
     if (superuser) api.get("/workspaces/", { params: { page_size: 100 } }).then((r) => setList(r.data.results || r.data)).catch(() => setList([]));
   };
   useEffect(() => { load(); }, [superuser]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1032,6 +1044,24 @@ function WorkspacesBlock({ me }) {
       load();
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't create the workspace.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveInbox(e) {
+    e.preventDefault();
+    if (!current) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.patch(`/workspaces/${current.id}/`, { notification_email: inbox.trim() });
+      setMsg({ ok: true, text: inbox.trim()
+        ? `Reminders for ${current.name} now go to ${inbox.trim()}.`
+        : `Reminders for ${current.name} fall back to the installation address.` });
+      load();
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "Couldn't save the address.") });
     } finally {
       setBusy(false);
     }
@@ -1068,6 +1098,17 @@ function WorkspacesBlock({ me }) {
       </p>
       {superuser ? (
         <>
+          <form onSubmit={saveInbox} className="mt-4 flex flex-wrap items-end gap-2">
+            <Field id="workspace-inbox" label="Reminder address for this workspace" className="min-w-[240px] flex-1">
+              <input id="workspace-inbox" type="email" className="input" value={inbox} disabled={busy}
+                     placeholder="grc@your-company.example"
+                     onChange={(e) => setInbox(e.target.value)} />
+            </Field>
+            <Button type="submit" size="sm" variant="secondary" disabled={busy}>Save</Button>
+          </form>
+          <p className="mt-2 max-w-[62ch] text-xs text-muted">
+            Review, vendor and auditor-request reminders name this organisation's documents and vendors, so they go here rather than to one address for the whole installation. Leave it blank to use the installation's own.
+          </p>
           <ul className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2">
             {(list || []).map((ws) => (
               <li key={ws.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-[13px]">

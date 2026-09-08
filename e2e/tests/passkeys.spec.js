@@ -44,6 +44,8 @@ test.describe("passkeys", () => {
       await expect(page.getByText("Passkeys and security keys")).toBeVisible();
       await expect(page.getByText("No passkeys enrolled.")).toBeVisible();
       await page.locator("#passkey-name").fill("E2E key");
+      // Adding a factor takes the same proof removing one does.
+      await page.locator("#passkey-password").fill(DEMO.owner.password);
       await page.getByRole("button", { name: "Add passkey" }).click();
       const list = page.getByRole("list", { name: "Enrolled passkeys" });
       await expect(list.getByText("E2E key")).toBeVisible();

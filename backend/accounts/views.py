@@ -269,7 +269,10 @@ class MfaVerifyView(APIView):
         if device.enabled:
             return Response({"detail": "MFA is already enabled."}, status=400)
         code = (request.data.get("code") or "").strip()
-        if not mfa_lib.verify(device.secret, code):
+        # device.verify rather than mfa_lib.verify: it spends the time step,
+        # so the code that switched the factor on cannot then be replayed to
+        # sign in with it.
+        if not device.verify(code):
             return Response({"detail": "That code isn't valid — check your authenticator and try again."}, status=400)
         from django.utils import timezone
         device.enabled = True
