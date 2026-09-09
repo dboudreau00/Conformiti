@@ -1,4 +1,5 @@
 """In-app notification feed: list (with read/dismissed state), mark-read, dismiss."""
+from django.conf import settings
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,9 +18,23 @@ class ChannelsView(APIView):
     def get(self, request):
         from . import webhooks
 
+        from accounts import tenancy
+        from accounts.models import Workspace
+
         names = [name for name, _ in webhooks.channels()]
+        workspace = tenancy.current()
+        own = [name for name, _ in webhooks.workspace_channels(workspace)]
+        installation = [name for name, _ in webhooks.installation_channels()]
         body = {
             "slack": "slack" in names, "teams": "teams" in names,
+            # Where the configured channels come from, so the settings screen
+            # can say "this workspace's" rather than "the server's", and can
+            # warn a multi-tenant installation that relies on the shared one.
+            "source": "workspace" if own else ("installation" if names else "none"),
+            "workspace_channels": own,
+            "installation_channels": installation,
+            "multi_workspace": Workspace.objects.filter(is_active=True).count() > 1,
+            "shared_across_workspaces": bool(getattr(settings, "WEBHOOKS_SHARED_ACROSS_WORKSPACES", False)),
             "events": [{"event": e, "label": label, "enabled": webhooks.allowed(e)}
                        for e, label in webhooks.EVENTS.items() if e != "test"],
             "digest": request.user.digest,

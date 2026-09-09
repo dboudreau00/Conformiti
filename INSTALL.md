@@ -63,6 +63,7 @@ prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
    SECURE_HSTS_SECONDS=31536000
    EMAIL_PROVIDER=smtp        # + EMAIL_HOST / EMAIL_HOST_USER / EMAIL_HOST_PASSWORD
    POSTGRES_PASSWORD=<something long>
+   REDIS_PASSWORD=<letters and digits>
    ```
 2. Terminate TLS (Caddy, Traefik, a load balancer) in front of port 8080.
 3. Create your own administrator and retire the demo data:
@@ -73,8 +74,11 @@ prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
    or set `SEED_DEMO_DATA=false` and `DJANGO_SUPERUSER_USERNAME` /
    `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first boot.
 4. Confirm: `curl -s https://grc.example.com/api/health/` →
-   `{"status":"ok","version":"0.5.0","database":"ok","demo_accounts":false}`.
-5. Back up the `pgdata` and `media` volumes nightly.
+   `{"status":"ok","version":"0.9.5","database":"ok","demo_accounts":false,…}`.
+5. Put `scripts/backup.sh` on cron and copy its output off the machine. It
+   takes the database dump and the evidence, secrets and tree volumes in one
+   go; `scripts/restore.sh <directory>` brings an installation back, here or
+   on another machine. CI runs both on every push.
 
 ### Single sign-on (OpenID Connect)
 
@@ -257,6 +261,14 @@ working `EMAIL_PROVIDER`: each person switches theirs on under the same
 section; the worker sends them at `REVIEW_SCAN_HOUR` + 20 minutes, or run
 `manage.py send_digests` from cron.
 
+Since 0.9.5 each workspace can carry its own Slack and Teams webhooks, set
+by a superuser under *Settings › Role & access › Workspaces*. A workspace
+with its own addresses posts only to them. The installation-wide addresses
+above serve a single-workspace installation as before; once a second
+workspace exists they are held back from every workspace, so one
+organisation's package events never land in another's channel, unless
+`WEBHOOKS_SHARED_ACROSS_WORKSPACES=true` says that is what you want.
+
 ### Workspaces
 
 Since 0.9.0 every row belongs to a workspace; a fresh install and every
@@ -370,8 +382,10 @@ python manage.py collectstatic --noinput
 gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
 ```
 
-Run `celery -A config worker -B -l info` under a supervisor for the daily
-jobs, or schedule them with cron:
+Run `celery -A config worker -l info` and, once and only once,
+`celery -A config beat -l info` under a supervisor for the daily jobs (a
+single worker may carry the scheduler itself with `-B`, but never more than
+one), or schedule them with cron:
 
 ```
 0 6 * * *  cd /srv/conformiti/backend && ../.venv/bin/python manage.py send_review_reminders

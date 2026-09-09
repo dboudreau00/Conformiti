@@ -13,6 +13,7 @@ import api, { downloadFile, fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
+import { TextDialog } from "../ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
 
 const STATUS = {
@@ -85,19 +86,24 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     }, "Request raised.");
   };
 
-  const provide = (r) => {
-    const hasItems = (r.items || []).length > 0;
-    const note = window.prompt(hasItems
-      ? "A note for the auditor (optional):"
-      : "Nothing is attached. Say why, or cancel and attach a document first:", r.response_note || "");
-    if (note === null || (!hasItems && !note.trim())) return undefined;
-    return act(`provide-${r.id}`, () => api.post(`/pbc-requests/${r.id}/provide/`, { response_note: note }), `${r.reference} marked provided.`);
-  };
+  // Both notes are written into the request's record and read by the other
+  // side; they are asked for in a dialog, not a browser prompt.
+  const [asking, setAsking] = useState(null); // { kind: "provide" | "return", request }
+  const provide = (r) => setAsking({ kind: "provide", request: r });
   const accept = (r) => act(`accept-${r.id}`, () => api.post(`/pbc-requests/${r.id}/accept/`), `${r.reference} accepted.`);
-  const giveBack = (r) => {
-    const note = window.prompt("What is missing or wrong?");
-    if (!note || !note.trim()) return undefined;
-    return act(`return-${r.id}`, () => api.post(`/pbc-requests/${r.id}/return/`, { returned_note: note }), `${r.reference} returned.`);
+  const giveBack = (r) => setAsking({ kind: "return", request: r });
+  const submitNote = async (note) => {
+    const r = asking.request;
+    // `act` reports a failure in the page notice and resolves; the dialog
+    // needs the failure too, so the note stays on screen to be corrected.
+    let failed = null;
+    const guard = (fn) => async () => { try { await fn(); } catch (e) { failed = e; throw e; } };
+    if (asking.kind === "provide") {
+      await act(`provide-${r.id}`, guard(() => api.post(`/pbc-requests/${r.id}/provide/`, { response_note: note })), `${r.reference} marked provided.`);
+    } else {
+      await act(`return-${r.id}`, guard(() => api.post(`/pbc-requests/${r.id}/return/`, { returned_note: note })), `${r.reference} returned.`);
+    }
+    if (failed) throw new Error(errorText(failed));
   };
   const withdraw = (r) => {
     if (!window.confirm(`Withdraw ${r.reference}? The line stays on the list as withdrawn.`)) return undefined;
@@ -348,6 +354,23 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
           The auditor raises what they need, or you transcribe their list; each line is assigned and chased until it is answered, and the auditor accepts or returns the answer. Documents attached here are read under the same grant as the package.
         </p>
       ) : null}
+      <TextDialog
+        open={!!asking}
+        onClose={() => setAsking(null)}
+        title={asking?.kind === "return" ? `Return ${asking.request.reference}` : `Mark ${asking?.request?.reference || ""} provided`}
+        description={asking?.kind === "return"
+          ? "Tell the organisation what is missing or wrong. They see this note on the request."
+          : (asking?.request?.items || []).length
+            ? "A note for the auditor, if there is anything to say about what is attached."
+            : "Nothing is attached to this request. Say why it is answered without a document, or cancel and attach one first."}
+        label="Note"
+        multiline
+        initial={asking?.kind === "provide" ? asking.request.response_note || "" : ""}
+        required={asking?.kind === "return" || !(asking?.request?.items || []).length}
+        submitLabel={asking?.kind === "return" ? "Return" : "Mark provided"}
+        tone={asking?.kind === "return" ? "danger" : "primary"}
+        onSubmit={submitNote}
+      />
     </Panel>
   );
 }

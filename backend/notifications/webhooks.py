@@ -41,14 +41,53 @@ EVENTS = {
 SEVERITY_EMOJI = {"info": "", "medium": "", "high": ":warning: ", "critical": ":rotating_light: "}
 
 
-def channels():
-    """``[(name, url)]`` for every configured channel."""
+def installation_channels():
+    """``[(name, url)]`` from the operator's environment: the installation's own."""
     out = []
     for name, key in (("slack", "SLACK_WEBHOOK_URL"), ("teams", "TEAMS_WEBHOOK_URL")):
         url = (getattr(settings, key, "") or "").strip()
         if url:
             out.append((name, url))
     return out
+
+
+def workspace_channels(workspace):
+    """``[(name, url)]`` the organisation configured for itself."""
+    if workspace is None:
+        return []
+    out = []
+    for name, attr in (("slack", "slack_webhook_url"), ("teams", "teams_webhook_url")):
+        url = (getattr(workspace, attr, "") or "").strip()
+        if url:
+            out.append((name, url))
+    return out
+
+
+def channels():
+    """``[(name, url)]`` for every channel an event should go to right now.
+
+    An event raised inside a workspace goes to that workspace's own channels.
+    On an installation with several organisations it goes *nowhere else*:
+    one channel for the installation used to receive every tenant's sealed
+    packages, auditor requests and returned questionnaires with the tenant's
+    name prefixed — a disclosure to every other tenant reading it. Set
+    ``WEBHOOKS_SHARED_ACROSS_WORKSPACES=true`` to restore that on purpose.
+
+    With one workspace, or with no workspace active (an installation-level
+    event such as the scanner going down), the operator's channels apply, so
+    a single-organisation deployment behaves exactly as before.
+    """
+    from accounts import tenancy
+
+    workspace = tenancy.current()
+    own = workspace_channels(workspace)
+    if own:
+        return own
+    if workspace is not None and not getattr(settings, "WEBHOOKS_SHARED_ACROSS_WORKSPACES", False):
+        from accounts.models import Workspace
+        if Workspace.objects.filter(is_active=True).count() > 1:
+            return []
+    return installation_channels()
 
 
 def allowed(event):

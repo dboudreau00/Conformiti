@@ -16,6 +16,8 @@ TREND_MONTHS = 6
 
 
 def _measure():
+    from compliance.scoring import programme_score
+
     by_status = {row["status"]: row["n"] for row in Control.objects.values("status").annotate(n=Count("id"))}
     total = sum(by_status.values())
     not_applicable = by_status.get("not_applicable", 0)
@@ -29,6 +31,7 @@ def _measure():
         "evidence_links": ControlEvidence.objects.count(),
         "documents_overdue": Document.objects.filter(next_review_date__lt=today).count(),
         "risks_open": Risk.objects.filter(status__in=[Risk.Status.OPEN, Risk.Status.MITIGATING]).count(),
+        "score": programme_score()["score"],
     }
 
 
@@ -68,8 +71,16 @@ def trend(months=TREND_MONTHS):
             "month": f"{year:04d}-{month:02d}",
             "date": snap.date.isoformat(),
             "pct": snap.pct,
+            "score": snap.score,
             "implemented": snap.implemented,
             "applicable": snap.applicable,
         })
     delta = points[-1]["pct"] - points[-2]["pct"] if len(points) >= 2 else None
-    return {"points": points, "delta_pts": delta}
+    # The score is the headline figure from 0.9.5 on. Its own delta is only
+    # offered when both months measured it; before that the implemented
+    # share is the only history there is, and the dashboard says which it is
+    # showing.
+    scored = [p for p in points if p["score"] is not None]
+    score_delta = (scored[-1]["score"] - scored[-2]["score"]
+                   if len(scored) >= 2 and scored[-1] is points[-1] else None)
+    return {"points": points, "delta_pts": delta, "score_delta_pts": score_delta}

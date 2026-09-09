@@ -32,3 +32,6 @@ backend/.package-signing-key*
 # Commercial planning notes — never publish
 docs/PAID_FEATURES.md
 PAID_FEATURES.md
+
+# scripts/backup.sh writes here by default; a backup never belongs in the repository
+backups/

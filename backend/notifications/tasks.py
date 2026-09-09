@@ -71,39 +71,52 @@ def run_review_scan(dry_run=False):
     qs = Document.objects.filter(next_review_date__isnull=False).select_related("owner", "folder")
     for doc in qs:
         days = (doc.next_review_date - today).days
-        sent = list(doc.reminders_sent or [])
-        changed = False
+        before = list(doc.reminders_sent or [])
+        sent = list(before)
+        window = None
+        overdue = False
+
+        if days < 0:
+            if OVERDUE not in sent:
+                sent.append(OVERDUE)
+                overdue = True
+        else:
+            applicable = sorted(l for l in leads if days <= l)
+            if applicable and any(l not in sent for l in applicable):
+                sent = sorted(set(sent) | set(applicable))
+                window = min(applicable)
+        if sent == before:
+            continue
+        notified += 1
+        if dry_run:
+            continue
+
+        # Claim the window before sending it, with a conditional UPDATE that
+        # only succeeds if the row still records what this worker read. Two
+        # workers running the scan at once (a second beat, a manual run beside
+        # the scheduled one) used to both read "not yet sent", both send, and
+        # both save — one document, two emails. Now only one of them wins the
+        # claim; the other sees zero rows updated and moves on.
+        fields = {"reminders_sent": sent}
+        if overdue:
+            fields["status"] = Document.Status.EXPIRED
+        claimed = Document.objects.filter(pk=doc.pk, reminders_sent=before).update(**fields)
+        if not claimed:
+            continue
 
         # Isolate each document: a failing send (bad address, provider/network
         # error) must not abort the whole scan and starve every document after
-        # it. On failure we skip persisting this doc's state so it retries next
-        # run, and move on.
+        # it. On failure the claim is handed back so the next run retries.
         try:
-            if days < 0:
-                if OVERDUE not in sent:
-                    if not dry_run:
-                        _notify(doc, days, overdue=True)
-                    sent.append(OVERDUE)
-                    doc.status = Document.Status.EXPIRED
-                    changed = True
-            else:
-                applicable = sorted(l for l in leads if days <= l)
-                if applicable and any(l not in sent for l in applicable):
-                    if not dry_run:
-                        _notify(doc, days, overdue=False, window=min(applicable))
-                    sent = sorted(set(sent) | set(applicable))
-                    changed = True
+            _notify(doc, days, overdue=overdue, window=window)
         except Exception:
             logger.exception(
                 "Review reminder failed for document %s; will retry next run", doc.pk
             )
+            Document.objects.filter(pk=doc.pk, reminders_sent=sent).update(
+                reminders_sent=before, status=doc.status)
+            notified -= 1
             continue
-
-        if changed:
-            notified += 1
-            if not dry_run:
-                doc.reminders_sent = sent
-                doc.save(update_fields=["reminders_sent", "status"])
 
     return notified
 
@@ -178,30 +191,37 @@ def run_pbc_scan(dry_run=False):
     ).exclude(package__status=EvidencePackage.Status.WITHDRAWN).select_related("assignee", "package")
     for req in qs:
         days = (req.due_date - today).days
-        sent = list(req.reminders_sent or [])
-        changed = False
+        before = list(req.reminders_sent or [])
+        sent = list(before)
+        window = None
+        overdue = False
+        if days < 0:
+            if OVERDUE not in sent:
+                sent.append(OVERDUE)
+                overdue = True
+        else:
+            applicable = sorted(l for l in leads if days <= l)
+            if applicable and any(l not in sent for l in applicable):
+                sent = sorted(set(sent) | set(applicable))
+                window = min(applicable)
+        if sent == before:
+            continue
+        notified += 1
+        if dry_run:
+            continue
+        # Same claim-then-send as the document scan above: the conditional
+        # UPDATE is what stops two concurrent runs sending the same reminder.
+        claimed = PbcRequest.objects.filter(pk=req.pk, reminders_sent=before).update(
+            reminders_sent=sent)
+        if not claimed:
+            continue
         try:
-            if days < 0:
-                if OVERDUE not in sent:
-                    if not dry_run:
-                        _notify_pbc(req, days, overdue=True)
-                    sent.append(OVERDUE)
-                    changed = True
-            else:
-                applicable = sorted(l for l in leads if days <= l)
-                if applicable and any(l not in sent for l in applicable):
-                    if not dry_run:
-                        _notify_pbc(req, days, overdue=False, window=min(applicable))
-                    sent = sorted(set(sent) | set(applicable))
-                    changed = True
+            _notify_pbc(req, days, overdue=overdue, window=window)
         except Exception:
             logger.exception("PBC reminder failed for request %s; will retry next run", req.pk)
+            PbcRequest.objects.filter(pk=req.pk, reminders_sent=sent).update(reminders_sent=before)
+            notified -= 1
             continue
-        if changed:
-            notified += 1
-            if not dry_run:
-                req.reminders_sent = sent
-                req.save(update_fields=["reminders_sent"])
     return notified
 
 

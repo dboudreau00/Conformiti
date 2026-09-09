@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, vendors, risk and access reviews in one audit-ready system, ending in a sealed package your assessor can verify without you.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.9.4-1D6FE0.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.9.5-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -588,7 +588,8 @@ defaults; `.env` overrides them. Every key is documented in
 |---|---|
 | `SIGNING_KEY_FILE` / `SIGNING_KEY` | Where the Ed25519 package-signing key lives. In compose: `/app/secrets/package_signing_key`. Rotate with `manage.py rotate_signing_key` |
 | `CLAMAV_*` | Point at a clamd instance to scan uploads, with a health probe, an outage alert and an hourly re-scan sweep |
-| `SLACK_WEBHOOK_URL`, `TEAMS_WEBHOOK_URL` | Incoming webhooks, `https` only, set by an operator and nowhere else |
+| `SLACK_WEBHOOK_URL`, `TEAMS_WEBHOOK_URL` | Installation-wide incoming webhooks, `https` only. Since 0.9.5 each workspace can carry its own under *Settings › Workspaces*; with more than one workspace the installation-wide pair is held back unless `WEBHOOKS_SHARED_ACROSS_WORKSPACES=true` |
+| `REDIS_PASSWORD` | Compose only: puts AUTH on the queue, result store and cache. Letters and digits |
 
 ---
 
@@ -670,22 +671,40 @@ manage.py link_oidc_identity
 manage.py test_mailbox --to you@example.com
 ```
 
-### Backup — three things, all of them
+### Backup — four things, all of them
 
 ```bash
-# 1 · the database
-docker compose exec -T db pg_dump -U conformiti conformiti | gzip > db.sql.gz
-
-# 2 · the evidence files (a database without these is a manifest of things you no longer have)
-docker run --rm -v conformiti_media:/m -v "$PWD:/out" alpine tar czf /out/media.tgz -C /m .
-
-# 3 · the secrets volume — DJANGO_SECRET_KEY_FILE and the package signing key
-docker run --rm -v conformiti_secrets:/s -v "$PWD:/out" alpine tar czf /out/secrets.tgz -C /s .
+scripts/backup.sh                 # → backups/<UTC timestamp>/
+scripts/backup.sh /mnt/nightly    # or a directory of your choosing
 ```
+
+One script, run from the checkout while the stack is up. It writes the
+database dump (`db.sql.gz`), the evidence files (`media.tgz` — a database
+without these is a manifest of things you no longer have), the secrets volume
+(`secrets.tgz` — the Django secret key, the field-encryption ring that
+protects enrolled authenticators, and the package signing key) and the folder
+tree on disk (`tree.tgz`). It asks the running containers for the database
+credentials and the volume names, so it needs no configuration. Put it on
+cron and copy the directory somewhere else; CI runs it, destroys the
+installation and restores from it on every push.
 
 Losing the signing key does **not** invalidate signatures already issued — the
 public key travels in every bundle — but you will not be able to sign with the
-same identity again, and roll-forward chains will change key.
+same identity again, and roll-forward chains will change key. Losing the
+field-encryption ring makes enrolled authenticators unreadable; backup codes
+still work.
+
+### Restore
+
+```bash
+scripts/restore.sh backups/<UTC timestamp>
+```
+
+On the same machine or a fresh one (clone the same release first). The
+application containers are stopped, the database is emptied and reloaded,
+the three volumes are replaced from the archives and the stack is started
+again. Check `docker compose ps` and `/api/health/` afterwards; the signing
+key reported there should be the one you had.
 
 ### Health
 
@@ -701,17 +720,22 @@ Semantic versioning. Upgrade notes for each release — including migration
 counts and what to budget for them — are in [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
-# back up first (see above)
-git fetch --tags && git checkout v0.9.0
+scripts/backup.sh                 # first, always
+git fetch --tags && git checkout v0.9.5
 docker compose pull && docker compose up -d --build
-docker compose exec backend python manage.py migrate
-docker compose exec backend python manage.py seed_frameworks --with-folders
 ```
 
-**0.9.0 in particular** is ten migrations, one per app. Each adds the workspace
-column, moves every row into the *Default* workspace, and then makes the column
-required — inside one transaction on PostgreSQL. Budget a few seconds per
-hundred thousand rows.
+The backend container applies the shipped migrations and re-seeds the control
+libraries in every workspace at boot, so the two `manage.py` steps earlier
+releases asked for are no longer needed; running them is harmless.
+
+**0.9.5** adds two small columns (a score on each readiness snapshot, and the
+per-workspace webhook addresses) and a `beat` service to the compose file —
+the worker no longer runs the scheduler itself, so `docker compose up -d`
+after the checkout is what starts it. **0.9.0** is ten migrations, one per
+app: each adds the workspace column, moves every row into the *Default*
+workspace and makes the column required, inside one transaction on
+PostgreSQL. Budget a few seconds per hundred thousand rows.
 
 ---
 
@@ -1067,10 +1091,11 @@ group holding several regulated entities on one installation.
 
 SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 ship in this repository, free,
 with a crosswalk between them. Additional framework libraries — NIST CSF 2.0,
-HIPAA, CIS Controls v8 and others — are on the roadmap as seed packs, and can
-also be commissioned as a supported package through
-[conformiti.app](https://conformiti.app/consulting.html#seed-packs). A custom
-control set can be modelled the same way.
+HIPAA, CIS Controls v8 and others — are not part of this edition; they are
+offered as seed packs through
+[conformiti.app](https://conformiti.app/consulting.html#seed-packs), and a
+custom control set can be modelled the same way. The seeding command and the
+control model here load any pack built to the same shape.
 </details>
 
 <details>
@@ -1094,20 +1119,19 @@ the platform here is the platform there.
 
 ## Roadmap
 
-Shipped through **0.9.0** (workspaces). Highlights of what is next, from
-[ROADMAP.md](ROADMAP.md):
+**0.9.5 is the feature-complete release of the open-source edition.** What
+the repository set out to be — a self-hosted programme of record for SOC 2,
+ISO 27001 and PCI DSS, with sealed and signed audit packages, vendor risk,
+workspaces and the operations to run it — is here, and every finding of two
+independent reviews is closed. Further public releases are maintenance:
+security fixes, dependency updates and compatibility with new Python, Django
+and PostgreSQL versions, for as long as people run it. [ROADMAP.md](ROADMAP.md)
+has the release-by-release history.
 
-| Item | Why |
-|---|---|
-| Per-workspace single sign-on | One IdP per organisation rather than one per installation (`SSO_WORKSPACE` today) |
-| Workspace-scoped chat channels | A Slack/Teams webhook per organisation rather than one shared channel with a prefix |
-
-**Later:** automated evidence collection from cloud and SaaS (AWS, GitHub,
-Okta, Google Workspace) with continuous control tests — and, with it, pulling a
-provider's published responsibility matrix straight into the vendor record.
-Parked until there are accounts to test it against properly, rather than
-shipped half-working. Additional frameworks (NIST CSF 2.0, HIPAA, CIS Controls
-v8) as seed packs.
+Automated evidence collection from cloud and SaaS accounts, additional
+framework libraries (NIST CSF 2.0, HIPAA, CIS Controls v8) and the like are
+not planned for this edition; see [conformiti.app](https://conformiti.app)
+for what is offered around it.
 
 ---
 

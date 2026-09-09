@@ -10,10 +10,12 @@ import {
 } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import DocumentViewer from "../components/documents/DocumentViewer.jsx";
+import { AddControls } from "../components/packages/AddControls.jsx";
 import { PbcList } from "../components/packages/PbcList.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { TextDialog } from "../components/ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText } from "../utils/a11y.js";
@@ -156,27 +158,35 @@ export default function Packages({ me }) {
     }, "Package opened. Add the controls in scope, then seal it.");
   };
 
-  const seal = () => {
-    const assertion = window.prompt(
-      "Management assertion — the statement the auditor relies on (40 characters minimum):",
-      "Management asserts that the controls described in this package were designed and "
-      + "implemented as described, and that the evidence attached is complete and accurate."
-    );
-    if (!assertion) return;
-    return act("seal", async () => {
-      await api.post(`/evidence-packages/${selectedId}/seal/`, { assertion });
-      await loadPackages();
-    }, "Sealed. The manifest digest is now fixed — publish it to the auditor separately.");
+  // Every question that used to be a browser prompt is a dialog: `ask`
+  // names which one is open, and the dialog's onSubmit runs the request.
+  const [ask, setAsk] = useState(null);
+
+  const DEFAULT_ASSERTION =
+    "Management asserts that the controls described in this package were designed and "
+    + "implemented as described, and that the evidence attached is complete and accurate.";
+
+  // A thrown error keeps the dialog open with the text intact; `act` also
+  // shows it in the page notice.
+  const rethrowing = (kind, fn, okText) => async () => {
+    let failed = null;
+    await act(kind, async () => {
+      try { await fn(); } catch (e) { failed = e; throw e; }
+    }, okText);
+    if (failed) throw new Error(errorText(failed));
   };
 
-  const withdraw = () => {
-    const reason = window.prompt("Why is this package being withdrawn?", "Fieldwork complete");
-    if (reason === null) return;
-    return act("withdraw", async () => {
-      await api.post(`/evidence-packages/${selectedId}/withdraw/`, { reason });
-      await loadPackages();
-    }, "Withdrawn. Every grant is revoked; the record remains.");
-  };
+  const seal = () => setAsk({ kind: "seal" });
+  const submitSeal = (assertion) => rethrowing("seal", async () => {
+    await api.post(`/evidence-packages/${selectedId}/seal/`, { assertion });
+    await loadPackages();
+  }, "Sealed. The manifest digest is now fixed — publish it to the auditor separately.")();
+
+  const withdraw = () => setAsk({ kind: "withdraw" });
+  const submitWithdraw = (reason) => rethrowing("withdraw", async () => {
+    await api.post(`/evidence-packages/${selectedId}/withdraw/`, { reason });
+    await loadPackages();
+  }, "Withdrawn. Every grant is revoked; the record remains.")();
 
   const exportBundle = () =>
     act("export", () =>
@@ -185,28 +195,48 @@ export default function Packages({ me }) {
 
   // Next year's draft from this sealed package: same controls re-snapshotted
   // today, today's visible evidence pinned, this package as predecessor.
-  const rollForward = () => {
-    const name = window.prompt("Name for the new package:", `${selected?.name || "Package"} (roll-forward)`);
-    if (!name) return;
-    return act("roll", async () => {
-      const { data } = await api.post(`/evidence-packages/${selectedId}/roll_forward/`, { name });
-      await loadPackages(data.id);
-      const skipped = (data.skipped || []).length;
-      setMsg({ ok: true, text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}. Review the diff, then seal.` });
-    });
-  };
+  const rollForward = () => setAsk({ kind: "roll" });
+  const submitRollForward = (name) => rethrowing("roll", async () => {
+    const { data } = await api.post(`/evidence-packages/${selectedId}/roll_forward/`, { name });
+    await loadPackages(data.id);
+    const skipped = (data.skipped || []).length;
+    setMsg({ ok: true, text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}. Review the diff, then seal.` });
+  })();
 
-  const conclude = (row, field, value) =>
-    act(`row-${row.id}`, async () => {
-      const body = { [field]: value };
-      if (value === "not_tested") {
-        const reason = window.prompt("Why was this control not tested?");
-        if (!reason) return;
-        body.not_tested_reason = reason;
-      }
-      await api.patch(`/package-controls/${row.id}/`, body);
+  const conclude = (row, field, value) => {
+    if (value === "not_tested") {
+      setAsk({ kind: "not_tested", row, field });
+      return undefined;
+    }
+    return act(`row-${row.id}`, async () => {
+      await api.patch(`/package-controls/${row.id}/`, { [field]: value });
       setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
     });
+  };
+  const submitNotTested = (reason) => rethrowing(`row-${ask.row.id}`, async () => {
+    await api.patch(`/package-controls/${ask.row.id}/`, { [ask.field]: "not_tested", not_tested_reason: reason });
+    setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
+  })();
+
+  const removeControl = (row) =>
+    act(`row-${row.id}`, async () => {
+      await api.delete(`/package-controls/${row.id}/`);
+      setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
+      await loadPackages();
+    }, `${row.control_ref} taken out of scope.`);
+
+  const onControlsAdded = async (data) => {
+    await reloadRows();
+    await loadPackages();
+    const skipped = data.skipped || [];
+    setMsg({
+      ok: true,
+      text: `${data.added} control(s) added to the package.`
+        + (skipped.length
+          ? ` ${skipped.length} evidence file(s) were not pinned because you cannot see them: ${skipped.slice(0, 3).map((s) => `${s.document} (${s.control})`).join(", ")}${skipped.length > 3 ? "…" : ""}.`
+          : ""),
+    });
+  };
 
   if (packages === null) {
     return (
@@ -483,13 +513,18 @@ export default function Packages({ me }) {
                      canRaise={(canAssemble || isGrantee) && selected.status !== "withdrawn"}
                      canAssemble={canAssemble} onOpen={setViewing} onMessage={setMsg} />
 
+            {canAssemble && selected.status === "draft" ? (
+              <AddControls key={`add-${selected.id}`} packageId={selected.id} inScope={rows}
+                           onAdded={onControlsAdded} onError={(text) => setMsg({ ok: false, text })} />
+            ) : null}
+
             {/* ------------------------------------------------ workpaper */}
             <Panel className="overflow-hidden">
               <PanelHeader title="Controls in scope" meta={`${rows.length} rows`} />
               {rows.length === 0 ? (
                 <Empty title="No controls yet">
                   {canAssemble
-                    ? "Add controls from the Controls page, or POST their ids to add_controls."
+                    ? "Use Add controls above to choose the controls this audit covers."
                     : "This package has no controls."}
                 </Empty>
               ) : (
@@ -580,6 +615,12 @@ export default function Packages({ me }) {
                             </Button>
                           ) : null}
                           {row.risk ? <Badge tone="info">Tracked as a risk</Badge> : null}
+                          {canAssemble && selected.status === "draft" ? (
+                            <Button size="sm" variant="ghost" disabled={busy === `row-${row.id}`}
+                                    onClick={() => removeControl(row)} aria-label={`Remove ${row.control_ref} from the package`}>
+                              Remove
+                            </Button>
+                          ) : null}
                         </div>
                       </motion.li>
                     ))}
@@ -596,6 +637,53 @@ export default function Packages({ me }) {
       </div>
     </div>
     <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
+
+    <TextDialog
+      open={ask?.kind === "seal"}
+      onClose={() => setAsk(null)}
+      title="Seal this package"
+      description="The management assertion is the statement the auditor relies on. It is sealed into the manifest with the evidence and cannot be edited afterwards."
+      label="Management assertion"
+      multiline
+      minLength={40}
+      maxLength={4000}
+      initial={DEFAULT_ASSERTION}
+      submitLabel="Seal"
+      hint="Read it as the auditor will."
+      onSubmit={submitSeal}
+    />
+    <TextDialog
+      open={ask?.kind === "withdraw"}
+      onClose={() => setAsk(null)}
+      title="Withdraw this package"
+      description="Every grant is revoked and the auditor loses access at once. The package and its record stay."
+      label="Reason"
+      initial="Fieldwork complete"
+      required={false}
+      submitLabel="Withdraw"
+      tone="danger"
+      onSubmit={submitWithdraw}
+    />
+    <TextDialog
+      open={ask?.kind === "roll"}
+      onClose={() => setAsk(null)}
+      title="Roll forward"
+      description="A new draft with the same controls snapshotted today and today's evidence pinned, with this package as its predecessor."
+      label="Name for the new package"
+      initial={`${selected?.name || "Package"} (roll-forward)`}
+      submitLabel="Create draft"
+      onSubmit={submitRollForward}
+    />
+    <TextDialog
+      open={ask?.kind === "not_tested"}
+      onClose={() => setAsk(null)}
+      title={`${ask?.row?.control_ref || "Control"} not tested`}
+      description="Say why the control was not tested. The reason is recorded on the workpaper."
+      label="Reason"
+      multiline
+      submitLabel="Record"
+      onSubmit={submitNotTested}
+    />
     </PanelTransition>
   );
 }
@@ -711,16 +799,28 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
       await reload();
     }, "Sample item listed.");
   };
-  const judge = (sample, result) => act(`sample-${sample.id}`, async () => {
-    const body = { result };
+  const [failing, setFailing] = useState(null); // the sample being marked as an exception
+  const judge = (sample, result) => {
     if (result === "fail") {
-      const note = window.prompt("What was the exception?", sample.exception_note || "");
-      if (!note) return;
-      body.exception_note = note;
+      setFailing(sample);
+      return undefined;
     }
-    await api.patch(`/package-samples/${sample.id}/`, body);
-    await reload();
-  });
+    return act(`sample-${sample.id}`, async () => {
+      await api.patch(`/package-samples/${sample.id}/`, { result });
+      await reload();
+    });
+  };
+  const submitException = async (note) => {
+    const sample = failing;
+    let failed = null;
+    await act(`sample-${sample.id}`, async () => {
+      try {
+        await api.patch(`/package-samples/${sample.id}/`, { result: "fail", exception_note: note });
+        await reload();
+      } catch (e) { failed = e; throw e; }
+    });
+    if (failed) throw new Error(errorText(failed));
+  };
   const remove = (sample) => act(`sample-${sample.id}`, async () => {
     await api.delete(`/package-samples/${sample.id}/`);
     await reload();
@@ -884,6 +984,18 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
           </div>
         </form>
       ) : null}
+      <TextDialog
+        open={!!failing}
+        onClose={() => setFailing(null)}
+        title={`Exception on ${failing?.identifier || "sample"}`}
+        description="What was wrong with this item. The note is recorded with the failed result on the workpaper."
+        label="Exception"
+        multiline
+        initial={failing?.exception_note || ""}
+        submitLabel="Record exception"
+        tone="danger"
+        onSubmit={submitException}
+      />
     </section>
   );
 }

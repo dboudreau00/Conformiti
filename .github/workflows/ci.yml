@@ -174,3 +174,86 @@ jobs:
             e2e/.report
             e2e/.results
           retention-days: 7
+
+  # The stack as shipped, through nginx: sign in on the cookie transport,
+  # upload evidence, read it back through X-Accel, back the installation up
+  # with the shipped script, destroy it, restore it and read the same bytes
+  # back. Until 0.9.5 nothing exercised the compose file end to end, and the
+  # backup instructions in the README named a database user that did not
+  # exist.
+  compose:
+    name: Compose stack, backup and restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEMO_PASSWORD: CiDemoPassword2026
+      REDIS_PASSWORD: ciRedisSecret42
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the stack (Redis password on, demo data seeded)
+        run: |
+          printf 'DEMO_PASSWORD=%s\nREDIS_PASSWORD=%s\n' "$DEMO_PASSWORD" "$REDIS_PASSWORD" > .env
+          docker compose up -d --build
+      - name: nginx answers /api/health/
+        run: |
+          for i in $(seq 1 120); do
+            if curl -fsS http://localhost:8080/api/health/ > /tmp/health.json 2>/dev/null; then break; fi
+            sleep 3
+          done
+          cat /tmp/health.json; echo
+          jq -e '.status == "ok" and .database == "ok"' /tmp/health.json > /dev/null
+          docker compose ps
+      - name: Sign in through nginx, upload a document, download it through X-Accel
+        run: |
+          set -euo pipefail
+          jar=/tmp/cookies.txt
+          curl -fsS -c "$jar" -H 'Content-Type: application/json' \
+            -d "{\"username\":\"admin\",\"password\":\"$DEMO_PASSWORD\"}" \
+            http://localhost:8080/api/auth/token/ > /tmp/login.json
+          # Cookie mode keeps the tokens out of the body; only the CSRF token is readable.
+          if grep -q '"access"' /tmp/login.json; then echo "tokens leaked into the login body"; exit 1; fi
+          csrf=$(awk '$6 == "csrftoken" {print $7}' "$jar")
+          test -n "$csrf"
+          folder=$(curl -fsS -b "$jar" http://localhost:8080/api/folders/tree/ | jq -r '.[0].id')
+          test "$folder" != "null"
+          head -c 65536 /dev/urandom > /tmp/evidence.bin
+          doc=$(curl -fsS -b "$jar" -H "X-CSRFToken: $csrf" \
+            -F "folder=$folder" -F "name=CI evidence" -F "file=@/tmp/evidence.bin;filename=evidence.bin" \
+            http://localhost:8080/api/documents/ | jq -r '.id')
+          test "$doc" != "null"
+          echo "doc=$doc" >> "$GITHUB_ENV"
+          curl -fsS -b "$jar" -D /tmp/dl.headers -o /tmp/dl.bin "http://localhost:8080/api/documents/$doc/download/"
+          cmp /tmp/evidence.bin /tmp/dl.bin
+          grep -qi '^content-disposition: attachment' /tmp/dl.headers
+          if grep -qi '^x-accel-redirect' /tmp/dl.headers; then echo "nginx passed the X-Accel header through"; exit 1; fi
+          # The file is served by nginx from the internal location, never by gunicorn.
+          curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/protected-media/ | grep -q '^404$'
+          curl -fsS -b "$jar" http://localhost:8080/api/signing-keys/ > /tmp/keys-before.json
+      - name: Back up with the shipped script
+        run: |
+          scripts/backup.sh /tmp/backup
+          for f in db.sql.gz media.tgz secrets.tgz tree.tgz; do test -s "/tmp/backup/$f"; done
+          tar tzf /tmp/backup/secrets.tgz | grep -q package_signing_key
+      - name: Destroy the installation and restore it
+        run: |
+          docker compose down -v
+          scripts/restore.sh /tmp/backup
+          for i in $(seq 1 120); do
+            if curl -fsS http://localhost:8080/api/health/ > /dev/null 2>&1; then break; fi
+            sleep 3
+          done
+          docker compose ps
+      - name: The document is back byte for byte, under the same signing key
+        run: |
+          set -euo pipefail
+          jar=/tmp/cookies2.txt
+          curl -fsS -c "$jar" -H 'Content-Type: application/json' \
+            -d "{\"username\":\"admin\",\"password\":\"$DEMO_PASSWORD\"}" \
+            http://localhost:8080/api/auth/token/ > /dev/null
+          curl -fsS -b "$jar" -o /tmp/dl2.bin "http://localhost:8080/api/documents/$doc/download/"
+          cmp /tmp/evidence.bin /tmp/dl2.bin
+          curl -fsS -b "$jar" http://localhost:8080/api/signing-keys/ > /tmp/keys-after.json
+          cmp /tmp/keys-before.json /tmp/keys-after.json
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color | tail -n 400

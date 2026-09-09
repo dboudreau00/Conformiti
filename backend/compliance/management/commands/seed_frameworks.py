@@ -47,22 +47,40 @@ class Command(BaseCommand):
                             help="Also create app folders mirroring the control tree.")
         parser.add_argument("--roles-only", action="store_true",
                             help="Seed the built-in roles and nothing else.")
+        parser.add_argument("--all-workspaces", action="store_true",
+                            help="Every active workspace in turn, not just --workspace. "
+                                 "The container entrypoint runs this, so a release that "
+                                 "adds a role or a control reaches every organisation on "
+                                 "the installation rather than only Default.")
         tenancy.workspace_option(parser)
 
-    @transaction.atomic
     def handle(self, *args, **opts):
+        if opts.get("all_workspaces"):
+            count = 0
+            for workspace in tenancy.for_each_workspace():
+                # One transaction per workspace: a failure in one organisation
+                # rolls back that organisation alone and is reported by name.
+                with transaction.atomic():
+                    self._seed_one(workspace, opts)
+                count += 1
+            self.stdout.write(self.style.SUCCESS(f"Seeding complete in {count} workspace(s)."))
+            return
         workspace = tenancy.from_option(opts)
-        self.stdout.write(f"Workspace: {workspace.name} ({workspace.slug})")
-        with tenancy.scoped(workspace):
-            self._seed_roles()
-            if opts["roles_only"]:
-                self.stdout.write(self.style.SUCCESS("Roles seeded."))
-                return
-            self._seed_frameworks()
-            self._seed_crosswalk()
-            if opts["with_folders"]:
-                self._seed_folders()
+        with tenancy.scoped(workspace), transaction.atomic():
+            self._seed_one(workspace, opts)
         self.stdout.write(self.style.SUCCESS("Seeding complete."))
+
+    def _seed_one(self, workspace, opts):
+        """Seed the active workspace. Idempotent, like everything it calls."""
+        self.stdout.write(f"Workspace: {workspace.name} ({workspace.slug})")
+        self._seed_roles()
+        if opts["roles_only"]:
+            self.stdout.write(self.style.SUCCESS("Roles seeded."))
+            return
+        self._seed_frameworks()
+        self._seed_crosswalk()
+        if opts["with_folders"]:
+            self._seed_folders()
 
     # ------------------------------------------------------------------ roles
     def _seed_roles(self):

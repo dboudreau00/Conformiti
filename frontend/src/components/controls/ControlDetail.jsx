@@ -228,6 +228,71 @@ export function ControlDetail({
             )}
           </div>
         </div>
+
+        {/* Testing is 15 points of the readiness score and, until 0.9.5, had
+            no way to be recorded except the API: the toast copy for these
+            two fields existed, the inputs did not. */}
+        <div className="rounded-xl border border-line bg-surface p-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              {canManage ? (
+                <>
+                  <label htmlFor={`control-tested-${id}`} className="field-label">Last tested</label>
+                  <input
+                    id={`control-tested-${id}`}
+                    type="date"
+                    className="input input-sm"
+                    value={control.last_tested_on || ""}
+                    max={new Date().toISOString().slice(0, 10)}
+                    disabled={saving}
+                    onChange={(e) => patch("last_tested_on", e.target.value || null)}
+                  />
+                </>
+              ) : (
+                <>
+                  <Label className="mb-1.5 block">Last tested</Label>
+                  <p className={cn("text-[13px]", control.last_tested_on ? "text-ink" : "text-danger")}>
+                    {control.last_tested_on || "Never"}
+                  </p>
+                </>
+              )}
+            </div>
+            <div>
+              {canManage ? (
+                <>
+                  <label htmlFor={`control-interval-${id}`} className="field-label">Test every (days)</label>
+                  <input
+                    id={`control-interval-${id}`}
+                    type="number"
+                    min={1}
+                    max={3650}
+                    className="input input-sm"
+                    value={control.test_interval_days ?? ""}
+                    placeholder="365"
+                    disabled={saving}
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      const next = raw === "" ? null : Number(raw);
+                      if (next !== (control.test_interval_days ?? null)) patch("test_interval_days", next);
+                    }}
+                    onChange={() => {}}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                  />
+                </>
+              ) : (
+                <>
+                  <Label className="mb-1.5 block">Test every</Label>
+                  <p className="text-[13px] text-ink">{control.test_interval_days ? `${control.test_interval_days} days` : "Default"}</p>
+                </>
+              )}
+            </div>
+          </div>
+          <p className="mt-2 text-2xs text-faint">
+            {control.last_tested_by_name
+              ? `Recorded by ${control.last_tested_by_name}${control.last_tested_recorded_at ? ` on ${String(control.last_tested_recorded_at).slice(0, 10)}` : ""}.`
+              : "Recording a test date stamps who recorded it and when, and writes to the audit trail."}
+          </p>
+        </div>
       </div>
 
       {/* ---- Right: evidence ---------------------------------------------- */}

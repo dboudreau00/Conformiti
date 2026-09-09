@@ -97,11 +97,24 @@ class AnalyticsSummaryView(APIView):
         # --- Readiness history -----------------------------------------------
         record_today()  # idempotent: first hit of the day records a point
         history = trend()
+        # `pct` is the share of applicable controls marked implemented — the
+        # figure this endpoint has always reported and the one the trend
+        # history is made of. `score` is what the register scores a control
+        # on: implementation, an owner, evidence, its freshness, a test, less
+        # open risks. A control marked implemented with none of the rest used
+        # to count as ready here and score poorly one page over; the dashboard
+        # now leads with the score and shows the share beside it.
+        from compliance.scoring import programme_score
+
+        scored = programme_score()
         readiness = {
             "pct": round(control_status["implemented"] / applicable_all * 100) if applicable_all else 0,
             "implemented": control_status["implemented"],
             "applicable": applicable_all,
+            "score": scored["score"],
+            "bands": scored["bands"],
             "delta_pts": history["delta_pts"],
+            "score_delta_pts": history.get("score_delta_pts"),
             "trend": history["points"],
         }
 

@@ -14,8 +14,18 @@ test.describe("dashboard", () => {
   });
 
   test("the readiness card reports a figure and a trend", async ({ page }) => {
-    await expect(page.getByText("Overall readiness")).toBeVisible();
-    await expect(page.getByText(/of \d+ applicable controls implemented/)).toBeVisible();
+    // 0.9.5: once any control is applicable the headline is the register's
+    // score out of 100, with the implemented share quoted beside it; an
+    // empty programme still shows the share on its own.
+    const label = page.getByText(/^(Readiness score|Overall readiness)$/);
+    await expect(label).toBeVisible();
+    if ((await label.textContent()).trim() === "Readiness score") {
+      await expect(page.getByText("/100")).toBeVisible();
+      await expect(page.getByText(/Mean score across \d+ applicable controls/)).toBeVisible();
+      await expect(page.getByText(/\d+% are marked implemented/)).toBeVisible();
+    } else {
+      await expect(page.getByText(/of \d+ applicable controls implemented/)).toBeVisible();
+    }
     await expect(page.getByRole("img", { name: /readiness trend/i })).toBeVisible();
   });
 

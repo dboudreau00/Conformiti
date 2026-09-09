@@ -36,8 +36,11 @@ fi
 log "Applying migrations"
 python manage.py migrate --noinput
 
-log "Seeding control libraries, roles and folder tree"
-python manage.py seed_frameworks --with-folders
+log "Seeding control libraries, roles and folder tree in every workspace"
+# --all-workspaces: a release that adds a role or a control used to reach
+# only Default on boot; every other organisation on the installation kept
+# the previous release's libraries until someone ran this by hand.
+python manage.py seed_frameworks --with-folders --all-workspaces
 
 case "${SEED_DEMO_DATA:-true}" in
   1|true|TRUE|yes|on)

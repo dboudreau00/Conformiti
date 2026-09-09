@@ -52,18 +52,24 @@
 - **0.9.0** — Workspaces: one installation serving several organisations,
   each seeing only its own; superuser switch, archive, per-workspace jobs
   and seeding.
+- **0.9.1 – 0.9.4** — the findings of an adversarial review of 0.9.0, all
+  fifty of them closed: ORM-level workspace scoping, a bundle-wide signature
+  and a per-workspace signing key, MFA on the admin site, the auditor role
+  confined to its engagement by a deny-by-default permission, one-time TOTP
+  and backup codes, a row lock on sealing, no third-party assets.
+- **0.9.5** — the second independent review, closed: reminders that cannot
+  be sent twice or lost, the review clock reset on cadence changes, sessions
+  revoked on an administrator's password reset, access-review revocations
+  applied on completion, the readiness score on the dashboard and in the
+  history, controls added to a package from the page, a document search,
+  workspace-scoped chat channels, Redis with a password and an eviction
+  policy that cannot drop the queue, a separate scheduler, and a backup and
+  restore that CI performs on every push.
 
-## Next
+## Beyond 0.9.5
 
-| Item | Why |
-|---|---|
-| Per-workspace single sign-on | one IdP per organisation rather than one per installation (`SSO_WORKSPACE` today) |
-| Workspace-scoped chat channels | a Slack/Teams webhook per organisation rather than one shared channel with a prefix |
-
-## Later
-
-- Automated evidence collection from cloud/SaaS (AWS, GitHub, Okta, Google
-  Workspace) with continuous control tests — and, with it, pulling a
-  provider's published responsibility matrix straight into the vendor record.
-  Parked until there are accounts to test it against properly.
-- Additional frameworks (NIST CSF 2.0, HIPAA, CIS Controls v8) as seed packs.
+0.9.5 is the feature-complete release of the open-source edition. Further
+public releases are maintenance — security fixes, dependency updates,
+compatibility with new Python, Django and PostgreSQL versions — for as long
+as people run it. Automated evidence collection, additional framework
+libraries and other extensions are not planned for this edition.

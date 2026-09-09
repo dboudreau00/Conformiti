@@ -272,9 +272,15 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
         ]
 
     def get_control_count(self, obj):
-        return obj.controls.count()
+        # Annotated by the viewset's queryset for the list; a lone instance
+        # (an action's response) falls back to the query.
+        counted = getattr(obj, "control_count_annotated", None)
+        return counted if counted is not None else obj.controls.count()
 
     def get_evidence_count(self, obj):
+        counted = getattr(obj, "evidence_count_annotated", None)
+        if counted is not None:
+            return counted
         return PackageEvidence.objects.filter(package_control__package=obj).count()
 
     def get_live_grants(self, obj):

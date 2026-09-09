@@ -5,6 +5,95 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.5] — 2026-09-09
+
+The feature-complete release of the open-source edition, and the close of a
+second independent review. Everything it found that was real is fixed here
+and covered by a test; further public releases are maintenance.
+
+### Fixed
+
+- **Reminders are sent at most once, and never lost.** The document and PBC
+  scans claim a reminder with a conditional update before sending it, so two
+  workers (or a retry after a crash) cannot both mail the same window, and a
+  failed send hands the claim back so the next scan tries again.
+- **Changing a document's cadence resets its review clock.** Editing the
+  cadence or the last-reviewed date recomputes the next review date and
+  clears the reminders already sent for the old one, instead of leaving a
+  document silently on the wrong schedule.
+- **An administrator's password reset signs the person out everywhere.** Every
+  refresh token is revoked and the change is written to the auth trail.
+- **Completing an access review applies its revocations.** Rows marked
+  *revoke* now remove the folder grants and role memberships they name; the
+  response says what was applied.
+- **Folder tree in constant queries.** The tree computed effective access one
+  folder at a time; a hundred seeded folders cost a few hundred queries per
+  page load. One pass now, whatever the size.
+- **Package lists no longer query per row** for control and evidence counts.
+- **Public signing keys need a workspace name** on an installation with more
+  than one; the endpoint used to answer for whichever came first.
+- **Seeding reaches every workspace at boot.** `seed_frameworks
+  --all-workspaces` runs from the container entrypoint, so a release that
+  adds a role or a control no longer leaves every organisation but *Default*
+  on the previous library until someone remembers.
+- **The bundle verifier says "unsigned" and means it.** An unsigned bundle
+  exits 3 rather than passing as verified; `--allow-unsigned` accepts it on
+  purpose.
+- **Redis cannot evict the queue.** The compose stack ran Redis under
+  `allkeys-lru`, which could drop queued reminder mail under memory pressure;
+  it is `volatile-lru` with more room, behind a password (`REDIS_PASSWORD`).
+- **The README's backup command named a database user that does not exist.**
+  Replaced by scripts that ask the containers (below).
+
+### Added
+
+- **Readiness score on the dashboard.** The headline number is the mean of
+  the per-control score the register already gave each control
+  (implementation, an owner, evidence, its freshness, a test, less open
+  risks), with the four readiness bands beneath it; the implemented share is
+  still shown. Daily snapshots record the score from now on, and the trend
+  line switches to it once two are in.
+- **Record a test on a control.** Last tested and the test interval are edited
+  on the control, and feed the score.
+- **Controls added to a package from the page.** A picker by framework and
+  text, with the evidence already linked to each control pinned in one
+  request and a plain report of what could not be pinned because the
+  assembler cannot see it; controls can be taken back out of a draft.
+- **Document search** across every folder the person can see, with a jump to
+  the folder.
+- **Dialogs of the page's own** for every question that was a browser prompt:
+  the management assertion at sealing (with the minimum length visible), the
+  withdrawal reason, the roll-forward name, not-tested and exception notes,
+  the auditor's note on a PBC request, and a passkey's name.
+- **Workspace-scoped chat channels.** Each workspace can carry its own Slack
+  and Teams webhooks; a workspace with its own posts only to them. On an
+  installation with more than one workspace the installation-wide pair is
+  held back unless `WEBHOOKS_SHARED_ACROSS_WORKSPACES=true`, so one
+  organisation's package events cannot land in another's channel. *Settings
+  › Notifications* says which channels are in effect and why.
+- **`scripts/backup.sh` and `scripts/restore.sh`** for the compose stack: the
+  database dump and the evidence, secrets and tree volumes, with the database
+  credentials and volume names taken from the running containers. CI runs
+  the stack through nginx (cookie sign-in, upload, download through X-Accel),
+  backs it up, destroys it, restores it and reads the same bytes back under
+  the same signing key.
+- **A `beat` service** in the compose file. The worker no longer runs the
+  scheduler, so it can be scaled without every reminder going out once per
+  worker.
+- **Version lock in the validator:** `version.py`, `package.json`, the README
+  badge and this file's first heading must agree.
+
+### Upgrading
+
+Two small migrations (a score column on readiness snapshots, the webhook
+columns on workspaces). `docker compose up -d --build` after the checkout
+starts the new `beat` service; set `REDIS_PASSWORD` in `.env` if you want
+AUTH on Redis (recommended). The container applies migrations and re-seeds
+the libraries itself. Roll-forward chains, signatures and sealed bundles are
+untouched.
+
+---
+
 ## [0.9.4] — 2026-09-08
 
 The eleven findings the adversarial review left open. Nothing is outstanding

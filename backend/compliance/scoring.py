@@ -84,16 +84,18 @@ def band_for(score):
     return "not_started"
 
 
-def annotate(queryset, user):
+def annotate(queryset, user, visible=None):
     """Add every signal the score needs, in one query.
 
     ``evidence`` and ``freshness`` count only documents in folders ``user`` can
     see. Call this on any queryset whose serializer will report a score, or the
-    serializer falls back to a per-row query.
+    serializer falls back to a per-row query. ``visible`` overrides the folder
+    set — the organisation-wide figure on the dashboard counts every folder,
+    because it is an aggregate and names nothing.
     """
     from documents.access import accessible_folder_ids
 
-    visible = accessible_folder_ids(user)
+    visible = accessible_folder_ids(user) if visible is None else visible
     visible_link = Q(evidence_links__document__folder_id__in=visible)
     approved_link = visible_link & Q(evidence_links__document__status="approved")
     return queryset.annotate(
@@ -113,6 +115,40 @@ def annotate(queryset, user):
             distinct=True,
         ),
     )
+
+
+def programme_score(queryset=None):
+    """The organisation's readiness: the mean score of every applicable
+    control, counting evidence in every folder, plus how many controls sit in
+    each band.
+
+    This is the number the dashboard should show. It used to show the share
+    of controls marked *implemented*, which the register's own scoring exists
+    to disbelieve: a control marked implemented with no evidence, no owner,
+    no test and an open risk scored well under the bar in the register and
+    counted as ready on the dashboard. The two now agree.
+
+    Returns ``{"score", "applicable", "bands": {band: n}}``; ``score`` is
+    None when nothing is applicable.
+    """
+    from documents.models import Folder
+
+    from .models import Control
+
+    qs = queryset if queryset is not None else Control.objects.all()
+    qs = annotate(qs.exclude(status="not_applicable"), None,
+                  visible=set(Folder.objects.values_list("id", flat=True)))
+    counts = {"ready": 0, "nearly": 0, "at_risk": 0, "not_started": 0}
+    total = 0
+    n = 0
+    for control in qs:
+        result = score_control(control)
+        if result["score"] is None:
+            continue
+        total += result["score"]
+        n += 1
+        counts[result["band"]] = counts.get(result["band"], 0) + 1
+    return {"score": round(total / n) if n else None, "applicable": n, "bands": counts}
 
 
 def _implementation(control, weight):

@@ -19,6 +19,20 @@ from . import tenancy
 from .models import Workspace
 
 
+def _https_or_blank(value, expected_host=None):
+    """A webhook is a credential in URL form: it is posted to, so it must be
+    https, and a Slack one lives on hooks.slack.com. The dispatcher refuses
+    non-https at send time too; refusing it here tells the person typing."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if not value.lower().startswith("https://"):
+        raise serializers.ValidationError("A webhook URL must start with https://.")
+    if expected_host and expected_host not in value.lower():
+        raise serializers.ValidationError(f"Expected a {expected_host} address.")
+    return value
+
+
 class WorkspaceSerializer(serializers.ModelSerializer):
     users = serializers.SerializerMethodField()
     # Seed the built-in roles and the shipped frameworks into a new workspace
@@ -27,10 +41,17 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Workspace
-        fields = ["id", "name", "slug", "is_active", "notification_email", "created_at",
+        fields = ["id", "name", "slug", "is_active", "notification_email",
+                  "slack_webhook_url", "teams_webhook_url", "created_at",
                   "users", "with_frameworks"]
         read_only_fields = ["created_at"]
         extra_kwargs = {"slug": {"required": False}}
+
+    def validate_slack_webhook_url(self, value):
+        return _https_or_blank(value, "hooks.slack.com")
+
+    def validate_teams_webhook_url(self, value):
+        return _https_or_blank(value)
 
     def get_users(self, obj):
         with tenancy.unscoped():

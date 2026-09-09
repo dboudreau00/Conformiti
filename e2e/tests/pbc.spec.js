@@ -51,8 +51,14 @@ test.describe("PBC request list", () => {
     await expect(mine).toBeVisible();
     const openLine = mine.locator('li[data-reference="PBC-03"]');
     await expect(openLine.getByText(/SOC 2 Type II fieldwork/)).toBeVisible();
-    page.once("dialog", (d) => d.accept("Q1-Q4 sign-offs are in the access review export already in the package."));
+    // 0.9.5: the note is asked for in a dialog of the page's own, not a
+    // browser prompt, so the whole answer stays visible and can be corrected.
     await openLine.getByRole("button", { name: "Mark provided" }).click();
+    const ask = page.getByRole("dialog", { name: "Mark PBC-03 provided" });
+    await expect(ask).toBeVisible();
+    await ask.getByLabel("Note").fill("Q1-Q4 sign-offs are in the access review export already in the package.");
+    await ask.getByRole("button", { name: "Mark provided" }).click();
+    await expect(ask).toBeHidden();
     await expect(page.getByText("PBC-03 marked provided.")).toBeVisible();
     await expect(openLine.getByText("Provided", { exact: true })).toBeVisible();
   });

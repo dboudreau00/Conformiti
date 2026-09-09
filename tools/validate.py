@@ -662,6 +662,40 @@ def check_tests_and_ci():
 
 
 # ===========================================================================
+# ===========================================================================
+# 19. One version, everywhere it is written down
+# ===========================================================================
+def check_version_lock():
+    """The version is written in four places by hand. They drifted: the
+    README badge said 0.9.3 for a whole release. A build whose badge, package
+    manifest, changelog heading and `config/version.py` disagree is refused,
+    so the badge can never lag the tag again.
+    """
+    sources = {}
+    version_py = read(os.path.join(BACKEND, "config", "version.py"))
+    m = re.search(r'^__version__\s*=\s*"([^"]+)"', version_py, re.M)
+    sources["backend/config/version.py"] = m.group(1) if m else None
+
+    package = json.load(open(os.path.join(ROOT, "frontend", "package.json"), encoding="utf-8"))
+    sources["frontend/package.json"] = package.get("version")
+
+    readme = read(os.path.join(ROOT, "README.md"))
+    m = re.search(r"badge/release-v([0-9][^-\s]*)-", readme)
+    sources["README.md badge"] = m.group(1) if m else None
+
+    changelog = read(os.path.join(ROOT, "CHANGELOG.md"))
+    m = re.search(r"^## \[([0-9][^\]]*)\]", changelog, re.M)
+    sources["CHANGELOG.md first entry"] = m.group(1) if m else None
+
+    distinct = {v for v in sources.values()}
+    if None in distinct or len(distinct) != 1:
+        for where, value in sources.items():
+            err("version", f"{where}: {value or 'not found'}")
+        err("version", "the release version must be identical in all four places")
+    print(f" 19. version lock: {sources['backend/config/version.py']} in "
+          f"{len(sources)} places, all agree")
+
+
 def main():
     print(f"Validating {ROOT}\n")
     check_python_syntax()
@@ -682,6 +716,7 @@ def main():
     check_compose_debug_isolation()
     check_malware_scanning()
     check_no_offsite_assets()
+    check_version_lock()
 
     print()
     for w in warnings:

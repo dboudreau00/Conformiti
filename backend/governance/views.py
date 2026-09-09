@@ -108,6 +108,45 @@ def _snapshot_items(review):
     AccessReviewItem.objects.bulk_create(rows)
 
 
+def _apply_revocations(request, review):
+    """Deactivate every account the review decided to revoke.
+
+    Returns ``{"revoked": [usernames], "skipped": [{"username", "reason"}]}``.
+    Three rows are never applied automatically, and are reported instead:
+    the reviewer's own account (a review must not sign its author out
+    mid-request), a superuser (deactivating the last one locks the
+    installation), and a user that no longer exists.
+    """
+    from accounts.session_views import _blacklist_all
+    from audit.events import record_auth_event
+
+    revoked, skipped = [], []
+    rows = review.items.filter(decision=AccessReviewItem.Decision.REVOKE).select_related("user")
+    for item in rows:
+        user = item.user
+        if user is None:
+            skipped.append({"username": item.username, "reason": "the account no longer exists"})
+            continue
+        if user.pk == request.user.pk:
+            skipped.append({"username": user.username, "reason": "you cannot revoke your own access"})
+            continue
+        if user.is_superuser:
+            skipped.append({"username": user.username,
+                            "reason": "superusers are deactivated by hand, never by a review"})
+            continue
+        if not user.is_active:
+            skipped.append({"username": user.username, "reason": "already inactive"})
+            continue
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        sessions = _blacklist_all(user)
+        record_auth_event(
+            request, user, "deactivated",
+            f"access revoked by review \"{review.name}\" ({sessions} refresh token(s) revoked)")
+        revoked.append(user.username)
+    return {"revoked": revoked, "skipped": skipped}
+
+
 class AccessReviewViewSet(viewsets.ModelViewSet):
     queryset = AccessReview.objects.all()
     serializer_class = AccessReviewSerializer
@@ -129,10 +168,19 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
                 {"detail": f"{pending} row(s) still pending a decision."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # A decision that nobody carried out is not evidence of a control; it
+        # is evidence that the control was not operating. Completing the
+        # review now applies every "revoke" row — the account is deactivated
+        # and its sessions are revoked — and says which rows it could not
+        # apply and why, so the reviewer finishes the job by hand rather than
+        # believing it was done.
+        applied = _apply_revocations(request, review)
         review.status = AccessReview.Status.COMPLETED
         review.completed_at = timezone.now()
         review.save(update_fields=["status", "completed_at"])
-        return Response(AccessReviewSerializer(review).data)
+        data = AccessReviewSerializer(review).data
+        data["applied"] = applied
+        return Response(data)
 
     @action(detail=True, methods=["get"])
     def export(self, request, pk=None):

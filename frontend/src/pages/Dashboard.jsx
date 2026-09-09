@@ -89,8 +89,32 @@ export default function Dashboard({ me }) {
     const by = controls?.by_status || {};
     return Object.entries(CONTROL_STATUS).map(([key, meta]) => ({ label: meta.label, value: by[key] || 0, tone: meta.tone }));
   }, [controls]);
-  const trendPoints = useMemo(() => (readiness?.trend || []).map((p) => ({ label: p.label, value: p.pct })), [readiness]);
-  const delta = readiness?.delta_pts;
+  // The headline is the register's score: implementation, an owner, evidence,
+  // its freshness and a test, less open risks. The implemented share is shown
+  // beside it. History recorded before 0.9.5 knew only the share, so the
+  // trend line is the score once it exists and the share until then.
+  const scored = readiness?.score !== null && readiness?.score !== undefined;
+  const hero = scored ? readiness.score : readiness?.pct;
+  const trendPoints = useMemo(() => {
+    const points = readiness?.trend || [];
+    const withScore = points.filter((p) => p.score !== null && p.score !== undefined);
+    return withScore.length >= 2
+      ? withScore.map((p) => ({ label: p.label, value: p.score }))
+      : points.map((p) => ({ label: p.label, value: p.pct }));
+  }, [readiness]);
+  // The month-on-month badge sits beside the headline, so it must be the
+  // headline's own delta: the score's once two scored snapshots exist (null
+  // before that, so no badge), the share's when the share is the headline.
+  const delta = scored ? readiness?.score_delta_pts : readiness?.delta_pts;
+  const bandSegments = useMemo(() => {
+    const by = readiness?.bands || {};
+    return [
+      { label: "Ready", value: by.ready || 0, tone: "success" },
+      { label: "Nearly there", value: by.nearly || 0, tone: "warning" },
+      { label: "At risk", value: by.at_risk || 0, tone: "danger" },
+      { label: "Not ready", value: by.not_started || 0, tone: "faint" },
+    ];
+  }, [readiness]);
 
   const overdue = revs?.overdue ?? reviews.filter((r) => r.days_until_review < 0).length;
   const due30 = revs?.due_30 ?? reviews.filter((r) => r.days_until_review >= 0 && r.days_until_review <= 30).length;
@@ -127,7 +151,7 @@ export default function Dashboard({ me }) {
               <>
                 <div>
                   <div className="flex items-start justify-between gap-3">
-                    <Label>Overall readiness</Label>
+                    <Label>{scored ? "Readiness score" : "Overall readiness"}</Label>
                     {delta != null ? (
                       <Badge tone={delta > 0 ? "success" : delta < 0 ? "danger" : "muted"} mono>
                         {delta > 0 ? `+${delta} pts this month` : delta < 0 ? `${delta} pts this month` : "No change this month"}
@@ -135,12 +159,13 @@ export default function Dashboard({ me }) {
                     ) : null}
                   </div>
                   <div className="mt-3 flex items-end gap-2">
-                    <span className="tabular text-[64px] font-semibold leading-[0.85] tracking-[-0.045em] text-ink">{readiness.pct}</span>
-                    <span className="tabular pb-1 text-2xl font-medium text-faint">%</span>
+                    <span className="tabular text-[64px] font-semibold leading-[0.85] tracking-[-0.045em] text-ink">{hero}</span>
+                    <span className="tabular pb-1 text-2xl font-medium text-faint">{scored ? "/100" : "%"}</span>
                   </div>
-                  <p className="mt-2 max-w-[34ch] text-[13px] leading-snug text-muted">
-                    {readiness.implemented} of {readiness.applicable} applicable controls implemented
-                    {fwNames.length ? ` across ${joinNames(fwNames)}` : ""}.
+                  <p className="mt-2 max-w-[38ch] text-[13px] leading-snug text-muted">
+                    {scored
+                      ? `Mean score across ${readiness.applicable} applicable controls${fwNames.length ? ` in ${joinNames(fwNames)}` : ""} — the same score the register gives each control. ${readiness.pct}% are marked implemented.`
+                      : `${readiness.implemented} of ${readiness.applicable} applicable controls implemented${fwNames.length ? ` across ${joinNames(fwNames)}` : ""}.`}
                   </p>
                 </div>
 
@@ -155,8 +180,17 @@ export default function Dashboard({ me }) {
                 </div>
 
                 <div className="mt-5">
-                  <SegmentBar segments={statusSegments} total={controlTotal} height={10} ariaLabel={`Control status distribution across ${controlTotal} controls`} />
-                  <Legend items={statusSegments} className="mt-3" />
+                  {scored ? (
+                    <>
+                      <SegmentBar segments={bandSegments} total={readiness.applicable} height={10} ariaLabel={`Readiness bands across ${readiness.applicable} applicable controls`} />
+                      <Legend items={bandSegments} className="mt-3" />
+                    </>
+                  ) : (
+                    <>
+                      <SegmentBar segments={statusSegments} total={controlTotal} height={10} ariaLabel={`Control status distribution across ${controlTotal} controls`} />
+                      <Legend items={statusSegments} className="mt-3" />
+                    </>
+                  )}
                 </div>
               </>
             ) : (

@@ -57,9 +57,13 @@ x-backend-env: &backend-env
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-compliance}
   POSTGRES_HOST: db
   POSTGRES_PORT: 5432
-  CACHE_URL: redis://redis:6379/2
-  CELERY_BROKER_URL: redis://redis:6379/0
-  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  # Redis carries the Celery queue, the result store and the rate-limit
+  # counters. REDIS_PASSWORD (letters and digits: it is spliced into these
+  # URLs) puts AUTH in front of all three. Empty means no password, which is
+  # tolerable only because the redis service publishes no port.
+  CACHE_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/2
+  CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+  CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
   COMPLIANCE_TREE_ROOT: /data/compliance-data
   SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
   EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
@@ -83,9 +87,18 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    # volatile-lru, not allkeys-lru: the Celery queues and the beat schedule
+    # carry no expiry and must never be evicted. Under allkeys-lru a busy hour
+    # of throttle counters could silently drop queued reminder mail. Only keys
+    # with a TTL (cache entries, rate-limit counters) are candidates now.
+    # `--requirepass ""` is Redis for "no password" when REDIS_PASSWORD is unset.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru", "--requirepass", "${REDIS_PASSWORD:-}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # With a password the first form answers; without one it is refused and
+      # the plain ping answers instead.
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping 2>/dev/null | grep -q PONG || redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -119,7 +132,10 @@ services:
     # Run Celery directly (bypass the seeding entrypoint the backend uses) so
     # migrations/seeding happen once, in the backend container only. Waiting
     # for the backend to be *healthy* guarantees the tables exist first.
-    entrypoint: ["celery", "-A", "config", "worker", "-B", "-l", "info", "--concurrency", "2"]
+    # No -B: the scheduler is the `beat` service below, so this one can be
+    # scaled (docker compose up -d --scale worker=3) without every reminder
+    # going out three times.
+    entrypoint: ["celery", "-A", "config", "worker", "-l", "info", "--concurrency", "2"]
     env_file:
       - path: .env
         required: false
@@ -138,6 +154,31 @@ services:
       interval: 60s
       timeout: 15s
       start_period: 60s
+      retries: 3
+
+  # The scheduler: one of these, ever. It queues the daily review scan, the
+  # readiness snapshot, the digests and the scanner watch for the workers.
+  beat:
+    build: ./backend
+    restart: unless-stopped
+    entrypoint: ["celery", "-A", "config", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule", "--pidfile", "/tmp/celerybeat.pid"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *backend-env
+    volumes:
+      - secrets:/app/secrets:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 $$(cat /tmp/celerybeat.pid) 2>/dev/null || exit 1"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
       retries: 3
 
   frontend:

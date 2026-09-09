@@ -125,6 +125,23 @@ class UserWriteSerializer(serializers.ModelSerializer):
             self._validate_password(password, instance)
             instance.set_password(password)
         instance.save()
+        if password:
+            # An administrator setting somebody's password is the recovery
+            # path for an account that may already be in the wrong hands.
+            # The person's own password change and the MFA reset both revoke
+            # every issued refresh token; this path used to leave them all
+            # valid, so a hijacked session outlived the reset that was meant
+            # to end it.
+            from accounts.session_views import _blacklist_all
+            from audit.events import record_auth_event
+
+            revoked = _blacklist_all(instance)
+            request = self.context.get("request")
+            if request is not None:
+                by = request.user.get_username() if request.user.is_authenticated else "?"
+                record_auth_event(
+                    request, instance, "password",
+                    f"password set by {by}; {revoked} refresh token(s) revoked")
         return instance
 
 

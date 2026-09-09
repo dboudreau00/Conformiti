@@ -22,7 +22,15 @@ openssl agrees with it:
     base64 -d manifest.sig > manifest.sig.bin
     openssl pkeyutl -verify -pubin -inkey signing-key.pub -rawin -in manifest.json -sigfile manifest.sig.bin
 
-Exit codes: 0 everything matches, 1 a mismatch, 2 the bundle is unusable.
+Exit codes: 0 everything matches and both signatures verify; 1 a mismatch;
+2 the bundle is unusable; 3 every file matches but a signature is missing.
+
+That last one is deliberate. A bundle with its signatures stripped and its
+file list rewritten still has every checksum in agreement with itself, and a
+script that answered 0 to it would be telling an automated check that a
+forgery was fine. Pass --allow-unsigned to accept an unsigned bundle on
+purpose — for example one sealed by a release that predates bundle
+signatures — and compare the manifest digest with the one you were given.
 """
 import base64
 import hashlib
@@ -237,7 +245,7 @@ def check_for_extra_files(root, listed, problems):
             problems.append(f"not listed in SHA256SUMS: {rel}")
 
 
-def main(root):
+def main(root, allow_unsigned=False):
     problems, checked = [], 0
 
     manifest_path = os.path.join(root, "manifest.json")
@@ -340,6 +348,17 @@ def main(root):
             print(f"  - {problem}")
         return 1
 
+    missing = [name for name, state in (("manifest.sig", signature),
+                                        ("SHA256SUMS.sig", sums_signature))
+               if state == "unsigned"]
+    if missing and not allow_unsigned:
+        print(f"\nUNSIGNED — {' and '.join(missing)} missing.")
+        print("Every file matches its checksum, but nothing proves who produced this bundle,")
+        print("and a file list without a signature can be rewritten to match any change.")
+        print("Compare the manifest digest above with the one the organisation gave you")
+        print("directly, and re-run with --allow-unsigned to accept the bundle deliberately.")
+        return 3
+
     print("\nOK — every file matches both the bundle checksums and the sealed manifest.")
     if signature == "valid" and sums_signature == "valid":
         print("Both signatures verify: the sealed manifest, and the file list covering every")
@@ -359,4 +378,10 @@ def main(root):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "."))
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    unknown = flags - {"--allow-unsigned"}
+    if unknown:
+        print(f"usage: verify.py [--allow-unsigned] [DIRECTORY]   (unknown: {', '.join(sorted(unknown))})")
+        sys.exit(2)
+    sys.exit(main(args[0] if args else ".", allow_unsigned="--allow-unsigned" in flags))

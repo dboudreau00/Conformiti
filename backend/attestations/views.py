@@ -93,8 +93,16 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "engagement", "audit_firm"]
 
     def get_queryset(self):
-        return access.readable_packages(self.request.user) \
-            .select_related("framework").prefetch_related("grants", "scope")
+        from django.db.models import Count
+
+        # Counts annotated here, once, rather than two queries per package in
+        # the serializer; the successors and PBC rows are prefetched for the
+        # same reason.
+        return (access.readable_packages(self.request.user)
+                .select_related("framework", "prior_package")
+                .prefetch_related("grants", "scope", "successors", "pbc_requests")
+                .annotate(control_count_annotated=Count("controls", distinct=True),
+                          evidence_count_annotated=Count("controls__evidence", distinct=True)))
 
     def _check_prior(self, prior, package=None):
         """A predecessor must be one the caller can read, no longer a draft,
@@ -408,6 +416,17 @@ class SigningKeysView(APIView):
         workspace = Workspace.objects.filter(slug=slug).first() if slug else None
         if slug and workspace is None:
             return Response({"detail": "Unknown workspace."}, status=status.HTTP_404_NOT_FOUND)
+
+        # On an installation with several organisations, an unnamed request
+        # used to list every key of every one of them — with each key's
+        # workspace slug and label attached. A public key is for publishing;
+        # a directory of the tenants on a server is not. Ask for the
+        # organisation by name, and answer only that one.
+        if workspace is None and Workspace.objects.filter(is_active=True).count() > 1:
+            return Response(
+                {"detail": "This installation serves several organisations. "
+                           "Name the one whose keys you want: ?workspace=<slug>."},
+                status=status.HTTP_400_BAD_REQUEST)
 
         with tenancy.scoped(workspace):
             current = signing.current_key_info(create=False)

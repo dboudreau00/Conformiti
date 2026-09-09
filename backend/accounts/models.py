@@ -23,6 +23,17 @@ class Workspace(models.Model):
         blank=True,
         help_text="Where this organisation's reminders and alerts go. "
                   "Blank falls back to the installation's COMPLIANCE_TEAM_EMAIL.")
+    # Chat channels are per organisation for the same reason the mailbox is:
+    # a sealed package's name, an auditor's request and a returned
+    # questionnaire name the organisation's own affairs, and one shared
+    # channel for the installation would show every tenant the others'.
+    slack_webhook_url = models.URLField(
+        max_length=500, blank=True,
+        help_text="This organisation's Slack incoming webhook. On an installation with "
+                  "several organisations, tenant events are posted here or nowhere.")
+    teams_webhook_url = models.URLField(
+        max_length=500, blank=True,
+        help_text="This organisation's Teams incoming webhook.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -20,6 +20,11 @@ class ReadinessSnapshot(TenantModel):
     evidence_links = models.PositiveIntegerField(default=0)
     documents_overdue = models.PositiveIntegerField(default=0)
     risks_open = models.PositiveIntegerField(default=0)
+    # The programme's readiness score (the mean of every applicable control's
+    # score, 0–100) as of that day. Null on rows recorded before 0.9.5, which
+    # knew only the implemented share; the trend shows the score from the
+    # first day it was measured and says so.
+    score = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

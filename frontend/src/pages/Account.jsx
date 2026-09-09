@@ -23,6 +23,7 @@ import { errorText } from "../utils/a11y.js";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { TextDialog } from "../components/ui/Dialog.jsx";
 import { Divider, Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 
 const SECTIONS = [
@@ -674,14 +675,16 @@ function PasskeysBlock() {
     }
   }
 
-  async function rename(row) {
-    const next = window.prompt("Name this passkey", row.name);
-    if (!next || next.trim() === row.name) return;
+  const [renaming, setRenaming] = useState(null);
+  const rename = (row) => setRenaming(row);
+  async function submitRename(next) {
+    if (!renaming || next === renaming.name) return;
     try {
-      await api.patch(`/auth/webauthn/${row.id}/`, { name: next.trim() });
+      await api.patch(`/auth/webauthn/${renaming.id}/`, { name: next });
       load();
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't rename the passkey.") });
+      throw new Error(errorText(err, "Couldn't rename the passkey."));
     }
   }
 
@@ -764,6 +767,17 @@ function PasskeysBlock() {
           ) : null}
         </div>
       ) : null}
+      <TextDialog
+        open={!!renaming}
+        onClose={() => setRenaming(null)}
+        title="Rename passkey"
+        description="The name is only a label for this list. Changing it does not touch the key."
+        label="Name"
+        initial={renaming?.name || ""}
+        maxLength={80}
+        submitLabel="Rename"
+        onSubmit={submitRename}
+      />
     </>
   );
 }
@@ -856,7 +870,11 @@ function ChannelsBlock({ me, onUpdate }) {
                 ) : null}
               </span>
               <span className="mt-1.5 block text-xs">
-                Sealed and issued packages, the auditor's returns and requests, returned questionnaires, scanner outages, quarantined files and a daily summary are posted to the channels an operator configures with SLACK_WEBHOOK_URL / TEAMS_WEBHOOK_URL.
+                {info.source === "workspace"
+                  ? "Sealed and issued packages, the auditor's returns and requests, returned questionnaires and a daily summary are posted to this workspace's own channels, set under Workspace below."
+                  : info.multi_workspace && !info.shared_across_workspaces
+                    ? `This installation serves several organisations, so this workspace's events go only to channels set for it under Workspace below${info.installation_channels?.length ? ` — the installation's ${info.installation_channels.join(" and ")} channel carries only installation-level events (scanner outages) unless WEBHOOKS_SHARED_ACROSS_WORKSPACES is set` : ""}.`
+                    : "Sealed and issued packages, the auditor's returns and requests, returned questionnaires, scanner outages, quarantined files and a daily summary are posted to the channels an operator configures with SLACK_WEBHOOK_URL / TEAMS_WEBHOOK_URL, or to this workspace's own channels set under Workspace below."}
               </span>
               {admin && info.deliveries?.length ? (
                 <span className="mt-2 block font-mono text-2xs text-faint">
@@ -1015,11 +1033,18 @@ function WorkspacesBlock({ me }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [inbox, setInbox] = useState("");
+  const [slack, setSlack] = useState("");
+  const [teams, setTeams] = useState("");
   const superuser = !!me?.is_superuser;
 
   const load = () => {
     api.get("/workspaces/current/")
-      .then((r) => { setCurrent(r.data || null); setInbox(r.data?.notification_email || ""); })
+      .then((r) => {
+        setCurrent(r.data || null);
+        setInbox(r.data?.notification_email || "");
+        setSlack(r.data?.slack_webhook_url || "");
+        setTeams(r.data?.teams_webhook_url || "");
+      })
       .catch(() => setCurrent(null));
     if (superuser) api.get("/workspaces/", { params: { page_size: 100 } }).then((r) => setList(r.data.results || r.data)).catch(() => setList([]));
   };
@@ -1055,13 +1080,17 @@ function WorkspacesBlock({ me }) {
     setBusy(true);
     setMsg(null);
     try {
-      await api.patch(`/workspaces/${current.id}/`, { notification_email: inbox.trim() });
+      await api.patch(`/workspaces/${current.id}/`, {
+        notification_email: inbox.trim(),
+        slack_webhook_url: slack.trim(),
+        teams_webhook_url: teams.trim(),
+      });
       setMsg({ ok: true, text: inbox.trim()
-        ? `Reminders for ${current.name} now go to ${inbox.trim()}.`
+        ? `Reminders for ${current.name} now go to ${inbox.trim()}${slack.trim() || teams.trim() ? ", and its chat events to its own channel" : ""}.`
         : `Reminders for ${current.name} fall back to the installation address.` });
       load();
     } catch (err) {
-      setMsg({ ok: false, text: errorText(err, "Couldn't save the address.") });
+      setMsg({ ok: false, text: errorText(err, "Couldn't save the workspace settings.") });
     } finally {
       setBusy(false);
     }
@@ -1098,16 +1127,32 @@ function WorkspacesBlock({ me }) {
       </p>
       {superuser ? (
         <>
-          <form onSubmit={saveInbox} className="mt-4 flex flex-wrap items-end gap-2">
-            <Field id="workspace-inbox" label="Reminder address for this workspace" className="min-w-[240px] flex-1">
+          <form onSubmit={saveInbox} className="mt-4 grid gap-2 sm:grid-cols-2">
+            <Field id="workspace-inbox" label="Reminder address for this workspace" className="sm:col-span-2">
               <input id="workspace-inbox" type="email" className="input" value={inbox} disabled={busy}
                      placeholder="grc@your-company.example"
                      onChange={(e) => setInbox(e.target.value)} />
             </Field>
-            <Button type="submit" size="sm" variant="secondary" disabled={busy}>Save</Button>
+            <Field id="workspace-slack" label="Slack incoming webhook for this workspace">
+              <input id="workspace-slack" type="url" className="input font-mono text-xs" value={slack} disabled={busy}
+                     placeholder="https://hooks.slack.com/services/…"
+                     onChange={(e) => setSlack(e.target.value)} />
+            </Field>
+            <Field id="workspace-teams" label="Teams incoming webhook for this workspace">
+              <input id="workspace-teams" type="url" className="input font-mono text-xs" value={teams} disabled={busy}
+                     placeholder="https://…webhook.office.com/…"
+                     onChange={(e) => setTeams(e.target.value)} />
+            </Field>
+            <div className="sm:col-span-2">
+              <Button type="submit" size="sm" variant="secondary" disabled={busy}>Save</Button>
+            </div>
           </form>
           <p className="mt-2 max-w-[62ch] text-xs text-muted">
-            Review, vendor and auditor-request reminders name this organisation's documents and vendors, so they go here rather than to one address for the whole installation. Leave it blank to use the installation's own.
+            Review, vendor and auditor-request reminders name this organisation's documents and vendors, so they go here rather than to one address for the whole installation. Leave the address blank to use the installation's own.
+            Chat events — sealed packages, auditor requests, returned questionnaires — go to this workspace's own channels; on an installation with several organisations they go nowhere else, so one shared channel never shows every tenant the others' affairs.
+          </p>
+          <p className="mt-2 max-w-[62ch] text-xs text-muted">
+            Single sign-on is configured once per installation (<code className="font-mono">SSO_WORKSPACE</code> names the workspace it signs people into), not per workspace. An installation whose organisations each need their own identity provider should run one installation per organisation.
           </p>
           <ul className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2">
             {(list || []).map((ws) => (

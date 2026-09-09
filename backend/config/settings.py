@@ -461,6 +461,11 @@ COMPLIANCE_TEAM_EMAIL = os.getenv("COMPLIANCE_TEAM_EMAIL", DEFAULT_FROM_EMAIL)
 # (comma-separated keys from notifications/webhooks.py, default all).
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "").strip()
 TEAMS_WEBHOOK_URL = os.getenv("TEAMS_WEBHOOK_URL", "").strip()
+# On an installation with several workspaces, tenant events go only to the
+# workspace's own channels (Settings › Workspace). Opt back into one shared
+# channel for everything deliberately; every tenant reading it sees the
+# others' package names and auditor requests.
+WEBHOOKS_SHARED_ACROSS_WORKSPACES = env_bool("WEBHOOKS_SHARED_ACROSS_WORKSPACES", False)
 NOTIFY_EVENTS = [e.strip() for e in os.getenv("NOTIFY_EVENTS", "").split(",") if e.strip()]
 WEBHOOK_TIMEOUT = env_int("WEBHOOK_TIMEOUT", 5)
 # Posts leave the request path on a thread; the test suite sets this to post inline.

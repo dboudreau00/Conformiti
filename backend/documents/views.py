@@ -107,15 +107,27 @@ class FolderViewSet(viewsets.ModelViewSet):
             key = f.parent_id if f.parent_id in visible_ids else None
             by_parent.setdefault(key, []).append(f)
 
+        # Two facts per node, each resolved once for the whole tree rather
+        # than once per node: the tree used to run an access walk and a
+        # count query for every folder it rendered.
+        from django.db.models import Count
+
+        from .access import bulk_effective_access
+
+        access = bulk_effective_access(request.user, folders)
+        counts = dict(
+            Document.objects.filter(folder_id__in=visible_ids)
+            .values_list("folder_id").annotate(n=Count("id")).values_list("folder_id", "n"))
+
         def build(parent_id):
             nodes = []
             for f in sorted(by_parent.get(parent_id, []), key=lambda x: x.name):
                 nodes.append({
                     "id": f.id, "name": f.name, "control": f.control_id,
                     "owner": f.owner.get_full_name() if f.owner else None,
-                    "my_access": f.effective_access(request.user),
+                    "my_access": access.get(f.id),
                     "is_seeded": f.is_seeded,
-                    "document_count": f.documents.count(),
+                    "document_count": counts.get(f.id, 0),
                     "children": build(f.id),
                 })
             return nodes
@@ -222,9 +234,20 @@ class DocumentViewSet(viewsets.ModelViewSet):
         new_folder = serializer.validated_data.get("folder")
         if new_folder is not None and new_folder.id != serializer.instance.folder_id:
             self._require_folder_edit(new_folder)
+        before = serializer.instance.next_review_date
         doc = serializer.save()
         doc.compute_next_review()
-        doc.save(update_fields=["next_review_date"])
+        fields = ["next_review_date"]
+        # A moved review clock is a new set of windows. The reminder scan
+        # records which windows it has already sent for the *old* date — and
+        # once the overdue sentinel is in that list, nothing fires again — so
+        # an edit to the review date used to silence every later reminder
+        # for good. Clearing the record lets the scan start over against the
+        # new date, exactly as `mark_reviewed` and `new_version` already do.
+        if doc.next_review_date != before:
+            doc.reminders_sent = []
+            fields.append("reminders_sent")
+        doc.save(update_fields=fields)
 
     # --- actions -----------------------------------------------------------
     @action(detail=True, methods=["post"])

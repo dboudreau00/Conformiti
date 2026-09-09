@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DownloadIcon, FileUpIcon, FolderPlusIcon, KeyRoundIcon, Link2Icon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
+import { DownloadIcon, FileUpIcon, FolderPlusIcon, KeyRoundIcon, Link2Icon, SearchIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import DocumentViewer, { documentViewerProps } from "../components/documents/DocumentViewer.jsx";
 import { Badge, Dot } from "../components/ui/Badge.jsx";
@@ -24,6 +24,8 @@ const EMPTY_UPLOAD = { name: "", cadence: "annual", owner: "", file: null };
 const MAX_CHIPS = 3;
 
 const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+const SEARCH_COLS = "minmax(220px, 1.5fr) minmax(160px, 1fr) 110px 130px 130px";
+
 function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(`${iso}T00:00:00`);
@@ -264,6 +266,60 @@ export default function Documents({ me }) {
     loadDocs(node.id);
   }
   const refreshDocs = () => { if (folderId != null) loadDocs(folderId, { silent: true }); };
+
+  // Search across every folder the person can see. Until 0.9.5 finding a
+  // document meant knowing which of a hundred seeded folders it was in; the
+  // API had ?search= all along and nothing on the page used it. Two letters
+  // start it, a short pause between keystrokes, and the newest answer wins.
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState(null); // null = not searching
+  const [searching, setSearching] = useState(false);
+  const searchReq = useRef(0);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      searchReq.current += 1;
+      setHits(null);
+      setSearching(false);
+      return undefined;
+    }
+    const req = ++searchReq.current;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const rows = await fetchAll(`/documents/?search=${encodeURIComponent(q)}&ordering=name`);
+        if (req === searchReq.current) setHits(rows);
+      } catch (e) {
+        if (req === searchReq.current) {
+          setHits([]);
+          setMsg({ ok: false, text: errorText(e, "The search could not run.") });
+        }
+      } finally {
+        if (req === searchReq.current) setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Open a hit's folder: expand the path down to it and select it.
+  function jumpTo(doc) {
+    const node = findNode(tree, doc.folder);
+    if (!node) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      const walk = (nodes, trail) => {
+        for (const n of nodes) {
+          if (n.id === doc.folder) { trail.forEach((id) => next.add(id)); return true; }
+          if (n.children?.length && walk(n.children, [...trail, n.id])) return true;
+        }
+        return false;
+      };
+      walk(tree, []);
+      return next;
+    });
+    setQuery("");
+    selectFolder(node);
+  }
 
   function toggleNode(id, open) {
     setExpanded((prev) => {
@@ -589,8 +645,84 @@ export default function Documents({ me }) {
         {/* ---------------- Right: documents in the selected folder ---------------- */}
         <StackItem className="col-span-12 lg:col-span-9">
           <Panel className="overflow-hidden">
-            {!folder ? (
-              <Empty title="Select a folder" className="py-20">Pick a folder on the left to see its documents.</Empty>
+            <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
+              <div className="relative min-w-[240px] flex-1">
+                <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" strokeWidth={2} aria-hidden="true" />
+                <input
+                  type="search"
+                  className="input input-sm pl-8"
+                  value={query}
+                  placeholder="Search every folder you can see: name or description"
+                  aria-label="Search documents"
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              {hits !== null ? (
+                <Label>{searching ? "Searching…" : `${hits.length} ${hits.length === 1 ? "match" : "matches"}`}</Label>
+              ) : null}
+              {query ? (
+                <Button size="sm" variant="ghost" onClick={() => setQuery("")}>Clear</Button>
+              ) : null}
+            </div>
+            {hits !== null ? (
+              <section aria-label="Search results">
+                {searching && hits.length === 0 ? (
+                  <Loading>Searching…</Loading>
+                ) : hits.length === 0 ? (
+                  <Empty title="No documents match">Try a shorter word: the search matches names and descriptions.</Empty>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[760px]">
+                      <div className="grid gap-4 border-b border-line bg-surface-2 px-5 py-2" style={{ gridTemplateColumns: SEARCH_COLS }}>
+                        <Label>Document</Label>
+                        <Label>Folder</Label>
+                        <Label>Status</Label>
+                        <Label>Review due</Label>
+                        <Label>Owner</Label>
+                      </div>
+                      <ul className="divide-y divide-line">
+                        {hits.map((d) => {
+                          const status = DOC_STATUS[d.status] || { label: d.status, tone: "muted" };
+                          const days = d.days_until_review;
+                          return (
+                            <li key={d.id} className="grid items-center gap-4 px-5 py-3 transition-colors duration-150 ease-out hover:bg-surface-2" style={{ gridTemplateColumns: SEARCH_COLS }}>
+                              <span className="flex min-w-0 items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewing(documentViewerProps(d))}
+                                  title="Open in browser"
+                                  className="block min-w-0 max-w-full truncate text-left text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:text-accent"
+                                >
+                                  {d.name}
+                                </button>
+                                <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.name)}>
+                                  <DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                                </IconButton>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => jumpTo(d)}
+                                title="Open this folder"
+                                className="truncate text-left font-mono text-2xs uppercase tracking-label text-faint transition-colors duration-150 ease-out hover:text-accent"
+                              >
+                                {d.folder_path}
+                              </button>
+                              <span><Badge tone={status.tone} dot>{status.label}</Badge></span>
+                              <span className="flex flex-col items-start gap-1">
+                                <span className="tabular font-mono text-xs" style={{ color: toneVar(dueTone(days)) }}>{fmtDate(d.next_review_date)}</span>
+                                <Badge tone={dueTone(days)} mono>{dueLabel(days)}</Badge>
+                              </span>
+                              <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "—"}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : !folder ? (
+              <Empty title="Select a folder" className="py-20">Pick a folder on the left to see its documents, or search across all of them above.</Empty>
             ) : (
               <>
                 <PanelHeader title={folder.name}>
