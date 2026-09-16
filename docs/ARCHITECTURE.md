@@ -15,7 +15,7 @@
 | `analytics` | dashboard summary endpoint, `ReadinessSnapshot` history + trend |
 | `calendar_app` | `CalendarEvent` + merged review/audit/task feed |
 | `integrations` | Jira Cloud client (https-only, public-IP pinned, no redirects) |
-| `config` | settings, URLs, health endpoint, version, CSV sanitiser |
+| `config` | settings, URLs, health endpoint, version, CSV sanitiser, field encryption (`fieldcrypto.py`), and the one safe way to make an outbound request (`outbound.py`: host allow-lists, address checks, a pinned connection, refused redirects, proxies honoured) |
 
 ## Data model (essentials)
 

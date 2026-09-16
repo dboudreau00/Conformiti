@@ -9,11 +9,11 @@ walkthrough with exact expected values from the seeded demo data.
 ./install.sh --test            # Windows: .\install.ps1 -Test
 ```
 
-Runs, in order: `tools/validate.py` (17 static checks), `manage.py check`,
-`makemigrations --check`, the backend suite (**467 tests**, ~11 min on SQLite),
+Runs, in order: `tools/validate.py` (19 static checks), `manage.py check`,
+`makemigrations --check`, the backend suite (**580 tests**, ~13 min on SQLite),
 and a production frontend build. CI runs the same plus the PostgreSQL job,
-`npm audit`, the Docker boot check and the Playwright end-to-end suite.
-Details: [VALIDATION.md](VALIDATION.md).
+`npm audit`, the Docker boot check, the compose backup-and-restore rehearsal
+and the Playwright suite. Details: [VALIDATION.md](VALIDATION.md).
 
 To run one module or test:
 
@@ -25,8 +25,10 @@ cd backend
 
 ## Manual walkthrough (~30 min)
 
-All demo accounts share the password the seeding step printed; set
-`DEMO_PASSWORD` before seeding to pin it. Seeded documents (owner Owen Owner):
+Needs the demo dataset, which is **not** seeded by default: start with
+`SEED_DEMO_DATA=true`, or `./install.sh --demo`. All demo accounts share the
+password the seeding step printed; set `DEMO_PASSWORD` before seeding to pin
+it. Seeded documents (owner Owen Owner):
 
 | Document | Review due |
 |---|---|
@@ -118,8 +120,13 @@ codes. Sign out/in → code prompt; wrong code rejected; a backup code works
 once. Regenerate/disable require the password. As `admin`: **Reset 2FA**.
 
 ### 13 · Sign-out revokes the session
-Sign in, copy the `refresh` token from DevTools → Application → Local Storage,
-sign out, then `POST /api/auth/token/refresh/` with it → **401**.
+Cookie mode is the default, so the refresh token is an HttpOnly cookie you
+cannot read: sign in, note `conformiti_refresh` in DevTools → Application →
+Cookies, sign out, and confirm it is gone and that reloading does not sign you
+back in. To check the server side, wait for the access cookie to expire, sign
+out, then `POST /api/auth/token/refresh/` → **401**, which is what 0.9.5b
+fixed. With `AUTH_TRANSPORT=header` the token is in Local Storage and can be
+replayed directly.
 
 ### 14 · Audit log
 As `admin`: entries for your sign-ins, the failed attempts from step 1 (with
@@ -131,10 +138,12 @@ Load more. No write controls; `DELETE /api/audit-log/1/` → 405.
 prints the emails (console provider); second run → 0.
 
 ### 16 · Docker path
-`./install.sh --docker` → healthy in < 4 minutes on a laptop;
+`./install.sh --docker --demo` → healthy in < 4 minutes on a laptop;
 `http://localhost:8080/api/health/` → `status ok`, `demo_accounts true`;
 `docker compose exec backend python manage.py remove_demo_data` → the login
-page stops showing the demo hint and `demo_accounts` is `false`.
+page stops showing the demo hint and `demo_accounts` is `false`. Without
+`--demo` the dataset is never created and `demo_accounts` is `false` from the
+start, which is what a real deployment gets.
 
 ### 17 · Themes and reduced motion
 Repeat the Dashboard and Documents checks in **Obsidian** and **Audit Ledger**:

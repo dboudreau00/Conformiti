@@ -1,7 +1,13 @@
 # Changelog
 
 All notable changes to Conformiti are documented here.
-This project adheres to [Semantic Versioning](https://semver.org/).
+
+**0.9.5 is the last version number.** It is the feature-complete release of
+this edition, so every release after it is a revision letter on it: 0.9.5b,
+then c, d and so on. Releases up to and including 0.9.5 followed
+[semantic versioning](https://semver.org/); from 0.9.5b the number is fixed
+and only the letter moves. Each revision is maintenance, and the entry below
+says what changed and what to expect on upgrade.
 
 ---
 

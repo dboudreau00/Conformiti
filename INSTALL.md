@@ -416,7 +416,71 @@ from disk).
 | The app loads but every request is `400 Bad Request` | The hostname you browse with isn't in `DJANGO_ALLOWED_HOSTS`. |
 | Admin login form reloads silently over plain HTTP | `BEHIND_TLS=true` (secure cookies) on an HTTP deployment. Set it to `false` until TLS is in front. |
 | `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up or credentials differ between the `db` and `backend` services. |
-| Login always fails on the local path | Seed didn't run: `cd backend && ../.venv/bin/python manage.py bootstrap_demo`. |
+| Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser`, or seed the sample data with `manage.py bootstrap_demo`. |
 | `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
 | Uploads rejected as too large | Raise `MAX_UPLOAD_MB` **and** `client_max_body_size` in `frontend/nginx.conf`. |
 | Port in use | `CONFORMITI_PORT=8081` (Docker) or `manage.py runserver 127.0.0.1:8001` + the proxy target in `frontend/vite.config.js`. |
+
+<details>
+<summary><strong>The site loads but I cannot sign in</strong></summary>
+
+Almost always `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` or
+`CORS_ALLOWED_ORIGINS` not listing the hostname you are actually using —
+including scheme and port. The backend log names the header it rejected. Behind
+a proxy, confirm it forwards `Host` and `X-Forwarded-Proto`.
+</details>
+
+<details>
+<summary><strong>Downloads fail, or the browser refuses the file</strong></summary>
+
+Check that nothing adds a `Content-Disposition` header in the
+`/protected-media/` nginx location. Django sets it upstream and nginx passes it
+through; adding one produces two headers, and browsers refuse the response.
+</details>
+
+<details>
+<summary><strong>Passkeys will not enrol or verify</strong></summary>
+
+`WEBAUTHN_RP_ID` must be a domain name — browsers refuse an IP address,
+including `127.0.0.1`. Use `localhost` for local work and set
+`WEBAUTHN_ORIGINS` to match exactly, port included. If a proxy rewrites `Host`,
+pin both values rather than letting them be derived.
+</details>
+
+<details>
+<summary><strong>Reminder emails are not arriving</strong></summary>
+
+`manage.py send_review_reminders --dry-run` shows what the scan believes is
+due; `manage.py test_mailbox --to you@example.com` tests the transport
+separately. Each lead window is sent once and recorded on the document — a
+second run will not re-send yesterday's mail, which is correct and often
+mistaken for a failure.
+</details>
+
+<details>
+<summary><strong>Everything returns 403 after upgrading to 0.9.0</strong></summary>
+
+An account with no workspace cannot make API requests. A superuser created by
+`createsuperuser` lands in the first active workspace automatically; anyone
+else in that position is refused with 403 by design. Assign the account a
+workspace under *Settings › Role & access*, or re-run the migration if it did
+not complete.
+</details>
+
+<details>
+<summary><strong>A file is stuck in quarantine</strong></summary>
+
+The re-scan sweep quarantines a stored file when updated definitions match it.
+That is intended, and the file is not deleted. Check the scanner status row and
+the notification; if it is a false positive the file can be released, and the
+release is an audit-log entry with your name on it.
+</details>
+
+<details>
+<summary><strong>A PDF renders blank</strong></summary>
+
+Do not add a `sandbox` attribute to the PDF frame — Chromium disables plugins
+and renders blank. PDFs are drawn by pdf.js onto canvases; the viewer must
+fetch through the API client and render from a blob, never point a frame at the
+media URL.
+</details>

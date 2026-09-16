@@ -76,11 +76,10 @@ git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
 docker compose up -d --build
 ```
 
-Open **http://localhost:8080** and sign in as `admin`. The password is
-generated on first boot and printed once:
+Open **http://localhost:8080** and create the first account:
 
 ```bash
-docker compose logs backend | grep "Sign in as"
+docker compose exec backend python manage.py createsuperuser
 ```
 
 That is the whole install: PostgreSQL, Redis, the API, the reminder worker and
@@ -102,16 +101,18 @@ Local development without Docker — SQLite, console email, nothing left running
 ./install.sh                   # or: .\install.ps1
 ```
 
-> **Before any real data goes in**, retire the demo accounts. The five demo
-> personas share one password and none of them has a second factor.
+> **Want the worked example instead of an empty installation?** Start with
+> `SEED_DEMO_DATA=true` for a seeded organisation and five personas sharing
+> one generated password, printed once in the backend log. It is off by
+> default because those accounts have no second factor, and an installation
+> carrying them says so on its own sign-in page. Retire them before any real
+> data goes in:
 >
 > ```bash
-> docker compose exec backend python manage.py createsuperuser
 > docker compose exec backend python manage.py remove_demo_data
 > ```
 >
-> Then set `SEED_DEMO_DATA=false` so it never comes back. Full sequence:
-> [Day one, in order](#day-one-in-order).
+> Full sequence: [Day one, in order](#day-one-in-order).
 
 ---
 
@@ -359,12 +360,14 @@ list, fetch or even reference another's rows.
   or overdue, tasks assigned to you, meeting cadences you own that are behind.
   Managers get org-wide digests; administrators and auditors see open access
   reviews. Opening the tray marks items read; `×` dismisses one.
-- **Slack and Microsoft Teams** by incoming webhook (`https` only, set by an
-  operator and nowhere else): a package sealed, issued or withdrawn; the
+- **Slack and Microsoft Teams** by incoming webhook: a package sealed, issued or withdrawn; the
   auditor raising a request or returning an answer; a vendor's questionnaire
   coming back; the malware scanner going quiet or recovering; a file
   quarantined; and a **daily summary** of what is outstanding. Slack receives
-  Block Kit, Teams an Adaptive Card, and every delivery is logged.
+  Block Kit, Teams an Adaptive Card, and every delivery is logged. A webhook
+  URL is a credential, so it is stored encrypted, never returned by the API,
+  and may only address a host those services actually issue webhooks on —
+  checked, resolved and pinned before every post, with redirects refused.
 - **Digest email** — each person can have their own tray sent daily or weekly.
 
 ### Interface and identity
@@ -494,15 +497,14 @@ access still sees and answers the lines assigned to them.**
 | # | Do this | Why |
 |---|---|---|
 | 1 | `docker compose up -d --build` | The stack comes up with production-safe defaults |
-| 2 | `manage.py createsuperuser` | A real administrator that is not a demo persona |
-| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | The demo accounts share one password and have no second factor |
-| 4 | Set `SEED_DEMO_DATA=false` | So it never comes back on a rebuild |
-| 5 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. `PUBLIC_URL` is what vendor-questionnaire links are built from |
-| 6 | Put TLS in front and set `BEHIND_TLS=true` | Secure cookies, HTTPS redirect, `__Host-` prefixes — the prefix only works over https |
-| 7 | Configure `EMAIL_PROVIDER`, then `manage.py test_mailbox --to you@example.com` | Reminders are half the product |
-| 8 | Enrol a second factor on every account with a management capability | TOTP or passkeys; backup codes belong to the account |
-| 9 | Back up the **secrets** volume | It holds `DJANGO_SECRET_KEY_FILE` *and* the package signing key |
-| 10 | Restore from a backup once, into a scratch environment | An untested backup is a finding in most frameworks and a disaster in all of them |
+| 2 | `manage.py createsuperuser` | Your first real administrator. No demo dataset is seeded unless you asked for one |
+| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | Only if you did ask: those accounts share one password and have no second factor |
+| 4 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. Sending a vendor questionnaire is refused until `PUBLIC_URL` is set, because the link carries a bearer token |
+| 5 | Put TLS in front and set `BEHIND_TLS=true` | Secure cookies, HTTPS redirect, `__Host-` prefixes — the prefix only works over https |
+| 6 | Configure `EMAIL_PROVIDER`, then `manage.py test_mailbox --to you@example.com` | Reminders are half the product |
+| 7 | Enrol a second factor on every account with a management capability | TOTP or passkeys; backup codes belong to the account |
+| 8 | Back up the **secrets** volume | It holds `DJANGO_SECRET_KEY_FILE` *and* the package signing key |
+| 9 | Restore from a backup once, into a scratch environment | An untested backup is a finding in most frameworks and a disaster in all of them |
 
 ---
 
@@ -557,9 +559,9 @@ defaults; `.env` overrides them. Every key is documented in
 | `DJANGO_SECRET_KEY` / `DJANGO_SECRET_KEY_FILE` | A strong key, or a path where one is generated and persisted (compose uses the file form on the `secrets` volume) |
 | `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS` | Your real hostname(s) once you leave localhost. Getting these wrong is the most common cause of an install that runs but refuses logins |
 | `BEHIND_TLS` | `true` once a TLS-terminating proxy sits in front of nginx |
-| `PUBLIC_URL` | The base that vendor-questionnaire links are built from; falls back to the request `Origin`, which a dev proxy will rewrite |
+| `PUBLIC_URL` | The address links mailed outside the organisation point at. **Required off DEBUG:** a questionnaire link carries a bearer token, so rather than guess the host from the request, sending is refused until this is set |
 | `ORGANISATION_NAME` | Your name in outbound email and on the page a vendor sees |
-| `SEED_DEMO_DATA` | `false` to boot without the demo dataset |
+| `SEED_DEMO_DATA` | `true` to boot with the demo dataset. Off by default: an installation carrying it says so on its own sign-in page |
 | `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` | Create your first account on first boot |
 
 ### Data, storage and mail
@@ -588,7 +590,7 @@ defaults; `.env` overrides them. Every key is documented in
 |---|---|
 | `SIGNING_KEY_FILE` / `SIGNING_KEY` | Where the Ed25519 package-signing key lives. In compose: `/app/secrets/package_signing_key`. Rotate with `manage.py rotate_signing_key` |
 | `CLAMAV_*` | Point at a clamd instance to scan uploads, with a health probe, an outage alert and an hourly re-scan sweep |
-| `SLACK_WEBHOOK_URL`, `TEAMS_WEBHOOK_URL` | Installation-wide incoming webhooks, `https` only. Since 0.9.5 each workspace can carry its own under *Settings › Workspaces*; with more than one workspace the installation-wide pair is held back unless `WEBHOOKS_SHARED_ACROSS_WORKSPACES=true` |
+| `SLACK_WEBHOOK_URL`, `TEAMS_WEBHOOK_URL` | Installation-wide incoming webhooks. A webhook URL is a credential, so it may only address a host Slack or Teams actually issues them on (`WEBHOOK_ALLOWED_HOSTS_SLACK` / `_TEAMS` to change), its address is checked before every post and a redirect is refused. Each workspace can carry its own under *Settings › Workspaces*, never readable back through the API; with more than one workspace the installation-wide pair is held back unless `WEBHOOKS_SHARED_ACROSS_WORKSPACES=true` |
 | `REDIS_PASSWORD` | Compose only: puts AUTH on the queue, result store and cache. Letters and digits |
 
 ---
@@ -716,8 +718,8 @@ attach to a bug report.
 
 ## Upgrading
 
-Semantic versioning. Upgrade notes for each release — including migration
-counts and what to budget for them — are in [CHANGELOG.md](CHANGELOG.md).
+Upgrade notes for each release, including migration counts and what to budget
+for them, are in [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 scripts/backup.sh                 # first, always
@@ -728,6 +730,13 @@ docker compose pull && docker compose up -d --build
 The backend container applies the shipped migrations and re-seeds the control
 libraries in every workspace at boot, so the two `manage.py` steps earlier
 releases asked for are no longer needed; running them is harmless.
+
+**0.9.5b** is one migration, which encrypts the two per-workspace webhook
+columns in place. Two behaviour changes will look like faults if you are not
+expecting them: a workspace's webhook URLs are no longer returned by the API,
+so the settings screen shows whether a channel is configured rather than its
+address, and the demo dataset is no longer seeded, so a rebuilt installation
+comes up empty unless you set `SEED_DEMO_DATA=true`.
 
 **0.9.5** adds two small columns (a score on each readiness snapshot, and the
 per-workspace webhook addresses) and a `beat` service to the compose file —
@@ -940,15 +949,17 @@ locally:
 
 | Gate | What it proves |
 |---|---|
-| `tools/validate.py` — **17 static checks** | App and route wiring, the API contract between the SPA and the backend, that every model change has a shipped migration, theme packs, tests and CI present. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
-| `manage.py test` — **467 tests across 29 modules** | Workspace isolation, auth, MFA, token rotation, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder dedupe, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against RFC 8032 vectors |
+| `tools/validate.py` — **19 static checks** | App and route wiring, the API contract between the SPA and the backend, that every model change has a shipped migration, theme packs, tests and CI present. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
+| `manage.py test` — **580 tests across 36 modules** | Workspace isolation, auth, MFA, token rotation, the auditor's reachable surface enumerated by walking the routers, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder claims, outbound request checks, field encryption and key rotation, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against RFC 8032 vectors |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 / 3.14 on SQLite, plus PostgreSQL 16 |
 | Frontend | A production build that must succeed, plus `npm audit --audit-level=high` |
-| Docker | Both images build; the API image boots and answers `/api/health/` |
-| [End-to-end](e2e/README.md) — **86 specs in 13 files** | Playwright drives the **built** SPA in a real browser through every screen, against *both* auth transports — and fails on any console error |
+| Docker | Both images build; the API image boots and answers `/api/health/`. The compose job also signs in through nginx, uploads, downloads through X-Accel, backs up, destroys the stack and restores it |
+| [End-to-end](e2e/README.md) — **93 tests in 13 files** | Playwright drives the **built** SPA in a real browser through every screen, against *both* auth transports — and fails on any console error |
 
-The review that produced this release — findings, severities, fixes and what
-was deliberately left alone — is in [REVIEW.md](REVIEW.md). Operator-facing
+The three independent reviews this product has been through — findings,
+severities, fixes and what was deliberately left alone — are in
+[REVIEW.md](REVIEW.md), [REVIEW_090.md](REVIEW_090.md) and
+[REVIEW_095.md](REVIEW_095.md). Operator-facing
 posture and residual risks: [SECURITY.md](SECURITY.md). How the gates run:
 [TESTING.md](TESTING.md) and [VALIDATION.md](VALIDATION.md).
 
@@ -956,69 +967,10 @@ posture and residual risks: [SECURITY.md](SECURITY.md). How the gates run:
 
 ## Troubleshooting
 
-<details>
-<summary><strong>The site loads but I cannot sign in</strong></summary>
-
-Almost always `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` or
-`CORS_ALLOWED_ORIGINS` not listing the hostname you are actually using —
-including scheme and port. The backend log names the header it rejected. Behind
-a proxy, confirm it forwards `Host` and `X-Forwarded-Proto`.
-</details>
-
-<details>
-<summary><strong>Downloads fail, or the browser refuses the file</strong></summary>
-
-Check that nothing adds a `Content-Disposition` header in the
-`/protected-media/` nginx location. Django sets it upstream and nginx passes it
-through; adding one produces two headers, and browsers refuse the response.
-</details>
-
-<details>
-<summary><strong>Passkeys will not enrol or verify</strong></summary>
-
-`WEBAUTHN_RP_ID` must be a domain name — browsers refuse an IP address,
-including `127.0.0.1`. Use `localhost` for local work and set
-`WEBAUTHN_ORIGINS` to match exactly, port included. If a proxy rewrites `Host`,
-pin both values rather than letting them be derived.
-</details>
-
-<details>
-<summary><strong>Reminder emails are not arriving</strong></summary>
-
-`manage.py send_review_reminders --dry-run` shows what the scan believes is
-due; `manage.py test_mailbox --to you@example.com` tests the transport
-separately. Each lead window is sent once and recorded on the document — a
-second run will not re-send yesterday's mail, which is correct and often
-mistaken for a failure.
-</details>
-
-<details>
-<summary><strong>Everything returns 403 after upgrading to 0.9.0</strong></summary>
-
-An account with no workspace cannot make API requests. A superuser created by
-`createsuperuser` lands in the first active workspace automatically; anyone
-else in that position is refused with 403 by design. Assign the account a
-workspace under *Settings › Role & access*, or re-run the migration if it did
-not complete.
-</details>
-
-<details>
-<summary><strong>A file is stuck in quarantine</strong></summary>
-
-The re-scan sweep quarantines a stored file when updated definitions match it.
-That is intended, and the file is not deleted. Check the scanner status row and
-the notification; if it is a false positive the file can be released, and the
-release is an audit-log entry with your name on it.
-</details>
-
-<details>
-<summary><strong>A PDF renders blank</strong></summary>
-
-Do not add a `sandbox` attribute to the PDF frame — Chromium disables plugins
-and renders blank. PDFs are drawn by pdf.js onto canvases; the viewer must
-fetch through the API client and render from a blob, never point a frame at the
-media URL.
-</details>
+Symptoms and fixes are collected in one place, with the install steps they belong to:
+[INSTALL.md](INSTALL.md#troubleshooting). The two most common are a hostname missing from
+`DJANGO_ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / `CORS_ALLOWED_ORIGINS`, and
+`BEHIND_TLS=true` on a deployment still served over plain HTTP.
 
 ---
 
@@ -1034,7 +986,7 @@ conformiti/
 │                       · brand.js · Dockerfile · nginx.conf
 ├── e2e/                Playwright suite — 13 spec files, both auth transports
 ├── compliance-data/    the generated evidence folder tree (segregated by control)
-├── docs/               ARCHITECTURE.md · EXECUTIVE_SUMMARY.txt · SHAREPOINT_INTEGRATION.md
+├── docs/               ARCHITECTURE.md · EXECUTIVE_SUMMARY.md · sample-risk-import.csv
 │                       · sample-risk-import.csv
 ├── assets/             brand/ (logo, mark, colourways) · screenshots/
 ├── tools/validate.py   the dependency-free static validator
@@ -1119,14 +1071,16 @@ the platform here is the platform there.
 
 ## Roadmap
 
-**0.9.5 is the feature-complete release of the open-source edition.** What
-the repository set out to be — a self-hosted programme of record for SOC 2,
-ISO 27001 and PCI DSS, with sealed and signed audit packages, vendor risk,
-workspaces and the operations to run it — is here, and every finding of two
-independent reviews is closed. Further public releases are maintenance:
-security fixes, dependency updates and compatibility with new Python, Django
-and PostgreSQL versions, for as long as people run it. [ROADMAP.md](ROADMAP.md)
-has the release-by-release history.
+**0.9.5 is the last version number, and the feature-complete release of the
+open-source edition.** What the repository set out to be, a self-hosted
+programme of record for SOC 2, ISO 27001 and PCI DSS with sealed and signed
+audit packages, vendor risk, workspaces and the operations to run it, is here,
+and every finding of three independent reviews is closed.
+
+Releases after it are revision letters on that number: 0.9.5b, then c, d and
+so on. Each is maintenance, meaning security fixes, dependency updates and
+compatibility with new Python, Django and PostgreSQL versions, for as long as
+people run it. [ROADMAP.md](ROADMAP.md) has the release-by-release history.
 
 Automated evidence collection from cloud and SaaS accounts, additional
 framework libraries (NIST CSF 2.0, HIPAA, CIS Controls v8) and the like are

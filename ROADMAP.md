@@ -66,10 +66,25 @@
   policy that cannot drop the queue, a separate scheduler, and a backup and
   restore that CI performs on every push.
 
+- **0.9.5b** — a third independent review, closed: chat webhook URLs are never
+  returned by the API and are encrypted at rest, a webhook may only address a
+  host Slack or Teams issues them on and its address is checked and pinned
+  before every post, redirects are refused, macro-enabled Office is refused as
+  evidence, a questionnaire link without `PUBLIC_URL` is refused rather than
+  guessed, a SAML response must name its destination and its recipient,
+  signing out revokes the refresh token, the signing-key directory no longer
+  confirms which organisations exist, and the demo dataset is no longer seeded
+  by default.
+
 ## Beyond 0.9.5
 
-0.9.5 is the feature-complete release of the open-source edition. Further
-public releases are maintenance — security fixes, dependency updates,
-compatibility with new Python, Django and PostgreSQL versions — for as long
-as people run it. Automated evidence collection, additional framework
-libraries and other extensions are not planned for this edition.
+**0.9.5 is the last version number.** It is the feature-complete release of
+the open-source edition, and every release after it is a revision letter on
+it: 0.9.5b, then c, d, e and so on. That is deliberate rather than untidy, and
+it is why this project does not follow semantic versioning: the number is
+finished, so only the revision moves.
+
+Those revisions are maintenance. Security fixes, dependency updates, and
+compatibility with new Python, Django and PostgreSQL versions, for as long as
+people run it. Automated evidence collection, additional framework libraries
+and other extensions are not planned for this edition.

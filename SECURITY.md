@@ -1,9 +1,39 @@
 # Security
 
-This document records the security posture Conformiti ships with, the findings
-of the two security reviews performed on it (0.1.0 and 0.2.0), the residual
-risks you should weigh before hosting real compliance data, and how to report
-a vulnerability.
+The security posture Conformiti ships with, the reviews it has been through,
+the residual risks to weigh before hosting real compliance data, and how to
+report a vulnerability.
+
+## Reporting a vulnerability
+
+Open a private security advisory on GitHub
+(https://github.com/dboudreau00/Conformiti/security/advisories/new) or email
+the maintainer listed in the repository profile. Please do not file public
+issues for vulnerabilities. You will get an acknowledgement within a week.
+
+## Reviews
+
+Five in total, of which **three were independent**. Each had its findings
+fixed before the release that followed. The records are the method and the
+evidence rather than a summary: each names what was found, what was contested,
+and what was deliberately left alone.
+
+| Review | | Findings | Record | Closed in |
+|---|---|---|---|---|
+| 0.1.0, first pass | internal | 9 | below | 0.1.1 |
+| 0.2.0, line by line | internal | 19 | [REVIEW.md](REVIEW.md) | 0.2.0 |
+| 0.9.0, adversarial | **independent** | 50 confirmed of 69 candidates | [REVIEW_090.md](REVIEW_090.md) | 0.9.1 – 0.9.4 |
+| 0.9.4, source review | **independent** | all confirmed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5 |
+| 0.9.5, source review | **independent** | 9 of 9 verified | [REVIEW_095.md](REVIEW_095.md) | 0.9.5b |
+
+The independent ones are the substantial ones. The 0.9.0 review attacked
+tenancy, authentication, single sign-on, file ingest, cryptography, background
+jobs and deployment as separate exercises, and every candidate was then
+attacked again by three reviewers asking whether it was real, whether the
+cited code said what was claimed, and whether something already mitigated it.
+The 0.9.5 review found nine, of which the one that mattered was a chat webhook
+URL, a credential, readable by every signed-in account including an issued
+external auditor.
 
 ## Workspace isolation (0.9.0)
 
@@ -19,13 +49,6 @@ else's `X-Workspace` header is honoured. Each release's suite includes
 first and checks the collection lists, by-id fetches, cross-workspace
 references, the header, the archive rules and the scheduled jobs from its
 point of view.
-
-## Reporting a vulnerability
-
-Open a private security advisory on GitHub
-(https://github.com/dboudreau00/Conformiti/security/advisories/new) or email
-the maintainer listed in the repository profile. Please do not file public
-issues for vulnerabilities. You will get an acknowledgement within a week.
 
 ## Posture at a glance
 

@@ -29,15 +29,16 @@ a deployment you intend to keep, leave it out and set
 **Local dev (no Docker):** `./install.sh` (or `.\install.ps1`) → open
 **http://localhost:5173**.
 
-**Verify the build is wired (30 s):** `./install.sh --test` ✓ validator
-`PASS — 0 error(s)`, `Ran 215 tests … OK`, `✓ built`.
+**Verify the build is wired:** `./install.sh --test` ✓ validator
+`PASS — 0 error(s)`, `Ran 580 tests … OK`, `✓ built`. Allow about fifteen
+minutes; the backend suite is most of it.
 
 ## Part B — Sign in (1 min)
 
-🖱 Sign in as `mia`, using the password the demo seeding printed (the login
-page shows the demo hint only
-while demo accounts exist). ✓ The Dashboard loads; the sidebar shows Workspace
-and Governance sections with live badges (controls in progress, open risks).
+🖱 Sign in as `mia`, using the password the demo seeding printed. The sign-in
+page shows that hint only while demo accounts exist. ✓ The Dashboard loads;
+the sidebar shows Workspace and Governance sections with live badges (controls
+in progress, open risks).
 
 Demo accounts, all sharing that one password: `admin` (superuser) · `mia` (Compliance
 Manager) · `owen` (Control Owner) · `aria` (Auditor) · `val` (Viewer).
@@ -140,6 +141,8 @@ Real mail: set `EMAIL_PROVIDER=smtp|mailbox|ses` in `.env` and restart;
 2. `docker compose exec backend python manage.py createsuperuser`
 3. `docker compose exec backend python manage.py remove_demo_data`
 4. `curl -s http://localhost:8080/api/health/` → `"demo_accounts": false`.
-5. Back up the `pgdata` and `media` volumes.
+5. Put `scripts/backup.sh` on cron and copy its output off the machine.
+   `scripts/restore.sh <directory>` brings an installation back, here or
+   elsewhere; CI runs both on every push.
 
 Residual risks to weigh: [SECURITY.md](SECURITY.md#residual-risks-to-weigh-for-production).
