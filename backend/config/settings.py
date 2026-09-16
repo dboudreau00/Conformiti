@@ -468,6 +468,23 @@ TEAMS_WEBHOOK_URL = os.getenv("TEAMS_WEBHOOK_URL", "").strip()
 WEBHOOKS_SHARED_ACROSS_WORKSPACES = env_bool("WEBHOOKS_SHARED_ACROSS_WORKSPACES", False)
 NOTIFY_EVENTS = [e.strip() for e in os.getenv("NOTIFY_EVENTS", "").split(",") if e.strip()]
 WEBHOOK_TIMEOUT = env_int("WEBHOOK_TIMEOUT", 5)
+# The only hosts a webhook may address, matched label by label (a host is
+# allowed if it equals an entry or is a subdomain of one). A webhook URL is a
+# credential the server posts to, so an unchecked one is a request the server
+# makes to wherever someone else chose: Redis, the database, the cloud
+# instance metadata service. Override only to reach a genuinely different
+# endpoint, never to widen these to a bare domain.
+WEBHOOK_ALLOWED_HOSTS_SLACK = [
+    h.strip() for h in os.getenv("WEBHOOK_ALLOWED_HOSTS_SLACK", "hooks.slack.com").split(",")
+    if h.strip()]
+# Teams incoming webhooks are mid-migration: the retired Office 365 connectors
+# issue *.webhook.office.com and outlook.office.com URLs, while Workflows
+# (Power Automate) issues *.logic.azure.com ones.
+WEBHOOK_ALLOWED_HOSTS_TEAMS = [
+    h.strip() for h in os.getenv(
+        "WEBHOOK_ALLOWED_HOSTS_TEAMS",
+        "webhook.office.com,outlook.office.com,outlook.office365.com,logic.azure.com",
+    ).split(",") if h.strip()]
 # Posts leave the request path on a thread; the test suite sets this to post inline.
 WEBHOOK_SYNC = env_bool("WEBHOOK_SYNC", False)
 
@@ -658,6 +675,18 @@ SAML_DEFAULT_ROLE = os.getenv("SAML_DEFAULT_ROLE", OIDC_DEFAULT_ROLE).strip() or
 SAML_LINK_BY_EMAIL = env_bool("SAML_LINK_BY_EMAIL", OIDC_LINK_BY_EMAIL)
 if SAML_IDP_SSO_URL and not SAML_IDP_SSO_URL.startswith("https://") and not DEBUG:
     raise ImproperlyConfigured("SAML_IDP_SSO_URL must be an https:// URL.")
+
+# Where the provider sends the answer. Pinned here if set; otherwise built
+# from the request, which is why a wildcard host is refused alongside single
+# sign-on: the assertion's Destination and Recipient are compared against this
+# address, and with ALLOWED_HOSTS=* any host would satisfy the comparison.
+# Pin SAML_ACS_URL / OIDC_REDIRECT_URI and the question does not arise.
+if not DEBUG and (OIDC_ISSUER or SAML_IDP_SSO_URL) and "*" in ALLOWED_HOSTS:
+    if not (SAML_ACS_URL and OIDC_REDIRECT_URI):
+        raise ImproperlyConfigured(
+            "Single sign-on with DJANGO_ALLOWED_HOSTS=* needs SAML_ACS_URL and "
+            "OIDC_REDIRECT_URI set explicitly, so an assertion cannot be redirected "
+            "to a host of the sender's choosing. Name your hosts, or pin both URLs.")
 
 # --- Step-up on single sign-on -------------------------------------------------------
 #   off          trust the provider's authentication as it is;

@@ -14,11 +14,17 @@ Legend: **⌨ terminal** · **🖱 browser** · **✓ what you should see**
 
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
-./install.sh --docker            # Windows: .\install.ps1 -Docker
+SEED_DEMO_DATA=true ./install.sh --docker   # Windows: .\install.ps1 -Docker
 ```
 
 ✓ The script builds the images, waits for `/api/health/` to say `ok`, and
 prints `App http://localhost:8080` with the demo credentials.
+
+`SEED_DEMO_DATA=true` asks for the sample organisation this tour walks
+through. It is off by default, because a real installation should not carry
+five shared accounts, and says so on its own sign-in page while it does. For
+a deployment you intend to keep, leave it out and set
+`DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD` instead.
 
 **Local dev (no Docker):** `./install.sh` (or `.\install.ps1`) → open
 **http://localhost:5173**.

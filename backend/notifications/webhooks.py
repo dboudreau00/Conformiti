@@ -12,6 +12,13 @@ POST per event per channel with a short timeout, built on ``urllib`` so no
 dependency is added. Posts leave the request path on a thread, never block a
 seal on a chat outage, and every attempt is recorded in ``WebhookDelivery``
 so "did Slack get it?" has an answer. Nothing is ever *read* from these URLs.
+
+Every POST goes through ``config.outbound``: the host must be one Slack or
+Teams actually issues webhooks on, it must resolve to a public address, the
+connection is pinned to that address, and a redirect is refused rather than
+followed. Until 0.9.5b this was a check that the URL began with ``https://``,
+which let a stored URL point the server at anything on its own network
+(REVIEW_095.md, S-2).
 """
 import json
 import logging
@@ -21,6 +28,8 @@ import urllib.request
 
 from django.conf import settings
 from django.db import connection
+
+from config import outbound
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +48,28 @@ EVENTS = {
 }
 
 SEVERITY_EMOJI = {"info": "", "medium": "", "high": ":warning: ", "critical": ":rotating_light: "}
+
+
+def allowed_hosts(channel):
+    """The hosts this channel's webhook may address (see settings)."""
+    key = "WEBHOOK_ALLOWED_HOSTS_SLACK" if channel == "slack" else "WEBHOOK_ALLOWED_HOSTS_TEAMS"
+    return [h for h in (getattr(settings, key, None) or []) if h]
+
+
+def check_url(channel, url):
+    """Return the IP to post to, or raise ``outbound.OutboundError``.
+
+    Called twice on purpose: when someone types a URL, so they are told, and
+    again before every POST, because a value can reach the column another way
+    (the Django admin, a fixture, a restored backup) or predate this rule.
+    """
+    return outbound.assert_safe_url(url, allowed_hosts=allowed_hosts(channel))
+
+
+def _open(request, timeout, pinned_ip):
+    """The one place a webhook POST leaves the process. A seam: the test
+    suite replaces this, so nothing in a test run reaches the network."""
+    return outbound.opener(pinned_ip).open(request, timeout=timeout)
 
 
 def installation_channels():
@@ -152,14 +183,24 @@ def _post(channel, url, payload, event):
     if not url.lower().startswith("https://"):
         _record(event, channel, False, None, "refused: webhook URL is not https")
         return False
+    # Check the host, refuse anything that resolves inside the deployment
+    # network, and keep the address we validated so the connection cannot be
+    # re-pointed between here and the socket.
+    try:
+        pinned = check_url(channel, url)
+    except outbound.OutboundError as exc:
+        _record(event, channel, False, None, f"refused: {exc}")
+        return False
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, method="POST", headers={
         "Content-Type": "application/json", "User-Agent": "Conformiti"})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - https enforced above
+        with _open(request, timeout, pinned) as response:
             code = getattr(response, "status", 200)
             _record(event, channel, 200 <= code < 300, code)
             return 200 <= code < 300
+    except outbound.OutboundError as exc:  # a redirect, after every check passed
+        _record(event, channel, False, None, f"refused: {exc}")
     except urllib.error.HTTPError as exc:
         _record(event, channel, False, exc.code, f"HTTP {exc.code}")
     except (urllib.error.URLError, OSError, ValueError) as exc:

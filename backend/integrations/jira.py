@@ -8,13 +8,12 @@ Authentication is HTTP Basic with an Atlassian API token
 (email + token — create one at id.atlassian.com → Security → API tokens).
 """
 import base64
-import http.client
-import ipaddress
 import json
-import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from config import outbound
 
 
 class JiraError(Exception):
@@ -22,91 +21,36 @@ class JiraError(Exception):
     message is safe to show to the user."""
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Refuse HTTP redirects. Following them would let a malicious or
-    compromised Jira endpoint bounce the server-side request to an internal
-    address (SSRF), bypassing the host checks below."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise JiraError("Jira endpoint attempted a redirect; refusing it for security.")
-
-
-class _PinnedHTTPSConnection(http.client.HTTPSConnection):
-    """Dials a pre-validated IP address while keeping TLS SNI and certificate
-    verification bound to the original hostname. This closes the DNS-rebind
-    (TOCTOU) SSRF gap: without pinning, urllib re-resolves the hostname at
-    connect time, so an attacker-controlled DNS record could point the safety-
-    checked hostname at an internal IP for the actual connection."""
-
-    def __init__(self, host, *args, pinned_ip=None, **kwargs):
-        super().__init__(host, *args, **kwargs)
-        self._pinned_ip = pinned_ip
-
-    def connect(self):
-        sock = socket.create_connection(
-            (self._pinned_ip or self.host, self.port), self.timeout, self.source_address
-        )
-        if self._tunnel_host:
-            self.sock = sock
-            self._tunnel()
-        server_hostname = self._tunnel_host or self.host
-        self.sock = self._context.wrap_socket(sock, server_hostname=server_hostname)
+# The safety checks below used to live here in full. They moved to
+# config/outbound.py in 0.9.5b so the chat webhooks could not ship a second,
+# weaker copy of them (REVIEW_095.md, S-2). Jira keeps its own wording.
+_MESSAGES = {
+    "scheme": "Jira base URL must start with https:// (e.g. https://your-team.atlassian.net).",
+    "userinfo": "Jira base URL must not carry a username or password.",
+    "host": "Jira base URL must be a public host.",
+    "dns": "Could not resolve the Jira host \u2014 check the base URL.",
+    "private": "Jira base URL must resolve to a public host.",
+    "address": "Jira host resolved to an invalid address.",
+    "redirect": "Jira endpoint attempted a redirect; refusing it for security.",
+}
 
 
-class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
-    """urllib HTTPS handler that connects via a pinned IP (see above)."""
-
-    def __init__(self, pinned_ip):
-        super().__init__()
-        self._pinned_ip = pinned_ip
-
-    def https_open(self, req):
-        # Pass only the handler's SSL context (context=None -> stdlib's secure
-        # default, which verifies the cert against the hostname). Mirrors
-        # HTTPSHandler.https_open on modern Python.
-        return self.do_open(
-            lambda host, **kw: _PinnedHTTPSConnection(host, pinned_ip=self._pinned_ip, **kw),
-            req, context=self._context,
-        )
+def _translate(exc):
+    return JiraError(_MESSAGES.get(exc.code, str(exc)))
 
 
-def _ip_is_public(ip_str):
-    ip = ipaddress.ip_address(ip_str)
-    return not (
-        ip.is_private or ip.is_loopback or ip.is_link_local
-        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
-    )
+# Kept as module names because the integration tests import them.
+_ip_is_public = outbound.ip_is_public
 
 
 def _assert_safe_base_url(base_url):
     """Only allow https to a host that resolves exclusively to public IPs, and
-    return the validated IP to pin the connection to. Resolving here (not just
-    checking IP literals) closes the gap where an internal hostname like
-    ``jira.corp.local`` points at a private address; returning the pinned IP
-    lets the caller connect to exactly the address we validated."""
-    parsed = urllib.parse.urlparse(base_url or "")
-    if parsed.scheme != "https" or not parsed.hostname:
-        raise JiraError("Jira base URL must start with https:// (e.g. https://your-team.atlassian.net).")
-    host = parsed.hostname.lower()
-    if host in ("localhost",) or host.endswith(".local") or host.endswith(".internal"):
-        raise JiraError("Jira base URL must be a public host.")
+    return the validated IP to pin the connection to. A Jira Server install
+    may sit on a non-standard port, so the port is not restricted here."""
     try:
-        infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
-    except socket.gaierror:
-        raise JiraError("Could not resolve the Jira host — check the base URL.")
-    pinned = None
-    for info in infos:
-        addr = info[4][0]
-        try:
-            if not _ip_is_public(addr):
-                raise JiraError("Jira base URL must resolve to a public host.")
-        except ValueError:
-            raise JiraError("Jira host resolved to an invalid address.")
-        if pinned is None:
-            pinned = addr
-    if pinned is None:
-        raise JiraError("Could not resolve the Jira host — check the base URL.")
-    return pinned
+        return outbound.assert_safe_url(base_url, allowed_hosts=None, allowed_ports=None)
+    except outbound.OutboundError as exc:
+        raise _translate(exc)
 
 
 def _request(config, path, params=None):
@@ -126,10 +70,12 @@ def _request(config, path, params=None):
     })
     # Connect to the exact IP we validated, refusing redirects, so the request
     # can't be bounced to an internal address after the safety check.
-    opener = urllib.request.build_opener(_NoRedirect, _PinnedHTTPSHandler(pinned_ip))
+    sender = outbound.opener(pinned_ip)
     try:
-        with opener.open(req, timeout=15) as resp:
+        with sender.open(req, timeout=15) as resp:
             return json.load(resp)
+    except outbound.OutboundError as exc:
+        raise _translate(exc)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             raise JiraError("Jira rejected the credentials (check the email and API token).")

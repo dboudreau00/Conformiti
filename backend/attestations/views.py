@@ -414,15 +414,19 @@ class SigningKeysView(APIView):
         # installation, which is what a single-workspace deployment wants.
         slug = (request.query_params.get("workspace") or "").strip()
         workspace = Workspace.objects.filter(slug=slug).first() if slug else None
-        if slug and workspace is None:
-            return Response({"detail": "Unknown workspace."}, status=status.HTTP_404_NOT_FOUND)
 
         # On an installation with several organisations, an unnamed request
         # used to list every key of every one of them — with each key's
         # workspace slug and label attached. A public key is for publishing;
         # a directory of the tenants on a server is not. Ask for the
         # organisation by name, and answer only that one.
-        if workspace is None and Workspace.objects.filter(is_active=True).count() > 1:
+        #
+        # A name nobody recognises gets that same answer, rather than a 404.
+        # Anyone could otherwise sit here unauthenticated and learn which
+        # organisations exist on the server by watching which slugs 404
+        # (REVIEW_095.md, S-8).
+        several = Workspace.objects.filter(is_active=True).count() > 1
+        if workspace is None and (slug or several):
             return Response(
                 {"detail": "This installation serves several organisations. "
                            "Name the one whose keys you want: ?workspace=<slug>."},

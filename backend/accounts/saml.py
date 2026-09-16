@@ -302,8 +302,14 @@ def complete(request, flow):
     response_to = root.get("InResponseTo")
     if response_to and not _same(response_to, flow["id"]):
         raise OidcError("state", "the response answers a different request")
+    # Required, not merely checked when present. The HTTP-POST binding says a
+    # signed response carries Destination; treating an absent one as "fine"
+    # meant a response captured at one service could be replayed at another
+    # (REVIEW_095.md, S-6).
     destination = root.get("Destination")
-    if destination and destination != flow["acs"]:
+    if not destination:
+        raise OidcError("token", "the response does not say where it was meant to go")
+    if destination != flow["acs"]:
         raise OidcError("token", "the response was meant for another destination")
 
     conditions = assertion.find("saml:Conditions", NS)
@@ -333,8 +339,10 @@ def complete(request, flow):
             continue
         if not _same(data.get("InResponseTo", ""), flow["id"]):
             continue
+        # Same rule as Destination above: a confirmation that names no
+        # recipient confirms nothing.
         recipient = data.get("Recipient")
-        if recipient and recipient != flow["acs"]:
+        if not recipient or recipient != flow["acs"]:
             continue
         expiry = _parse_time(data.get("NotOnOrAfter"))
         if expiry and now - skew >= expiry:

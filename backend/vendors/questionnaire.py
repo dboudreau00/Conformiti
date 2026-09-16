@@ -61,18 +61,46 @@ def _hash(token):
     return hashlib.sha256(str(token or "")[:256].encode("utf-8")).hexdigest()
 
 
+class LinkBaseUnset(Exception):
+    """PUBLIC_URL is not configured and nothing may stand in for it."""
+
+
+def _trusted_origins():
+    """Origins the operator has already named in configuration."""
+    out = set()
+    for key in ("CSRF_TRUSTED_ORIGINS", "CORS_ALLOWED_ORIGINS"):
+        for entry in getattr(settings, key, None) or ():
+            entry = (entry or "").strip().rstrip("/")
+            if entry:
+                out.add(entry)
+    return out
+
+
 def public_base(request):
-    """Where the vendor will open the link: PUBLIC_URL, else the origin the
-    SPA sent the request from (the ``Origin`` header a browser attaches to a
-    POST -- right behind the shipped nginx AND behind a dev proxy that
-    rewrites Host), else the origin the request arrived on."""
+    """Where the vendor will open the link.
+
+    ``PUBLIC_URL`` decides it. The token in that link is a bearer credential,
+    so the host it points at cannot be taken from the request: an ``Origin``
+    header is chosen by whoever sent the request, and a mailed link to an
+    attacker's copy of the sign-in page is the whole attack (REVIEW_095.md,
+    S-5). Off DEBUG, an unset PUBLIC_URL is refused rather than guessed.
+
+    In DEBUG the fallback survives, because a developer moves between
+    localhost ports all day, and even then only to an origin the operator has
+    already named in CSRF_TRUSTED_ORIGINS or CORS_ALLOWED_ORIGINS.
+    """
     configured = getattr(settings, "PUBLIC_URL", "") or ""
     if configured:
         return configured.rstrip("/")
+    if not getattr(settings, "DEBUG", False):
+        raise LinkBaseUnset(
+            "This installation has no PUBLIC_URL set, so a questionnaire link would "
+            "point wherever the request said. Set PUBLIC_URL to the address vendors "
+            "reach, then send the invitation again.")
     if request is None:
         return ""
     origin = (request.headers.get("Origin") or "").strip().rstrip("/")
-    if origin.startswith(("http://", "https://")) and "/" not in origin.split("://", 1)[1]:
+    if origin and origin in _trusted_origins():
         return origin
     return request.build_absolute_uri("/").rstrip("/")
 
@@ -109,6 +137,12 @@ def create_invite(vendor, request, email, days=None, message=""):
     """Issue a link and email it. Returns ``(invite, link)``; the link is
     returned exactly once, so the sender can paste it into their own mail if
     the automatic one does not arrive."""
+    # Settled before anything is created: a link nobody can build safely is
+    # not worth revoking the vendor's live invitation for.
+    try:
+        public_base(request)
+    except LinkBaseUnset as exc:
+        raise QuestionnaireError("public_url", str(exc))
     try:
         days = QuestionnaireInvite.DEFAULT_DAYS if days in (None, "") else int(days)
     except (TypeError, ValueError):

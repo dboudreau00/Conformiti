@@ -12,8 +12,9 @@
 #                               validator and a production frontend build.
 #   ./install.sh --reset        Local only: wipe db.sqlite3 + uploads, reseed.
 #
-# Flags that combine with the above: --no-demo (skip the demo dataset),
-# --open (open the browser when ready), --port N (Docker: host port).
+# Flags that combine with the above: --demo (load the sample organisation;
+# off by default, and an installation carrying it says so on its sign-in
+# page), --open (open the browser when ready), --port N (Docker: host port).
 #
 # The local path needs no external services: SQLite + console email. Review
 # reminders run on demand (`manage.py send_review_reminders`); the Docker
@@ -28,14 +29,15 @@ ok()   { printf "%s\n" "${GREEN}  ✓${RESET} $*"; }
 warn() { printf "%s\n" "${YEL}  !${RESET} $*"; }
 die()  { printf "%s\n" "${RED}Error:${RESET} $*" >&2; exit 1; }
 
-MODE="run"; DEMO="true"; OPEN="no"; PORT="8080"
+MODE="run"; DEMO="false"; OPEN="no"; PORT="8080"
 while [ $# -gt 0 ]; do
   case "$1" in
     --setup-only) MODE="setup" ;;
     --docker)     MODE="docker" ;;
     --test)       MODE="test" ;;
     --reset)      MODE="reset" ;;
-    --no-demo)    DEMO="false" ;;
+    --demo)       DEMO="true" ;;
+    --no-demo)    DEMO="false" ;;   # kept: it is what older notes say
     --open)       OPEN="yes" ;;
     --port)       shift; PORT="${1:-8080}" ;;
     -h|--help)    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;

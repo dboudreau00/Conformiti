@@ -91,6 +91,12 @@ urlpatterns = [
     path("api/auth/logout/", LogoutView.as_view(), name="logout"),
     path("api/auth/session/", SessionView.as_view(), name="session"),
     path("api/auth/session/clear/", SessionClearView.as_view(), name="session_clear"),
+    # The same view, inside the refresh cookie's narrow path. The browser
+    # attaches the refresh cookie to this URL and not to the one above, so
+    # this is the only sign-out that can revoke the token when the access
+    # cookie has already expired (REVIEW_095.md, S-7). The SPA calls this one
+    # and falls back to the other, which older builds still use.
+    path("api/auth/token/clear/", SessionClearView.as_view(), name="token_clear"),
     path("api/auth/config/", AuthConfigView.as_view(), name="auth_config"),
     # apps
     path("api/", include("accounts.urls")),

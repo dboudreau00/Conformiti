@@ -1,11 +1,41 @@
 """User and Role models -- the foundation of role-based access control."""
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from config.fieldcrypto import EncryptedCharField
 
 from .tenancy import TenantModel, TenantUserManager
+
+# The URL an operator types. The columns are wider because they hold the
+# encrypted envelope, not the URL.
+MAX_WEBHOOK_URL_LENGTH = 500
+MAX_WEBHOOK_COLUMN = 800
+
+
+def validate_webhook_url(channel, value, error=ValidationError):
+    """Return a webhook URL that is safe to store, or raise.
+
+    Lives here rather than in the serializer so the Django admin cannot write
+    a URL the API would refuse: a model's ``clean`` runs on every admin save.
+    Only the part that can be judged from the text is checked here. Where the
+    host actually points is settled at send time, by ``notifications.webhooks``,
+    because that is the only answer that cannot go stale.
+    """
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if len(value) > MAX_WEBHOOK_URL_LENGTH:
+        raise error(f"A webhook URL may be at most {MAX_WEBHOOK_URL_LENGTH} characters.")
+    from config import outbound
+    from notifications import webhooks
+
+    try:
+        outbound.check_shape(value, allowed_hosts=webhooks.allowed_hosts(channel))
+    except outbound.OutboundError as exc:
+        raise error(str(exc))
+    return value
 
 
 class Workspace(models.Model):
@@ -27,12 +57,16 @@ class Workspace(models.Model):
     # a sealed package's name, an auditor's request and a returned
     # questionnaire name the organisation's own affairs, and one shared
     # channel for the installation would show every tenant the others'.
-    slack_webhook_url = models.URLField(
-        max_length=500, blank=True,
+    # Encrypted at rest for the same reason the TOTP secret and the Jira token
+    # are: whoever holds an incoming-webhook URL can post into the channel as
+    # the app, and a database dump or a restored backup should not hand that
+    # over (REVIEW_095.md, S-3).
+    slack_webhook_url = EncryptedCharField(
+        max_length=MAX_WEBHOOK_COLUMN, blank=True, aad_from="id",
         help_text="This organisation's Slack incoming webhook. On an installation with "
                   "several organisations, tenant events are posted here or nowhere.")
-    teams_webhook_url = models.URLField(
-        max_length=500, blank=True,
+    teams_webhook_url = EncryptedCharField(
+        max_length=MAX_WEBHOOK_COLUMN, blank=True, aad_from="id",
         help_text="This organisation's Teams incoming webhook.")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -41,6 +75,41 @@ class Workspace(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        """Insert first, then write the webhooks.
+
+        Each webhook is encrypted with this row's id as associated data, so a
+        ciphertext lifted into another organisation's row will not decrypt.
+        That leaves nothing to bind to while the row is still being inserted,
+        which is what creating a workspace with a webhook already filled in
+        does. Two writes, and only in that case.
+        """
+        pending = {}
+        if self._state.adding and self.pk is None:
+            for field in ("slack_webhook_url", "teams_webhook_url"):
+                value = getattr(self, field, "") or ""
+                if value:
+                    pending[field] = value
+                    setattr(self, field, "")
+        super().save(*args, **kwargs)
+        if pending:
+            for field, value in pending.items():
+                setattr(self, field, value)
+            super().save(update_fields=list(pending), using=kwargs.get("using"))
+
+    def clean(self):
+        """Runs on every admin save, which is the path that skips the API's
+        validators entirely."""
+        super().clean()
+        errors = {}
+        for channel, field in (("slack", "slack_webhook_url"), ("teams", "teams_webhook_url")):
+            try:
+                setattr(self, field, validate_webhook_url(channel, getattr(self, field, "")))
+            except ValidationError as exc:
+                errors[field] = exc
+        if errors:
+            raise ValidationError(errors)
 
 
 class Role(TenantModel):

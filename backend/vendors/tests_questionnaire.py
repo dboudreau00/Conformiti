@@ -85,7 +85,8 @@ class SendTests(APITestBase):
                                    format="json").data["code"], "revoked")
 
 
-@override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local")
+@override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local",
+                   PUBLIC_URL="https://grc.example")
 class VendorSideTests(APITestBase):
     def setUp(self):
         super().setUp()
@@ -209,11 +210,25 @@ class VendorSideTests(APITestBase):
             codes = [self.anon.get(f"/api/questionnaire/{self.token}/").status_code for _ in range(4)]
         self.assertEqual(codes, [200, 200, 200, 429])
 
-    def test_the_link_base_follows_the_request_when_public_url_is_unset(self):
+    def test_without_public_url_the_send_is_refused_rather_than_guessed(self):
+        """The token in the link is a bearer credential. Until 0.9.5b the host
+        it pointed at fell back to the request's own Origin header, which is
+        chosen by whoever sent the request, so a spoofed one put an
+        attacker's host in the vendor's email (REVIEW_095.md, S-5). An unset
+        PUBLIC_URL is the shipped default, so this had to fail closed."""
+        live = QuestionnaireInvite.objects.filter(
+            vendor=self.vendor, revoked_at__isnull=True).count()
         with override_settings(PUBLIC_URL=""):
             r = self.client_for(self.manager).post(
-                f"/api/vendors/{self.vendor.pk}/questionnaire/send/", {}, format="json")
-        self.assertTrue(re.match(r"^http://testserver/questionnaire/[A-Za-z0-9_-]{40,}$", r.data["link"]), r.data["link"])
+                f"/api/vendors/{self.vendor.pk}/questionnaire/send/",
+                {}, HTTP_ORIGIN="https://phish.example", format="json")
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertIn("PUBLIC_URL", str(r.data))
+        # And nothing happened: the vendor's live link was not revoked to
+        # make room for one that could not be built.
+        self.assertEqual(QuestionnaireInvite.objects.filter(
+            vendor=self.vendor, revoked_at__isnull=True).count(), live)
+        self.assertEqual(len(mail.outbox), 0)
 
 
 @override_settings(EMAIL_PROVIDER="console", ORGANISATION_NAME="Acme Ltd",

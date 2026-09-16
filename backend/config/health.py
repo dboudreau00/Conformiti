@@ -75,6 +75,14 @@ class HealthView(APIView):
                 cur.fetchone()
         except DatabaseError:
             db_ok = False
+        # `demo_accounts` is deliberately still unauthenticated. It is what
+        # puts "this installation still has its seeded demo accounts, remove
+        # them before real use" on the sign-in screen, where the person who
+        # can act on it will actually see it. Hiding it would quietly remove
+        # that warning from the one page it belongs on, and the seeded
+        # accounts would stay. 0.9.5b stops seeding them by default instead,
+        # so an installation has nothing to disclose unless its operator
+        # asked for the demo dataset (REVIEW_095.md, S-9).
         body = {
             "status": "ok" if db_ok else "degraded",
             "version": __version__,

@@ -12,7 +12,7 @@
                                 production frontend build.
     .\install.ps1 -Reset        Local only: wipe db.sqlite3 + uploads, reseed.
 
-  Combine with -NoDemo (skip the demo dataset), -Open (launch the browser when
+  Combine with -Demo (load the sample organisation; off by default), -Open (launch the browser when
   ready) and -Port N (Docker host port). Every native command is exit-code
   checked: a failed step stops the installer instead of reporting success.
 #>
@@ -22,6 +22,7 @@ param(
   [switch]$Docker,
   [switch]$Test,
   [switch]$Reset,
+  [switch]$Demo,
   [switch]$NoDemo,
   [switch]$Open,
   [int]$Port = 8080
@@ -56,7 +57,10 @@ function New-Secret {
   [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
   return ([Convert]::ToBase64String($bytes) -replace '[+/=]', '')
 }
-$demo = if ($NoDemo) { "false" } else { "true" }
+# Off unless asked for: an installation carrying the sample organisation says
+# so on its own sign-in page, which a real deployment should never publish.
+# -NoDemo is kept because older notes say it, and it agrees with the default.
+$demo = if ($Demo -and -not $NoDemo) { "true" } else { "false" }
 
 # --- Docker path -------------------------------------------------------------
 if ($Docker) {

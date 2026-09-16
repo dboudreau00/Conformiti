@@ -16,21 +16,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from . import tenancy
-from .models import Workspace
+from .models import MAX_WEBHOOK_URL_LENGTH, Workspace, validate_webhook_url
 
-
-def _https_or_blank(value, expected_host=None):
-    """A webhook is a credential in URL form: it is posted to, so it must be
-    https, and a Slack one lives on hooks.slack.com. The dispatcher refuses
-    non-https at send time too; refusing it here tells the person typing."""
-    value = (value or "").strip()
-    if not value:
-        return ""
-    if not value.lower().startswith("https://"):
-        raise serializers.ValidationError("A webhook URL must start with https://.")
-    if expected_host and expected_host not in value.lower():
-        raise serializers.ValidationError(f"Expected a {expected_host} address.")
-    return value
+# What everyone signed in may read about the organisation they belong to:
+# enough to name it on screen. Its mailbox, its chat channels and its
+# headcount are the operator's business. Before 0.9.5b the whole record went
+# to every member, external auditors included, chat webhooks and all
+# (REVIEW_095.md, S-1).
+PUBLIC_FIELDS = ("id", "name", "slug", "is_active", "created_at", "can_switch")
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
@@ -38,24 +31,49 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     # Seed the built-in roles and the shipped frameworks into a new workspace
     # (the same `seed_frameworks --with-folders` a fresh install runs).
     with_frameworks = serializers.BooleanField(write_only=True, required=False, default=True)
+    # An incoming-webhook URL is a credential: whoever holds it can post into
+    # the channel as the app. It goes in and is never read back out, by
+    # anyone. The booleans below are what the settings screen needs.
+    slack_webhook_url = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, max_length=MAX_WEBHOOK_URL_LENGTH,
+        trim_whitespace=True)
+    teams_webhook_url = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, max_length=MAX_WEBHOOK_URL_LENGTH,
+        trim_whitespace=True)
+    slack_configured = serializers.SerializerMethodField()
+    teams_configured = serializers.SerializerMethodField()
 
     class Meta:
         model = Workspace
         fields = ["id", "name", "slug", "is_active", "notification_email",
                   "slack_webhook_url", "teams_webhook_url", "created_at",
-                  "users", "with_frameworks"]
+                  "slack_configured", "teams_configured", "users", "with_frameworks"]
         read_only_fields = ["created_at"]
         extra_kwargs = {"slug": {"required": False}}
 
     def validate_slack_webhook_url(self, value):
-        return _https_or_blank(value, "hooks.slack.com")
+        return validate_webhook_url("slack", value, serializers.ValidationError)
 
     def validate_teams_webhook_url(self, value):
-        return _https_or_blank(value)
+        return validate_webhook_url("teams", value, serializers.ValidationError)
+
+    def get_slack_configured(self, obj):
+        return bool((obj.slack_webhook_url or "").strip())
+
+    def get_teams_configured(self, obj):
+        return bool((obj.teams_webhook_url or "").strip())
 
     def get_users(self, obj):
         with tenancy.unscoped():
             return obj.users.filter(is_active=True).count()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not getattr(user, "is_superuser", False):
+            return {k: v for k, v in data.items() if k in PUBLIC_FIELDS}
+        return data
 
     def validate(self, attrs):
         if not self.instance and not attrs.get("slug"):
@@ -115,6 +133,8 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         workspace = tenancy.request_workspace(request)
         if workspace is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
-        data = WorkspaceSerializer(workspace).data
+        # With the context, so the serializer knows who is asking and trims
+        # the operator-only fields for everyone else.
+        data = WorkspaceSerializer(workspace, context=self.get_serializer_context()).data
         data["can_switch"] = bool(request.user.is_superuser)
         return Response(data)

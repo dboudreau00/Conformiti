@@ -1042,8 +1042,11 @@ function WorkspacesBlock({ me }) {
       .then((r) => {
         setCurrent(r.data || null);
         setInbox(r.data?.notification_email || "");
-        setSlack(r.data?.slack_webhook_url || "");
-        setTeams(r.data?.teams_webhook_url || "");
+        // A webhook URL is a credential and never comes back from the API.
+        // The boxes start empty and say whether one is already configured;
+        // typing in one replaces it, and Remove clears it.
+        setSlack("");
+        setTeams("");
       })
       .catch(() => setCurrent(null));
     if (superuser) api.get("/workspaces/", { params: { page_size: 100 } }).then((r) => setList(r.data.results || r.data)).catch(() => setList([]));
@@ -1080,17 +1083,39 @@ function WorkspacesBlock({ me }) {
     setBusy(true);
     setMsg(null);
     try {
-      await api.patch(`/workspaces/${current.id}/`, {
-        notification_email: inbox.trim(),
-        slack_webhook_url: slack.trim(),
-        teams_webhook_url: teams.trim(),
-      });
+      // Only send a webhook the operator actually typed. An empty box means
+      // "leave it as it is", not "delete it": the boxes are always empty on
+      // load, so sending them would wipe a configured channel on every save
+      // of the reminder address.
+      const body = { notification_email: inbox.trim() };
+      if (slack.trim()) body.slack_webhook_url = slack.trim();
+      if (teams.trim()) body.teams_webhook_url = teams.trim();
+      await api.patch(`/workspaces/${current.id}/`, body);
       setMsg({ ok: true, text: inbox.trim()
         ? `Reminders for ${current.name} now go to ${inbox.trim()}${slack.trim() || teams.trim() ? ", and its chat events to its own channel" : ""}.`
         : `Reminders for ${current.name} fall back to the installation address.` });
       load();
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't save the workspace settings.") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The only path that clears a configured webhook, so that clearing one is
+   *  always something the operator chose rather than a side effect of saving
+   *  the form with an empty box. */
+  async function removeWebhook(field) {
+    if (!current) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.patch(`/workspaces/${current.id}/`, { [field]: "" });
+      if (field === "slack_webhook_url") setSlack(""); else setTeams("");
+      setMsg({ ok: true, text: `Channel removed. ${current.name}'s events stop going to it.` });
+      load();
+    } catch (err) {
+      setMsg({ ok: false, text: errorText(err, "Couldn't remove the channel.") });
     } finally {
       setBusy(false);
     }
@@ -1133,15 +1158,25 @@ function WorkspacesBlock({ me }) {
                      placeholder="grc@your-company.example"
                      onChange={(e) => setInbox(e.target.value)} />
             </Field>
-            <Field id="workspace-slack" label="Slack incoming webhook for this workspace">
+            <Field id="workspace-slack" label="Slack incoming webhook for this workspace"
+                   hint={current?.slack_configured ? "Configured. Type a new URL to replace it." : null}>
               <input id="workspace-slack" type="url" className="input font-mono text-xs" value={slack} disabled={busy}
-                     placeholder="https://hooks.slack.com/services/…"
+                     placeholder={current?.slack_configured ? "••••••••  (configured)" : "https://hooks.slack.com/services/…"}
                      onChange={(e) => setSlack(e.target.value)} />
+              {current?.slack_configured ? (
+                <button type="button" className="mt-1 text-xs text-muted underline" disabled={busy}
+                        onClick={() => removeWebhook("slack_webhook_url")}>Remove</button>
+              ) : null}
             </Field>
-            <Field id="workspace-teams" label="Teams incoming webhook for this workspace">
+            <Field id="workspace-teams" label="Teams incoming webhook for this workspace"
+                   hint={current?.teams_configured ? "Configured. Type a new URL to replace it." : null}>
               <input id="workspace-teams" type="url" className="input font-mono text-xs" value={teams} disabled={busy}
-                     placeholder="https://…webhook.office.com/…"
+                     placeholder={current?.teams_configured ? "••••••••  (configured)" : "https://…webhook.office.com/…"}
                      onChange={(e) => setTeams(e.target.value)} />
+              {current?.teams_configured ? (
+                <button type="button" className="mt-1 text-xs text-muted underline" disabled={busy}
+                        onClick={() => removeWebhook("teams_webhook_url")}>Remove</button>
+              ) : null}
             </Field>
             <div className="sm:col-span-2">
               <Button type="submit" size="sm" variant="secondary" disabled={busy}>Save</Button>

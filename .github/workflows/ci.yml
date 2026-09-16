@@ -192,7 +192,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: Start the stack (Redis password on, demo data seeded)
         run: |
-          printf 'DEMO_PASSWORD=%s\nREDIS_PASSWORD=%s\n' "$DEMO_PASSWORD" "$REDIS_PASSWORD" > .env
+          # SEED_DEMO_DATA is off in the shipped compose file since 0.9.5b, so
+          # this job asks for it: the steps below sign in as a demo account.
+          printf 'DEMO_PASSWORD=%s\nREDIS_PASSWORD=%s\nSEED_DEMO_DATA=true\n' \
+            "$DEMO_PASSWORD" "$REDIS_PASSWORD" > .env
           docker compose up -d --build
       - name: nginx answers /api/health/
         run: |

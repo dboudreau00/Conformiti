@@ -7,8 +7,10 @@
 # volume, Redis-backed rate limits, API/admin reachable only through nginx).
 # Most keys in .env override these defaults — see .env.example — but DEBUG and
 # the signing key do not, on purpose (see the note on DJANGO_DEBUG below). The
-# demo dataset is seeded unless SEED_DEMO_DATA=false; the sign-in password is
-# generated on first boot and printed once — docker compose logs backend.
+# demo dataset is NOT seeded: set SEED_DEMO_DATA=true for the guided tour. Its
+# sign-in password is generated on first boot and printed once (docker compose
+# logs backend), and an installation carrying it says so on its sign-in page
+# until `manage.py remove_demo_data` is run.
 
 x-backend-env: &backend-env
   # DEBUG and the signing key are deliberately NOT read from DJANGO_DEBUG /
@@ -65,7 +67,7 @@ x-backend-env: &backend-env
   CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
   CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
   COMPLIANCE_TREE_ROOT: /data/compliance-data
-  SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+  SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
   EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
 
 services:
@@ -200,6 +202,14 @@ services:
   # and set CONFORMITI_SCANNING=true so the API actually calls it. The first
   # start downloads the signature database, which takes a few minutes; freshclam
   # keeps it current afterwards.
+  #
+  # Off by default, deliberately. Scanning is fail-closed when it is on, which
+  # is the right behaviour and the reason it is not the default: a first
+  # `docker compose up` would pull this image and a virus-definition database
+  # before anything worked, and refuse every upload with a 503 until freshclam
+  # finished. Uploads that browsers execute, and macro-bearing Office files,
+  # are refused outright by documents/uploads.py whether or not this runs.
+  # Turn it on for any installation holding evidence you did not create.
   clamav:
     image: clamav/clamav:1.4
     profiles: ["scanning"]

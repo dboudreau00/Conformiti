@@ -223,13 +223,40 @@ class DocumentLifecycleTests(APITestBase):
 
     def test_active_content_extensions_are_refused(self):
         c = self.client_for(self.manager)
-        for bad in ("evil.html", "evil.svg", "run.exe", "s.ps1"):
+        for bad in ("evil.html", "evil.svg", "run.exe", "s.ps1",
+                    # Macro-enabled Office, refused since 0.9.5b: these are the
+                    # files an analyst opens without thinking, which is what
+                    # makes them the delivery method of choice.
+                    "policy.docm", "figures.xlsm", "deck.pptm", "book.xlsb",
+                    "saved.mhtml"):
             self.assertEqual(self._upload(c, self.tree.ctrl1, filename=bad).status_code, 400, bad)
         self.assertEqual(self._upload(c, self.tree.ctrl1, content=b"", filename="empty.pdf").status_code, 400)
         self.assertEqual(self._upload(c, self.tree.ctrl1, filename="scan.pdf").status_code, 201)
         doc = Document.objects.get(name="Evidence")
         r = c.post(f"/api/documents/{doc.pk}/new_version/", {"file": SimpleUploadedFile("x.html", b"<x>")}, format="multipart")
         self.assertEqual(r.status_code, 400)
+
+    def test_a_macro_document_renamed_to_docx_is_still_refused(self):
+        """The extension is the uploader's word for it. An OOXML file is a
+        zip, so the macro part is visible from here, and Office runs it
+        whatever the name says."""
+        import io
+        import zipfile
+
+        def ooxml(*parts):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("[Content_Types].xml", "<Types/>")
+                archive.writestr("word/document.xml", "<w:document/>")
+                for part in parts:
+                    archive.writestr(part, b"\x00\x01")
+            return buffer.getvalue()
+
+        c = self.client_for(self.manager)
+        self.assertEqual(self._upload(c, self.tree.ctrl1, filename="clean.docx",
+                                      content=ooxml()).status_code, 201)
+        self.assertEqual(self._upload(c, self.tree.ctrl1, filename="innocent.docx",
+                                      content=ooxml("word/vbaProject.bin")).status_code, 400)
 
     def test_unauthenticated_requests_are_rejected(self):
         self.assertEqual(self.client_for().get("/api/documents/").status_code, 401)

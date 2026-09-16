@@ -113,6 +113,24 @@ class AuditorSurfaceTests(APITestBase):
             with self.subTest(prefix=prefix):
                 self.assertEqual(manager.get(f"/api/{prefix}/").status_code, 200, prefix)
 
+    def test_a_reachable_collection_still_answers_with_only_what_it_should(self):
+        """Reaching a route and reading everything on it are two questions.
+        "workspaces" is on the allowed list so the auditor can see whose
+        engagement they are on, and until 0.9.5b that answer also carried the
+        organisation's Slack and Teams webhook URLs, which are credentials
+        (REVIEW_095.md, S-1). Being listed here is not a licence to disclose."""
+        from accounts.models import Workspace
+
+        workspace = Workspace.objects.get(pk=self.auditor.workspace_id)
+        workspace.slack_webhook_url = "https://hooks.slack.com/services/T0/B0/secret"
+        workspace.notification_email = "grc@example.com"
+        workspace.save()
+        for url in ("/api/workspaces/", "/api/workspaces/current/"):
+            body = str(self.client_.get(url).data)
+            self.assertNotIn("hooks.slack.com", body, url)
+            self.assertNotIn("secret", body, url)
+            self.assertNotIn("grc@example.com", body, url)
+
     def test_the_analytics_summary_is_refused(self):
         """Not a router prefix, but the same disclosure: readiness, coverage
         and ownership for the whole organisation."""

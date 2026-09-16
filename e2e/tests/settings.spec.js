@@ -141,3 +141,67 @@ test.describe("multi-factor authentication", () => {
     await expect(page.getByRole("button", { name: "Enable", exact: true })).toBeVisible();
   });
 });
+
+test.describe("workspace chat channels", () => {
+  /** Click Save and wait for the PATCH itself to come back.
+   *  `waitForLoadState("networkidle")` is not enough here: the page is
+   *  already idle when the click happens, so it can resolve before the
+   *  request is even sent, and the reload that follows cancels it. */
+  async function save(page) {
+    const patched = page.waitForResponse((r) =>
+      r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    return patched;
+  }
+
+  /** The webhook URL is a credential and is never returned by the API, so the
+   *  box is always empty on load and says whether one is configured. That
+   *  makes "saved the form with an empty box" ambiguous, and getting it wrong
+   *  deletes a working channel (REVIEW_095.md, S-1). */
+  test("a saved webhook is shown as configured, never echoed, and survives an unrelated save",
+    async ({ page }) => {
+      await open(page, "/settings", "Account");
+      await section(page, "Role & access").click();
+
+      const slack = page.locator("#workspace-slack");
+      await expect(slack).toBeVisible();
+      await slack.fill("https://hooks.slack.com/services/T000/B000/e2esecret");
+      expect((await save(page)).status()).toBe(200);
+
+      // Configured, and the URL is not on the page anywhere.
+      await page.reload();
+      await page.waitForLoadState("networkidle");
+      await section(page, "Role & access").click();
+      await expect(page.getByText(/Configured\. Type a new URL to replace it\./).first())
+        .toBeVisible();
+      await expect(slack).toHaveValue("");
+      expect(await page.content()).not.toContain("e2esecret");
+
+      // Saving the reminder address with the webhook box untouched must not
+      // clear the channel.
+      await page.locator("#workspace-inbox").fill("grc@e2e.example");
+      expect((await save(page)).status()).toBe(200);
+      await page.reload();
+      await page.waitForLoadState("networkidle");
+      await section(page, "Role & access").click();
+      await expect(page.getByText(/Configured\. Type a new URL to replace it\./).first())
+        .toBeVisible();
+
+      // Remove is the one thing that clears it.
+      const removed = page.waitForResponse((r) =>
+        r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
+      await page.getByRole("button", { name: "Remove", exact: true }).first().click();
+      expect((await removed).status()).toBe(200);
+      await expect(page.getByText(/Configured\. Type a new URL to replace it\./))
+        .toHaveCount(0);
+    });
+
+  test("a webhook on someone else's host is refused", async ({ page }) => {
+    await open(page, "/settings", "Account");
+    await section(page, "Role & access").click();
+    expectBrowserError(page, /status of 400/);
+    await page.locator("#workspace-slack").fill("https://hooks.slack.com.attacker.example/x");
+    expect((await save(page)).status()).toBe(400);
+    await expect(page.getByText(/Expected one of/i).first()).toBeVisible();
+  });
+});

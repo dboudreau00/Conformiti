@@ -18,17 +18,28 @@ Rotating a key is a three-step operation and this command is the middle one:
 Doing step 3 before step 2 is what makes secrets unreadable, which is why
 `--status` reports per key rather than just a total.
 """
+from django.apps import apps
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from config import fieldcrypto
 
-# (model label, attribute). Extend this when a column becomes encrypted --
-# a column missing here is silently never rotated.
-ENCRYPTED_COLUMNS = [
-    ("accounts.MfaDevice", "secret"),
-    ("integrations.JiraIntegration", "api_token"),
-]
+
+def encrypted_columns():
+    """Every encrypted column in the project, found rather than listed.
+
+    This used to be a hand-written list with a comment asking the next person
+    to extend it. 0.9.5b encrypted two more columns and the list did not
+    follow, which would have left those rows on the old key and made them
+    unreadable the moment an operator completed step 3 above. Asking the
+    model registry cannot go stale that way.
+    """
+    found = []
+    for model in apps.get_models():
+        for field in model._meta.get_fields():
+            if isinstance(field, fieldcrypto.EncryptedCharField):
+                found.append((model, field))
+    return sorted(found, key=lambda pair: (pair[0]._meta.db_table, pair[1].column))
 
 
 class Command(BaseCommand):
@@ -48,9 +59,8 @@ class Command(BaseCommand):
         )
 
         total_rotated = 0
-        for label, attname in ENCRYPTED_COLUMNS:
-            model = apps.get_model(label)
-            field = model._meta.get_field(attname)
+        for model, field in encrypted_columns():
+            attname = field.attname
             table, column = model._meta.db_table, field.column
 
             # Read the raw column, bypassing the decrypting descriptor.

@@ -176,15 +176,25 @@ function clearSession() {
 /** Revoke server-side, then clear local state. Always resolves — a failed
  * revoke must never trap the user in a signed-in shell.
  *
- * Cookie mode goes through /auth/session/clear/ rather than /auth/logout/:
+ * Cookie mode goes through /auth/token/clear/ rather than /auth/logout/:
  * the SPA cannot clear an HttpOnly cookie itself, and logout requires
  * authentication, so a sign-out after the access cookie expired would 401 and
  * leave a live 7-day refresh cookie behind a UI that said "signed out".
+ *
+ * The refresh cookie's path is /api/auth/token/, so only an endpoint under
+ * that path receives it. /auth/session/clear/ does not, which meant a
+ * sign-out with an expired access cookie cleared the browser but never
+ * revoked the token. It stays as the fallback for a server older than 0.9.5b.
  */
 export async function logout() {
   try {
     if (cookieMode()) {
-      await api.post("/auth/session/clear/", {});
+      try {
+        await api.post("/auth/token/clear/", {});
+      } catch (err) {
+        if (err?.response?.status !== 404) throw err;
+        await api.post("/auth/session/clear/", {});
+      }
     } else {
       const refresh = localStorage.getItem("refresh");
       if (refresh) await api.post("/auth/logout/", { refresh });

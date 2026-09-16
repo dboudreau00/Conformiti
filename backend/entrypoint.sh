@@ -42,7 +42,7 @@ log "Seeding control libraries, roles and folder tree in every workspace"
 # the previous release's libraries until someone ran this by hand.
 python manage.py seed_frameworks --with-folders --all-workspaces
 
-case "${SEED_DEMO_DATA:-true}" in
+case "${SEED_DEMO_DATA:-false}" in
   1|true|TRUE|yes|on)
     log "Seeding demo dataset (SEED_DEMO_DATA=true)"
     # bootstrap_demo prints the generated sign-in password on first boot.

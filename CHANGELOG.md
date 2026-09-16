@@ -5,6 +5,75 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.5b] — 2026-09-15
+
+A security release, closing a third independent review. It found nine things;
+all nine were real, and all nine are fixed here with a test apiece. Details,
+including what was deliberately not done, are in
+[REVIEW_095.md](REVIEW_095.md).
+
+Two changes need a word before you upgrade. Chat webhook URLs are no longer
+returned by the API to anyone, so the settings form shows whether a channel is
+configured rather than its URL, and a stored one may only address a host Slack
+or Teams actually issues webhooks on. And the demo dataset is no longer seeded
+by default.
+
+### Fixed
+
+- **Chat webhook URLs are no longer readable by everyone in the workspace.**
+  An incoming-webhook URL is a credential: whoever holds it can post into the
+  channel as the app. Both were returned on a read that any signed-in
+  account could make, the issued external auditor included. They are now
+  write-only, reported as "configured" or not, and the rest of the
+  organisation's record (its reminder mailbox, its headcount) is shown only
+  to an operator.
+- **A webhook URL is checked against the host it claims to be.** The Slack
+  check was `"hooks.slack.com" in url`, which accepts
+  `hooks.slack.com.attacker.example`, a URL with the name in its query
+  string, and one with it in the credentials before the `@`. Teams had no
+  check at all. Both now match the host label by label, refuse credentials in
+  the URL, and refuse a port of the sender's choosing.
+- **The server no longer follows a webhook redirect.** Posting went through
+  bare `urlopen`, which resolves whatever it is given and follows redirects,
+  so a stored URL could bounce the request to Redis, the database or the
+  cloud metadata service from inside the deployment network. Webhooks now use
+  the same checks the Jira client has had since 0.9.2, which have moved into
+  one shared module: the host must resolve to a public address, the
+  connection is pinned to the address that was checked, and a redirect is
+  refused and recorded rather than followed. That module also refuses
+  carrier-grade NAT space, which the standard library does not call private.
+- **Webhook URLs are encrypted at rest**, like the TOTP secret and the Jira
+  token, and bound to their own row so a ciphertext copied into another
+  organisation's record does not decrypt. The same rule now lives on the
+  model, so the Django admin cannot store a URL the API would refuse.
+- **Macro-enabled Office documents are refused as evidence** (`.docm`,
+  `.xlsm`, `.pptm` and the rest), along with `.mhtml`. A macro-bearing file
+  renamed to `.docx` is refused too: the container is opened and checked,
+  because the extension is the uploader's word for it.
+- **A questionnaire link can no longer be pointed at another host.** The link
+  carries a bearer token, and its address fell back to the `Origin` header
+  when `PUBLIC_URL` was unset, which is the shipped default. Off DEBUG the
+  send is now refused with a message naming the setting, rather than mailing
+  a vendor a link to someone else's copy of the page.
+- **A SAML response must say where it was meant to go.** `Destination` and the
+  bearer confirmation's `Recipient` were compared when present and accepted
+  when absent, so dropping the attribute skipped the check. Both are now
+  required. Single sign-on with `DJANGO_ALLOWED_HOSTS=*` also now requires
+  `SAML_ACS_URL` and `OIDC_REDIRECT_URI` to be pinned.
+- **Signing out revokes the refresh token when the access cookie has
+  expired.** The refresh cookie's path is `/api/auth/token/`, so the sign-out
+  endpoint never received it and could only clear the browser. The same
+  endpoint is now also served inside that path, where the cookie arrives.
+- **The signing-key directory no longer confirms which organisations exist.**
+  An unknown workspace slug gets the same answer as no slug at all.
+
+### Changed
+
+- **The demo dataset is no longer seeded by default**, in compose, in the
+  entrypoint and in both installers. An installation carrying it announces
+  that on its own sign-in page, which is right for a tour and wrong for a
+  deployment. Ask for it with `SEED_DEMO_DATA=true`, or `--demo` / `-Demo`.
+
 ## [0.9.5] — 2026-09-09
 
 The feature-complete release of the open-source edition, and the close of a

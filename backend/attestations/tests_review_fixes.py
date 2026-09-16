@@ -6,6 +6,7 @@ of findings; these cover the ones remediated in this pass.
 from django.core.files.base import ContentFile
 from rest_framework.test import APIClient
 
+from accounts.models import Workspace
 from documents.models import Document
 
 from .models import PackageControl, PackageEvidence
@@ -270,5 +271,12 @@ class PerWorkspaceKeyTests(PackageTestBase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["workspace"], "default")
         self.assertTrue(any(k["current"] for k in r.data["keys"]))
-        self.assertEqual(self.client_for(self.manager).get(
-            "/api/signing-keys/", {"workspace": "nope"}).status_code, 404)
+        # A name nobody recognises gets the same answer as no name at all.
+        # The endpoint is unauthenticated, and a 404 here told anyone who
+        # asked which organisations exist on the server (REVIEW_095.md, S-8).
+        unknown = self.client_for(self.manager).get("/api/signing-keys/", {"workspace": "nope"})
+        self.assertEqual(unknown.status_code, 400)
+        Workspace.objects.create(name="Beta Ltd", slug="beta-ltd")
+        unnamed = self.client_for(self.manager).get("/api/signing-keys/")
+        self.assertEqual(unnamed.status_code, 400)
+        self.assertEqual(unknown.data["detail"], unnamed.data["detail"])

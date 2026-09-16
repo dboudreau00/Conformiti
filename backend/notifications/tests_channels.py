@@ -14,8 +14,15 @@ from notifications.models import NotificationReceipt, WebhookDelivery
 from notifications.tasks import post_daily_summary, run_digests
 from testutils import APITestBase, make_doc
 
-CHANNELS = dict(SLACK_WEBHOOK_URL="https://hooks.slack.test/T/B/x", TEAMS_WEBHOOK_URL="https://teams.test/hook",
+# Real Slack and Teams hosts: since 0.9.5b a webhook may only address a host
+# those services actually issue webhooks on, checked before every post.
+SLACK_HOOK = "https://hooks.slack.com/services/T/B/x"
+TEAMS_HOOK = "https://example.webhook.office.com/webhookb2/hook"
+CHANNELS = dict(SLACK_WEBHOOK_URL=SLACK_HOOK, TEAMS_WEBHOOK_URL=TEAMS_HOOK,
                 WEBHOOK_SYNC=True, PUBLIC_URL="https://grc.example", NOTIFY_EVENTS=[])
+# One public address, so the suite never depends on DNS. Everything else about
+# the URL is checked for real.
+PUBLIC_ADDRESS = [(2, 1, 6, "", ("93.184.216.34", 443))]
 
 
 class FakeUrlopen:
@@ -25,7 +32,7 @@ class FakeUrlopen:
         self.calls = []
         self.status = status
 
-    def __call__(self, request, timeout=None):
+    def __call__(self, request, timeout=None, pinned_ip=None):
         self.calls.append({"url": request.full_url, "body": json.loads(request.data.decode("utf-8")),
                            "headers": dict(request.header_items()), "timeout": timeout})
         fake = mock.MagicMock()
@@ -33,12 +40,20 @@ class FakeUrlopen:
         return fake
 
 
+def stub_dns(case, addresses=PUBLIC_ADDRESS):
+    """Answer every lookup with one public address, for the length of a test."""
+    patcher = mock.patch("config.outbound.socket.getaddrinfo", return_value=addresses)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 @override_settings(**CHANNELS)
 class WebhookTests(PackageTestBase):
     def setUp(self):
         super().setUp()
+        stub_dns(self)
         self.http = FakeUrlopen()
-        self.patcher = mock.patch("urllib.request.urlopen", self.http)
+        self.patcher = mock.patch("notifications.webhooks._open", self.http)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
 
@@ -47,10 +62,10 @@ class WebhookTests(PackageTestBase):
                                         path="/packages", severity="high", sync=True)
         self.assertEqual(attempted, ["slack", "teams"])
         by_url = {c["url"]: c["body"] for c in self.http.calls}
-        slack = by_url["https://hooks.slack.test/T/B/x"]
+        slack = by_url[SLACK_HOOK]
         self.assertIn(":warning: *Hello*", slack["blocks"][0]["text"]["text"])
         self.assertIn("https://grc.example/packages", slack["blocks"][-1]["elements"][0]["text"])
-        teams = by_url["https://teams.test/hook"]
+        teams = by_url[TEAMS_HOOK]
         card = teams["attachments"][0]["content"]
         self.assertEqual(card["type"], "AdaptiveCard")
         self.assertEqual(card["body"][0]["text"], "Hello")
@@ -60,7 +75,7 @@ class WebhookTests(PackageTestBase):
         self.assertEqual(WebhookDelivery.objects.filter(ok=True).count(), 2)
 
     def test_https_only_and_the_allow_list(self):
-        with override_settings(SLACK_WEBHOOK_URL="http://hooks.slack.test/plain"):
+        with override_settings(SLACK_WEBHOOK_URL="http://hooks.slack.com/plain"):
             webhooks.post_event("test", "x", "y", sync=True)
         refused = WebhookDelivery.objects.get(channel="slack")
         self.assertFalse(refused.ok)
@@ -75,7 +90,8 @@ class WebhookTests(PackageTestBase):
     def test_a_failing_endpoint_is_recorded_and_never_breaks_the_caller(self):
         import urllib.error
         self.http.status = 500
-        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+        with mock.patch("notifications.webhooks._open",
+                        side_effect=urllib.error.URLError("refused")):
             self.assertEqual(webhooks.post_event("test", "x", "y", sync=True), ["slack", "teams"])
         rows = WebhookDelivery.objects.all()
         self.assertEqual(rows.count(), 2)

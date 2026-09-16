@@ -74,6 +74,12 @@ class FakeIdp:
         self.sign = "response"       # response | assertion | none
         self.status = "urn:oasis:names:tc:SAML:2.0:status:Success"
         self.extra_assertion = None
+        # Both normally follow self.recipient. Set one to "" to leave that
+        # attribute empty without touching the other, which is how a response
+        # that names no destination, or a confirmation that names no
+        # recipient, is built.
+        self.destination = None
+        self.subject_recipient = None
 
     def _t(self, when):
         return when.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -88,7 +94,8 @@ class FakeIdp:
             f'<saml:Issuer>{self.issuer}</saml:Issuer>'
             f'<saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{name_id or self.name_id}</saml:NameID>'
             f'<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">'
-            f'<saml:SubjectConfirmationData InResponseTo="{self.in_response_to}" Recipient="{self.recipient}" '
+            f'<saml:SubjectConfirmationData InResponseTo="{self.in_response_to}" '
+            f'Recipient="{self.recipient if self.subject_recipient is None else self.subject_recipient}" '
             f'NotOnOrAfter="{self._t(self.not_after)}"/></saml:SubjectConfirmation></saml:Subject>'
             f'<saml:Conditions NotBefore="{self._t(self.not_before)}" NotOnOrAfter="{self._t(self.not_after)}">'
             f'<saml:AudienceRestriction><saml:Audience>{self.audience}</saml:Audience></saml:AudienceRestriction>'
@@ -107,7 +114,8 @@ class FakeIdp:
             assertion = signer.sign(assertion, key=self.key, cert=self.cert)
         root = etree.fromstring(
             f'<samlp:Response xmlns:samlp="{NS["samlp"]}" xmlns:saml="{NS["saml"]}" ID="_r{self.assertion_id[2:]}" '
-            f'Version="2.0" IssueInstant="{self._t(self.not_before)}" Destination="{self.recipient}" '
+            f'Version="2.0" IssueInstant="{self._t(self.not_before)}" '
+            f'Destination="{self.recipient if self.destination is None else self.destination}" '
             f'InResponseTo="{self.in_response_to}"><saml:Issuer>{self.issuer}</saml:Issuer>'
             f'<samlp:Status><samlp:StatusCode Value="{self.status}"/></samlp:Status></samlp:Response>')
         if self.extra_assertion is not None:
@@ -277,6 +285,20 @@ class SamlFlowTests(APITestBase):
             # is not ours at all.
             idp.recipient = "https://evil.example/acs"
         self.refused("token", recipient)
+
+    def test_a_response_that_names_no_destination_is_refused(self):
+        """0.9.5 checked Destination only when it was there, so a response
+        captured at one service provider could be replayed at another by
+        dropping the attribute (REVIEW_095.md, S-6). The POST binding
+        requires it."""
+        def no_destination(idp):
+            idp.destination = ""
+        self.refused("token", no_destination)
+
+    def test_a_confirmation_that_names_no_recipient_confirms_nothing(self):
+        def no_recipient(idp):
+            idp.subject_recipient = ""
+        self.refused("state", no_recipient)
 
     def test_state_relay_and_in_response_to_bind_the_browser(self):
         def other_request(idp):

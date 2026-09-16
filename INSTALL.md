@@ -18,17 +18,24 @@ cd Conformiti
 docker compose up -d --build
 ```
 
-Then open **http://localhost:8080** and sign in as `admin`. The demo password
-is generated on first boot and printed once — `docker compose logs backend |
-grep "Sign in as"` — or set `DEMO_PASSWORD` before the first start to choose it.
+Then open **http://localhost:8080**. Create the first account with
+`docker compose exec backend python manage.py createsuperuser`.
+
+To look around a worked example instead, start with `SEED_DEMO_DATA=true`.
+That seeds five accounts sharing one password, generated on first boot and
+printed once (`docker compose logs backend | grep "Sign in as"`, or set
+`DEMO_PASSWORD` beforehand). It is off by default: an installation carrying
+those accounts says so on its own sign-in page, which is not a thing a real
+deployment should publish.
 
 What happens on first boot:
 
 1. PostgreSQL 16 and Redis 7 start with healthchecks.
 2. The API container waits for the database, applies the shipped migrations,
    seeds the three control libraries (217 controls, 1,117 folders) and the
-   built-in roles, seeds the demo dataset (unless `SEED_DEMO_DATA=false`),
-   collects static files and starts gunicorn as an unprivileged user.
+   built-in roles, seeds the demo dataset only if you asked for it
+   (`SEED_DEMO_DATA=true`), collects static files and starts gunicorn as an
+   unprivileged user.
 3. A strong `DJANGO_SECRET_KEY` is generated and persisted in the `secrets`
    volume — no placeholder ever signs a token.
 4. The Celery worker starts once the API is *healthy* and runs the daily
@@ -49,7 +56,7 @@ sees nginx on port 8080 (`CONFORMITI_PORT` to change it).
 The script checks Docker is running, writes a production-style `.env` if you
 don't have one (DEBUG off, a unique key, your hostname in `ALLOWED_HOSTS`),
 builds and starts the stack, **waits until `/api/health/` reports `ok`**, and
-prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
+prints the URLs. Flags: `--demo` / `-Demo` (load the sample organisation),
 `--open` / `-Open`, `--port N` / `-Port N`.
 
 ### Going to production
@@ -71,10 +78,11 @@ prints the URLs and demo credentials. Flags: `--no-demo` / `-NoDemo`,
    docker compose exec backend python manage.py createsuperuser
    docker compose exec backend python manage.py remove_demo_data
    ```
-   or set `SEED_DEMO_DATA=false` and `DJANGO_SUPERUSER_USERNAME` /
-   `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first boot.
+   The dataset is off by default; set `DJANGO_SUPERUSER_USERNAME` /
+   `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first
+   boot to get an account to sign in with.
 4. Confirm: `curl -s https://grc.example.com/api/health/` →
-   `{"status":"ok","version":"0.9.5","database":"ok","demo_accounts":false,…}`.
+   `{"status":"ok","version":"0.9.5b","database":"ok","demo_accounts":false,…}`.
 5. Put `scripts/backup.sh` on cron and copy its output off the machine. It
    takes the database dump and the evidence, secrets and tree volumes in one
    go; `scripts/restore.sh <directory>` brings an installation back, here or
