@@ -11,6 +11,25 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5c], 2026-09-17
+
+A maintenance release with one fix. Nothing to do on upgrade beyond pulling
+the image or the checkout; there is no migration.
+
+### Fixed
+
+- **The document list answered 500 on SQLite once the content grew.** The
+  list prefetched each document's control links and then, in further
+  queries, the control, category and framework behind every link. On SQLite
+  Django expands that forward-key prefetch into one OR clause per related
+  row, and SQLite refuses an expression deeper than 1000, so a page of
+  policies mapped into many libraries (a Pro seed pack lands thousands of
+  links) failed for exactly the installations with the most content.
+  PostgreSQL ran the same query in one very wide statement. The links are
+  now prefetched with their control, category and framework joined in: one
+  query on every backend, and a regression test with 1,200 links on one
+  document.
+
 ## [0.9.5b] — 2026-09-15
 
 A security release, closing a third independent review. It found nine things;

@@ -82,6 +82,32 @@ class FolderVisibilityTests(APITestBase):
         self.assertEqual(r.status_code, 400)
 
 
+class HeavilyLinkedDocumentTests(APITestBase):
+    """A policy pre-mapped into every shipped library carries thousands of
+    control links. Django expands a forward-key prefetch on SQLite into one
+    OR clause per related row, and SQLite refuses an expression deeper than
+    1000, so the document list answered 500 for exactly the customers with
+    the most content. The links are now prefetched with their control joined
+    in, which is one query on every backend."""
+
+    def test_the_list_answers_with_more_than_a_thousand_links(self):
+        from compliance.models import Control, ControlEvidence
+
+        controls = Control.objects.bulk_create([
+            Control(category=self.tree.category, control_id=f"TC9.{n}", title=f"Control {n}")
+            for n in range(1200)])
+        doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Everything Policy")
+        ControlEvidence.objects.bulk_create([
+            ControlEvidence(control=c, document=doc) for c in controls])
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+
+        r = self.client_for(self.viewer).get("/api/documents/")
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        rows = r.data["results"] if isinstance(r.data, dict) else r.data
+        row = next(x for x in rows if x["id"] == doc.pk)
+        self.assertEqual(len(row["satisfies"]), 1200)
+
+
 class FolderIntegrityTests(APITestBase):
     def test_parent_cycle_is_rejected(self):
         c = self.client_for(self.manager)

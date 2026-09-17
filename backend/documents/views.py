@@ -194,11 +194,21 @@ class DocumentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["updated_at", "next_review_date", "name"]
 
     def get_queryset(self):
+        from django.db.models import Prefetch
+
+        from compliance.models import ControlEvidence
+
         visible_ids = accessible_folder_ids(self.request.user)
+        # The links are prefetched with their control, category and framework
+        # joined in, rather than as three further prefetches: on SQLite Django
+        # expands a forward-key prefetch into one OR clause per related row,
+        # and a page of policies mapped into every shipped library carries
+        # thousands of links, past SQLite's expression depth of 1000.
+        links = ControlEvidence.objects.select_related("control__category__framework")
         return (
             Document.objects.filter(folder_id__in=visible_ids)
             .select_related("folder", "owner", "control")
-            .prefetch_related("control_links__control__category__framework")
+            .prefetch_related(Prefetch("control_links", queryset=links))
         )
 
     def _require_folder_edit(self, folder):
