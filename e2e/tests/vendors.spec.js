@@ -57,7 +57,8 @@ test.describe("vendor register", () => {
     await expect(page.getByText("Controls in scope", { exact: true })).toBeVisible();
     await expect(page.getByText("Stated", { exact: true })).toBeVisible();
     // A seeded statement is in the grid, editable by a frameworks manager.
-    await page.getByRole("button", { name: "PCI DSS", exact: true }).click();
+    // The framework filter is a select since 0.9.5d: twenty-five chips wrapped.
+    await page.locator("#matrix-framework").selectOption("pci_dss_v4");
     await expect(page.getByLabel("What Amazon Web Services does for 1.3", { exact: true })).toHaveValue(/Edge network controls/);
     // Typing marks the row unsaved until Save is pressed.
     await page.getByLabel("What we do for 12.1", { exact: true }).fill("Our policy, our review cycle.");
@@ -137,7 +138,7 @@ test.describe("responsibility matrix (RACI)", () => {
     await expect(page.getByText("No Accountable", { exact: true })).toBeVisible();
     await expect(page.getByText("No Responsible", { exact: true })).toBeVisible();
     await expect(page.getByText("Shared with a vendor", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "SOC 2", exact: true }).click();
+    await page.locator("#raci-framework").selectOption("soc2");
     await page.getByLabel("Search controls", { exact: true }).fill("CC6.1");
     // Explicit rows from the seed, and the implied vendor from Okta's matrix.
     await expect(page.getByText("Mia Manager", { exact: true }).first()).toBeVisible();
@@ -148,9 +149,10 @@ test.describe("responsibility matrix (RACI)", () => {
   test("a second Accountable party is refused", async ({ page }) => {
     expectBrowserError(page, /status of 400/);   // the refusal is the point
     await open(page, "/responsibilities", "Responsibility matrix");
-    const control = page.getByLabel("Control", { exact: true });
-    const value = await control.locator("option", { hasText: /CC6\.1: / }).first().getAttribute("value");
-    await control.selectOption(value);
+    // Since 0.9.5d the control is found by typing rather than scrolling a
+    // dropdown of every control in the workspace.
+    await page.locator("#raci-control").fill("CC6.1");
+    await page.getByRole("button", { name: /^CC6\.1/ }).click();
     await page.getByLabel("Person", { exact: true }).selectOption({ label: "Owen Owner" });
     await page.getByLabel("Role", { exact: true }).selectOption("accountable");
     await page.getByRole("button", { name: "Assign", exact: true }).click();

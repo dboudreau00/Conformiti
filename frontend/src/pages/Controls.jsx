@@ -241,12 +241,12 @@ export default function Controls({ me }) {
 
           <Panel className="overflow-hidden">
             <PanelHeader title="Control register">
+              {/* Rendered, then loaded. The second number stays the whole
+                  register even while a filter is on, so this line still shows
+                  that every page of the API's results arrived; how many the
+                  filter matched is on the button at the foot of the list. */}
               <Label className="tabular">
-                {ready
-                  ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}${
-                      rows.length === controls.length ? "" : ` (${controls.length.toLocaleString()} in all)`
-                    }`
-                  : "Loading"}
+                {ready ? `Showing ${page.shown.toLocaleString()} of ${controls.length.toLocaleString()}` : "Loading"}
               </Label>
             </PanelHeader>
 

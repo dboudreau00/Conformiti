@@ -74,7 +74,7 @@ test.describe("access review", () => {
     // empty on a fresh install and the README screenshot promises a view the
     // demo does not produce.
     await expect(page.getByRole("combobox", { name: /access review/i }))
-      .toContainText(/access review . open \(4\/5\)/i);
+      .toContainText(/access review, open \(4\/5\)/i);
     for (const name of ["Ada Admin", "Aria Auditor", "Mia Manager", "Owen Owner", "Val Viewer"]) {
       await expect(page.getByRole("radiogroup", { name: `Decision for ${name}` })).toBeVisible();
     }

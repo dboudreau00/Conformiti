@@ -9,9 +9,18 @@ test.describe("control register", () => {
 
   test("shows every seeded control, not just the first page", async ({ page }) => {
     // 217 controls across three frameworks arrive over five paginated pages.
-    // Reading only the first was a real 0.2.0 defect on four screens.
-    await expect(page.getByText(/SHOWING 217 OF 217/i)).toBeVisible();
+    // Reading only the first was a real 0.2.0 defect on four screens. The
+    // register renders a hundred rows at a time since 0.9.5d, so the second
+    // number is what arrived and the first is what is on screen: both matter.
+    await expect(page.getByText(/SHOWING 100 OF 217/i)).toBeVisible();
     await expect(page.getByRole("tab", { name: /All frameworks/i })).toBeVisible();
+
+    // And every one of them is reachable.
+    for (let i = 0; i < 2; i += 1) {
+      await page.getByRole("button", { name: /Show \d+ more of/ }).click();
+    }
+    await expect(page.getByText(/SHOWING 217 OF 217/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Show \d+ more of/ })).toHaveCount(0);
   });
 
   test("the framework tabs narrow the register", async ({ page }) => {
@@ -25,14 +34,14 @@ test.describe("control register", () => {
     await expect(page.getByText(/SHOWING 61 OF 61/i)).toBeVisible();
 
     await page.getByRole("tab", { name: /All frameworks/i }).click();
-    await expect(page.getByText(/SHOWING 217 OF 217/i)).toBeVisible();
+    await expect(page.getByText(/SHOWING 100 OF 217/i)).toBeVisible();
   });
 
   test("the status filter narrows the register", async ({ page }) => {
     await page.getByRole("button", { name: /^Implemented/ }).click();
     await expect(page.getByText(/SHOWING 62 OF 217/i)).toBeVisible();
     await page.getByRole("button", { name: /^Every status/ }).click();
-    await expect(page.getByText(/SHOWING 217 OF 217/i)).toBeVisible();
+    await expect(page.getByText(/SHOWING 100 OF 217/i)).toBeVisible();
   });
 
   test("search matches on reference and on title", async ({ page }) => {

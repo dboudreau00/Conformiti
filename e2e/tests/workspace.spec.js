@@ -21,8 +21,13 @@ test.describe("dashboard", () => {
     await expect(label).toBeVisible();
     if ((await label.textContent()).trim() === "Readiness score") {
       await expect(page.getByText("/100")).toBeVisible();
-      await expect(page.getByText(/Mean score across \d+ applicable controls/)).toBeVisible();
-      await expect(page.getByText(/\d+% are marked implemented/)).toBeVisible();
+      // 0.9.5d: the card states the share, and the "i" beside the label
+      // explains how the score is worked out, on hover or on focus.
+      await expect(page.getByText(/\d+% of [\d,]+ applicable controls are marked implemented/)).toBeVisible();
+      const why = page.getByRole("button", { name: /how the readiness score is worked out/i });
+      await expect(why).toBeVisible();
+      await why.hover();
+      await expect(page.getByRole("tooltip")).toContainText(/mean score across [\d,]+ applicable controls/i);
     } else {
       await expect(page.getByText(/of \d+ applicable controls implemented/)).toBeVisible();
     }
@@ -61,7 +66,7 @@ test.describe("dashboard", () => {
 
   test("the evidence coverage meter is populated", async ({ page }) => {
     await expect(page.getByRole("progressbar", { name: /evidence coverage/i })).toBeVisible();
-    await expect(page.getByText(/control–document links/)).toBeVisible();
+    await expect(page.getByText(/control-document links/)).toBeVisible();
   });
 });
 

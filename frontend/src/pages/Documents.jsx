@@ -3,8 +3,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { DownloadIcon, FileUpIcon, FolderPlusIcon, KeyRoundIcon, Link2Icon, SearchIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import DocumentViewer, { documentViewerProps } from "../components/documents/DocumentViewer.jsx";
+import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Badge, Dot } from "../components/ui/Badge.jsx";
 import { Button, IconButton } from "../components/ui/Button.jsx";
+import { useConfirm } from "../components/ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
@@ -535,27 +537,27 @@ export default function Documents({ me }) {
             {treeLoading ? (
               <Loading />
             ) : tree.length === 0 ? (
-              <Empty title="No folders yet">
-                {canManageFolders ? (
-                  <span className="flex flex-col items-center gap-3">
-                    <span>Make the first folder here, or load a framework library, which brings its evidence folders with it.</span>
-                    <form onSubmit={(e) => createFolder(e, null)} className="flex items-center gap-2">
-                      <input
-                        className="input input-sm max-w-[200px]"
-                        placeholder="First folder name"
-                        aria-label="First folder name"
-                        value={newFolder}
-                        onChange={(e) => setNewFolder(e.target.value)}
-                        disabled={busy}
-                      />
-                      <Button size="sm" variant="primary" type="submit" disabled={busy || !newFolder.trim()}>
-                        Create folder
-                      </Button>
-                    </form>
-                  </span>
-                ) : (
-                  <span>Ask an administrator to create the first folder, or to load a framework library, which brings its evidence folders with it.</span>
-                )}
+              <Empty
+                title="No folders yet"
+                action={canManageFolders ? (
+                  <form onSubmit={(e) => createFolder(e, null)} className="flex items-center gap-2">
+                    <input
+                      className="input input-sm max-w-[200px]"
+                      placeholder="First folder name"
+                      aria-label="First folder name"
+                      value={newFolder}
+                      onChange={(e) => setNewFolder(e.target.value)}
+                      disabled={busy}
+                    />
+                    <Button size="sm" variant="primary" type="submit" disabled={busy || !newFolder.trim()}>
+                      Create folder
+                    </Button>
+                  </form>
+                ) : null}
+              >
+                {canManageFolders
+                  ? "Make the first folder here, or load a framework library, which brings its evidence folders with it."
+                  : "Ask an administrator to create the first folder, or to load a framework library, which brings its evidence folders with it."}
               </Empty>
             ) : (
               <FolderTree
