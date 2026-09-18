@@ -104,14 +104,31 @@ jobs:
       - run: docker compose config -q
       - run: docker build -t conformiti-backend:ci ./backend
       - run: docker build -t conformiti-frontend:ci ./frontend
-      - name: Backend image boots and answers /api/health/ (SQLite, no services)
+      # Two runs, because they take different paths through entrypoint.sh and
+      # the first one is the one nothing used to cover: compose and both
+      # installers always set SEED_DEMO_DATA, so a plain `docker run` of the
+      # published image was the only caller that left it unset, and `set -u`
+      # made that fatal after the migrations had already run (0.9.5e).
+      - name: Backend image boots with no environment at all (SQLite, no services)
         run: |
-          docker run -d --name api -p 8000:8000 \
+          docker run -d --name bare -p 8000:8000 \
+            -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
+            conformiti-backend:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/api/health/; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs bare
+          exit 1
+
+      - name: Backend image boots and answers /api/health/ (demo dataset seeded)
+        run: |
+          docker run -d --name api -p 8001:8000 \
             -e DJANGO_DEBUG=false -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
             -e BEHIND_TLS=false -e SEED_DEMO_DATA=true -e EMAIL_PROVIDER=console \
             conformiti-backend:ci
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/api/health/; then echo; exit 0; fi
+            if curl -fsS http://localhost:8001/api/health/; then echo; exit 0; fi
             sleep 2
           done
           docker logs api

@@ -11,6 +11,37 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5e], 2026-09-18
+
+The stack is published as container images. Doing so found that the backend
+image could not start on its own, which is fixed here. Nothing to do on
+upgrade: no migration, no configuration.
+
+### Fixed
+
+- **The backend image exited after applying its migrations** when it was run
+  without `SEED_DEMO_DATA` in its environment. The entrypoint runs under
+  `set -u`, and the branch that says the demo dataset is being skipped read
+  the variable bare, so the one path that reaches it, an image started with
+  nothing set, was fatal. Nothing in this repository could reach it: the
+  compose file sets the variable explicitly, both installers write it, and
+  the image test in CI passed it, so the failure needed a plain `docker run`
+  to appear. CI now boots the image twice, once with an empty environment.
+
+### Distribution
+
+- **The stack is published as container images**, so an installation no longer
+  has to build one: `ghcr.io/dboudreau00/conformiti-backend` and
+  `ghcr.io/dboudreau00/conformiti-frontend`, for `linux/amd64` and
+  `linux/arm64`, tagged with the version, the commit, and `latest` for the
+  newest release. `docker-compose.ghcr.yml` runs them in place of the four
+  services that would otherwise be built, changing nothing else about the
+  stack. Building from source stays the default path and is still what the
+  README opens with. The images are built from the same two Dockerfiles by
+  `.github/workflows/packages.yml`, which pulls what it pushed and boots it
+  before the run may pass, and the version an image reports on
+  `/api/health/` is read out of the source at build time.
+
 ## [0.9.5d], 2026-09-18
 
 A user-experience release. The screens were laid out when a workspace held
@@ -72,20 +103,6 @@ Nothing to do on upgrade: no migration, no configuration.
   three libraries, and the dashboard and controls captions said the same.
 - The release validator no longer misreads a string that follows `return`,
   which made a balanced file look unbalanced.
-
-### Distribution
-
-- **The stack is published as container images**, so an installation no longer
-  has to build one: `ghcr.io/dboudreau00/conformiti-backend` and
-  `ghcr.io/dboudreau00/conformiti-frontend`, for `linux/amd64` and
-  `linux/arm64`, tagged with the version, the commit, and `latest` for the
-  newest release. `docker-compose.ghcr.yml` runs them in place of the four
-  services that would otherwise be built, changing nothing else about the
-  stack. Building from source stays the default path and is still what the
-  README opens with. The images are built from the same two Dockerfiles by
-  `.github/workflows/packages.yml`, which pulls what it pushed and boots it
-  before the run may pass, and the version an image reports on
-  `/api/health/` is read out of the source at build time.
 
 ## [0.9.5c], 2026-09-17
 

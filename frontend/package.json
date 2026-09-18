@@ -1,6 +1,6 @@
 {
   "name": "conformiti-frontend",
-  "version": "0.9.5d",
+  "version": "0.9.5e",
   "private": true,
   "type": "module",
   "engines": {

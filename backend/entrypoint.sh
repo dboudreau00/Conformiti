@@ -50,7 +50,10 @@ case "${SEED_DEMO_DATA:-false}" in
     python manage.py bootstrap_demo
     ;;
   *)
-    log "Skipping demo dataset (SEED_DEMO_DATA=${SEED_DEMO_DATA})"
+    # Defaulted for the same reason as CLAMAV_ENABLED below: `set -u` makes a
+    # bare expansion fatal, and this branch is the one an image run without any
+    # environment at all takes.
+    log "Skipping demo dataset (SEED_DEMO_DATA=${SEED_DEMO_DATA:-unset})"
     ;;
 esac
 

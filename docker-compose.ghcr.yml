@@ -9,7 +9,7 @@
 #
 # `latest` follows the newest release; pin a version for production:
 #
-#   CONFORMITI_VERSION=0.9.5d docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#   CONFORMITI_VERSION=0.9.5e docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
 # `build: !reset null` removes the build stanza the base file sets, so these
 # services can only ever run what was pulled. It needs Compose v2.24 or newer.
