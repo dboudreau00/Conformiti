@@ -294,7 +294,12 @@ jobs:
         run: |
           set -euo pipefail
           jar=/tmp/cookies2.txt
-          curl -fsS -c "$jar" -H 'Content-Type: application/json' \
+          # Signing in after the restore, the same way as before it.
+          curl -fsS -c "$jar" http://localhost:8080/api/auth/config/ > /dev/null
+          login_csrf=$(awk '$6 ~ /csrftoken$/ {print $7}' "$jar" | tail -1)
+          test -n "$login_csrf"
+          curl -fsS -b "$jar" -c "$jar" -H "X-CSRFToken: $login_csrf" \
+            -H 'Content-Type: application/json' \
             -d "{\"username\":\"admin\",\"password\":\"$DEMO_PASSWORD\"}" \
             http://localhost:8080/api/auth/token/ > /dev/null
           curl -fsS -b "$jar" -o /tmp/dl2.bin "http://localhost:8080/api/documents/$doc/download/"
