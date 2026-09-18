@@ -1,0 +1,31 @@
+# Run the published images instead of building from source.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# Everything else comes from docker-compose.yml: the environment, the volumes,
+# the healthchecks, the single published port. An installation started this way
+# is the same installation, assembled from artefacts rather than from a build.
+#
+# `latest` follows the newest release; pin a version for production:
+#
+#   CONFORMITI_VERSION=0.9.5d docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# `build: !reset null` removes the build stanza the base file sets, so these
+# services can only ever run what was pulled. It needs Compose v2.24 or newer.
+services:
+  backend:
+    build: !reset null
+    image: ghcr.io/dboudreau00/conformiti-backend:${CONFORMITI_VERSION:-latest}
+
+  worker:
+    build: !reset null
+    image: ghcr.io/dboudreau00/conformiti-backend:${CONFORMITI_VERSION:-latest}
+
+  beat:
+    build: !reset null
+    image: ghcr.io/dboudreau00/conformiti-backend:${CONFORMITI_VERSION:-latest}
+
+  frontend:
+    build: !reset null
+    image: ghcr.io/dboudreau00/conformiti-frontend:${CONFORMITI_VERSION:-latest}

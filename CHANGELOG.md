@@ -73,6 +73,20 @@ Nothing to do on upgrade: no migration, no configuration.
 - The release validator no longer misreads a string that follows `return`,
   which made a balanced file look unbalanced.
 
+### Distribution
+
+- **The stack is published as container images**, so an installation no longer
+  has to build one: `ghcr.io/dboudreau00/conformiti-backend` and
+  `ghcr.io/dboudreau00/conformiti-frontend`, for `linux/amd64` and
+  `linux/arm64`, tagged with the version, the commit, and `latest` for the
+  newest release. `docker-compose.ghcr.yml` runs them in place of the four
+  services that would otherwise be built, changing nothing else about the
+  stack. Building from source stays the default path and is still what the
+  README opens with. The images are built from the same two Dockerfiles by
+  `.github/workflows/packages.yml`, which pulls what it pushed and boots it
+  before the run may pass, and the version an image reports on
+  `/api/health/` is read out of the source at build time.
+
 ## [0.9.5c], 2026-09-17
 
 A maintenance release with one fix. Nothing to do on upgrade beyond pulling

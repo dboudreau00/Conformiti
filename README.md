@@ -88,6 +88,15 @@ generated and persisted on first boot, rate limits in Redis shared across
 workers, and the API published only on the host's loopback so the network
 sees nothing but nginx. **No `.env` is required.**
 
+Nothing to build? The same two images are published for `linux/amd64` and
+`linux/arm64` at
+[ghcr.io/dboudreau00](https://github.com/dboudreau00?tab=packages&repo_name=Conformiti),
+and a second compose file runs them:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
 Prefer a script that waits for the stack to report healthy and prints the URLs?
 
 ```bash
@@ -522,6 +531,37 @@ access still sees and answers the lines assigned to them.**
 Full detail: [PREREQUISITES.md](PREREQUISITES.md) · [INSTALL.md](INSTALL.md) ·
 a guided first hour in [GETTING_STARTED.md](GETTING_STARTED.md).
 
+### Prebuilt images
+
+| Image | Holds |
+|---|---|
+| `ghcr.io/dboudreau00/conformiti-backend` | Django, Celery and gunicorn: the API, the scheduler and the worker all run from this one image |
+| `ghcr.io/dboudreau00/conformiti-frontend` | the built interface, served by nginx, which also fronts the API |
+
+Both are built for `linux/amd64` and `linux/arm64`, so the same tag runs on an
+Ampere or Graviton VPS and on an Apple Silicon laptop. Each release is tagged
+with its version (`0.9.5d`), with the first seven characters of the commit it
+was built from (`sha-…`), and the newest release also answers to `latest`. The version an image carries
+is read out of `backend/config/version.py` at build time, which is the same
+string `/api/health/` reports, so a running container cannot claim a version
+its code is not.
+
+```bash
+docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5d
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+CONFORMITI_VERSION=0.9.5d docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+`docker-compose.ghcr.yml` only swaps the four built services for the published
+images. The environment, the volumes, the healthchecks and the single published
+port are the ones in `docker-compose.yml`, so an installation assembled this way
+is the same installation. Pin `CONFORMITI_VERSION` in production: `latest` moves.
+
+Building from source stays the default path, and the images are built from the
+same Dockerfiles by
+[`.github/workflows/packages.yml`](.github/workflows/packages.yml), which then
+pulls what it pushed and boots it before the run is allowed to pass.
+
 ### What comes up
 
 Five containers, five volumes, **one published port**. The API listens on
@@ -725,6 +765,16 @@ for them, are in [CHANGELOG.md](CHANGELOG.md).
 scripts/backup.sh                 # first, always
 git fetch --tags && git checkout v0.9.5d
 docker compose pull && docker compose up -d --build
+```
+
+Running the published images instead? The checkout still matters, because the
+compose file, the nginx configuration and the backup scripts come from it:
+
+```bash
+scripts/backup.sh
+git fetch --tags && git checkout v0.9.5d
+CONFORMITI_VERSION=0.9.5d docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+CONFORMITI_VERSION=0.9.5d docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 The backend container applies the shipped migrations and re-seeds the control
@@ -990,8 +1040,9 @@ conformiti/
 │                       · sample-risk-import.csv
 ├── assets/             brand/ (logo, mark, colourways) · screenshots/
 ├── tools/validate.py   the dependency-free static validator
-├── .github/workflows   CI
+├── .github/workflows   ci.yml · packages.yml (the images on ghcr.io)
 ├── docker-compose.yml  db · redis · backend · worker · frontend
+├── docker-compose.ghcr.yml  the same stack, from the published images
 └── install.sh / install.ps1
 ```
 

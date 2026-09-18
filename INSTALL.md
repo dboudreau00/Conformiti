@@ -59,6 +59,41 @@ builds and starts the stack, **waits until `/api/health/` reports `ok`**, and
 prints the URLs. Flags: `--demo` / `-Demo` (load the sample organisation),
 `--open` / `-Open`, `--port N` / `-Port N`.
 
+### Without a build: the published images
+
+Every release is published as two images on this repository's registry, built
+for `linux/amd64` and `linux/arm64`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+`docker-compose.ghcr.yml` swaps the four services that would be built
+(`backend`, `worker`, `beat`, `frontend`) for `ghcr.io/dboudreau00/conformiti-backend`
+and `ghcr.io/dboudreau00/conformiti-frontend`, and changes nothing else: the
+environment, the volumes, the healthchecks and the single published port are
+still the ones in `docker-compose.yml`, and first boot runs exactly as above.
+It needs Compose v2.24 or newer.
+
+`latest` follows the newest release. Pin the version in production, and pin it
+in both commands, because `pull` and `up` each read it:
+
+```bash
+export CONFORMITI_VERSION=0.9.5d
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+A container will tell you what it is: `curl -s localhost:8080/api/health/`
+reports the version compiled into the image, and
+`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5d` carries the
+commit it was built from in `org.opencontainers.image.revision`.
+
+Building from source remains the default, and stays supported: the images are
+built from the same two Dockerfiles in this repository, by a workflow that
+pulls what it pushed and boots it before the run is allowed to pass.
+
 ### Going to production
 
 1. Set the real hostname in `.env`:

@@ -1,0 +1,177 @@
+# Publishes the two runtime images to this repository's container registry:
+#
+#   ghcr.io/dboudreau00/conformiti-backend    Django, Celery and gunicorn
+#   ghcr.io/dboudreau00/conformiti-frontend   the built SPA behind nginx
+#
+# Run it from the Actions tab, or let a `v*` tag publish the release it names.
+# Both images are built for linux/amd64 and linux/arm64, so the same tag runs
+# on an Ampere or Graviton VPS and on an Apple Silicon laptop.
+#
+# The version the images carry is read from backend/config/version.py, the same
+# file the health endpoint reports: an image cannot claim a version the code
+# inside it does not. On a tag push the tag must agree with that file, which is
+# the version lock the static validator already applies to the README and the
+# changelog, extended to the registry.
+name: Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      latest:
+        description: "Also move :latest to this build"
+        type: boolean
+        default: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# Two runs would otherwise race for :latest and the loser would win.
+concurrency:
+  group: packages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: conformiti-backend
+            context: ./backend
+            description: Conformiti API, scheduler and worker (Django 5.2 LTS)
+          - image: conformiti-frontend
+            context: ./frontend
+            description: Conformiti web interface, built and served by nginx
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The version comes from the source, not from the trigger
+        id: v
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/config/version.py)
+          test -n "$version" || { echo "no __version__ in backend/config/version.py"; exit 1; }
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match version ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${{ matrix.image }}:${version}"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The tags this build answers to
+        id: tags
+        env:
+          IMG: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          VERSION: ${{ steps.v.outputs.version }}
+          MOVE_LATEST: ${{ github.event_name != 'workflow_dispatch' || inputs.latest }}
+        run: |
+          set -euo pipefail
+          tags="${IMG}:${VERSION}"$'\n'"${IMG}:sha-${GITHUB_SHA::7}"
+          if [ "${MOVE_LATEST}" = true ]; then
+            tags="${tags}"$'\n'"${IMG}:latest"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "${tags}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.tags.outputs.tags }}
+          # image.source is what attaches the package to this repository and
+          # gives its registry page a readme; the rest is what `docker inspect`
+          # answers when someone asks where a running container came from.
+          labels: |
+            org.opencontainers.image.title=${{ matrix.image }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/main/INSTALL.md
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=Conformiti
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  verify:
+    name: The published images are the ones that run
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Both architectures are in the manifest
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/config/version.py)
+          for image in conformiti-backend conformiti-frontend; do
+            ref="ghcr.io/${{ github.repository_owner }}/${image}:${version}"
+            docker buildx imagetools inspect "$ref"
+            # --raw is pretty-printed, so the whitespace comes out before the
+            # match rather than being guessed at.
+            raw=$(docker buildx imagetools inspect --raw "$ref" | tr -d ' \n')
+            for arch in amd64 arm64; do
+              echo "$raw" | grep -q "\"architecture\":\"${arch}\"" \
+                || { echo "${ref} has no linux/${arch}"; exit 1; }
+            done
+          done
+
+      # The same boot check CI runs against a locally built image, run against
+      # the artefact a stranger would actually pull.
+      - name: The backend image boots and reports its own version
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/config/version.py)
+          docker run -d --name api -p 8000:8000 \
+            -e DJANGO_DEBUG=false -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
+            -e BEHIND_TLS=false -e EMAIL_PROVIDER=console \
+            "ghcr.io/${{ github.repository_owner }}/conformiti-backend:${version}"
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/api/health/ -o /tmp/health.json; then
+              cat /tmp/health.json; echo
+              grep -q "\"${version}\"" /tmp/health.json \
+                || { echo "image reports a different version than ${version}"; exit 1; }
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs api
+          exit 1
+
+      - name: The frontend image serves the application
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/config/version.py)
+          docker run -d --name web -p 8080:80 \
+            "ghcr.io/${{ github.repository_owner }}/conformiti-frontend:${version}"
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/ | grep -qi "<div id=\"root\""; then exit 0; fi
+            sleep 2
+          done
+          docker logs web
+          exit 1
