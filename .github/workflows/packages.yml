@@ -142,14 +142,14 @@ jobs:
           done
 
       # The same boot check CI runs against a locally built image, run against
-      # the artefact a stranger would actually pull.
+      # the artefact a stranger would actually pull, and with nothing in the
+      # environment but the key path: that is the case 0.9.5e fixed.
       - name: The backend image boots and reports its own version
         run: |
           set -euo pipefail
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/config/version.py)
           docker run -d --name api -p 8000:8000 \
-            -e DJANGO_DEBUG=false -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
-            -e BEHIND_TLS=false -e EMAIL_PROVIDER=console \
+            -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
             "ghcr.io/${{ github.repository_owner }}/conformiti-backend:${version}"
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:8000/api/health/ -o /tmp/health.json; then
@@ -163,15 +163,32 @@ jobs:
           docker logs api
           exit 1
 
-      - name: The frontend image serves the application
+      # The frontend image is half of a stack, not a server: its nginx resolves
+      # the `backend` upstream while it parses its configuration, so running it
+      # alone is a configuration error rather than a test. The pair is what the
+      # compose file runs and what this checks, over one docker network, with
+      # the API reached the way a browser reaches it.
+      - name: The images serve the application as a pair
         run: |
           set -euo pipefail
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/config/version.py)
-          docker run -d --name web -p 8080:80 \
+          docker rm -f api >/dev/null 2>&1 || true
+          docker network create conformiti-verify
+          docker run -d --name backend --network conformiti-verify \
+            -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
+            "ghcr.io/${{ github.repository_owner }}/conformiti-backend:${version}"
+          docker run -d --name web --network conformiti-verify -p 8080:80 \
             "ghcr.io/${{ github.repository_owner }}/conformiti-frontend:${version}"
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8080/ | grep -qi "<div id=\"root\""; then exit 0; fi
+          ok=
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/health/ -o /tmp/health.json; then ok=1; break; fi
             sleep 2
           done
-          docker logs web
-          exit 1
+          if [ -z "${ok}" ]; then docker logs web; docker logs backend; exit 1; fi
+          cat /tmp/health.json; echo
+          # Written to a file rather than piped: `grep -q` closes the pipe on
+          # its first match, and under pipefail the SIGPIPE'd curl fails the
+          # step it just passed.
+          curl -fsS http://localhost:8080/ -o /tmp/index.html
+          grep -qi '<div id="root"' /tmp/index.html \
+            || { echo "nginx did not serve the built application"; docker logs web; exit 1; }
