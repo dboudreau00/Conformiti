@@ -14,7 +14,7 @@ const PAGE = 8;
 
 /** Upcoming document reviews (rows from GET /documents/reviews/?days=120,
  * loaded by the dashboard). Marking one reviewed needs edit access to its
- * folder — the API returns 403 otherwise — so the action is only offered to
+ * folder, the API returns 403 otherwise, so the action is only offered to
  * users who can manage documents or folders, and a refusal is surfaced. */
 export function ReviewQueue({ me, reviews = [], onChanged }) {
   const { refreshCounts } = useShell();
@@ -77,7 +77,7 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-medium leading-tight text-ink">{r.name}</p>
                 <p className="truncate font-mono text-2xs uppercase tracking-label text-faint">
-                  {r.folder_path || "—"}
+                  {r.folder_path || "-"}
                   {r.owner_name ? ` / ${r.owner_name}` : ""}
                 </p>
               </div>

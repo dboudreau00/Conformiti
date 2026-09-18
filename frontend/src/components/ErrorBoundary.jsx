@@ -27,7 +27,7 @@ export default class ErrorBoundary extends Component {
         <Panel className="p-5">
           <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">Something went wrong</h2>
           <p className="mt-2 text-[13px] leading-snug text-muted">
-            This page hit an unexpected error. Your data is fine — reloading usually clears it. If it keeps happening, note what you clicked and tell your administrator.
+            This page hit an unexpected error. Your data is fine, reloading usually clears it. If it keeps happening, note what you clicked and tell your administrator.
           </p>
           <div className="mt-4 flex gap-2">
             <Button variant="primary" onClick={() => window.location.reload()}>Reload</Button>

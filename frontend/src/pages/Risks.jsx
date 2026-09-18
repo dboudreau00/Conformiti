@@ -10,6 +10,7 @@ import { RiskTable } from "../components/risks/RiskTable.jsx";
 import { FILTERS, IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, TEMPLATE_CSV, TYPES, deriveSummary, filterRisks } from "../components/risks/vocab.js";
 import { Button } from "../components/ui/Button.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
 import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
@@ -26,6 +27,7 @@ export default function Risks({ me }) {
   const [users, setUsers] = useState([]);
   const [usersErr, setUsersErr] = useState("");
   const [controls, setControls] = useState([]);
+  const [riskControl, setRiskControl] = useState(null); // the control picked on the new-risk form
   const [filter, setFilter] = useState("live");
   const [selectedId, setSelectedId] = useState(null);
   const [notes, setNotes] = useState([]);
@@ -152,6 +154,7 @@ export default function Risks({ me }) {
       refreshCounts();
       setShowNew(false);
       f.reset();
+      setRiskControl(null);
       setSelectedId(data.id);
       setBanner({ ok: true, text: `Risk #${data.id} created.` });
     } catch (err) {
@@ -272,7 +275,7 @@ export default function Risks({ me }) {
                         {importResult.warnings?.length ? <> · {importResult.warnings.length} warning{importResult.warnings.length === 1 ? "" : "s"}</> : null}
                       </p>
                       {importResult.skipped?.slice(0, 8).map((s, i) => (
-                        <p key={`s${i}`} className="mt-1.5 text-xs text-muted">Row {s.row}: {s.title} — {s.reason}</p>
+                        <p key={`s${i}`} className="mt-1.5 text-xs text-muted">Row {s.row}: {s.title}, {s.reason}</p>
                       ))}
                       {importResult.warnings?.length ? (
                         <div className="notice notice-warn mt-3">
@@ -323,11 +326,26 @@ export default function Risks({ me }) {
                       {users.map((u) => <option key={u.id} value={u.id}>{displayName(u)}</option>)}
                     </select>
                   </Field>
-                  <Field id="new-control" label="Related control">
-                    <select id="new-control" name="control" className="input" defaultValue="">
-                      <option value="">None</option>
-                      {controls.map((c) => <option key={c.id} value={c.id}>{c.framework_name} · {c.label}</option>)}
-                    </select>
+                  <Field id="new-control" label="Related control (optional)">
+                    <input type="hidden" name="control" value={riskControl?.id ?? ""} />
+                    {riskControl ? (
+                      <div className="flex items-baseline gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5">
+                        <span className="shrink-0 font-mono text-xs text-accent">{riskControl.label}</span>
+                        <span className="truncate text-xs text-ink">{riskControl.title}</span>
+                        <button type="button" className="ml-auto shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink"
+                                onClick={() => setRiskControl(null)}>
+                          Clear
+                        </button>
+                      </div>
+                    ) : (
+                      <ControlPicker
+                        id="new-control"
+                        label="Related control"
+                        placeholder="Find a control, or leave this empty"
+                        controls={controls.length ? controls : null}
+                        onPick={setRiskControl}
+                      />
+                    )}
                   </Field>
                   <Field id="new-description" label="Description" className="md:col-span-4">
                     <textarea id="new-description" name="description" className="input" rows={2} placeholder="What is exposed, and how" />
@@ -393,7 +411,7 @@ export default function Risks({ me }) {
         {!loading && !error ? (
           <StackItem>
             <Label className="block px-1">
-              Ratings use the 5×5 banding: 1–4 low · 5–9 moderate · 10–15 high · 16–25 critical. Owners may edit their own risks; framework managers may edit, create, import and delete.
+              Ratings use the 5×5 banding: 1 to 4 low · 5 to 9 moderate · 10 to 15 high · 16 to 25 critical. Owners may edit their own risks; framework managers may edit, create, import and delete.
             </Label>
           </StackItem>
         ) : null}

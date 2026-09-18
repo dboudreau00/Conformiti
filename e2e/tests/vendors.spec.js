@@ -149,7 +149,7 @@ test.describe("responsibility matrix (RACI)", () => {
     expectBrowserError(page, /status of 400/);   // the refusal is the point
     await open(page, "/responsibilities", "Responsibility matrix");
     const control = page.getByLabel("Control", { exact: true });
-    const value = await control.locator("option", { hasText: /CC6\.1 — / }).first().getAttribute("value");
+    const value = await control.locator("option", { hasText: /CC6\.1: / }).first().getAttribute("value");
     await control.selectOption(value);
     await page.getByLabel("Person", { exact: true }).selectOption({ label: "Owen Owner" });
     await page.getByLabel("Role", { exact: true }).selectOption("accountable");

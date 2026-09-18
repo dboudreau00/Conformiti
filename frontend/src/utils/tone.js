@@ -50,7 +50,7 @@ export const TONE_FILL = {
   "line-strong": "bg-line-strong",
 };
 
-/** Raw CSS colour for SVG fills/strokes and inline styles — stays reactive to the active theme. */
+/** Raw CSS colour for SVG fills/strokes and inline styles, stays reactive to the active theme. */
 export function toneVar(tone, alpha) {
   return alpha === undefined ? `rgb(var(--${tone}))` : `rgb(var(--${tone}) / ${alpha})`;
 }

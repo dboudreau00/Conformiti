@@ -116,7 +116,11 @@ class VendorViewSet(viewsets.ModelViewSet):
                 done += 1
             rows.append({
                 "control": c.pk, "control_id": c.control_id, "title": c.title,
-                "framework": c.category.framework.key, "category": c.category.name,
+                # The name as well as the key: this matrix is shared with the
+                # vendor, and a screen of slugs is not.
+                "framework": c.category.framework.key,
+                "framework_name": c.category.framework.name,
+                "category": c.category.name,
                 "responsibility": r.responsibility if r else None,
                 "provider_statement": r.provider_statement if r else "",
                 "customer_statement": r.customer_statement if r else "",

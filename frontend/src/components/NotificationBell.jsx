@@ -28,7 +28,7 @@ export default function NotificationBell() {
       setItems(data.results);
       setUnread(data.unread);
     } catch {
-      /* not signed in yet or transient — leave the bell quiet */
+      /* not signed in yet or transient, leave the bell quiet */
     }
   }
 

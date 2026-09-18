@@ -25,7 +25,7 @@ export function Meter({ value, total, tone = "accent", height = 6, delay = 0, cl
   );
 }
 
-/** Stacked single-row bar — used where the parts must sum visibly.
+/** Stacked single-row bar, used where the parts must sum visibly.
  * segments: [{label, value, tone}] */
 export function SegmentBar({ segments, total, height = 8, delay = 0, className, ariaLabel }) {
   return (

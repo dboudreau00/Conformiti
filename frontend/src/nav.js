@@ -50,9 +50,9 @@ export function navSections(me) {
 }
 
 export const NAV_LOOKUP = {
-  "/": { title: "Dashboard", caption: "Compliance posture across SOC 2, ISO 27001 and PCI DSS" },
+  "/": { title: "Dashboard", caption: "Compliance posture across every framework in this workspace" },
   "/analytics": { title: "Analytics", caption: "Readiness, coverage and ownership breakdowns" },
-  "/controls": { title: "Controls", caption: "Control libraries mapped across three frameworks" },
+  "/controls": { title: "Controls", caption: "Every control library in this workspace, with its crosswalk" },
   "/documents": { title: "Documents", caption: "Policies, procedures and evidence in your folders" },
   "/users": { title: "Users", caption: "Workspace membership, roles and folder grants" },
   "/user-audit": { title: "User audit", caption: "Periodic access review and attestation" },

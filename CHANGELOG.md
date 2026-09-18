@@ -11,6 +11,68 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5d], 2026-09-18
+
+A user-experience release. The screens were laid out when a workspace held
+three control libraries; an installation can now hold twenty-five and a few
+thousand controls, and several of them did not survive the difference.
+Nothing to do on upgrade: no migration, no configuration.
+
+### Fixed
+
+- **The "Test every (days)" field could not be typed into.** It was a
+  controlled input whose change handler did nothing, so React restored the
+  previous value after every keystroke and the interval stayed API-only. It
+  now accepts a value, refuses one outside 1 to 3650 with a reason, and saves
+  on blur.
+- **A workspace with no folders had no way to make one.** The Documents page
+  told every reader to run a management command, while the upload button was
+  disabled and the subfolder form needed a folder that did not exist. Anyone
+  who can manage folders now creates the first one on the page; everyone else
+  is told who can.
+- **Issuing an audit package to an auditor dead-ended** when no account held
+  the Auditor role: an empty picker and a button that never enabled. The form
+  now says what is missing and where to fix it, and distinguishes that from a
+  list that failed to load.
+- **The document list 500'd on SQLite** once a page of documents carried more
+  than about a thousand control links (0.9.5c fixed the query; this release
+  carries it).
+
+### Changed
+
+- **Long lists have a ceiling.** The control register and the responsibility
+  matrix render a hundred rows with "Show 100 more" rather than mounting
+  every one of a few thousand, and the framework filter on the Controls page
+  collapses to five with "+N more". The dashboard's framework card and the
+  About page's framework list show eight with "Show all".
+- **Framework names come from the library, not a hard-coded list of three.**
+  The responsibility matrix and the vendor matrix showed twenty-two of
+  twenty-five frameworks as raw keys such as `nist_csf_2`, on a screen that
+  is shared with the vendor. Their framework filters are now a select rather
+  than a strip of twenty-five chips.
+- **Finding a control is a search, not a scroll.** The three places that
+  offered a native dropdown of every control (linking a document, assigning a
+  responsibility, relating a risk) take a reference or a few words instead.
+- **Every destructive action asks in the product's own dialog.** Deleting a
+  user or a folder, resetting two-factor, archiving a workspace, withdrawing
+  a request and removing a vendor's report used the browser's prompt, which
+  cannot be worded carefully and is dismissed by one keystroke.
+- **A failed load says so.** The control register showed "No frameworks
+  available, seed a framework" when the request had simply failed; it now
+  reports the failure and offers to try again.
+- **A panel header renders the controls it is given.** Buttons and badges
+  passed to a header inherited its caption typography and came out in a
+  letter-spaced monospace face.
+- **The workspace name appears only when it means something**: on an
+  installation with more than one workspace, or while a superuser is viewing
+  another organisation's. A single workspace called Default read as an empty
+  section under the logo.
+- **The product is called Conformiti.** The sign-in page and the sidebar
+  carried a "SOC 2 · ISO 27001 · PCI" tagline from when those were the only
+  three libraries, and the dashboard and controls captions said the same.
+- The release validator no longer misreads a string that follows `return`,
+  which made a balanced file look unbalanced.
+
 ## [0.9.5c], 2026-09-17
 
 A maintenance release with one fix. Nothing to do on upgrade beyond pulling

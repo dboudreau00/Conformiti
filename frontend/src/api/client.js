@@ -173,7 +173,7 @@ function clearSession() {
   chooseWorkspace("");
 }
 
-/** Revoke server-side, then clear local state. Always resolves — a failed
+/** Revoke server-side, then clear local state. Always resolves, a failed
  * revoke must never trap the user in a signed-in shell.
  *
  * Cookie mode goes through /auth/token/clear/ rather than /auth/logout/:

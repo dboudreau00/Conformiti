@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { cn } from "../../utils/cn.js";
 import { toneVar } from "../../utils/tone.js";
 
-/** points: [{label, value}] — renders a filled line; a single point renders as a marker. */
+/** points: [{label, value}], renders a filled line; a single point renders as a marker. */
 export function TrendLine({ points, tone = "accent", height = 96, className, ariaLabel }) {
   const w = 320;
   const h = height;

@@ -39,7 +39,7 @@ const CLOSED = {
   unknown: ["This link is not valid", "Check the address from the email, or ask your contact to send it again."],
   expired: ["This link has expired", "Ask your contact to send a new one."],
   revoked: ["This link was withdrawn", "Your contact has sent a newer link, or no longer needs the questionnaire."],
-  submitted: ["Already submitted — thank you", "Your answers were received and are being reviewed."],
+  submitted: ["Already submitted: thank you", "Your answers were received and are being reviewed."],
   error: ["Something went wrong", "Try again in a moment."],
 };
 

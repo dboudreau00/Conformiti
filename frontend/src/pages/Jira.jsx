@@ -73,7 +73,7 @@ export default function Jira({ me }) {
 
   function loadBoards(selectId) {
     setBoardsErr(null);
-    // Paginated at 50 — follow `next` so every tracked board is listed.
+    // Paginated at 50, follow `next` so every tracked board is listed.
     return fetchAll("/integrations/jira/boards/")
       .then((list) => {
         setBoards(list);
@@ -118,7 +118,7 @@ export default function Jira({ me }) {
       setForm((f) => ({ ...f, api_token: "" }));
       setMsg({ ok: true, text: "Configuration saved." });
     } catch (err) {
-      setMsg({ ok: false, text: errorText(err, "Couldn't save — check the base URL format.") });
+      setMsg({ ok: false, text: errorText(err, "Couldn't save. Check the base URL format.") });
     } finally {
       setBusy(null);
     }
@@ -240,7 +240,7 @@ export default function Jira({ me }) {
                       type="password"
                       className="input font-mono"
                       autoComplete="new-password"
-                      placeholder={config.has_token ? "•••••• (saved — leave blank to keep)" : "Paste an Atlassian API token"}
+                      placeholder={config.has_token ? "•••••• (saved, leave blank to keep)" : "Paste an Atlassian API token"}
                       value={form.api_token}
                       onChange={(e) => setForm({ ...form, api_token: e.target.value })}
                     />
@@ -284,7 +284,7 @@ export default function Jira({ me }) {
                     </AnimatePresence>
                   </div>
                   {dirty ? (
-                    <p className="text-2xs leading-snug text-faint">Test connection checks the saved configuration — save first to test these changes.</p>
+                    <p className="text-2xs leading-snug text-faint">Test connection checks the saved configuration. Save first to test these changes.</p>
                   ) : null}
                 </form>
               )}
@@ -496,7 +496,7 @@ export default function Jira({ me }) {
                         </td>
                         <td className={CELL}>
                           <Badge tone={statusTone(i.status)} dot>
-                            {i.status || "—"}
+                            {i.status || "-"}
                           </Badge>
                         </td>
                         <td className={cn(CELL, "truncate text-xs text-muted")} title={i.assignee || undefined}>

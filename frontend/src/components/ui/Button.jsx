@@ -16,7 +16,7 @@ const SIZES = {
 };
 
 /** The one button. `type` defaults to "button" so a stray click inside a form
- * never submits it — pass type="submit" explicitly for submit buttons. */
+ * never submits it, pass type="submit" explicitly for submit buttons. */
 export const Button = forwardRef(function Button(
   { variant = "secondary", size = "md", icon, className, children, type = "button", ...rest },
   ref

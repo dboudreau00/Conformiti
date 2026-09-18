@@ -125,10 +125,26 @@ def _strip_js(s):
     out, i, n = [], 0, len(s)
     SP = set("([{,:;=?&|!+-*/%<~^\n") | {""}
 
+    # A quote opens a string when what precedes it is an operator, a bracket
+    # or one of these words. Without the words, `return "-";` read as JSX text
+    # rather than a string: the opening quote was passed through and the
+    # closing one, preceded by `-` (an operator), opened a string that ate the
+    # rest of the file. The guard exists for apostrophes in JSX prose
+    # ("Couldn't"), so it has to stay, but it has to know a keyword too.
+    KEYWORDS = {"return", "typeof", "case", "in", "of", "new", "delete",
+                "throw", "do", "else", "yield", "await", "instanceof", "void"}
+
     def last_sig(j):
         k = j - 1
         while k >= 0 and s[k] in " \t":
             k -= 1
+        if k >= 0 and (s[k].isalnum() or s[k] == "_"):
+            end = k + 1
+            while k >= 0 and (s[k].isalnum() or s[k] == "_"):
+                k -= 1
+            if s[k + 1:end] in KEYWORDS:
+                return "\n"   # a place a string may start
+            return s[end - 1]
         return s[k] if k >= 0 else ""
 
     while i < n:

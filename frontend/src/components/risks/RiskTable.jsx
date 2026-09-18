@@ -85,7 +85,7 @@ function RiskRow({ risk, active, onSelect }) {
       </td>
 
       <td className={cn("tabular px-3 py-3 align-middle font-mono text-xs", risk.is_overdue ? "text-danger" : "text-muted")}>
-        {risk.due_date || "—"}
+        {risk.due_date || "-"}
         {days != null ? <span className={cn("block text-2xs", risk.is_overdue ? "text-danger/80" : "text-faint")}>{dueLabel(days)}</span> : null}
       </td>
 

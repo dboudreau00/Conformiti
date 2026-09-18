@@ -15,7 +15,7 @@ import { CONTROL_STATUS, DOC_STATUS, TONE_TEXT } from "../utils/tone.js";
 /** Everything on this page comes from one read-only call. Control, framework
  * and risk figures are organisation-wide; document figures are already
  * filtered server-side to the folders the caller may see. There are no write
- * controls here, so no role gates apply — `me` is accepted for route parity. */
+ * controls here, so no role gates apply, `me` is accepted for route parity. */
 const SUMMARY_URL = "/analytics/summary/";
 
 /** [{label, value, tone}] rows from a vocab map (tone.js) and a by_status block. */
@@ -296,7 +296,7 @@ export default function Analytics({ me }) {
                     </Badge>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-medium leading-tight text-ink">{d.name}</p>
-                      <p className="truncate font-mono text-2xs uppercase tracking-label text-faint">{d.folder_path || "—"}</p>
+                      <p className="truncate font-mono text-2xs uppercase tracking-label text-faint">{d.folder_path || "-"}</p>
                     </div>
                     <span className={cn("shrink-0 font-mono text-2xs", d.owner ? "text-muted" : "text-faint")}>{d.owner || "unassigned"}</span>
                   </li>

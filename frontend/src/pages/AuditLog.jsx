@@ -278,7 +278,7 @@ export default function AuditLog({ me }) {
                             ) : null}
                           </td>
                           <td className="whitespace-nowrap px-5 py-2.5">
-                            <Badge tone={tone} mono dot>{String(r.action || "").replace(/_/g, " ") || "—"}</Badge>
+                            <Badge tone={tone} mono dot>{String(r.action || "").replace(/_/g, " ") || "-"}</Badge>
                           </td>
                           <td className="max-w-0 truncate px-5 py-2.5 font-mono text-xs text-ink">
                             {r.object_type ? (
@@ -287,7 +287,7 @@ export default function AuditLog({ me }) {
                                 {r.object_id ? <span className="text-muted"> #{r.object_id}</span> : null}
                               </>
                             ) : (
-                              <span className="text-faint">—</span>
+                              <span className="text-faint">-</span>
                             )}
                           </td>
                           <td className="max-w-0 px-5 py-2.5">
@@ -296,11 +296,11 @@ export default function AuditLog({ me }) {
                                 {r.detail}
                               </span>
                             ) : (
-                              <span className="text-[13px] text-faint">—</span>
+                              <span className="text-[13px] text-faint">-</span>
                             )}
                           </td>
                           <td className="tabular whitespace-nowrap px-5 py-2.5 font-mono text-xs text-muted">
-                            {r.ip_address || <span className="text-faint">—</span>}
+                            {r.ip_address || <span className="text-faint">-</span>}
                           </td>
                         </motion.tr>
                       );
@@ -328,7 +328,7 @@ export default function AuditLog({ me }) {
           <p className="flex items-start gap-2 text-xs leading-snug text-muted">
             <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" strokeWidth={2} aria-hidden="true" />
             <span>
-              Immutable record of every change and sign-in made through the API — who did what, to which record,
+              Immutable record of every change and sign-in made through the API: who did what, to which record,
               from where. Entries are written server-side and cannot be edited or deleted from the app.
             </span>
           </p>

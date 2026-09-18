@@ -1,7 +1,7 @@
 /**
  * Third-party risk: the vendor register, the assurance each vendor has given
  * us (SOC 2 reports, PCI AOCs, pen tests, questionnaires), and the shared
- * responsibility matrix — which of our controls the provider does, which we
+ * responsibility matrix, which of our controls the provider does, which we
  * do, which are split, with the statement for each side.
  *
  * The matrix is an in-browser grid over every control in scope. It can be
@@ -20,6 +20,7 @@ import DocumentViewer from "../components/documents/DocumentViewer.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
+import { useConfirm } from "../components/ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
@@ -57,7 +58,6 @@ const RESP = [["provider", "Provider"], ["customer", "Us"], ["shared", "Shared"]
 const RESP_LABEL = { provider: "Provider", customer: "Us", shared: "Shared", not_applicable: "N/A" };
 const RESP_TONE = { provider: "info", customer: "accent", shared: "warning", not_applicable: "muted" };
 const ANSWERS = [["yes", "Yes"], ["partial", "Partial"], ["no", "No"], ["n/a", "N/A"]];
-const FRAMEWORK_LABEL = { soc2: "SOC 2", iso27001: "ISO 27001", pci_dss_v4: "PCI DSS" };
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "assessments", label: "Assurance" },
@@ -71,7 +71,7 @@ const EMPTY_VENDOR = {
 
 const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 function fmtDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
   return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
 }
@@ -216,7 +216,7 @@ function OverviewTab({ vendor, users, canManage, busy, onSave, onReviewed }) {
             ].map(([k, v]) => (
               <div key={k}>
                 <Label as="dt">{k}</Label>
-                <dd className={cn("mt-0.5 break-words", v ? "text-ink" : "text-faint")}>{v || "—"}</dd>
+                <dd className={cn("mt-0.5 break-words", v ? "text-ink" : "text-faint")}>{v || "-"}</dd>
               </div>
             ))}
             {vendor.notes ? (
@@ -292,7 +292,7 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                 </Field>
                 <Field id="as-doc" label="Copy on file (document)">
                   <select id="as-doc" className="input input-sm" value={a.document} onChange={set("document")}>
-                    <option value="">{docs ? "None — not uploaded yet" : "Loading documents…"}</option>
+                    <option value="">{docs ? "None, not uploaded yet" : "Loading documents…"}</option>
                     {(docs || []).map((d) => <option key={d.id} value={d.id}>{d.path} / {d.name}</option>)}
                   </select>
                 </Field>
@@ -320,7 +320,7 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
               <li key={r.id} className="flex flex-wrap items-start justify-between gap-3 px-5 py-3">
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium text-ink">
-                    {KIND_LABEL[r.kind] || r.kind_display}{r.title ? ` — ${r.title}` : ""}
+                    {KIND_LABEL[r.kind] || r.kind_display}{r.title ? `, ${r.title}` : ""}
                   </p>
                   <Label className="mt-0.5 block">
                     {r.period_start || r.period_end ? `Period ${fmtDate(r.period_start)} → ${fmtDate(r.period_end)} · ` : ""}
@@ -406,7 +406,7 @@ function SendToVendor({ vendor, busy, act, refresh }) {
       ) : null}
       {sent ? (
         <div className="notice notice-ok m-4" role="status">
-          <span className="block font-medium">{sent.email_sent ? `Emailed to ${sent.sent_to}.` : "The email could not be sent — paste the link into your own message."}</span>
+          <span className="block font-medium">{sent.email_sent ? `Emailed to ${sent.sent_to}.` : "The email could not be sent, paste the link into your own message."}</span>
           <span className="mt-1 block text-xs">The link, shown once:</span>
           <code id="questionnaire-link" className="mt-1 block select-all break-all font-mono text-xs text-ink">{sent.link}</code>
         </div>
@@ -434,7 +434,7 @@ function SendToVendor({ vendor, busy, act, refresh }) {
                     <Badge tone={INVITE_TONE[inv.status] || "muted"} dot>{inv.status}</Badge>
                     {inv.status === "open" && inv.opened_at ? <span className="block text-faint">opened {fmtDate(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span> : null}
                   </td>
-                  <td className="py-2 pr-3 text-muted">{inv.respondent_name ? `${inv.respondent_name}${inv.respondent_title ? ` (${inv.respondent_title})` : ""} · ${fmtDate(inv.submitted_at)}` : "—"}</td>
+                  <td className="py-2 pr-3 text-muted">{inv.respondent_name ? `${inv.respondent_name}${inv.respondent_title ? ` (${inv.respondent_title})` : ""} · ${fmtDate(inv.submitted_at)}` : "-"}</td>
                   <td className="py-2 pr-5 text-right">
                     {inv.status === "open" ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => revoke(inv)}>Revoke</Button> : null}
                   </td>
@@ -586,7 +586,7 @@ function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
       <h3 className="mt-2 text-[15px] font-semibold text-ink">
         <span className="font-mono text-sm text-muted">{row.control_id}</span> {row.title}
       </h3>
-      <Label className="mt-0.5 block">{FRAMEWORK_LABEL[row.framework] || row.framework} · {row.category}</Label>
+      <Label className="mt-0.5 block">{row.framework_name || row.framework} · {row.category}</Label>
       <p className="mt-3 text-[13px] text-muted">Who does this control for the services {vendorName} provides?</p>
       <div className="mt-2"><RespPicker value={draft.responsibility} onChange={(v) => setDraft((d) => ({ ...d, responsibility: v }))} /></div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -618,7 +618,8 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
   const [review, setReview] = useState(null);
   // A bare "6.1" is a PCI requirement, an ISO clause and a SOC 2 point of
   // focus; the file is about one of them and only the person knows which.
-  const [fw, setFw] = useState(framework || (frameworks.length === 1 ? frameworks[0] : ""));
+  // `frameworks` is [key, name] pairs; one framework means one obvious choice.
+  const [fw, setFw] = useState(framework || (frameworks.length === 1 ? frameworks[0][0] : ""));
 
   async function parse(e) {
     const file = e.target.files?.[0];
@@ -651,7 +652,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
           <label htmlFor="import-framework" className="sr-only">Framework in the file</label>
           <select id="import-framework" className="input input-sm w-44" value={fw} onChange={(e) => { setFw(e.target.value); setReview(null); }} disabled={parsing || busy}>
             <option value="">Framework in the file…</option>
-            {frameworks.map((k) => <option key={k} value={k}>{FRAMEWORK_LABEL[k] || k}</option>)}
+            {frameworks.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
           </select>
           <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={parse} aria-label="Matrix file" />
           <Button size="sm" variant="primary" onClick={() => fileRef.current?.click()} disabled={parsing || busy || !fw}
@@ -705,14 +706,14 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                         <td className="px-2 py-1.5">
                           <select className="input input-sm" aria-label={`Control for line ${r.line}`} value={r.control_id || ""}
                                   onChange={(e) => patch(r.key, { control_id: e.target.value ? Number(e.target.value) : null, matched: !!e.target.value, include: !!e.target.value })}>
-                            <option value="">{r.matched ? "" : "Not matched — choose"}</option>
-                            {controls.filter((c) => !fw || c.framework === fw).map((c) => <option key={c.id} value={c.id}>{c.label} — {c.title}</option>)}
+                            <option value="">{r.matched ? "" : "Not matched, choose"}</option>
+                            {controls.filter((c) => !fw || c.framework === fw).map((c) => <option key={c.id} value={c.id}>{c.label}: {c.title}</option>)}
                           </select>
                         </td>
                         <td className="px-2 py-1.5">
                           <select className={cn("input input-sm", !r.responsibility && "border-warning")} aria-label={`Responsibility for line ${r.line}`} value={r.responsibility || ""}
                                   onChange={(e) => patch(r.key, { responsibility: e.target.value || null, include: !!e.target.value && !!r.control_id })}>
-                            <option value="">Not recognised — choose</option>
+                            <option value="">Not recognised, choose</option>
                             {RESP.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                           </select>
                         </td>
@@ -762,11 +763,15 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   useEffect(() => { setEdits({}); load(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [vendor.id]);
   useEffect(() => { if (intent) { setMode(intent); onIntentDone(); } }, [intent, onIntentDone]);
 
+  // [key, name] pairs, so every framework reads as its name: a hard-coded map
+  // of three keys showed the other twenty-two as slugs on a screen that is
+  // shared with the vendor.
   const frameworks = useMemo(() => {
-    const seen = [];
-    for (const r of data?.rows || []) if (!seen.includes(r.framework)) seen.push(r.framework);
-    return seen;
+    const seen = new Map();
+    for (const r of data?.rows || []) if (!seen.has(r.framework)) seen.set(r.framework, r.framework_name || r.framework);
+    return Array.from(seen.entries());
   }, [data]);
+  const names = useMemo(() => Object.fromEntries(frameworks), [frameworks]);
   const controls = useMemo(() => (data?.rows || []).map((r) => ({ id: r.control, label: r.control_id, title: r.title, framework: r.framework })), [data]);
   const merged = useMemo(() => (data?.rows || []).map((r) => ({ ...r, ...(edits[r.control] || {}), dirty: !!edits[r.control] })), [data, edits]);
   const visible = useMemo(() => merged.filter((r) =>
@@ -854,8 +859,12 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
           </div>
         </PanelHeader>
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
-          <Chip active={!fw} onClick={() => setFw("")}>All frameworks</Chip>
-          {frameworks.map((k) => <Chip key={k} active={fw === k} onClick={() => setFw(k)}>{FRAMEWORK_LABEL[k] || k}</Chip>)}
+          <label htmlFor="matrix-framework" className="sr-only">Framework</label>
+          <select id="matrix-framework" className="input input-sm w-auto min-w-[220px]" value={fw}
+                  onChange={(e) => setFw(e.target.value)}>
+            <option value="">All frameworks</option>
+            {frameworks.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+          </select>
           <Chip active={onlyUnstated} onClick={() => setOnlyUnstated((x) => !x)} tone="warning">Unstated only</Chip>
           <label htmlFor="matrix-search" className="sr-only">Search controls</label>
           <input id="matrix-search" className="input input-sm ml-auto w-56" placeholder="Search controls…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -877,24 +886,24 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
               ) : visible.map((r) => (
                 <tr key={r.control} className={cn("align-top transition-colors duration-150 hover:bg-surface-2", r.dirty && "bg-accent/[0.04]")}>
                   <td className="w-[280px] px-4 py-2">
-                    <span className="block font-mono text-[11px] text-muted">{FRAMEWORK_LABEL[r.framework] || r.framework} · {r.control_id}</span>
+                    <span className="block font-mono text-[11px] text-muted">{names[r.framework] || r.framework} · {r.control_id}</span>
                     <span className="block text-[13px] text-ink">{r.title}</span>
                   </td>
                   <td className="w-[230px] px-2 py-2">
                     {canManage ? <RespPicker compact label={`Responsibility for ${r.control_id}`} value={r.responsibility} disabled={busy} onChange={(v) => edit(r.control, { responsibility: v })} />
-                      : r.responsibility ? <Badge tone={RESP_TONE[r.responsibility]}>{RESP_LABEL[r.responsibility]}</Badge> : <span className="text-faint">—</span>}
+                      : r.responsibility ? <Badge tone={RESP_TONE[r.responsibility]}>{RESP_LABEL[r.responsibility]}</Badge> : <span className="text-faint">-</span>}
                   </td>
                   <td className="px-2 py-2">
                     {canManage ? (
                       <textarea className="input input-sm min-h-[40px] w-full" rows={1} aria-label={`What ${vendor.name} does for ${r.control_id}`} value={r.provider_statement || ""} disabled={busy}
                                 onChange={(e) => edit(r.control, { provider_statement: e.target.value })} />
-                    ) : <span className="whitespace-pre-line text-muted">{r.provider_statement || "—"}</span>}
+                    ) : <span className="whitespace-pre-line text-muted">{r.provider_statement || "-"}</span>}
                   </td>
                   <td className="px-2 py-2">
                     {canManage ? (
                       <textarea className="input input-sm min-h-[40px] w-full" rows={1} aria-label={`What we do for ${r.control_id}`} value={r.customer_statement || ""} disabled={busy}
                                 onChange={(e) => edit(r.control, { customer_statement: e.target.value })} />
-                    ) : <span className="whitespace-pre-line text-muted">{r.customer_statement || "—"}</span>}
+                    ) : <span className="whitespace-pre-line text-muted">{r.customer_statement || "-"}</span>}
                   </td>
                   <td className="w-[90px] px-2 py-2">
                     {r.dirty ? <Badge tone="accent" mono>unsaved</Badge> : r.source ? <Badge tone="faint" mono>{r.source}</Badge> : null}
@@ -925,6 +934,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
 // --- Page --------------------------------------------------------------------------------
 
 export default function Vendors({ me }) {
+  const { ask, confirmDialog } = useConfirm();
   const [params, setParams] = useSearchParams();
   const [vendors, setVendors] = useState(null);
   const [selectedId, setSelectedId] = useState(() => Number(params.get("vendor")) || null);
@@ -1020,6 +1030,7 @@ export default function Vendors({ me }) {
 
   return (
     <PanelTransition>
+      {confirmDialog}
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         {/* ------------------------------------------------------------ register */}
         <div className="flex flex-col gap-4">
@@ -1119,7 +1130,7 @@ export default function Vendors({ me }) {
                 {needsMatrix ? (
                   <div className="notice notice-warn mt-4 flex flex-wrap items-center justify-between gap-3" role="status">
                     <span>
-                      <span className="font-medium">New vendor — no responsibilities stated yet.</span>{" "}
+                      <span className="font-medium">New vendor, no responsibilities stated yet.</span>{" "}
                       Record which controls {detail.name} covers, or import their shared responsibility matrix, so the RACI view and audit packages can name them.
                     </span>
                     {canManage ? (
@@ -1142,7 +1153,12 @@ export default function Vendors({ me }) {
               ) : tab === "assessments" ? (
                 <AssessmentsTab vendor={detail} docs={docs} canManage={canManage} busy={busy} onOpen={openAssessmentDoc}
                                 onFile={(body) => act(async () => { await api.post("/vendor-assessments/", body); await refresh(); }, "Filed.")}
-                                onRemove={(r) => { if (window.confirm(`Remove this ${KIND_LABEL[r.kind] || r.kind} from the vendor's file?`)) act(async () => { await api.delete(`/vendor-assessments/${r.id}/`); await refresh(); }, "Removed."); }} />
+                                onRemove={(r) => ask({
+                                  title: `Remove this ${KIND_LABEL[r.kind] || r.kind}?`,
+                                  description: `It comes off ${detail.name}'s file, and any assurance date it carried stops counting.`,
+                                  confirmLabel: "Remove it",
+                                  onConfirm: () => act(async () => { await api.delete(`/vendor-assessments/${r.id}/`); await refresh(); }, "Removed."),
+                                })} />
               ) : tab === "questionnaire" ? (
                 <QuestionnaireTab key={detail.id} vendor={detail} canManage={canManage} busy={busy} act={act} refresh={refresh}
                                   onSubmit={(body) => act(async () => { await api.post("/vendor-assessments/", body); await refresh(); }, "Questionnaire saved.")} />

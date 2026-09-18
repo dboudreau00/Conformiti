@@ -6,8 +6,9 @@ import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components
 import { ControlDetail } from "../components/controls/ControlDetail.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
+import { usePage } from "../components/ui/ShowMore.jsx";
 import { useShell } from "../shell.js";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
@@ -28,6 +29,10 @@ export default function Controls({ me }) {
   const [pageError, setPageError] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [exporting, setExporting] = useState(false);
+  // A failed load is not an empty catalogue: emptying the list told the reader
+  // to seed a framework they already have.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   // Pick-lists shared by every expanded row.
   const [users, setUsers] = useState(null); // null = not loaded / unavailable
@@ -41,7 +46,7 @@ export default function Controls({ me }) {
   // ---- data ----------------------------------------------------------------
   useEffect(() => {
     let alive = true;
-    // Paginated at 50 — follow `next` so every framework reaches the filter
+    // Paginated at 50, follow `next` so every framework reaches the filter
     // (and the "all frameworks" fetch below covers the whole catalog).
     fetchAll("/frameworks/")
       .then((list) => {
@@ -51,12 +56,13 @@ export default function Controls({ me }) {
         if (!alive) return;
         setFrameworks([]);
         setLoading(false);
+        setLoadFailed(true);
         setPageError(errorText(e, "Couldn't load frameworks."));
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [attempt]);
 
   useEffect(() => {
     if (!frameworks) return;
@@ -71,6 +77,7 @@ export default function Controls({ me }) {
       .catch((e) => {
         if (!alive) return;
         setControls([]);
+        setLoadFailed(true);
         setPageError(errorText(e, "Couldn't load controls."));
       })
       .finally(() => {
@@ -79,7 +86,7 @@ export default function Controls({ me }) {
     return () => {
       alive = false;
     };
-  }, [framework, frameworks]);
+  }, [framework, frameworks, attempt]);
 
   // Owner pick-list: only needed by users who can reassign controls.
   useEffect(() => {
@@ -171,6 +178,7 @@ export default function Controls({ me }) {
   }, [frameworks]);
 
   const ready = frameworks !== null && !loading;
+  const page = usePage(rows, 100, [framework, status, query]);
 
   return (
     <PanelTransition>
@@ -182,6 +190,7 @@ export default function Controls({ me }) {
             value={framework}
             onChange={setFramework}
             options={frameworkOptions}
+            collapseAfter={5}
           />
 
           <div className="flex flex-wrap items-center gap-2">
@@ -233,7 +242,11 @@ export default function Controls({ me }) {
           <Panel className="overflow-hidden">
             <PanelHeader title="Control register">
               <Label className="tabular">
-                {ready ? `Showing ${rows.length} of ${controls.length}` : "Loading"}
+                {ready
+                  ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}${
+                      rows.length === controls.length ? "" : ` (${controls.length.toLocaleString()} in all)`
+                    }`
+                  : "Loading"}
               </Label>
             </PanelHeader>
 
@@ -248,12 +261,19 @@ export default function Controls({ me }) {
 
               {!ready ? (
                 <Loading>Loading controls…</Loading>
+              ) : loadFailed ? (
+                <LoadError
+                  what="The control register"
+                  onRetry={() => { setLoadFailed(false); setPageError(""); setLoading(true); setAttempt((a) => a + 1); }}
+                />
               ) : frameworks.length === 0 ? (
-                <Empty title="No frameworks available">Seed a framework to populate the control register.</Empty>
+                <Empty title="No frameworks yet">
+                  Install a compliance pack, or load the framework library, to populate the control register.
+                </Empty>
               ) : (
                 <ul className="min-w-[860px] divide-y divide-line">
                   <AnimatePresence initial={false}>
-                    {rows.map((control) => (
+                    {page.visible.map((control) => (
                       <ControlRow
                         key={control.id}
                         control={control}
@@ -278,6 +298,13 @@ export default function Controls({ me }) {
                       <Empty title="No controls match these filters">
                         Clear the search or widen the status selection.
                       </Empty>
+                    </li>
+                  ) : null}
+                  {page.remaining ? (
+                    <li className="px-5 py-3 text-center">
+                      <Button size="sm" variant="secondary" onClick={page.more}>
+                        Show {Math.min(page.size, page.remaining)} more of {page.remaining.toLocaleString()}
+                      </Button>
                     </li>
                   ) : null}
                 </ul>

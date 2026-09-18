@@ -18,22 +18,30 @@ export function Sidebar({ onSignOut }) {
       className="sticky top-0 flex h-screen w-[248px] shrink-0 flex-col border-r border-line bg-surface-2 transition-colors duration-300 ease-out max-md:hidden"
     >
       <div className="px-5 py-5">
-        <ConformitiLogo size={36} tagline="SOC 2 · ISO 27001 · PCI" />
-        {(me?.active_workspace || me?.workspace_detail)?.name ? (
-          <p
-            className={cn(
-              "mt-3 truncate text-2xs font-medium uppercase tracking-[0.08em]",
-              me?.active_workspace?.switched ? "text-warning" : "text-faint"
-            )}
-            title={me?.active_workspace?.switched
-              ? `Switched into ${me.active_workspace.slug} — not your own workspace`
-              : "Workspace"}
-            data-testid="workspace-name"
-          >
-            {me?.active_workspace?.switched ? "Viewing " : ""}
-            {(me?.active_workspace || me?.workspace_detail).name}
-          </p>
-        ) : null}
+        <ConformitiLogo size={36} />
+        {(() => {
+          // The workspace is named only where it tells the reader something:
+          // on an installation with more than the one default workspace, or
+          // while a superuser is looking at another organisation's. A single
+          // workspace called "Default" under the logo was a label with no
+          // meaning, and read as an empty section.
+          const ws = me?.active_workspace || me?.workspace_detail;
+          const switched = !!me?.active_workspace?.switched;
+          if (!ws?.name || (!switched && (!ws.slug || ws.slug === "default"))) return null;
+          return (
+            <p
+              className={cn(
+                "mt-3 truncate text-2xs font-medium uppercase tracking-[0.08em]",
+                switched ? "text-warning" : "text-faint"
+              )}
+              title={switched ? `Switched into ${ws.slug}, not your own workspace` : "The workspace you are working in"}
+              data-testid="workspace-name"
+            >
+              {switched ? "Viewing " : "Workspace · "}
+              {ws.name}
+            </p>
+          );
+        })()}
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">

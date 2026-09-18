@@ -13,7 +13,7 @@ import api, { downloadFile, fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
-import { TextDialog } from "../ui/Dialog.jsx";
+import { TextDialog, useConfirm } from "../ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
 
 const STATUS = {
@@ -27,6 +27,7 @@ const EMPTY = { title: "", description: "", package_control: "", assignee: "", d
 const DATE = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
 export function PbcList({ pkg, mine = false, controls = [], canRaise = false, canAssemble = false, onOpen, onMessage }) {
+  const { ask, confirmDialog } = useConfirm();
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -105,10 +106,12 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     }
     if (failed) throw new Error(errorText(failed));
   };
-  const withdraw = (r) => {
-    if (!window.confirm(`Withdraw ${r.reference}? The line stays on the list as withdrawn.`)) return undefined;
-    return act(`withdraw-${r.id}`, () => api.post(`/pbc-requests/${r.id}/withdraw/`), `${r.reference} withdrawn.`);
-  };
+  const withdraw = (r) => ask({
+    title: `Withdraw ${r.reference}?`,
+    description: "The line stays on the list, marked withdrawn, so the auditor can see it was asked for and then dropped.",
+    confirmLabel: "Withdraw the request",
+    onConfirm: () => act(`withdraw-${r.id}`, () => api.post(`/pbc-requests/${r.id}/withdraw/`), `${r.reference} withdrawn.`),
+  });
   const attachDoc = (e, r) => {
     e.preventDefault();
     return act(`attach-${r.id}`, async () => {
@@ -136,7 +139,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     filename: item.document_name,
     facts: [
       { label: "Version when attached", value: `v${item.version}` },
-      { label: "Digest at attachment (SHA-256)", value: item.content_sha256 || "—", mono: true },
+      { label: "Digest at attachment (SHA-256)", value: item.content_sha256 || "-", mono: true },
       { label: "Attached by", value: `${item.attached_by_name} · ${DATE(item.attached_at)}` },
     ],
   });
@@ -153,6 +156,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
 
   return (
     <Panel className="overflow-hidden" aria-label={title} role="region">
+      {confirmDialog}
       <PanelHeader title={title} meta={rows ? `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}` : ""}>
         <span className="flex items-center gap-2">
           {!mine && rows && rows.length ? (
@@ -185,7 +189,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
             <label htmlFor={id("control")} className="field-label">Control</label>
             <select id={id("control")} className="input" value={form.package_control} onChange={(e) => setForm({ ...form, package_control: e.target.value })}>
               <option value="">Not tied to a control</option>
-              {controls.map((c) => <option key={c.id} value={c.id}>{c.control_ref} — {c.title}</option>)}
+              {controls.map((c) => <option key={c.id} value={c.id}>{c.control_ref}: {c.title}</option>)}
             </select>
           </div>
           <div>

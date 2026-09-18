@@ -22,7 +22,7 @@ function flatten(nodes, expanded, depth = 0, parentId = null, out = []) {
  *    Home / End jump, Enter / Space select.
  *  - Roving tabindex: the row last focused (else the selected row, else the
  *    first row) is the single tab stop.
- * Whatever the API returns as roots is rendered as roots — a folder whose
+ * Whatever the API returns as roots is rendered as roots, a folder whose
  * parent is not visible to this user is a root of *their* view.
  */
 export function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, className, label = "Folders" }) {

@@ -13,7 +13,7 @@ const day = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
 /**
  * The selected risk: description, the treatment fields (editable for a
- * framework manager or the risk's owner — the same rule as RiskPermission),
+ * framework manager or the risk's owner: the same rule as RiskPermission),
  * the mitigation plan and the progress-note thread (anyone may add a note).
  */
 export function RiskDetail({
@@ -65,7 +65,7 @@ export function RiskDetail({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <Label className="block truncate">
-            #{risk.id} · identified {risk.identified_on || "—"} · by {risk.created_by_name || "—"}
+            #{risk.id} · identified {risk.identified_on || "-"} · by {risk.created_by_name || "-"}
             {risk.closed_at ? ` · closed ${day(risk.closed_at)}` : ""}
           </Label>
           <h3 id={id("title")} className="mt-1 text-[15px] font-semibold text-ink">
@@ -190,11 +190,11 @@ export function RiskDetail({
           </div>
           <div>
             <dt><Label>Due</Label></dt>
-            <dd className={cn("tabular mt-1 font-mono text-[13px]", risk.is_overdue ? "text-danger" : "text-ink")}>{risk.due_date || "—"}</dd>
+            <dd className={cn("tabular mt-1 font-mono text-[13px]", risk.is_overdue ? "text-danger" : "text-ink")}>{risk.due_date || "-"}</dd>
           </div>
           <div>
             <dt><Label>Jira</Label></dt>
-            <dd className="mt-1 font-mono text-[13px] text-ink">{risk.jira_key || "—"}</dd>
+            <dd className="mt-1 font-mono text-[13px] text-ink">{risk.jira_key || "-"}</dd>
           </div>
         </dl>
       )}
@@ -253,7 +253,7 @@ export function RiskDetail({
             {notes.map((n) => (
               <li key={n.id} className="py-2.5">
                 <p className="font-mono text-2xs text-faint">
-                  <span className="text-muted">{n.author_name || "—"}</span> · {day(n.created_at) || "—"}
+                  <span className="text-muted">{n.author_name || "-"}</span> · {day(n.created_at) || "-"}
                 </p>
                 <p className="mt-0.5 whitespace-pre-line text-[13px] leading-relaxed text-ink">{n.text}</p>
               </li>

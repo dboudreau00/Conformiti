@@ -39,6 +39,13 @@ export function ControlDetail({
   const [saving, setSaving] = useState(false); // status / owner PATCH in flight
   const [notice, setNotice] = useState(null); // { ok?, warn?, err?, skipped? }
   const [viewing, setViewing] = useState(null); // in-browser viewer props
+  // The test interval is typed, so it needs a draft of its own: a controlled
+  // input whose onChange does not set state is put back by React after every
+  // keystroke, and the field refuses everything typed into it.
+  const [interval, setIntervalDraft] = useState(control.test_interval_days ?? "");
+  useEffect(() => {
+    setIntervalDraft(control.test_interval_days ?? "");
+  }, [control.id, control.test_interval_days]);
 
   const openLink = (l) => setViewing({
     title: l.document_name,
@@ -49,8 +56,8 @@ export function ControlDetail({
     badge: DOC_STATUS[l.document_status] || { label: l.document_status, tone: "muted" },
     facts: [
       { label: "Folder", value: l.folder_path },
-      { label: "Linked by", value: l.linked_by_name || "—" },
-      { label: "Note", value: l.note || "—" },
+      { label: "Linked by", value: l.linked_by_name || "-" },
+      { label: "Note", value: l.note || "-" },
     ],
   });
 
@@ -136,7 +143,7 @@ export function ControlDetail({
       await loadLinks();
       setNotice({
         ok: `${created.length} attached`,
-        skipped: skipped.map((s) => `${docName(s.document)} — ${s.reason}`),
+        skipped: skipped.map((s) => `${docName(s.document)}: ${s.reason}`),
       });
     } catch (ex) {
       setNotice({ err: errorText(ex) });
@@ -170,7 +177,7 @@ export function ControlDetail({
         {readiness ? <ReadinessBreakdown readiness={readiness} /> : null}
         <div>
           <Label className="mb-1.5 block">Objective</Label>
-          <p className="text-[13px] leading-relaxed text-ink">{control.objective || "—"}</p>
+          <p className="text-[13px] leading-relaxed text-ink">{control.objective || "-"}</p>
           <p className="mt-1.5 text-xs text-muted">
             {control.framework}
             {control.category_name ? ` · ${control.category_name}` : ""}
@@ -267,15 +274,20 @@ export function ControlDetail({
                     min={1}
                     max={3650}
                     className="input input-sm"
-                    value={control.test_interval_days ?? ""}
+                    value={interval}
                     placeholder="365"
                     disabled={saving}
-                    onBlur={(e) => {
-                      const raw = e.target.value.trim();
+                    onBlur={() => {
+                      const raw = String(interval).trim();
                       const next = raw === "" ? null : Number(raw);
+                      if (next !== null && (!Number.isFinite(next) || next < 1 || next > 3650)) {
+                        setIntervalDraft(control.test_interval_days ?? "");
+                        setNotice({ err: "A test interval is between 1 and 3650 days." });
+                        return;
+                      }
                       if (next !== (control.test_interval_days ?? null)) patch("test_interval_days", next);
                     }}
-                    onChange={() => {}}
+                    onChange={(e) => setIntervalDraft(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                   />
                 </>

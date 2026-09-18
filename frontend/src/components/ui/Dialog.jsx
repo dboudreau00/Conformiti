@@ -8,7 +8,7 @@
  * form, impossible to validate before the person commits, and dismissed by
  * one wrong keystroke. Three components replace every one of them:
  *
- *   <Dialog>        the frame — overlay, title, Escape, focus, scroll lock
+ *   <Dialog>        the frame: overlay, title, Escape, focus, scroll lock
  *   <TextDialog>    one labelled field (input or textarea) with a submit
  *   <ConfirmDialog> a question with a confirm and a cancel
  *
@@ -209,4 +209,42 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "Confir
       </div>
     </Dialog>
   );
+}
+
+/**
+ * `window.confirm` for the places that still use it, with the product's own
+ * dialog instead of the browser's.
+ *
+ *   const { ask, confirmDialog } = useConfirm();
+ *   …
+ *   ask({
+ *     title: `Delete ${user.username}?`,
+ *     description: "This cannot be undone. Deactivating is usually safer.",
+ *     confirmLabel: "Delete the account",
+ *     onConfirm: () => api.delete(`/users/${user.id}/`),
+ *   });
+ *   …
+ *   {confirmDialog}
+ *
+ * The browser's own prompt is unstyled, unlabelled, dismissed by one wrong
+ * keystroke and impossible to word carefully. `onConfirm` may be async: the
+ * dialog stays open and shows a working state until it settles, and reports
+ * a failure in place rather than closing over it.
+ */
+export function useConfirm() {
+  const [request, setRequest] = useState(null);
+  const confirmDialog = (
+    <ConfirmDialog
+      open={!!request}
+      title={request?.title || ""}
+      description={request?.description}
+      confirmLabel={request?.confirmLabel || "Confirm"}
+      tone={request?.tone || "danger"}
+      onClose={() => setRequest(null)}
+      onConfirm={async () => { await request?.onConfirm?.(); }}
+    >
+      {request?.children}
+    </ConfirmDialog>
+  );
+  return { ask: setRequest, confirmDialog };
 }

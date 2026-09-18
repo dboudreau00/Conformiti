@@ -27,7 +27,7 @@ const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "shor
 const SEARCH_COLS = "minmax(220px, 1.5fr) minmax(160px, 1fr) 110px 130px 130px";
 
 function fmtDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(`${iso}T00:00:00`);
   return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
 }
@@ -75,22 +75,15 @@ function MapEditor({ doc, choices, busy, onAdd, onRemove }) {
           <span className="text-xs text-faint">Not linked to any control yet.</span>
         )}
       </div>
-      <div className="mt-3 flex items-center gap-2">
-        <label htmlFor={selectId} className="sr-only">Link a control</label>
-        <select
+      <div className="mt-3 max-w-lg">
+        <ControlPicker
           id={selectId}
-          className="input input-sm max-w-lg"
-          value=""
-          disabled={busy || !choices}
-          onChange={(e) => onAdd(e.target.value)}
-        >
-          <option value="">{choices ? "Link a control…" : "Loading controls…"}</option>
-          {options.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.framework_name} · {c.label} — {c.title}
-            </option>
-          ))}
-        </select>
+          label="Link a control"
+          placeholder="Link a control by reference or title"
+          controls={choices ? options : null}
+          disabled={busy}
+          onPick={(c) => onAdd(String(c.id))}
+        />
       </div>
     </div>
   );
@@ -123,7 +116,7 @@ function AccessEditor({ perms, roles, users, busy, grantBy, onGrantBy, grant, on
       ) : (
         <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
           {perms.map((p) => {
-            const who = p.role_name || p.user_name || p.username || "—";
+            const who = p.role_name || p.user_name || p.username || "-";
             return (
               <li key={p.id} className="flex items-center gap-3 px-3 py-2">
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{who}</span>
@@ -201,6 +194,10 @@ export default function Documents({ me }) {
 
   const folder = useMemo(() => findNode(tree, folderId), [tree, folderId]);
   const canEdit = !!folder && ["edit", "manage"].includes(folder.my_access);
+  // Making a folder at the root is not granted by a folder, because there is
+  // no folder to grant it: it takes the workspace-wide capability.
+  const canManageFolders = !!me?.capabilities?.manage_folders || !!me?.is_superuser;
+  const { ask, confirmDialog } = useConfirm();
   const canManage = !!folder && folder.my_access === "manage";
   const canDelete = canManage && !folder.is_seeded;
 
@@ -463,20 +460,28 @@ export default function Documents({ me }) {
   }
 
   // --- folders ----------------------------------------------------------------------
-  async function createFolder(e) {
+  /** `parent` null makes a folder at the root, which is how the first one is made. */
+  async function createFolder(e, parentId) {
     e.preventDefault();
     const name = newFolder.trim();
     if (!name) return;
-    const parent = folder.id;
+    const parent = parentId === undefined ? folder.id : parentId;
     const ok = await run(() => api.post("/folders/", { name, parent }), "Folder created.");
     if (ok) {
       setNewFolder("");
-      toggleNode(parent, true);
+      if (parent !== null) toggleNode(parent, true);
       loadTree();
     }
   }
-  async function deleteFolder() {
-    if (!window.confirm(`Delete "${folder.name}" and everything inside it? This cannot be undone.`)) return;
+  function deleteFolder() {
+    ask({
+      title: `Delete "${folder.name}"?`,
+      description: "Everything inside it goes too: subfolders, documents and every version of them. This cannot be undone.",
+      confirmLabel: "Delete the folder",
+      onConfirm: () => reallyDeleteFolder(),
+    });
+  }
+  async function reallyDeleteFolder() {
     const id = folder.id;
     const ok = await run(() => api.delete(`/folders/${id}/`), "Folder deleted.");
     if (ok) {
@@ -501,6 +506,7 @@ export default function Documents({ me }) {
 
   return (
     <PanelTransition>
+      {confirmDialog}
       <AnimatePresence initial={false}>
         {msg ? (
           <motion.div
@@ -530,7 +536,26 @@ export default function Documents({ me }) {
               <Loading />
             ) : tree.length === 0 ? (
               <Empty title="No folders yet">
-                Run <span className="font-mono">seed_frameworks --with-folders</span> to generate the evidence tree.
+                {canManageFolders ? (
+                  <span className="flex flex-col items-center gap-3">
+                    <span>Make the first folder here, or load a framework library, which brings its evidence folders with it.</span>
+                    <form onSubmit={(e) => createFolder(e, null)} className="flex items-center gap-2">
+                      <input
+                        className="input input-sm max-w-[200px]"
+                        placeholder="First folder name"
+                        aria-label="First folder name"
+                        value={newFolder}
+                        onChange={(e) => setNewFolder(e.target.value)}
+                        disabled={busy}
+                      />
+                      <Button size="sm" variant="primary" type="submit" disabled={busy || !newFolder.trim()}>
+                        Create folder
+                      </Button>
+                    </form>
+                  </span>
+                ) : (
+                  <span>Ask an administrator to create the first folder, or to load a framework library, which brings its evidence folders with it.</span>
+                )}
               </Empty>
             ) : (
               <FolderTree
@@ -712,7 +737,7 @@ export default function Documents({ me }) {
                                 <span className="tabular font-mono text-xs" style={{ color: toneVar(dueTone(days)) }}>{fmtDate(d.next_review_date)}</span>
                                 <Badge tone={dueTone(days)} mono>{dueLabel(days)}</Badge>
                               </span>
-                              <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "—"}</span>
+                              <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "-"}</span>
                             </li>
                           );
                         })}
@@ -834,10 +859,10 @@ export default function Documents({ me }) {
                                     </span>
                                     <Badge tone={dueTone(days)} mono>{dueLabel(days)}</Badge>
                                   </span>
-                                  <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "—"}</span>
+                                  <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "-"}</span>
                                   <span className="tabular font-mono text-xs text-muted">v{d.version}</span>
                                   <span className="flex flex-wrap gap-1" title={chips.length ? "Controls this document is linked to as evidence" : undefined}>
-                                    {chips.length === 0 ? <span className="text-2xs text-faint">—</span> : null}
+                                    {chips.length === 0 ? <span className="text-2xs text-faint">-</span> : null}
                                     {chips.slice(0, MAX_CHIPS).map((s) => (
                                       <Badge key={s.link_id} tone="accent" mono title={s.title}>{s.label}</Badge>
                                     ))}

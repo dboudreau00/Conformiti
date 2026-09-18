@@ -23,8 +23,9 @@ import { errorText } from "../utils/a11y.js";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { TextDialog } from "../components/ui/Dialog.jsx";
+import { TextDialog, useConfirm } from "../components/ui/Dialog.jsx";
 import { Divider, Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { ShowMore } from "../components/ui/ShowMore.jsx";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: UserIcon },
@@ -184,7 +185,7 @@ function AppearanceSection() {
     <Panel className="p-5">
       <SectionTitle title="Appearance">
         Theme packs recolour every surface and chart at once; the accent recolours primary buttons, active navigation and
-        highlights. Status colours — success, warning, overdue — stay fixed so they remain meaningful in evidence exports.
+        highlights. Status colours (success, warning, overdue) stay fixed so they remain meaningful in evidence exports.
         Changes apply instantly and are remembered on this device.
       </SectionTitle>
 
@@ -374,7 +375,7 @@ function PasswordBlock() {
 
 function BackupCodes({ codes }) {
   function download() {
-    const text = "Conformiti — backup codes\n" + "Each code works once. Keep them somewhere safe.\n\n" + codes.join("\n") + "\n";
+    const text = "Conformiti, backup codes\n" + "Each code works once. Keep them somewhere safe.\n\n" + codes.join("\n") + "\n";
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
@@ -873,7 +874,7 @@ function ChannelsBlock({ me, onUpdate }) {
                 {info.source === "workspace"
                   ? "Sealed and issued packages, the auditor's returns and requests, returned questionnaires and a daily summary are posted to this workspace's own channels, set under Workspace below."
                   : info.multi_workspace && !info.shared_across_workspaces
-                    ? `This installation serves several organisations, so this workspace's events go only to channels set for it under Workspace below${info.installation_channels?.length ? ` — the installation's ${info.installation_channels.join(" and ")} channel carries only installation-level events (scanner outages) unless WEBHOOKS_SHARED_ACROSS_WORKSPACES is set` : ""}.`
+                    ? `This installation serves several organisations, so this workspace's events go only to channels set for it under Workspace below${info.installation_channels?.length ? `, the installation's ${info.installation_channels.join(" and ")} channel carries only installation-level events (scanner outages) unless WEBHOOKS_SHARED_ACROSS_WORKSPACES is set` : ""}.`
                     : "Sealed and issued packages, the auditor's returns and requests, returned questionnaires, scanner outages, quarantined files and a daily summary are posted to the channels an operator configures with SLACK_WEBHOOK_URL / TEAMS_WEBHOOK_URL, or to this workspace's own channels set under Workspace below."}
               </span>
               {admin && info.deliveries?.length ? (
@@ -905,7 +906,7 @@ function NotificationsSection({ me, onGoProfile, onUpdate }) {
         <span className="font-mono text-xs text-ink">{me.email}</span>
       ) : (
         <span>
-          No email on file —{" "}
+          No email on file -{" "}
           <button type="button" className="link" onClick={onGoProfile}>
             add one on the Profile tab
           </button>
@@ -1026,6 +1027,7 @@ function AccessSection({ me }) {
 /* ---------- Workspaces ---------- */
 
 function WorkspacesBlock({ me }) {
+  const { ask, confirmDialog } = useConfirm();
   const [current, setCurrent] = useState(null);
   const [list, setList] = useState(null);
   const [name, setName] = useState("");
@@ -1121,8 +1123,16 @@ function WorkspacesBlock({ me }) {
     }
   }
 
-  async function archive(ws) {
-    if (!window.confirm(`Archive “${ws.name}”? Its people can no longer sign in and it drops out of every scheduled job. Nothing is deleted.`)) return;
+  function archive(ws) {
+    ask({
+      title: `Archive “${ws.name}”?`,
+      description: "Its people can no longer sign in and it drops out of every scheduled job. Nothing is deleted, and it can be made active again.",
+      confirmLabel: "Archive the workspace",
+      tone: "danger",
+      onConfirm: () => reallyArchive(ws),
+    });
+  }
+  async function reallyArchive(ws) {
     setBusy(true);
     setMsg(null);
     try {
@@ -1138,6 +1148,7 @@ function WorkspacesBlock({ me }) {
 
   return (
     <div className="mt-6 border-t border-line pt-5" data-testid="workspaces">
+      {confirmDialog}
       <Label as="p" className="mb-2.5">Workspace</Label>
       <p className="text-[13px] text-ink">
         {current ? (
@@ -1148,7 +1159,7 @@ function WorkspacesBlock({ me }) {
         ) : "…"}
       </p>
       <p className="mt-1.5 max-w-[62ch] text-xs leading-snug text-muted">
-        Everything you see — frameworks, documents, risks, vendors, packages, people — belongs to this workspace. Other organisations on the same installation see only their own.
+        Everything you see (frameworks, documents, risks, vendors, packages, people) belongs to this workspace. Other organisations on the same installation see only their own.
       </p>
       {superuser ? (
         <>
@@ -1184,7 +1195,7 @@ function WorkspacesBlock({ me }) {
           </form>
           <p className="mt-2 max-w-[62ch] text-xs text-muted">
             Review, vendor and auditor-request reminders name this organisation's documents and vendors, so they go here rather than to one address for the whole installation. Leave the address blank to use the installation's own.
-            Chat events — sealed packages, auditor requests, returned questionnaires — go to this workspace's own channels; on an installation with several organisations they go nowhere else, so one shared channel never shows every tenant the others' affairs.
+            Chat events (sealed packages, auditor requests, returned questionnaires) go to this workspace's own channels; on an installation with several organisations they go nowhere else, so one shared channel never shows every tenant the others' affairs.
           </p>
           <p className="mt-2 max-w-[62ch] text-xs text-muted">
             Single sign-on is configured once per installation (<code className="font-mono">SSO_WORKSPACE</code> names the workspace it signs people into), not per workspace. An installation whose organisations each need their own identity provider should run one installation per organisation.
@@ -1264,8 +1275,8 @@ function AboutSection() {
       ? `On · answering${scanning.latency_ms != null ? ` in ${scanning.latency_ms} ms` : ""}`
       : `On · UNREACHABLE${scanning.down_since ? ` since ${String(scanning.down_since).slice(0, 16).replace("T", " ")}` : ""}`;
   const rows = [
-    ["Version", health?.version ? `v${health.version}` : "—"],
-    ["Frameworks", auditor ? "—" : frameworks ? `${frameworks.length} loaded` : "…"],
+    ["Version", health?.version ? `v${health.version}` : "-"],
+    ["Frameworks", auditor ? "-" : frameworks ? `${frameworks.length} loaded` : "…"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
     ["Malware scanning", scannerLabel],
     ["Package signing", health?.signing?.key_id
@@ -1310,24 +1321,32 @@ function AboutSection() {
       ) : frameworks.length === 0 ? (
         <Empty title="No frameworks loaded">An administrator can load a framework to start tracking controls.</Empty>
       ) : (
-        <ul className="max-w-[640px] divide-y divide-line rounded-xl border border-line">
-          {frameworks.map((f) => (
-            <li key={f.key || f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5">
-              <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-medium text-ink">{f.name}</span>
-                {f.authority ? <span className="block text-xs text-muted">{f.authority}</span> : null}
-              </span>
-              {f.version ? (
-                <Badge tone="muted" mono>
-                  {f.version}
-                </Badge>
-              ) : null}
-              {typeof f.control_count === "number" ? (
-                <span className="tabular font-mono text-2xs text-faint">{f.control_count} controls</span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <ShowMore total={frameworks.length} initial={8} noun="frameworks" className="max-w-[640px]">
+          {(n) => (
+            <ul className="divide-y divide-line rounded-xl border border-line">
+              {frameworks.slice(0, n).map((f) => (
+                <li key={f.key || f.id} className="px-4 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 truncate text-[13px] font-medium text-ink" title={f.name}>{f.name}</span>
+                    {typeof f.control_count === "number" ? (
+                      <span className="tabular shrink-0 font-mono text-2xs text-faint">{f.control_count} controls</span>
+                    ) : null}
+                  </div>
+                  {f.authority || f.version ? (
+                    <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted">
+                      {f.authority ? <span className="min-w-0 truncate" title={f.authority}>{f.authority}</span> : null}
+                      {f.version ? (
+                        <span className="min-w-0 shrink-0 truncate font-mono text-2xs text-faint" title={f.version}>
+                          {f.version}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </ShowMore>
       )}
 
       <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1">

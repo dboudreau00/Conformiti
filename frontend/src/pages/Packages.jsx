@@ -69,7 +69,7 @@ export default function Packages({ me }) {
   const [viewing, setViewing] = useState(null);
 
   // Pinned evidence opens through the package's own preview route, so the
-  // auditor's grant — not folder permissions — is what admits them.
+  // auditor's grant, not folder permissions, is what admits them.
   const openEvidence = (e) => setViewing({
     title: e.document_name,
     subtitle: `Pinned v${e.pinned_version} in ${selected?.name || "this package"}`,
@@ -180,7 +180,7 @@ export default function Packages({ me }) {
   const submitSeal = (assertion) => rethrowing("seal", async () => {
     await api.post(`/evidence-packages/${selectedId}/seal/`, { assertion });
     await loadPackages();
-  }, "Sealed. The manifest digest is now fixed — publish it to the auditor separately.")();
+  }, "Sealed. The manifest digest is now fixed. Publish it to the auditor separately.")();
 
   const withdraw = () => setAsk({ kind: "withdraw" });
   const submitWithdraw = (reason) => rethrowing("withdraw", async () => {
@@ -407,7 +407,7 @@ export default function Packages({ me }) {
                 <StatCard label="Evidence files" value={selected.evidence_count} />
                 <StatCard
                   label="Integrity"
-                  value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length}`) : "—"}
+                  value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length}`) : "-"}
                   detail={integrity
                     ? (integrity.ok
                         ? "Every file matches what was sealed"
@@ -889,7 +889,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
         </form>
       ) : (
         <p className="mt-1 text-xs text-muted">
-          Population: {row.population_size ?? "—"}
+          Population: {row.population_size ?? "-"}
           {row.population_source ? ` · ${row.population_source}` : " · source not stated"}
           {row.sampling_method_display ? ` · ${row.sampling_method_display}` : ""}
           {row.sampling_note ? <span className="block text-faint">Auditor: {row.sampling_note}</span> : null}
@@ -916,19 +916,19 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
                 return (
                   <tr key={sm.id} className="align-top">
                     <td className="py-1.5 pr-3 font-mono text-ink">{sm.identifier}{sm.sealed_in ? "" : <span className="ml-1 text-faint" title="Added by the auditor after sealing">†</span>}</td>
-                    <td className="py-1.5 pr-3 text-muted">{sm.description || "—"}</td>
-                    <td className="py-1.5 pr-3 text-muted">{sm.population_ref || "—"}</td>
+                    <td className="py-1.5 pr-3 text-muted">{sm.description || "-"}</td>
+                    <td className="py-1.5 pr-3 text-muted">{sm.population_ref || "-"}</td>
                     <td className="py-1.5 pr-3">
                       {artefact ? (
                         <button type="button" onClick={() => onOpen(artefact)} className="text-accent hover:underline">{sm.evidence_name}</button>
-                      ) : <span className="text-faint">{sm.evidence_name || "—"}</span>}
+                      ) : <span className="text-faint">{sm.evidence_name || "-"}</span>}
                     </td>
                     <td className="py-1.5 pr-3">
                       <Badge tone={r.tone} dot>{r.label}</Badge>
                       {sm.exception_note ? <span className="mt-1 block max-w-[320px] text-danger">{sm.exception_note}</span> : null}
                     </td>
                     <td className="py-1.5">
-                      <span className="block text-muted">{sm.tested_by_name ? `${sm.tested_by_name} · ${DATE(sm.tested_at)}` : "—"}</span>
+                      <span className="block text-muted">{sm.tested_by_name ? `${sm.tested_by_name} · ${DATE(sm.tested_at)}` : "-"}</span>
                       <span className="mt-1 flex flex-wrap gap-1">
                         {canJudge ? ["pass", "fail", "not_tested"].map((v) => (
                           <Button key={v} size="sm" variant={sm.result === v ? "primary" : "ghost"} disabled={busy === `sample-${sm.id}`}
@@ -950,7 +950,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
       )}
 
       {canJudge && s.fail > 0 && row.operating_conclusion === "pending" ? (
-        <p className="mt-2 text-xs text-warning">Exceptions recorded — conclude operating effectiveness below.</p>
+        <p className="mt-2 text-xs text-warning">Exceptions recorded. Conclude operating effectiveness below.</p>
       ) : null}
 
       {adding && canList ? (
@@ -1005,12 +1005,22 @@ function IssueForm({ packageId, onDone, onError }) {
   const [auditors, setAuditors] = useState([]);
   const [user, setUser] = useState("");
   const [busy, setBusy] = useState(false);
+  // An empty list has two very different causes, and a bare placeholder told
+  // the reader neither: nobody holds the Auditor role, or the list did not load.
+  const [state, setState] = useState("loading");
 
   useEffect(() => {
     if (!open) return;
+    setState("loading");
     fetchAll("/users/")
-      .then((all) => setAuditors(all.filter((u) => u.is_active && u.role_detail?.is_auditor)))
-      .catch(() => setAuditors([]));
+      .then((all) => {
+        setAuditors(all.filter((u) => u.is_active && u.role_detail?.is_auditor));
+        setState("ready");
+      })
+      .catch(() => {
+        setAuditors([]);
+        setState("error");
+      });
   }, [open]);
 
   if (!open) {
@@ -1039,18 +1049,29 @@ function IssueForm({ packageId, onDone, onError }) {
         }
       }}
     >
-      <select className="input h-8 py-0 text-xs" required value={user}
-              aria-label="Auditor to issue to"
-              onChange={(e) => setUser(e.target.value)}>
-        <option value="">Choose an auditor…</option>
-        {auditors.map((u) => (
-          <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
-        ))}
-      </select>
-      <Button size="sm" variant="primary" type="submit" disabled={busy || !user}>
-        {busy ? "Issuing…" : "Issue"}
-      </Button>
-      <Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)}>
+      {state === "ready" && auditors.length === 0 ? (
+        <p className="text-xs text-muted">
+          No active account holds the Auditor role. Create one on the Users page, then issue this package to it.
+        </p>
+      ) : state === "error" ? (
+        <p className="text-xs text-danger" role="alert">The list of auditors could not be loaded. Close this and try again.</p>
+      ) : (
+        <select className="input h-8 py-0 text-xs" required value={user}
+                aria-label="Auditor to issue to"
+                disabled={state === "loading"}
+                onChange={(e) => setUser(e.target.value)}>
+          <option value="">{state === "loading" ? "Loading auditors…" : "Choose an auditor…"}</option>
+          {auditors.map((u) => (
+            <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+          ))}
+        </select>
+      )}
+      {state === "ready" && auditors.length ? (
+        <Button size="sm" variant="primary" type="submit" disabled={busy || !user}>
+          {busy ? "Issuing…" : "Issue"}
+        </Button>
+      ) : null}
+      <Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)} aria-label="Close">
         <XIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
       </Button>
     </form>

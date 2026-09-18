@@ -5,7 +5,7 @@
  * through the API client (so the credential travels the same way as every
  * other request, in header or cookie mode). Images are shown from a blob URL
  * in an <img>; PDFs are drawn onto canvases by pdf.js, in a worker that is
- * part of this bundle, with scripting off — no frame, no plugin, and no PDF
+ * part of this bundle, with scripting off: no frame, no plugin, and no PDF
  * JavaScript ever runs. Word and Excel
  * files arrive from the server already parsed into a small structured
  * vocabulary (headings, runs, list items, tables, sheets) and are rendered
@@ -14,7 +14,7 @@
  *
  * The frame around the file is the point of the component: version, status,
  * folder, the controls it satisfies, and a SHA-256 computed in the browser
- * from the bytes on screen — the same digest a sealed package manifest
+ * from the bytes on screen, the same digest a sealed package manifest
  * records, so a reviewer can compare the two without downloading anything.
  */
 import { useEffect, useRef, useState } from "react";
@@ -54,10 +54,10 @@ export function documentViewerProps(doc) {
     badge: status,
     facts: [
       { label: "Version", value: `v${doc.version ?? 1}` },
-      { label: "Owner", value: doc.owner_name || "—" },
-      { label: "Folder", value: doc.folder_path || "—" },
-      { label: "Next review", value: doc.next_review_date || "—" },
-      { label: "Updated", value: (doc.updated_at || "").slice(0, 10) || "—" },
+      { label: "Owner", value: doc.owner_name || "-" },
+      { label: "Folder", value: doc.folder_path || "-" },
+      { label: "Next review", value: doc.next_review_date || "-" },
+      { label: "Updated", value: (doc.updated_at || "").slice(0, 10) || "-" },
     ],
     chips: (doc.satisfies || []).map((s) => ({ label: s.label, title: s.title })),
   };
@@ -490,7 +490,7 @@ export default function DocumentViewer({
                     {facts.map((f) => (
                       <div key={f.label}>
                         <Label as="dt">{f.label}</Label>
-                        <dd className={cn("mt-0.5 break-words text-[13px] text-ink", f.mono && "break-all font-mono text-2xs")}>{f.value || "—"}</dd>
+                        <dd className={cn("mt-0.5 break-words text-[13px] text-ink", f.mono && "break-all font-mono text-2xs")}>{f.value || "-"}</dd>
                       </div>
                     ))}
                     {chips.length ? (

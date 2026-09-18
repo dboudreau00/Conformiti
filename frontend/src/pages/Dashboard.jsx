@@ -7,8 +7,10 @@ import { ComplianceCalendar } from "../components/dashboard/ComplianceCalendar.j
 import { ReviewQueue } from "../components/dashboard/ReviewQueue.jsx";
 import { PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
+import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { Legend, Meter, SegmentBar } from "../components/ui/Meter.jsx";
 import { Empty, Label, Loading, Panel } from "../components/ui/Panel.jsx";
+import { ShowMore, joinAll, joinSome } from "../components/ui/ShowMore.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { cn } from "../utils/cn.js";
 import { CONTROL_STATUS } from "../utils/tone.js";
@@ -25,8 +27,12 @@ const SOURCES = [
 const rows = (data) => (Array.isArray(data) ? data : data?.results || []);
 
 function joinNames(names) {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return joinAll(names);
+}
+
+/** Three frameworks read as a list; twenty-five read as a count. */
+function frameworkPhrase(names) {
+  return names.length > 3 ? `${names.length} frameworks` : joinAll(names);
 }
 
 function ArrowLink({ to, children, className }) {
@@ -139,7 +145,7 @@ export default function Dashboard({ me }) {
         {failed.length ? (
           <StackItem className="col-span-12">
             <div className="notice notice-warn" role="status">
-              Couldn't load {joinNames(failed)} — showing what's available.
+              Couldn't load {joinNames(failed)}, so this shows what is available.
             </div>
           </StackItem>
         ) : null}
@@ -151,7 +157,14 @@ export default function Dashboard({ me }) {
               <>
                 <div>
                   <div className="flex items-start justify-between gap-3">
-                    <Label>{scored ? "Readiness score" : "Overall readiness"}</Label>
+                    <span className="flex items-center gap-1.5">
+                      <Label>{scored ? "Readiness score" : "Overall readiness"}</Label>
+                      <InfoTip label={scored ? "How the readiness score is worked out" : "How overall readiness is worked out"}>
+                        {scored
+                          ? `The mean score across ${readiness.applicable.toLocaleString()} applicable controls${fwNames.length ? ` in ${frameworkPhrase(fwNames)}` : ""}, the same score the register gives each control: implementation, an owner, evidence and its freshness, a test, less open risks.`
+                          : `${readiness.implemented.toLocaleString()} of ${readiness.applicable.toLocaleString()} applicable controls${fwNames.length ? ` across ${frameworkPhrase(fwNames)}` : ""} are marked implemented.`}
+                      </InfoTip>
+                    </span>
                     {delta != null ? (
                       <Badge tone={delta > 0 ? "success" : delta < 0 ? "danger" : "muted"} mono>
                         {delta > 0 ? `+${delta} pts this month` : delta < 0 ? `${delta} pts this month` : "No change this month"}
@@ -164,8 +177,8 @@ export default function Dashboard({ me }) {
                   </div>
                   <p className="mt-2 max-w-[38ch] text-[13px] leading-snug text-muted">
                     {scored
-                      ? `Mean score across ${readiness.applicable} applicable controls${fwNames.length ? ` in ${joinNames(fwNames)}` : ""} — the same score the register gives each control. ${readiness.pct}% are marked implemented.`
-                      : `${readiness.implemented} of ${readiness.applicable} applicable controls implemented${fwNames.length ? ` across ${joinNames(fwNames)}` : ""}.`}
+                      ? `${readiness.pct}% of ${readiness.applicable.toLocaleString()} applicable controls are marked implemented.`
+                      : `${readiness.implemented.toLocaleString()} of ${readiness.applicable.toLocaleString()} applicable controls implemented.`}
                   </p>
                 </div>
 
@@ -202,16 +215,22 @@ export default function Dashboard({ me }) {
         {/* Supporting metrics */}
         <StackItem className="col-span-12 xl:col-span-7">
           <div className="grid h-full grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard label="Frameworks" value={fwList.length} detail={fwNames.length ? fwNames.join(" · ") : "No frameworks loaded"}>
+            <StatCard label="Frameworks" value={fwList.length} detail={fwNames.length ? joinSome(fwNames, 3) : "No frameworks loaded"}>
               {fwList.length ? (
-                <ul className="mt-3 space-y-1.5">
-                  {fwList.map((f) => (
-                    <li key={f.key || f.name} className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs text-muted">{f.name}</span>
-                      <span className="tabular font-mono text-2xs text-faint">active</span>
-                    </li>
-                  ))}
-                </ul>
+                <ShowMore total={fwList.length} initial={8} noun="frameworks" className="mt-3">
+                  {(n) => (
+                    <ul className="space-y-1.5">
+                      {fwList.slice(0, n).map((f) => (
+                        <li key={f.key || f.name} className="flex items-center justify-between gap-2">
+                          <span className="truncate text-xs text-muted" title={f.name}>{f.name}</span>
+                          <span className="tabular shrink-0 font-mono text-2xs text-faint">
+                            {typeof f.control_count === "number" ? `${f.control_count} controls` : "active"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </ShowMore>
               ) : null}
             </StatCard>
 
@@ -238,7 +257,7 @@ export default function Dashboard({ me }) {
                     </span>
                   </div>
                   <Meter value={withEvidence} total={controlTotal} className="mt-3" delay={0.1} ariaLabel="Evidence coverage" />
-                  <p className="mt-2 text-xs text-muted">{controls.evidence_links || 0} control–document links.</p>
+                  <p className="mt-2 text-xs text-muted">{controls.evidence_links || 0} control-document links.</p>
                 </>
               ) : (
                 <p className="mt-2 text-xs text-muted">Unavailable until the analytics summary loads.</p>

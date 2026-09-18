@@ -1,6 +1,6 @@
 /**
  * The RACI matrix: who is Responsible, Accountable, Consulted and Informed
- * for each control — people and vendors alike. A control's owner is shown as
+ * for each control, people and vendors alike. A control's owner is shown as
  * its implicit Accountable, and a vendor that states it does (or shares) a
  * control on its shared responsibility matrix shows as implicitly
  * Responsible, so the grid reflects the register as it stands rather than
@@ -14,6 +14,8 @@ import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
+import { ControlPicker } from "../components/controls/ControlPicker.jsx";
+import { usePage } from "../components/ui/ShowMore.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
@@ -21,12 +23,11 @@ import { TONE_RING, TONE_TEXT, TONE_WASH } from "../utils/tone.js";
 
 const ROLES = [
   ["responsible", "Responsible", "Does the work"],
-  ["accountable", "Accountable", "Answers for it — exactly one"],
+  ["accountable", "Accountable", "Answers for it: exactly one"],
   ["consulted", "Consulted", "Asked before decisions"],
   ["informed", "Informed", "Told afterwards"],
 ];
 const PARTY = [{ id: "user", label: "Person" }, { id: "vendor", label: "Vendor" }];
-const FRAMEWORK_LABEL = { soc2: "SOC 2", iso27001: "ISO 27001", pci_dss_v4: "PCI DSS" };
 const EMPTY = { control: "", kind: "user", party: "", role: "responsible", note: "" };
 
 function PartyChip({ x, canManage, onRemove }) {
@@ -87,10 +88,15 @@ export default function Responsibilities({ me }) {
     for (const c of controls) if (!seen.has(c.framework)) seen.set(c.framework, c.framework_name);
     return Array.from(seen.entries());
   }, [controls]);
+  // The real names, from the choices the page already loads: a hard-coded
+  // map of three keys showed the other twenty-two frameworks as slugs.
+  const names = useMemo(() => Object.fromEntries(frameworks), [frameworks]);
   const rows = useMemo(() => (data?.rows || []).filter((r) =>
     (!q || `${r.control_id} ${r.title}`.toLowerCase().includes(q.toLowerCase()))
     && (!gapsOnly || r.accountable.length === 0 || r.responsible.length === 0)
   ), [data, q, gapsOnly]);
+  const page = usePage(rows, 100, [fw, q, gapsOnly]);
+  const chosen = useMemo(() => controls.find((c) => String(c.id) === String(form.control)) || null, [controls, form.control]);
   const shared = (data?.rows || []).filter((r) => r.shared).length;
   const parties = form.kind === "vendor" ? vendors.map((v) => ({ id: v.id, name: v.name })) : users.map((u) => ({ id: u.id, name: u.full_name || u.username }));
 
@@ -120,23 +126,27 @@ export default function Responsibilities({ me }) {
       ) : null}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Controls" value={data ? data.count : "—"} detail={fw ? FRAMEWORK_LABEL[fw] || fw : "All frameworks"} />
-        <StatCard label="No Accountable" value={data ? data.gaps.no_accountable : "—"} tone={data?.gaps.no_accountable ? "danger" : "success"} detail="Nobody answers for the control" />
-        <StatCard label="No Responsible" value={data ? data.gaps.no_responsible : "—"} tone={data?.gaps.no_responsible ? "warning" : "success"} detail="Nobody does the work" />
-        <StatCard label="Shared with a vendor" value={data ? shared : "—"} tone="info" detail="From vendors' responsibility matrices" />
+        <StatCard label="Controls" value={data ? data.count : "-"} detail={fw ? names[fw] || fw : "All frameworks"} />
+        <StatCard label="No Accountable" value={data ? data.gaps.no_accountable : "-"} tone={data?.gaps.no_accountable ? "danger" : "success"} detail="Nobody answers for the control" />
+        <StatCard label="No Responsible" value={data ? data.gaps.no_responsible : "-"} tone={data?.gaps.no_responsible ? "warning" : "success"} detail="Nobody does the work" />
+        <StatCard label="Shared with a vendor" value={data ? shared : "-"} tone="info" detail="From vendors' responsibility matrices" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Panel className="overflow-hidden">
-          <PanelHeader title="Responsibility matrix" meta={`${rows.length} controls`}>
+          <PanelHeader title="Responsibility matrix" meta={`Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}`}>
             <Button size="sm" variant="ghost" icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                     onClick={() => downloadFile(`/responsibilities/export/${fw ? `?framework=${encodeURIComponent(fw)}` : ""}`, "responsibility-matrix.csv")}>
               Export
             </Button>
           </PanelHeader>
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
-            <Chip active={!fw} onClick={() => setFw("")}>All</Chip>
-            {frameworks.map(([k, name]) => <Chip key={k} active={fw === k} onClick={() => setFw(k)}>{FRAMEWORK_LABEL[k] || name}</Chip>)}
+            <label htmlFor="raci-framework" className="sr-only">Framework</label>
+            <select id="raci-framework" className="input input-sm w-auto min-w-[220px]" value={fw}
+                    onChange={(e) => setFw(e.target.value)}>
+              <option value="">All frameworks</option>
+              {frameworks.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+            </select>
             <Chip active={gapsOnly} tone="danger" onClick={() => setGapsOnly((x) => !x)}>Gaps only</Chip>
             <label htmlFor="raci-search" className="sr-only">Search controls</label>
             <input id="raci-search" className="input input-sm ml-auto w-56" placeholder="Search controls…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -155,10 +165,10 @@ export default function Responsibilities({ me }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {rows.map((r) => (
+                  {page.visible.map((r) => (
                     <tr key={r.control} className="align-top transition-colors duration-150 hover:bg-surface-2">
                       <td className="w-[300px] px-4 py-2">
-                        <span className="block font-mono text-[11px] text-muted">{FRAMEWORK_LABEL[r.framework] || r.framework} · {r.control_id}</span>
+                        <span className="block font-mono text-[11px] text-muted">{names[r.framework] || r.framework_name || r.framework} · {r.control_id}</span>
                         <span className="block text-[13px] text-ink">{r.title}</span>
                         {r.shared ? <Badge tone="info" mono className="mt-1">shared with vendor</Badge> : null}
                       </td>
@@ -166,7 +176,7 @@ export default function Responsibilities({ me }) {
                         <td key={k} className="px-2 py-2">
                           {r[k].length === 0 ? (
                             <span className={cn("text-2xs", k === "accountable" ? "text-danger" : k === "responsible" ? "text-warning" : "text-faint")}>
-                              {k === "accountable" ? "nobody" : "—"}
+                              {k === "accountable" ? "nobody" : "-"}
                             </span>
                           ) : (
                             <span className="flex flex-wrap gap-1">
@@ -182,10 +192,17 @@ export default function Responsibilities({ me }) {
                   ))}
                 </tbody>
               </table>
+              {page.remaining ? (
+                <div className="border-t border-line px-5 py-3 text-center">
+                  <Button size="sm" variant="secondary" onClick={page.more}>
+                    Show {Math.min(page.size, page.remaining)} more of {page.remaining.toLocaleString()}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           )}
           <p className="border-t border-line px-5 py-3 text-xs text-muted">
-            Dashed entries are implied — the control's owner as Accountable, and any vendor whose shared
+            Dashed entries are implied: the control's owner as Accountable, and any vendor whose shared
             responsibility matrix claims the control as Responsible. Everything else was assigned here.
           </p>
         </Panel>
@@ -201,13 +218,26 @@ export default function Responsibilities({ me }) {
                 if (await act(() => api.post("/responsibilities/", body), "Assigned.")) setForm((f) => ({ ...f, party: "", note: "" }));
               }}>
                 <div>
-                  <label htmlFor="raci-control" className="field-label">Control</label>
-                  <select id="raci-control" className="input input-sm" required value={form.control} onChange={(e) => setForm((f) => ({ ...f, control: e.target.value }))}>
-                    <option value="">Choose a control…</option>
-                    {controls.filter((c) => !fw || c.framework === fw).map((c) => (
-                      <option key={c.id} value={c.id}>{FRAMEWORK_LABEL[c.framework] || c.framework_name} · {c.label} — {c.title}</option>
-                    ))}
-                  </select>
+                  <span className="field-label">Control</span>
+                  {chosen ? (
+                    <div className="mt-1 flex items-baseline gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5">
+                      <span className="shrink-0 font-mono text-xs text-accent">{chosen.label}</span>
+                      <span className="truncate text-xs text-ink">{chosen.title}</span>
+                      <button type="button" className="ml-auto shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink"
+                              onClick={() => setForm((f) => ({ ...f, control: "" }))}>
+                        Change
+                      </button>
+                    </div>
+                  ) : (
+                    <ControlPicker
+                      id="raci-control"
+                      label="Control"
+                      className="mt-1"
+                      controls={controls.length ? controls : null}
+                      framework={fw}
+                      onPick={(c) => setForm((f) => ({ ...f, control: String(c.id) }))}
+                    />
+                  )}
                 </div>
                 <div>
                   <Label className="mb-1.5 block">Party</Label>
@@ -223,7 +253,7 @@ export default function Responsibilities({ me }) {
                 <div>
                   <label htmlFor="raci-role" className="field-label">Role</label>
                   <select id="raci-role" className="input input-sm" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
-                    {ROLES.map(([k, l, hint]) => <option key={k} value={k}>{l} — {hint}</option>)}
+                    {ROLES.map(([k, l, hint]) => <option key={k} value={k}>{l}, {hint}</option>)}
                   </select>
                 </div>
                 <div>

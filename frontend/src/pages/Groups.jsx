@@ -250,7 +250,7 @@ export default function Groups({ me }) {
                     className="input input-sm"
                     value={gPurpose}
                     onChange={(e) => setGPurpose(e.target.value)}
-                    placeholder="Purpose — what this group is accountable for"
+                    placeholder="Purpose: what this group is accountable for"
                     disabled={gBusy}
                   />
                 </div>
@@ -258,7 +258,7 @@ export default function Groups({ me }) {
                   <div>
                     <label htmlFor="cg-owner" className="sr-only">Accountable owner</label>
                     <select id="cg-owner" className="input input-sm" value={gOwner} onChange={(e) => setGOwner(e.target.value)} disabled={gBusy}>
-                      <option value="">Accountable owner — unassigned</option>
+                      <option value="">Accountable owner: unassigned</option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>{displayName(u)}</option>
                       ))}
@@ -358,7 +358,7 @@ export default function Groups({ me }) {
                                   <Badge>{m.department}</Badge>
                                 </td>
                                 <td className="max-w-[320px] px-5 py-3 align-top text-xs leading-snug text-muted">
-                                  {m.note ? <span className="line-clamp-2">{m.note}</span> : <span className="text-faint">—</span>}
+                                  {m.note ? <span className="line-clamp-2">{m.note}</span> : <span className="text-faint">-</span>}
                                 </td>
                                 {canEdit ? (
                                   <td className="px-5 py-2 text-right align-top">

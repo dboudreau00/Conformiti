@@ -28,10 +28,10 @@ export const TEMPLATE_CSV =
   "Title,Description,Status,Type,Likelihood,Impact,Owner,Control,Due date,Jira,Mitigation plan,Note\n" +
   "Example: laptops missing encryption,12 laptops without disk encryption,Open,Control gap,High,High,owen,CC6.1,2026-09-15,SEC-101,Enforce via MDM,First note\n";
 
-export const typeLabel = (v) => TYPES.find(([k]) => k === v)?.[1] || v || "—";
-export const treatmentLabel = (v) => TREATMENTS.find(([k]) => k === v)?.[1] || v || "—";
+export const typeLabel = (v) => TYPES.find(([k]) => k === v)?.[1] || v || "-";
+export const treatmentLabel = (v) => TREATMENTS.find(([k]) => k === v)?.[1] || v || "-";
 
-/** Open or mitigating — the rows the summary counters and the heatmap describe. */
+/** Open or mitigating, the rows the summary counters and the heatmap describe. */
 export const isLive = (r) => r.status === "open" || r.status === "mitigating";
 
 /** Same 5×5 banding as Risk.rating on the server: 1-4 low, 5-9 moderate, 10-15 high, 16-25 critical. */

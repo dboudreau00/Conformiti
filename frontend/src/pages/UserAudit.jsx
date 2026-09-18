@@ -123,7 +123,7 @@ export default function UserAudit({ me }) {
 
   async function loadReviews(selectId) {
     try {
-      // Paginated at 50 — follow `next` so older reviews stay selectable.
+      // Paginated at 50, follow `next` so older reviews stay selectable.
       const list = await fetchAll("/access-reviews/");
       setReviews(list);
       const pick = selectId
@@ -143,14 +143,14 @@ export default function UserAudit({ me }) {
 
   async function startReview(e) {
     e?.preventDefault();
-    const name = newName.trim() || `Access review — ${new Date().toISOString().slice(0, 10)}`;
+    const name = newName.trim() || `Access review: ${new Date().toISOString().slice(0, 10)}`;
     setBusy("start");
     setMsg(null);
     try {
       const { data } = await api.post("/access-reviews/", { name });
       setNewName("");
       await loadReviews(data.id);
-      setMsg({ ok: true, text: `Started "${data.name}" — every user account has been snapshotted into the grid.` });
+      setMsg({ ok: true, text: `Started "${data.name}", every user account has been snapshotted into the grid.` });
     } catch (ex) {
       setMsg({ ok: false, text: errorText(ex, "Couldn't start the review.") });
     } finally {
@@ -197,7 +197,7 @@ export default function UserAudit({ me }) {
       const { data } = await api.post(`/access-reviews/${review.id}/complete/`);
       setReview(data);
       setReviews((rs) => rs.map((r) => (r.id === data.id ? data : r)));
-      setMsg({ ok: true, text: "Review completed — the grid is now read-only evidence." });
+      setMsg({ ok: true, text: "Review completed, the grid is now read-only evidence." });
     } catch (e) {
       setMsg({ ok: false, text: errorText(e, "Couldn't complete the review.") });
     } finally {
@@ -255,7 +255,7 @@ export default function UserAudit({ me }) {
               {reviews.length === 0 ? <option value="">No reviews yet</option> : null}
               {reviews.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name} — {r.status} ({r.decided_count}/{r.item_count})
+                  {r.name}, {r.status} ({r.decided_count}/{r.item_count})
                 </option>
               ))}
             </select>
@@ -328,7 +328,7 @@ export default function UserAudit({ me }) {
             <Panel>
               <Empty title="No access reviews yet">
                 {canWrite
-                  ? "Starting a review snapshots every user account — role, activity, folder grants and capabilities — into a grid. Record a decision per row, then export the CSV as audit evidence."
+                  ? "Starting a review snapshots every user account (role, activity, folder grants and capabilities) into a grid. Record a decision per row, then export the CSV as audit evidence."
                   : "An administrator hasn't started one yet. Completed reviews will appear here as read-only evidence."}
               </Empty>
             </Panel>
@@ -398,7 +398,7 @@ export default function UserAudit({ me }) {
                                 </span>
                               </span>
                               <span className="min-w-0">
-                                <span className="block truncate text-xs text-ink">{it.role_name || "—"}</span>
+                                <span className="block truncate text-xs text-ink">{it.role_name || "-"}</span>
                                 {it.job_title ? <span className="block truncate text-2xs text-muted">{it.job_title}</span> : null}
                               </span>
                               <span>
@@ -409,7 +409,7 @@ export default function UserAudit({ me }) {
                               <span className="tabular font-mono text-xs text-muted">{fmtDate(it.last_login)}</span>
                               <span className="tabular font-mono text-xs text-ink">{it.folder_grants ?? 0}</span>
                               <span className="truncate text-xs text-muted" title={it.capabilities || undefined}>
-                                {it.capabilities || "—"}
+                                {it.capabilities || "-"}
                               </span>
                               <span className="flex min-w-0 flex-col items-start gap-1">
                                 {editable ? (
@@ -441,7 +441,7 @@ export default function UserAudit({ me }) {
                                 />
                               ) : (
                                 <span className="truncate text-xs text-muted" title={it.decision_notes || undefined}>
-                                  {it.decision_notes || <span className="text-faint">—</span>}
+                                  {it.decision_notes || <span className="text-faint">-</span>}
                                 </span>
                               )}
                             </motion.li>

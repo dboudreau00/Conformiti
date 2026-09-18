@@ -6,7 +6,7 @@
  * therefore started in a terminal. This is the picker: every control in
  * the workspace, filtered by framework and text, chosen with checkboxes,
  * added in one request with the evidence already linked to each one pinned
- * — and a plain report of which evidence was skipped because the person
+ *, and a plain report of which evidence was skipped because the person
  * assembling the package cannot see it, which the API has always returned
  * and nothing displayed.
  */

@@ -4,6 +4,7 @@ import { PlusIcon, XIcon } from "lucide-react";
 import api, { fetchAll } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { useConfirm } from "../components/ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
@@ -40,6 +41,7 @@ const cell = "px-5 py-3 align-middle";
 const headCell = "table-head px-5 py-2 text-left font-normal";
 
 export default function Users({ me }) {
+  const { ask, confirmDialog } = useConfirm();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,18 +99,24 @@ export default function Users({ me }) {
     }
   }
 
-  async function removeUser(u) {
-    if (!window.confirm(`Delete ${u.username}? This cannot be undone. Deactivating is usually safer.`)) return;
-    setBusyId(u.id);
-    try {
-      await api.delete(`/users/${u.id}/`);
-      ok(`Deleted ${u.username}.`);
-      await loadUsers();
-    } catch (e) {
-      fail(e, "Delete failed.");
-    } finally {
-      setBusyId(null);
-    }
+  function removeUser(u) {
+    ask({
+      title: `Delete ${u.username}?`,
+      description: "This cannot be undone. Deactivating the account is usually safer: it keeps their history and stops them signing in.",
+      confirmLabel: "Delete the account",
+      onConfirm: async () => {
+        setBusyId(u.id);
+        try {
+          await api.delete(`/users/${u.id}/`);
+          ok(`Deleted ${u.username}.`);
+          await loadUsers();
+        } catch (e) {
+          fail(e, "Delete failed.");
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
   }
 
   async function savePassword(u) {
@@ -126,18 +134,25 @@ export default function Users({ me }) {
     }
   }
 
-  async function resetMfa(u) {
-    if (!window.confirm(`Reset two-factor for ${u.username}? They'll need to set it up again on next sign-in.`)) return;
-    setBusyId(u.id);
-    try {
-      await api.post(`/users/${u.id}/reset_mfa/`);
-      ok(`MFA reset for ${u.username}.`);
-      await loadUsers();
-    } catch (e) {
-      fail(e, "Couldn't reset MFA.");
-    } finally {
-      setBusyId(null);
-    }
+  function resetMfa(u) {
+    ask({
+      title: `Reset two-factor for ${u.username}?`,
+      description: "Their authenticator and backup codes stop working. They set it up again the next time they sign in.",
+      confirmLabel: "Reset two-factor",
+      tone: "danger",
+      onConfirm: async () => {
+        setBusyId(u.id);
+        try {
+          await api.post(`/users/${u.id}/reset_mfa/`);
+          ok(`MFA reset for ${u.username}.`);
+          await loadUsers();
+        } catch (e) {
+          fail(e, "Couldn't reset MFA.");
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
   }
 
   async function createUser(e) {
@@ -207,21 +222,22 @@ export default function Users({ me }) {
 
   return (
     <PanelTransition>
+      {confirmDialog}
       <Stack className="flex flex-col gap-4">
         <StackItem className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard
             label="Members"
-            value={loading ? "—" : total}
+            value={loading ? "-" : total}
             detail={loading ? "Loading…" : `${active} active · ${total - active} inactive`}
           />
           <StatCard
             label="Superusers"
-            value={loading ? "—" : superusers}
+            value={loading ? "-" : superusers}
             detail="Workspace-wide grants, managed only by superusers"
           />
           <StatCard
             label="Two-factor"
-            value={loading ? "—" : mfaOn}
+            value={loading ? "-" : mfaOn}
             suffix={loading ? undefined : `/ ${total}`}
             tone={!loading && total > 0 && mfaOn < total ? "warning" : undefined}
             detail="Accounts with an authenticator enrolled"
@@ -361,7 +377,7 @@ export default function Users({ me }) {
                               {r.is_system ? <Badge tone="faint" mono>built-in</Badge> : null}
                             </span>
                           </td>
-                          <td className={cn(cell, "py-2.5 text-xs text-muted")}>{r.description || "—"}</td>
+                          <td className={cn(cell, "py-2.5 text-xs text-muted")}>{r.description || "-"}</td>
                           <td className={cn(cell, "py-2.5")}>
                             {caps.length ? (
                               <span className="flex flex-wrap gap-1.5">
@@ -399,7 +415,7 @@ function UserRow({
   const initial = (u.full_name || u.username || "?").trim().charAt(0).toUpperCase();
   const pwValid = pwValue.length >= PASSWORD_MIN;
   const roleHint = self
-    ? "You cannot change your own role — ask another administrator."
+    ? "You cannot change your own role, ask another administrator."
     : !touchable
       ? "Only a superuser can modify a superuser account."
       : undefined;
@@ -427,13 +443,13 @@ function UserRow({
               {self ? <Badge tone="accent" dot>you</Badge> : null}
             </span>
             <span className="block truncate text-xs text-muted">
-              {u.full_name || "—"}
+              {u.full_name || "-"}
               {u.email ? ` · ${u.email}` : ""}
             </span>
           </span>
         </div>
       </td>
-      <td className={cn(cell, "text-xs", u.job_title ? "text-ink" : "text-faint")}>{u.job_title || "—"}</td>
+      <td className={cn(cell, "text-xs", u.job_title ? "text-ink" : "text-faint")}>{u.job_title || "-"}</td>
       <td className={cell}>
         <select
           className="input input-sm"
