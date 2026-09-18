@@ -121,6 +121,24 @@ jobs:
           docker logs bare
           exit 1
 
+      # An image that answers is not the same as an image that is safe to
+      # answer with. Nothing in this repository ever ran it without
+      # DJANGO_DEBUG, so nothing noticed that the code default is on (0.9.5f).
+      - name: That container is not in DEBUG
+        run: |
+          set -euo pipefail
+          docker logs bare 2>&1 | grep -q "DEBUG=off" \
+            || { echo "the boot banner does not say DEBUG=off"; docker logs bare; exit 1; }
+          # The browsable API is DEBUG-only, so it is the property under test
+          # rather than the banner's opinion of itself.
+          code=$(curl -s -o /tmp/api.html -w '%{http_code}' -H 'Accept: text/html' http://localhost:8000/api/)
+          if grep -qi 'django rest framework\|browsable' /tmp/api.html; then
+            echo "the browsable API is being served, so DEBUG is on (HTTP ${code})"
+            head -40 /tmp/api.html
+            exit 1
+          fi
+          echo "no browsable API (HTTP ${code})"
+
       - name: Backend image boots and answers /api/health/ (demo dataset seeded)
         run: |
           docker run -d --name api -p 8001:8000 \

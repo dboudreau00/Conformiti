@@ -127,6 +127,13 @@ def ip_is_public(ip_str):
     unreachable from the open internet, so the list above is checked too.
     """
     ip = ipaddress.ip_address(ip_str)
+    # ::ffff:100.64.0.1 is 100.64.0.1 wearing an IPv6 address. Python says it
+    # is neither private nor in any v4 network, because the version check
+    # below would compare a v6 address with a v4 range, so every rule in this
+    # function missed it and the range it belongs to is the one hosting
+    # providers put tenant networks in (0.9.5f).
+    if getattr(ip, "ipv4_mapped", None) is not None:
+        ip = ip.ipv4_mapped
     if (ip.is_private or ip.is_loopback or ip.is_link_local
             or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
         return False

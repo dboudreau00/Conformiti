@@ -159,12 +159,36 @@ _opener = urllib.request.build_opener(_NoRedirects)
 
 def _http(url, data=None, headers=None):
     """GET (or POST form ``data``) a JSON document over https, no redirects,
-    body capped. Patched wholesale in tests."""
+    body capped, and addressed to somewhere on the public internet.
+
+    The issuer is the operator's own setting. The token and userinfo endpoints
+    are not: they come out of the discovery document, which is the provider's
+    answer, so a provider that is hostile or has been interfered with chooses
+    where this process connects next. That is the shape of every request this
+    product makes to a URL it did not write, and since 0.9.5b they all go
+    through ``config.outbound``: the host must resolve to a public address,
+    the connection is pinned to the address that was checked, and a redirect
+    is refused rather than followed. This one did not (0.9.5f).
+
+    Patched wholesale in tests.
+    """
+    from config import outbound
+
     if not str(url).startswith("https://") and not settings.DEBUG:
         raise OidcError("provider", "identity provider URLs must be https")
+    schemes = ("https", "http") if settings.DEBUG else ("https",)
+    try:
+        pinned = outbound.assert_safe_url(
+            url, allowed_hosts=None, allowed_ports=None,
+            allowed_schemes=schemes,
+            # A self-hosted provider on the deployment network is a real
+            # deployment, and DEBUG is where it is exercised.
+            require_public=not settings.DEBUG)
+    except outbound.OutboundError as exc:
+        raise OidcError("provider", f"the identity provider's address is refused: {exc}")
     req = urllib.request.Request(url, data=data, headers={"Accept": "application/json", **(headers or {})})
     try:
-        with _opener.open(req, timeout=8) as resp:
+        with outbound.opener(pinned).open(req, timeout=8) as resp:
             body = resp.read(MAX_BODY + 1)
     except OidcError:
         raise

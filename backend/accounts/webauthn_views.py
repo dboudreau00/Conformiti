@@ -7,35 +7,8 @@ from audit.events import record_auth_event
 
 from . import passkeys
 from .models import WebAuthnCredential
+from .reauth import reauthenticated  # re-exported: this is where it used to live
 from .views import _MfaThrottle
-
-
-def reauthenticated(request):
-    """Has the caller just proved the account is theirs?
-
-    Removing a passkey takes the account password; adding one used to take
-    nothing, so a hijacked session could quietly enrol the attacker's own key
-    and keep the account for good. Enrolment now asks for the same proof --
-    the password, or a code from a factor already enrolled, which is what an
-    account signed in through an identity provider has instead.
-
-    An account with neither (no usable password, no second factor) has
-    nothing to prove with and nothing yet to protect: that is the first
-    enrolment, and it is allowed.
-    """
-    user = request.user
-    password = request.data.get("password") or ""
-    otp = str(request.data.get("otp") or "").strip()
-    has_password = user.has_usable_password()
-    if has_password and password and user.check_password(password):
-        return True
-    if otp and user.mfa_enabled:
-        device = getattr(user, "mfa_device", None)
-        if device is not None and device.enabled and device.verify(otp):
-            return True
-        if user.verify_backup_code(otp):
-            return True
-    return not (has_password or user.mfa_enabled)
 
 
 class PasskeyListView(APIView):
@@ -95,7 +68,7 @@ class PasskeyRegisterView(APIView):
 
 
 class PasskeyDetailView(APIView):
-    """PATCH renames; DELETE removes and takes the account password in the
+    """PATCH renames; DELETE removes and takes proof the account is yours in the
     body, like turning off the authenticator app does, so a hijacked session
     cannot quietly strip a factor -- or clear the suspect mark on a key it
     cloned."""
@@ -120,8 +93,14 @@ class PasskeyDetailView(APIView):
         row = self._get(request, pk)
         if row is None:
             return Response({"detail": "No such passkey."}, status=404)
-        if not request.user.check_password(request.data.get("password") or ""):
-            return Response({"detail": "Password is incorrect."}, status=400)
+        # Not check_password: an account provisioned through an identity
+        # provider has no usable password, so the owner of a passkey their
+        # authenticator has reported cloned had no way to take it off. A
+        # backup code, or a code from the authenticator app, proves the same
+        # thing.
+        if not reauthenticated(request):
+            return Response({"detail": "Confirm your password, or a code from a factor you still have.",
+                             "code": "reauth_required"}, status=403)
         name = row.name
         row.delete()
         if not request.user.mfa_enabled:

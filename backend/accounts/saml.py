@@ -344,8 +344,14 @@ def complete(request, flow):
         recipient = data.get("Recipient")
         if not recipient or recipient != flow["acs"]:
             continue
+        # Required, not merely honoured when present. The profile makes
+        # NotOnOrAfter mandatory on a bearer confirmation, and an assertion
+        # without one was falling back to the Conditions window (or, absent
+        # that, an hour) for how long the replay table remembers it: after
+        # that row is pruned the same assertion posts again. Same rule as
+        # Recipient above, for the same reason (0.9.5f).
         expiry = _parse_time(data.get("NotOnOrAfter"))
-        if expiry and now - skew >= expiry:
+        if expiry is None or now - skew >= expiry:
             continue
         confirmed = True
         break

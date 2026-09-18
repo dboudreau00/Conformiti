@@ -63,8 +63,18 @@ DENIED = {
 }
 
 
-def registered_prefixes():
-    """Every DRF router prefix in every installed app of this project."""
+# Actions on a denied collection that an external auditor may still reach,
+# because they act on the caller's own account rather than on the
+# organisation's programme. Everything else that declares its own
+# permission_classes has to refuse them.
+SELF_SERVICE_ACTIONS = {
+    ("users", "me"): "their own profile, the same row /users/me/ returns",
+    ("users", "change_password"): "changing your own password is self-service",
+}
+
+
+def registered_viewsets():
+    """(prefix, viewset) for every DRF router registration in this project."""
     found = set()
     here = str(settings.BASE_DIR)
     for config in apps.get_app_configs():
@@ -75,9 +85,14 @@ def registered_prefixes():
         except ModuleNotFoundError:
             continue
         for value in vars(module).values():
-            for prefix, _viewset, _basename in getattr(value, "registry", []):
-                found.add(prefix)
+            for prefix, viewset, _basename in getattr(value, "registry", []):
+                found.add((prefix, viewset))
     return found
+
+
+def registered_prefixes():
+    """Every DRF router prefix in every installed app of this project."""
+    return {prefix for prefix, _viewset in registered_viewsets()}
 
 
 class AuditorSurfaceTests(APITestBase):
@@ -141,3 +156,55 @@ class AuditorSurfaceTests(APITestBase):
         for path in ("/api/users/me/", "/api/auth/webauthn/", "/api/notifications/channels/"):
             with self.subTest(path=path):
                 self.assertEqual(self.client_.get(path).status_code, 200, path)
+
+
+class AuditorActionSurfaceTests(APITestBase):
+    """The list route is not the whole collection.
+
+    ``permission_classes`` on an ``@action`` REPLACES the viewset's, it does
+    not add to it, so one decorator can reopen a collection this suite has
+    already classified as denied and the walk above will still pass: it only
+    ever asked the list prefix. That is how the Jira issues proxy handed an
+    issued external auditor the organisation's remediation backlog, board by
+    sequential board, with the stored API token doing the fetching (0.9.5f).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client_ = self.client_for(self.auditor)
+
+    def test_no_action_reopens_a_denied_collection(self):
+        from rest_framework.test import APIRequestFactory
+
+        factory = APIRequestFactory()
+        open_to_auditor = set()
+        for prefix, viewset in sorted(registered_viewsets(), key=lambda pair: pair[0]):
+            if prefix not in DENIED:
+                continue
+            for extra in viewset.get_extra_actions():
+                declared = extra.kwargs.get("permission_classes")
+                if declared is None:
+                    continue  # inherits the viewset's pair, which is the walk above
+                method = sorted(extra.mapping)[0] if extra.mapping else "get"
+                request = getattr(factory, method)(f"/api/{prefix}/1/{extra.url_path}/")
+                request.user = self.auditor
+                view = viewset()
+                view.action = extra.__name__
+                if all(cls().has_permission(request, view) for cls in declared):
+                    open_to_auditor.add((prefix, extra.url_path))
+        self.assertEqual(open_to_auditor, set(SELF_SERVICE_ACTIONS), (
+            "An @action on a denied collection is reachable by an external auditor. "
+            "Setting permission_classes on an action REPLACES the viewset's pair rather "
+            "than adding to it, so NotExternalAuditor never runs. Drop them and inherit, "
+            "or, if the route really is self-service, add it to SELF_SERVICE_ACTIONS in "
+            "accounts/tests_auditor_surface.py with the reason."
+        ))
+
+    def test_the_jira_backlog_is_refused_board_by_board(self):
+        """The concrete case: board ids are sequential and the queryset is
+        pinned to the workspace, so trying 1, 2, 3 was the whole attack."""
+        from integrations.models import JiraBoard
+
+        board = JiraBoard.objects.create(board_id=1, name="Security backlog", added_by=self.manager)
+        r = self.client_.get(f"/api/integrations/jira/boards/{board.pk}/issues/")
+        self.assertEqual(r.status_code, 403, getattr(r, "data", r))

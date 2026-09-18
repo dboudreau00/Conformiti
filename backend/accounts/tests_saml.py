@@ -80,6 +80,7 @@ class FakeIdp:
         # recipient, is built.
         self.destination = None
         self.subject_recipient = None
+        self.subject_expiry = None   # None = the default window; "" = omit the attribute
 
     def _t(self, when):
         return when.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -96,7 +97,9 @@ class FakeIdp:
             f'<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">'
             f'<saml:SubjectConfirmationData InResponseTo="{self.in_response_to}" '
             f'Recipient="{self.recipient if self.subject_recipient is None else self.subject_recipient}" '
-            f'NotOnOrAfter="{self._t(self.not_after)}"/></saml:SubjectConfirmation></saml:Subject>'
+            + ('' if self.subject_expiry == "" else
+               f'NotOnOrAfter="{self._t(self.subject_expiry or self.not_after)}" ')
+            + '/></saml:SubjectConfirmation></saml:Subject>'
             f'<saml:Conditions NotBefore="{self._t(self.not_before)}" NotOnOrAfter="{self._t(self.not_after)}">'
             f'<saml:AudienceRestriction><saml:Audience>{self.audience}</saml:Audience></saml:AudienceRestriction>'
             f'</saml:Conditions>'
@@ -299,6 +302,17 @@ class SamlFlowTests(APITestBase):
         def no_recipient(idp):
             idp.subject_recipient = ""
         self.refused("state", no_recipient)
+
+    def test_a_confirmation_with_no_expiry_confirms_nothing(self):
+        """L-1, 0.9.5f. The POST binding requires NotOnOrAfter on a bearer
+        confirmation. 0.9.5b made Destination and Recipient required and left
+        this one honoured-when-present, so an assertion that simply omitted it
+        was bounded by the Conditions window instead, and by an hour when that
+        was absent too. Once the replay row is pruned, the same assertion
+        posts again."""
+        def no_expiry(idp):
+            idp.subject_expiry = ""
+        self.refused("state", no_expiry)
 
     def test_state_relay_and_in_response_to_bind_the_browser(self):
         def other_request(idp):

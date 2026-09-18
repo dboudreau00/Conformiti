@@ -94,10 +94,12 @@ function Notice({ msg, className }) {
 
 /* ---------- Profile ---------- */
 
+// Email is not here on purpose: it is what an identity provider matches on,
+// so it is an administrator's field rather than a preference. The server
+// stopped accepting it from this page in 0.9.5f.
 const pickProfile = (u) => ({
   first_name: u?.first_name || "",
   last_name: u?.last_name || "",
-  email: u?.email || "",
   job_title: u?.job_title || "",
 });
 
@@ -147,8 +149,9 @@ function ProfileSection({ me, onUpdate }) {
         <Field id="acct-last" label="Last name">
           <input id="acct-last" className="input" autoComplete="family-name" value={form.last_name} onChange={set("last_name")} />
         </Field>
-        <Field id="acct-email" label="Email" className="sm:col-span-2">
-          <input id="acct-email" type="email" className="input" autoComplete="email" value={form.email} onChange={set("email")} />
+        <Field id="acct-email" label="Email" className="sm:col-span-2"
+               hint="Your address is managed by an administrator: single sign-on matches on it.">
+          <input id="acct-email" type="email" className="input" value={me.email || ""} disabled />
         </Field>
         <Field id="acct-title" label="Job title" className="sm:col-span-2">
           <input id="acct-title" className="input" autoComplete="organization-title" placeholder="e.g. Security Analyst" value={form.job_title} onChange={set("job_title")} />
@@ -430,7 +433,7 @@ function MfaBlock() {
     setCodes(null);
     setBusy(true);
     try {
-      const { data } = await api.post("/auth/mfa/setup/");
+      const { data } = await api.post("/auth/mfa/setup/", { password, otp: password });
       setSetup(data);
     } catch (e) {
       setMsg({ ok: false, text: errorText(e, "Couldn't start setup.") });
@@ -444,7 +447,7 @@ function MfaBlock() {
     setMsg(null);
     setBusy(true);
     try {
-      const { data } = await api.post("/auth/mfa/verify/", { code: code.trim() });
+      const { data } = await api.post("/auth/mfa/verify/", { code: code.trim(), password, otp: password });
       setCodes(data.backup_codes || null);
       setSetup(null);
       setCode("");
@@ -463,7 +466,7 @@ function MfaBlock() {
     setMsg(null);
     setBusy(true);
     try {
-      await api.post("/auth/mfa/disable/", { password });
+      await api.post("/auth/mfa/disable/", { password, otp: password });
       setPassword("");
       setCodes(null);
       loadStatus();
@@ -479,7 +482,7 @@ function MfaBlock() {
     setMsg(null);
     setBusy(true);
     try {
-      const { data } = await api.post("/auth/mfa/backup-codes/", { password });
+      const { data } = await api.post("/auth/mfa/backup-codes/", { password, otp: password });
       setCodes(data.backup_codes);
       setPassword("");
       loadStatus();
@@ -541,6 +544,28 @@ function MfaBlock() {
 
       <Notice msg={msg} className="mt-4 max-w-[640px]" />
       {codes ? <BackupCodes codes={codes} /> : null}
+
+      {/* Enrolling the first factor asks for the same proof removing one does:
+          a session somebody else is holding must not be able to make their
+          authenticator the one this account needs. An account with nothing to
+          prove with yet -- no password, no factor -- may leave it empty. */}
+      {status && !status.enabled && !status.second_factor && !setup ? (
+        <div className="mt-4 max-w-[640px]">
+          <Field id="mfa-enable-password" label="Confirm your password to add an authenticator">
+            <input
+              id="mfa-enable-password"
+              type="password"
+              autoComplete="current-password"
+              className="input sm:max-w-[312px]"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          <p className="mt-2 text-xs text-muted">
+            Signed in through your organisation's identity provider, so you have no password here? Use a backup code instead.
+          </p>
+        </div>
+      ) : null}
 
       {/* Enrolment in progress */}
       {setup ? (
@@ -615,9 +640,11 @@ function MfaBlock() {
 
 /** Passkeys and security keys as a second factor. Enrolling one is a browser
  * ceremony (the server issues a challenge, the authenticator signs it).
- * Adding and removing both take the account password, so a hijacked session
- * can neither strip a factor nor quietly plant the attacker's own key and
- * keep the account. A key the server has flagged as possibly cloned is shown
+ * Adding and removing both take proof the account is yours -- the password,
+ * or a code from a factor you still hold, which is what an account signed in
+ * through an identity provider has instead -- so a hijacked session can
+ * neither strip a factor nor quietly plant the attacker's own key and keep
+ * the account. A key the server has flagged as possibly cloned is shown
  * as such and can only be removed. */
 function PasskeysBlock() {
   const [state, setState] = useState(null); // {results, factors, rp_id, max}
@@ -644,7 +671,7 @@ function PasskeysBlock() {
     try {
       // Asked for before the ceremony starts, so nobody touches their
       // authenticator only to be turned away afterwards.
-      const { data } = await api.post("/auth/webauthn/register/options/", { password });
+      const { data } = await api.post("/auth/webauthn/register/options/", { password, otp: password });
       const credential = await createPasskey(data.options);
       const done = await api.post("/auth/webauthn/register/", { state: data.state, name: name.trim(), credential });
       setName("");
@@ -665,7 +692,7 @@ function PasskeysBlock() {
     setMsg(null);
     setBusy(true);
     try {
-      await api.delete(`/auth/webauthn/${row.id}/`, { data: { password } });
+      await api.delete(`/auth/webauthn/${row.id}/`, { data: { password, otp: password } });
       setPassword("");
       load();
       setMsg({ ok: true, text: `Removed "${row.name}".` });

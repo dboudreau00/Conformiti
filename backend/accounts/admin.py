@@ -90,3 +90,22 @@ class WebAuthnCredentialAdmin(admin.ModelAdmin):
 class CustomUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (("Compliance", {"fields": ("role", "job_title")}),)
     list_display = ("username", "email", "first_name", "last_name", "role", "is_staff")
+
+    def save_model(self, request, obj, form, change):
+        """A password set here ends the account's sessions, as it does
+        everywhere else.
+
+        The API path has revoked them since 0.9.5; this one had not, so the
+        recovery action for an account believed to be in the wrong hands left
+        whoever held it signed in. Django's own form hashes the password into
+        ``password``, which is what ``changed_data`` reports.
+        """
+        super().save_model(request, obj, form, change)
+        if change and "password" in (form.changed_data or ()):
+            from accounts.session_views import _blacklist_all
+            from audit.events import record_auth_event
+
+            revoked = _blacklist_all(obj)
+            record_auth_event(request, obj, "password",
+                              f"password set in the admin by {request.user.get_username()}; "
+                              f"{revoked} refresh token(s) revoked and issued access tokens refused")

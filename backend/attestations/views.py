@@ -413,29 +413,47 @@ class SigningKeysView(APIView):
         # organisation is asked for by slug; without one this answers for the
         # installation, which is what a single-workspace deployment wants.
         slug = (request.query_params.get("workspace") or "").strip()
-        workspace = Workspace.objects.filter(slug=slug).first() if slug else None
 
-        # On an installation with several organisations, an unnamed request
-        # used to list every key of every one of them — with each key's
-        # workspace slug and label attached. A public key is for publishing;
-        # a directory of the tenants on a server is not. Ask for the
-        # organisation by name, and answer only that one.
+        # A public key is for publishing; a list of the tenants on a server is
+        # not. On an installation serving more than one, the caller names the
+        # organisation whose key they are checking, which an auditor holding a
+        # bundle always knows (REVIEW_095.md, S-8).
+        active = Workspace.objects.filter(is_active=True)
+        if not slug:
+            if active.count() > 1:
+                return Response(
+                    {"detail": "This installation serves several organisations. "
+                               "Name the one whose keys you want: ?workspace=<slug>."},
+                    status=status.HTTP_400_BAD_REQUEST)
+            # Resolved to the one organisation rather than left as None.
+            # Scoping to None is unscoped, and the query below used to fall
+            # back to every key on the server: on an installation with one
+            # active workspace and any number of archived ones, that answered
+            # an unauthenticated caller with the archived organisations'
+            # slugs (0.9.5f).
+            workspace = active.first()
+        else:
+            workspace = Workspace.objects.filter(slug=slug).first()
+
+        # A slug nobody recognises is answered exactly as one that exists but
+        # has never signed anything: the same status, the same shape, an empty
+        # list. Answering 400 for the unknown one and 200 for the known one
+        # left presence readable one request at a time, unauthenticated, which
+        # is the disclosure S-8 was about.
         #
-        # A name nobody recognises gets that same answer, rather than a 404.
-        # Anyone could otherwise sit here unauthenticated and learn which
-        # organisations exist on the server by watching which slugs 404
-        # (REVIEW_095.md, S-8).
-        several = Workspace.objects.filter(is_active=True).count() > 1
-        if workspace is None and (slug or several):
-            return Response(
-                {"detail": "This installation serves several organisations. "
-                           "Name the one whose keys you want: ?workspace=<slug>."},
-                status=status.HTTP_400_BAD_REQUEST)
+        # This narrows that oracle; it does not close it. An organisation that
+        # has published a key still answers differently from one that has not,
+        # which is what publishing a key means. Closing it entirely would mean
+        # authenticating the endpoint, and then an auditor could not check a
+        # bundle's signature without an account on the server it came from,
+        # which is the property the whole scheme is for (0.9.5f).
+        if slug and workspace is None:
+            return Response({"algorithm": signing.ALGORITHM, "enabled": False,
+                             "workspace": slug, "current": None, "keys": []})
 
         with tenancy.scoped(workspace):
             current = signing.current_key_info(create=False)
-            rows = SigningKey.objects.filter(workspace=workspace) if workspace \
-                else SigningKey.objects.all()
+            rows = SigningKey.objects.filter(workspace=workspace)
             keys = [{
                 "key_id": k.key_id, "public_key": k.public_key,
                 "fingerprint": signing.fingerprint(k.public_key), "label": k.label,

@@ -26,12 +26,29 @@ BLOCKED_EXTENSIONS = {
     # is lost: save as .docx, .xlsx or .pptx and upload that.
     ".docm", ".dotm", ".xlsm", ".xltm", ".xlam", ".xlsb",
     ".pptm", ".potm", ".ppsm", ".sldm",
+    # Legacy Office, which is OLE2 rather than zip, so the macro scan below
+    # cannot see inside it: a .doc carries its macros in a stream, and the
+    # formats that still get mailed to a compliance inbox are exactly the ones
+    # with a decade of memory-corruption history behind them. Blocking the
+    # macro-enabled OOXML names while accepting .doc was half a rule.
+    ".doc", ".dot", ".xls", ".xlt", ".xla", ".ppt", ".pot", ".pps",
+    # RTF is not OLE2 itself, and is the usual wrapper for an object that is.
+    ".rtf",
 }
 
-# Parts an OOXML container only holds if it carries macros. Checked because
-# the extension is the uploader's word: renaming evidence.docm to evidence.docx
-# defeats a name-only rule, and Office still runs the macros.
+# OLE2 / Compound File Binary Format. The extension is the uploader's word, so
+# the shape of the file is what decides: this is what a .doc renamed to .dat
+# still looks like on disk.
+OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+# Parts an OOXML container only holds if it carries macros, or if it carries a
+# packaged OLE object, which is the other half of the same trick: the macro
+# lives in an embedded binary rather than in the document's own VBA project.
+# An embedded worksheet or presentation is a real thing people do, so only the
+# packaged-object streams are refused, by suffix.
 MACRO_PARTS = ("vbaproject.bin", "vbadata.xml", "macros/vba")
+EMBEDDED_OBJECT = "embeddings/"
+EMBEDDED_OBJECT_SUFFIXES = (".bin", ".ole", ".emf")
 
 # The macro-free Office formats, which are the ones worth looking inside.
 OOXML_EXTENSIONS = {".docx", ".dotx", ".xlsx", ".xltx", ".pptx", ".potx", ".ppsx"}
@@ -50,7 +67,11 @@ def _holds_macros(uploaded):
     try:
         uploaded.seek(0)
         with zipfile.ZipFile(uploaded) as archive:
-            names = [n.lower() for n in archive.namelist()[:2000]]
+            # Every name, not the first two thousand. Reading the central
+            # directory is what costs, and namelist() has already done it, so
+            # the old slice bought nothing and left a place to hide a macro
+            # part: entry 2001.
+            names = [n.lower() for n in archive.namelist()]
     except (zipfile.BadZipFile, OSError, ValueError, AttributeError, NotImplementedError):
         return False
     finally:
@@ -58,7 +79,33 @@ def _holds_macros(uploaded):
             uploaded.seek(position or 0)
         except (AttributeError, OSError):
             pass
-    return any(any(part in name for part in MACRO_PARTS) for name in names)
+    if any(any(part in name for part in MACRO_PARTS) for name in names):
+        return True
+    return any(EMBEDDED_OBJECT in name and name.endswith(EMBEDDED_OBJECT_SUFFIXES)
+               for name in names)
+
+
+def _is_ole2(uploaded):
+    """True if the file begins with the OLE2 signature, whatever it is called.
+
+    Legacy Office is refused by extension above, and this is the same rule
+    applied to the file rather than to its name.
+    """
+    try:
+        position = uploaded.tell()
+    except (AttributeError, OSError):
+        position = None
+    try:
+        uploaded.seek(0)
+        head = uploaded.read(len(OLE2_MAGIC))
+    except (AttributeError, OSError, ValueError):
+        return False
+    finally:
+        try:
+            uploaded.seek(position or 0)
+        except (AttributeError, OSError):
+            pass
+    return bool(head) and bytes(head).startswith(OLE2_MAGIC)
 
 
 def validate_upload(uploaded):
@@ -87,5 +134,10 @@ def validate_upload(uploaded):
         raise serializers.ValidationError(
             "That file carries macros, whatever its name says. Remove them, or save "
             "it as PDF, and upload that instead."
+        )
+    if _is_ole2(uploaded):
+        raise serializers.ValidationError(
+            "That is a legacy Office file, whatever it is called. Save it as PDF, "
+            "or in the modern format (.docx, .xlsx, .pptx), and upload that instead."
         )
     return uploaded

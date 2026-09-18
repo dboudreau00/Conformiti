@@ -89,8 +89,13 @@ fi
 python - <<'PY'
 import os
 from config.version import __version__
-debug = os.getenv("DJANGO_DEBUG", "true").lower() in ("1", "true", "yes", "on")
-demo = os.getenv("SEED_DEMO_DATA", "true").lower() in ("1", "true", "yes", "on")
+# These defaults match what the image and the seed branch above actually do,
+# not what the code does for a developer running it. Announcing demo accounts
+# and a published password that were never seeded is a false alarm; reading
+# DEBUG as on when the image pins it off is a false one the other way, which
+# is worse, because the line that matters is the one nobody believes.
+debug = os.getenv("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes", "on")
+demo = os.getenv("SEED_DEMO_DATA", "false").lower() in ("1", "true", "yes", "on")
 # Read from the environment, not from django.conf: this heredoc runs with no
 # DJANGO_SETTINGS_MODULE, and `set -euo pipefail` above would kill the
 # container on the ImproperlyConfigured that importing settings would raise.

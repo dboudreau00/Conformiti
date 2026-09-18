@@ -5,6 +5,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# The code default is DEBUG on, because the code's usual caller is a developer
+# running `manage.py runserver`. This image's caller is `docker run`, which is
+# a server. Compose and both installers set this explicitly, so a published
+# image was the one path that reached the code default and came up with the
+# browsable API, session authentication on every route, and MEDIA_ROOT served
+# around the X-Accel check. Override it on purpose through compose with
+# CONFORMITI_DEBUG; nothing else should.
+ENV DJANGO_DEBUG=false
+
 WORKDIR /app
 
 # psycopg ships binary wheels, so no compiler or libpq headers are needed.

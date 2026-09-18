@@ -421,7 +421,7 @@ class ManagementTests(PasskeyTestBase):
         self.assertEqual([x["name"] for x in listed["results"]], ["Laptop"])
         self.assertEqual(c.patch(f"/api/auth/webauthn/{pk}/", {"name": "Work laptop"}, format="json").data["name"],
                          "Work laptop")
-        self.assertEqual(c.delete(f"/api/auth/webauthn/{pk}/", {"password": "wrong"}, format="json").status_code, 400)
+        self.assertEqual(c.delete(f"/api/auth/webauthn/{pk}/", {"password": "wrong"}, format="json").status_code, 403)
         self.assertEqual(c.delete(f"/api/auth/webauthn/{pk}/", {"password": PASSWORD}, format="json").status_code, 200)
         self.assertFalse(WebAuthnCredential.objects.filter(pk=pk).exists())
         # Nobody else's key is reachable through the same route.
@@ -537,7 +537,7 @@ class BackupCodeTests(PasskeyTestBase):
     def test_codes_regenerate_with_the_password_and_go_with_the_last_factor(self):
         auth, r = self.enrol(self.owner)
         c = self.client_for(self.owner)
-        self.assertEqual(c.post("/api/auth/mfa/backup-codes/", {"password": "wrong"}, format="json").status_code, 400)
+        self.assertEqual(c.post("/api/auth/mfa/backup-codes/", {"password": "wrong"}, format="json").status_code, 403)
         fresh = c.post("/api/auth/mfa/backup-codes/", {"password": PASSWORD}, format="json")
         self.assertEqual(fresh.status_code, 200)
         self.assertEqual(len(fresh.data["backup_codes"]), 10)
@@ -551,8 +551,9 @@ class BackupCodeTests(PasskeyTestBase):
     def test_enrolling_the_app_after_a_passkey_keeps_the_existing_codes(self):
         _, r = self.enrol(self.owner)
         c = self.client_for(self.owner)
-        setup = c.post("/api/auth/mfa/setup/").data
-        verify = c.post("/api/auth/mfa/verify/", {"code": mfa_lib.totp(setup["secret"])}, format="json")
+        setup = c.post("/api/auth/mfa/setup/", {"password": PASSWORD}, format="json").data
+        verify = c.post("/api/auth/mfa/verify/",
+                        {"code": mfa_lib.totp(setup["secret"]), "password": PASSWORD}, format="json")
         self.assertEqual(verify.status_code, 200, verify.data)
         self.assertIsNone(verify.data["backup_codes"])
         self.assertEqual(verify.data["backup_codes_remaining"], 10)

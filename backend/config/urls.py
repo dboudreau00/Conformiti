@@ -4,6 +4,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework.exceptions import APIException
+from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -32,11 +33,22 @@ class LoginRateThrottle(SimpleRateThrottle):
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     """Login endpoint: tight per-IP rate limit (THROTTLE_LOGIN) + optional
     TOTP second factor for accounts that have MFA enabled. Every attempt —
-    success, bad password, bad/missing OTP — is written to the audit trail."""
+    success, bad password, bad/missing OTP — is written to the audit trail.
+
+    In cookie mode it checks CSRF itself. The usual check runs inside
+    ``CookieJWTAuthentication``, so it only ever guarded a request that
+    already carried a session, and this endpoint authenticates nobody: a
+    cross-site form post could therefore sign the visitor's browser into the
+    attacker's account, which on this product means the evidence they upload
+    next goes somewhere else (0.9.5f). ``SameSite=Lax`` does not help, because
+    the cookie being set is in the response rather than the request."""
     throttle_classes = [LoginRateThrottle]
     serializer_class = MFATokenObtainPairSerializer
 
     def post(self, request, *args, **kwargs):
+        refused = cookie_auth.csrf_required(request)
+        if refused:
+            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
         try:
             response = super().post(request, *args, **kwargs)
         except APIException as exc:
@@ -69,6 +81,9 @@ class ThrottledTokenRefreshView(TokenRefreshView):
         """In cookie mode the refresh token arrives as a cookie the SPA cannot
         read, so put it where the serializer expects it, and hand the rotated
         pair back as cookies rather than as JSON."""
+        refused = cookie_auth.csrf_required(request)
+        if refused:
+            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
         if cookie_auth.cookie_mode() and not request.data.get("refresh"):
             cookie = request.COOKIES.get(cookie_auth.refresh_cookie_name())
             if cookie:

@@ -80,14 +80,14 @@ It needs Compose v2.24 or newer.
 in both commands, because `pull` and `up` each read it:
 
 ```bash
-export CONFORMITI_VERSION=0.9.5e
+export CONFORMITI_VERSION=0.9.5f
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 A container will tell you what it is: `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
-`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5e` carries the
+`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5f` carries the
 commit it was built from in `org.opencontainers.image.revision`.
 
 Building from source remains the default, and stays supported: the images are
@@ -341,6 +341,29 @@ Since 0.6.1 the SPA's tokens travel as HttpOnly cookies (`AUTH_TRANSPORT=cookie`
 with `__Host-` / `__Secure-` prefixes over https. Upgrading from 0.6.0 or
 earlier signs everyone out once. Set `AUTH_TRANSPORT=header` to keep tokens in
 `localStorage` as before. API clients using a Bearer header are unaffected.
+
+**From 0.9.5f, signing in with cookies is CSRF-checked.** The check used to
+run inside cookie authentication, which meant it only ever guarded a request
+that already had a session, and the endpoints that hand out the cookies have
+none by definition: a cross-site form post could sign a visitor's browser into
+someone else's account. `/api/auth/token/`, `/api/auth/token/refresh/` and
+`/api/auth/oidc/redeem/` now require `X-CSRFToken`, matching the readable
+`csrftoken` cookie. The interface already worked this way. A script does this:
+
+```bash
+# 1. /api/auth/config/ sets the cookie, and says which transport is live.
+curl -sc jar https://grc.example.com/api/auth/config/ >/dev/null
+token=$(awk '$6 ~ /csrftoken$/ {print $7}' jar | tail -1)
+# 2. Sign in with it. The token rotates here, so read the jar again afterwards.
+curl -sb jar -c jar -H "X-CSRFToken: ${token}" \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"…","password":"…"}' \
+     https://grc.example.com/api/auth/token/
+```
+
+A Bearer client needs none of this: a header is not attached by a browser on
+its own, so it cannot be forged cross-site. That is why the transport setting
+does not change how integrations authenticate.
 
 Everyday operations:
 

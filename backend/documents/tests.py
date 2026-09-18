@@ -284,6 +284,70 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(self._upload(c, self.tree.ctrl1, filename="innocent.docx",
                                       content=ooxml("word/vbaProject.bin")).status_code, 400)
 
+    def test_legacy_office_is_refused_by_name_and_by_shape(self):
+        """M-2, 0.9.5f. 0.9.5b refused the macro-enabled OOXML names and looked
+        inside the zip for a VBA project. Neither reaches legacy Office: a .doc
+        is an OLE2 compound file, its macros live in a stream rather than in a
+        zip member, and it is still what arrives in a compliance inbox. The
+        signature is what decides, because the extension is the uploader's
+        word and renaming it to .dat used to be the whole bypass."""
+        ole2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64
+        c = self.client_for(self.manager)
+        for bad in ("policy.doc", "figures.xls", "deck.ppt", "memo.rtf"):
+            with self.subTest(name=bad):
+                self.assertEqual(
+                    self._upload(c, self.tree.ctrl1, filename=bad).status_code, 400, bad)
+        # The same file under a name nothing blocks.
+        self.assertEqual(
+            self._upload(c, self.tree.ctrl1, filename="attachment.dat",
+                         content=ole2).status_code, 400)
+        # And a file that merely starts with something else is unaffected.
+        self.assertEqual(
+            self._upload(c, self.tree.ctrl1, filename="scan.pdf",
+                         content=b"%PDF-1.4 still fine").status_code, 201)
+
+    def test_a_packaged_object_inside_a_docx_is_refused(self):
+        """The other half of the same trick: no VBA project of its own, an
+        embedded OLE package instead. An embedded worksheet is a real thing
+        people do, so only the packaged-object streams are refused."""
+        import io as _io
+        import zipfile
+
+        def ooxml(*parts):
+            buffer = _io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("[Content_Types].xml", "<Types/>")
+                archive.writestr("word/document.xml", "<w:document/>")
+                for part in parts:
+                    archive.writestr(part, b"\x00\x01")
+            return buffer.getvalue()
+
+        c = self.client_for(self.manager)
+        self.assertEqual(
+            self._upload(c, self.tree.ctrl1, filename="packaged.docx",
+                         content=ooxml("word/embeddings/oleObject1.bin")).status_code, 400)
+        self.assertEqual(
+            self._upload(c, self.tree.ctrl1, filename="worksheet.docx",
+                         content=ooxml("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+                         ).status_code, 201)
+
+    def test_a_macro_part_past_the_old_scan_limit_is_found(self):
+        """The scan read the first two thousand names, so entry 2001 was a
+        place to hide. Reading the central directory is what costs, and
+        namelist() has already done it."""
+        import io as _io
+        import zipfile
+
+        buffer = _io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("[Content_Types].xml", "<Types/>")
+            for n in range(2100):
+                archive.writestr(f"word/media/image{n}.png", b"\x89PNG")
+            archive.writestr("word/vbaProject.bin", b"\x00\x01")
+        r = self._upload(self.client_for(self.manager), self.tree.ctrl1,
+                         filename="deep.docx", content=buffer.getvalue())
+        self.assertEqual(r.status_code, 400)
+
     def test_unauthenticated_requests_are_rejected(self):
         self.assertEqual(self.client_for().get("/api/documents/").status_code, 401)
         self.assertEqual(self.client_for().get("/api/folders/tree/").status_code, 401)

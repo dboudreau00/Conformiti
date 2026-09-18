@@ -120,3 +120,21 @@ class SigningKeyDirectoryTests(APITestBase):
         self.assertEqual(r.status_code, 200)
         with tenancy.unscoped():
             self.assertEqual(Workspace.objects.filter(is_active=True).count(), 1)
+
+    def test_and_the_archived_one_is_not_in_the_answer_either(self):
+        """0.9.5f, L-2. Not counting an archived organisation is deliberate:
+        an installation that has retired a workspace is still a single-tenant
+        installation and should not have to name itself. But the unnamed
+        answer listed every key on the server, because scoping to None is
+        unscoped, so the organisations that had left were disclosed by the
+        route that exists to publish one public key."""
+        from attestations.models import SigningKey
+
+        old = Workspace.objects.create(name="Old Co", slug="old-co", is_active=False)
+        with tenancy.scoped(old):
+            SigningKey.objects.create(workspace=old, key_id="deadbeefdeadbeef",
+                                      public_key="x" * 44, label="Old Co")
+        body = str(self.client_for().get("/api/signing-keys/").data)
+        self.assertNotIn("old-co", body)
+        self.assertNotIn("Old Co", body)
+        self.assertNotIn("deadbeefdeadbeef", body)

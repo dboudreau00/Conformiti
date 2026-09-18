@@ -426,7 +426,23 @@ def check_deploy():
     documented = set(re.findall(r"^#?\s*([A-Z0-9_]+)=", envex, re.M))
     for key in sorted(used - documented):
         warn("deploy", f"settings reads env '{key}' but .env.example doesn't mention it")
-    print(f" 10. deploy artifacts: compose/entrypoint present, {len(used)} env keys cross-checked")
+
+    # The image is published, so `docker run <image>` is a caller now. It is
+    # the only one that reaches the code's own DEBUG default, which is on.
+    dockerfile = read(os.path.join(BACKEND, "Dockerfile"))
+    if not re.search(r"^ENV\s+DJANGO_DEBUG=(false|0|no|off)\s*$", dockerfile, re.M | re.I):
+        err("deploy", "backend/Dockerfile must pin ENV DJANGO_DEBUG=false: the code "
+                      "default is on, and a published image is a server")
+
+    # COPY . . bakes whatever the build context holds. On a laptop that has
+    # run the local installer, that includes the key ring and the signing key.
+    ignored = read(os.path.join(BACKEND, ".dockerignore"))
+    for secret in (".field-encryption-key", ".package-signing-key", "*.pem"):
+        if secret not in ignored:
+            err("deploy", f"backend/.dockerignore must exclude {secret}: COPY . . would "
+                          f"bake a local key into a published image")
+    print(f" 10. deploy artifacts: compose/entrypoint present, DEBUG pinned off in the "
+          f"image, {len(used)} env keys cross-checked")
 
 
 # ===========================================================================

@@ -92,6 +92,10 @@ if ($Docker) {
       "CONFORMITI_PORT=$Port"
     ) | Set-Content -Path ".env" -Encoding ascii
     Ok ".env written (DEBUG off, unique secret key, demo data $demo)"
+    # No chmod here on purpose: NTFS inherits its ACL from the directory, and
+    # pretending otherwise would be a promise this script cannot keep. The
+    # file holds a signing key and two service passwords.
+    Warn ".env holds a signing key and service passwords. Keep the folder out of a shared location."
   } else {
     Ok ".env already present - leaving it untouched"
     if (Select-String -Path ".env" -Pattern '^CONFORMITI_DEBUG=(1|true|yes|on)' -Quiet) {

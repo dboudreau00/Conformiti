@@ -24,6 +24,8 @@ configuration would need ``SameSite=None; Secure``, a cookie domain and CORS
 credentials — four more knobs, each a way to get it subtly wrong — for a
 topology the product does not otherwise support.
 """
+from datetime import datetime, timezone
+
 from django.conf import settings
 from django.middleware.csrf import CsrfViewMiddleware, rotate_token
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
@@ -162,6 +164,7 @@ class CookieJWTAuthentication(JWTAuthentication):
             raise AuthenticationFailed("User is inactive", code="user_inactive")
         if user.workspace_id and not user.workspace.is_active and not user.is_superuser:
             raise AuthenticationFailed("This workspace is archived.", code="workspace_archived")
+        _refuse_if_superseded(user, validated_token)
         return user
 
     def authenticate(self, request):
@@ -178,11 +181,50 @@ class CookieJWTAuthentication(JWTAuthentication):
         return self.get_user(validated), validated
 
     def _enforce_csrf(self, request):
-        """Only a cookie-authenticated unsafe request needs this: a Bearer
+        """Only a cookie-authenticated unsafe request needs this. A Bearer
         header is not attached by the browser on its own, so it cannot be
-        forged cross-site."""
+        forged cross-site.
+
+        The two endpoints that *set* these cookies authenticate nobody, so
+        they never reach this method and have to ask for themselves. See
+        ``csrf_required`` below.
+        """
         if request.method in SAFE_METHODS:
             return
         reason = _Enforcer(lambda r: None).process_view(request, None, (), {})
         if reason:
             raise PermissionDenied(f"CSRF failed: {reason}")
+
+
+def _refuse_if_superseded(user, validated_token):
+    """Refuse an access token minted before the account's sessions were ended.
+
+    Blacklisting reaches refresh tokens only, so until 0.9.5f "signed out
+    everywhere" left the access token in the hijacked tab answering for the
+    rest of its hour. A token with no ``iat`` predates the field or was minted
+    by something that does not set it; it is refused rather than trusted,
+    because the alternative is a claim the holder controls.
+    """
+    stamped = getattr(user, "sessions_valid_from", None)
+    if not stamped:
+        return
+    issued = validated_token.payload.get("iat")
+    if issued is None or datetime.fromtimestamp(int(issued), tz=timezone.utc) < stamped:
+        raise AuthenticationFailed(
+            "This session was ended. Sign in again.", code="session_superseded")
+
+
+def csrf_required(request):
+    """Django's CSRF check, for a view that authenticates nobody.
+
+    ``_enforce_csrf`` above runs inside authentication, so it only ever saw a
+    request that already had a session. The endpoints that hand out the auth
+    cookies have none by definition, which left login itself forgeable: a
+    cross-site form post signs the visitor's browser into the attacker's
+    account, and on this product the next thing they upload is evidence.
+    Returns a reason string when the request fails, None when it passes, and
+    None in header mode, where no cookie is being set.
+    """
+    if not cookie_mode():
+        return None
+    return _Enforcer(lambda r: None).process_view(request, None, (), {})

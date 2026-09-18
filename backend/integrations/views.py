@@ -63,7 +63,12 @@ class JiraBoardViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(added_by=self.request.user)
 
-    @action(detail=True, methods=["get"], permission_classes=[IsAuthenticated])
+    # No permission_classes here on purpose. Setting them on an action
+    # REPLACES the viewset's pair rather than adding to it, and the pair is
+    # what refuses the issued external auditor: this route handed them the
+    # organisation's remediation backlog, proxied with the stored API token,
+    # for any board id they cared to try (0.9.5f).
+    @action(detail=True, methods=["get"])
     def issues(self, request, pk=None):
         board = self.get_object()
         try:

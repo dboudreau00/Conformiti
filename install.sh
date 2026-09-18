@@ -96,7 +96,9 @@ EMAIL_PROVIDER=console
 SEED_DEMO_DATA=${DEMO}
 CONFORMITI_PORT=${PORT}
 ENV
-    ok ".env written (DEBUG off, unique secret key, demo data ${DEMO})"
+    # It holds a signing key and two service passwords: not world-readable.
+    chmod 600 .env 2>/dev/null || true
+    ok ".env written (DEBUG off, unique secret key, demo data ${DEMO}, mode 600)"
   else
     ok ".env already present — leaving it untouched"
     if grep -Eq '^CONFORMITI_DEBUG=(1|true|yes|on)' .env; then
@@ -165,7 +167,8 @@ p = pathlib.Path(".env"); t = p.read_text(encoding="utf-8")
 t = re.sub(r'^DJANGO_SECRET_KEY=.*$', 'DJANGO_SECRET_KEY=' + sys.argv[1], t, flags=re.M)
 p.write_text(t, encoding="utf-8")
 PY
-  ok ".env created (SQLite + console email; a secret key was generated)"
+  chmod 600 .env 2>/dev/null || true
+  ok ".env created (SQLite + console email; a secret key was generated, mode 600)"
 else
   ok ".env already present — leaving it untouched"
 fi

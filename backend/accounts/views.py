@@ -14,6 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import MfaDevice, Role
 from . import mfa as mfa_lib
 from .permissions import CanManageUsers
+from .reauth import reauthenticated
 from .serializers import (
     PasswordChangeSerializer,
     ProfileUpdateSerializer,
@@ -242,6 +243,14 @@ class MfaSetupView(APIView):
         device = getattr(request.user, "mfa_device", None)
         if device and device.enabled:
             return Response({"detail": "MFA is already enabled. Disable it first to re-enroll."}, status=400)
+        # Asked for here rather than at /verify/, so nobody scans a QR code
+        # only to be turned away. A hijacked session on a password-only
+        # account could otherwise enrol the attacker's authenticator, take
+        # the backup codes, and leave the owner needing the attacker's phone
+        # to sign in. Adding a passkey has asked this since 0.9.5.
+        if not reauthenticated(request):
+            return Response({"detail": "Confirm your password to set up an authenticator.",
+                             "code": "reauth_required"}, status=403)
         secret = mfa_lib.generate_secret()
         if device:
             device.secret = secret
@@ -268,6 +277,9 @@ class MfaVerifyView(APIView):
             return Response({"detail": "Start setup first."}, status=400)
         if device.enabled:
             return Response({"detail": "MFA is already enabled."}, status=400)
+        if not reauthenticated(request):
+            return Response({"detail": "Confirm your password to turn on the authenticator.",
+                             "code": "reauth_required"}, status=403)
         code = (request.data.get("code") or "").strip()
         # device.verify rather than mfa_lib.verify: it spends the time step,
         # so the code that switched the factor on cannot then be replayed to
@@ -295,8 +307,9 @@ class MfaDisableView(APIView):
     throttle_classes = [_MfaThrottle]
 
     def post(self, request):
-        if not request.user.check_password(request.data.get("password") or ""):
-            return Response({"detail": "Password is incorrect."}, status=400)
+        if not reauthenticated(request):
+            return Response({"detail": "Confirm your password, or a code from a factor you still have.",
+                             "code": "reauth_required"}, status=403)
         device = getattr(request.user, "mfa_device", None)
         if device:
             device.delete()
@@ -307,15 +320,16 @@ class MfaDisableView(APIView):
 
 
 class MfaBackupCodesView(APIView):
-    """Regenerate backup codes (invalidates the old set). Password-gated, and
-    open to anyone with a second factor -- authenticator app or passkey."""
+    """Regenerate backup codes (invalidates the old set). Re-authenticated,
+    and open to anyone with a second factor -- authenticator app or passkey."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
     def post(self, request):
         if not request.user.mfa_enabled:
             return Response({"detail": "Enrol an authenticator app or a passkey first."}, status=400)
-        if not request.user.check_password(request.data.get("password") or ""):
-            return Response({"detail": "Password is incorrect."}, status=400)
+        if not reauthenticated(request):
+            return Response({"detail": "Confirm your password, or a code from a factor you still have.",
+                             "code": "reauth_required"}, status=403)
         codes = request.user.issue_backup_codes()
         return Response({"backup_codes": codes})

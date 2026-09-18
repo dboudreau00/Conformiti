@@ -11,6 +11,117 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5f], 2026-09-18
+
+A security release, closing a fourth independent review. It found fourteen
+things; all fourteen were real, and all fourteen are fixed here with a test
+apiece. Details, including what was deliberately not done, are in
+[REVIEW_095F.md](REVIEW_095F.md).
+
+Four changes are visible before you read the list. Turning on the authenticator
+app now asks for your password, as adding a passkey already did. Your email
+address is an administrator's field: the account page shows it and no longer
+edits it. Legacy Office files (`.doc`, `.xls`, `.ppt`, `.rtf`) are refused as
+evidence, as the macro-enabled formats have been since 0.9.5b. And in cookie
+mode, an API client that signs in must fetch `/api/auth/config/` first, which
+is what hands it the CSRF token the login endpoint now requires; the interface
+already did this.
+
+### Fixed
+
+- **A hijacked session could make the attacker's authenticator the one your
+  account needs.** Enrolling an app took nothing but a live session, while
+  adding a passkey has asked for the password since 0.9.5. So a stolen cookie
+  could enrol its own authenticator, collect the backup codes it returns, and
+  leave the real owner needing the attacker's phone to sign in. Setup,
+  verification, disabling and backup-code regeneration all ask for the same
+  proof now: the password, or a code from a factor you already hold.
+- **An account with no password could not remove a factor.** The other side of
+  the same code: removal insisted on `check_password`, which is always false
+  for an account provisioned through an identity provider, so the owner of a
+  passkey their authenticator had flagged as cloned could not take it off. A
+  backup code proves the same thing and is now accepted.
+- **A self-edited email address decided who single sign-on linked to.** With
+  `OIDC_LINK_BY_EMAIL` on, which is the default, a provider binds its subject
+  to whichever local account holds the address it asserts. Any signed-in
+  account, the issued external auditor included, could set its own address to
+  a colleague's, and that colleague's first sign-on would land in it. Email is
+  no longer a self-service field, and two accounts in one workspace can no
+  longer share an address, which is what made a provider give up with
+  `ambiguous_email`.
+- **The published image booted with `DEBUG` on.** The code's default is on,
+  because the code's usual caller is a developer running `manage.py
+  runserver`. Compose and both installers set it explicitly, so the images
+  0.9.5e started publishing were the one caller that reached that default: a
+  `docker run` came up with the browsable API, session authentication on every
+  route, and `MEDIA_ROOT` served around the X-Accel check. The image pins it
+  off, CI boots the image and fails if the banner or the browsable API says
+  otherwise, and the validator refuses a Dockerfile that does not pin it.
+- **An issued auditor could read the Jira backlog.** `permission_classes` on
+  an `@action` replaces the viewset's pair rather than adding to it, so the
+  issues proxy dropped the check that refuses an external auditor and served
+  any board id with the stored API token. The auditor-surface suite now walks
+  every action as well as every collection, and two self-service routes are
+  named as deliberate exceptions.
+- **Legacy Office is refused as evidence.** 0.9.5b blocked the macro-enabled
+  OOXML names and looked inside the zip for a VBA project. A `.doc` is not a
+  zip: it is an OLE2 compound file whose macros live in a stream, so none of
+  that reached it. The signature decides now, not the extension, so the same
+  file renamed to `.dat` is refused too; a packaged OLE object inside a
+  `.docx` goes with it, while an embedded worksheet still uploads.
+- **The cross-workspace username check never left the workspace.** A tenant
+  queryset carries `workspace_id = ActiveWorkspace()`, which resolves when the
+  query runs, so one built before entering `unscoped()` compared the column to
+  NULL and matched nothing. A name taken in another organisation therefore
+  passed the check, hit the database's global constraint, and returned a 500,
+  which is the disclosure the check was added in 0.9.4 to remove.
+- **"Signed out everywhere" now ends the session, not just its ability to
+  renew.** Blacklisting reaches refresh tokens; the access token in the
+  hijacked tab kept answering for up to an hour after the password reset or
+  the forced sign-out meant to end it. Every account carries the moment its
+  sessions were ended, and an access token issued before it is refused. The
+  Django admin's own password form does this too, which it never did.
+- **Signing in was not CSRF-protected in cookie mode.** The check runs inside
+  cookie authentication, so it only ever guarded a request that already had a
+  session, and the two endpoints that *set* the cookies have none by
+  definition. A cross-site form post could therefore sign a visitor's browser
+  into the attacker's account, and on this product the next thing they upload
+  is evidence. Login, refresh and SSO redemption check it themselves now.
+- **A SAML bearer confirmation must carry `NotOnOrAfter`.** 0.9.5b made
+  `Destination` and `Recipient` required and left this one honoured when
+  present, so an assertion that omitted it fell back to the `Conditions`
+  window, or to an hour. Once the replay row is pruned, the same assertion
+  posts again.
+- **The published-keys route no longer lists organisations that have left.**
+  An installation with one active workspace and any number of archived ones
+  took the single-tenant path, where the answer was every key on the server
+  with its workspace slug attached. A slug nobody recognises now answers
+  exactly as an organisation that exists and has never signed anything.
+- **The boot banner told the truth.** Its own defaults read `DJANGO_DEBUG` and
+  `SEED_DEMO_DATA` as on while the code it described defaulted them off, so a
+  plain `docker run` announced demo accounts with a published password that
+  were never seeded.
+- **`docker build` on a developer's machine cannot bake their keys into an
+  image.** `.dockerignore` excluded the database and the virtualenv, not the
+  field-encryption ring or the package-signing key the local installer leaves
+  in that directory. 0.9.5e started publishing that image.
+- **nginx no longer overwrites the scheme an outer proxy reported.**
+  `X-Forwarded-Proto $scheme` is always `http` inside this container, so a TLS
+  terminator in front of it was contradicted: `BEHIND_TLS=true` issued Secure
+  cookies while the request looked insecure, and `SECURE_SSL_REDIRECT` could
+  redirect to a URL that arrived back the same way.
+- **An IPv4-mapped address is checked as the address it is.**
+  `::ffff:100.64.0.1` is `100.64.0.1` in IPv6 clothing, and every rule in the
+  outbound check missed it, including the carrier-grade NAT range that hosting
+  providers put tenant networks in.
+- **The OpenID Connect client goes through the outbound guard**, like every
+  other server-side request since 0.9.5b. The issuer is the operator's own
+  setting; the token and userinfo endpoints are the provider's answer, so a
+  provider that is hostile or interfered with chose where this process
+  connected next.
+- **The installers write `.env` as mode 600.** It holds a signing key and two
+  service passwords, and it was written with whatever the umask allowed.
+
 ## [0.9.5e], 2026-09-18
 
 The stack is published as container images. Doing so found that the backend

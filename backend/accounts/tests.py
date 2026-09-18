@@ -95,13 +95,14 @@ class TokenLifecycleTests(APITestBase):
 class MfaTests(APITestBase):
     def _enable(self, user):
         c = self.client_for(user)
-        setup = c.post("/api/auth/mfa/setup/")
+        setup = c.post("/api/auth/mfa/setup/", {"password": PASSWORD}, format="json")
         self.assertEqual(setup.status_code, 200)
         secret = setup.data["secret"]
         self.assertIn("otpauth://totp/", setup.data["otpauth_uri"])
         # device exists but is not enabled yet -> login still password-only
         self.assertFalse(user.mfa_device.enabled)
-        verify = c.post("/api/auth/mfa/verify/", {"code": mfa_lib.totp(secret)}, format="json")
+        verify = c.post("/api/auth/mfa/verify/",
+                        {"code": mfa_lib.totp(secret), "password": PASSWORD}, format="json")
         self.assertEqual(verify.status_code, 200)
         self.assertEqual(len(verify.data["backup_codes"]), 10)
         return secret, verify.data["backup_codes"]
@@ -136,16 +137,17 @@ class MfaTests(APITestBase):
 
     def test_wrong_code_does_not_enable(self):
         c = self.client_for(self.owner)
-        c.post("/api/auth/mfa/setup/")
-        r = c.post("/api/auth/mfa/verify/", {"code": "123456"}, format="json")
+        c.post("/api/auth/mfa/setup/", {"password": PASSWORD}, format="json")
+        r = c.post("/api/auth/mfa/verify/",
+                   {"code": "123456", "password": PASSWORD}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertFalse(MfaDevice.objects.get(user=self.owner).enabled)
 
     def test_disable_and_regenerate_require_password(self):
         self._enable(self.owner)
         c = self.client_for(self.owner)
-        self.assertEqual(c.post("/api/auth/mfa/disable/", {"password": "wrong"}, format="json").status_code, 400)
-        self.assertEqual(c.post("/api/auth/mfa/backup-codes/", {"password": "wrong"}, format="json").status_code, 400)
+        self.assertEqual(c.post("/api/auth/mfa/disable/", {"password": "wrong"}, format="json").status_code, 403)
+        self.assertEqual(c.post("/api/auth/mfa/backup-codes/", {"password": "wrong"}, format="json").status_code, 403)
         r = c.post("/api/auth/mfa/backup-codes/", {"password": PASSWORD}, format="json")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(c.post("/api/auth/mfa/disable/", {"password": PASSWORD}, format="json").status_code, 200)
@@ -355,13 +357,14 @@ class MfaSecretAtRestTests(APITestBase):
     def test_enrolment_and_verification_work_end_to_end(self):
         """The whole point: encryption must be invisible to the feature."""
         c = self.client_for(self.manager)
-        setup = c.post("/api/auth/mfa/setup/", {}, format="json")
+        setup = c.post("/api/auth/mfa/setup/", {"password": PASSWORD}, format="json")
         self.assertEqual(setup.status_code, 200)
         secret = setup.data["secret"]
         stored = MfaDevice.objects.filter(user=self.manager).values_list("secret", flat=True).first()
         self.assertTrue(stored.startswith("fc1$"))
         self.assertNotIn(secret, stored)
-        r = c.post("/api/auth/mfa/verify/", {"code": mfa_lib.totp(secret)}, format="json")
+        r = c.post("/api/auth/mfa/verify/",
+                   {"code": mfa_lib.totp(secret), "password": PASSWORD}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertTrue(MfaDevice.objects.get(user=self.manager).enabled)
 
@@ -374,7 +377,21 @@ class CookieAuthTests(APITestBase):
     """The same tokens, delivered where script cannot read them."""
 
     def login(self, client=None, **extra):
+        """Sign in the way the SPA does.
+
+        Since 0.9.5f the login endpoint checks CSRF in cookie mode, because it
+        is one of the two that *set* the auth cookies and so never reached the
+        check inside CookieJWTAuthentication. A browser has a token by then:
+        /api/auth/config/ is the request the interface makes before this one,
+        and it is what seeds the cookie.
+        """
         client = client or APIClient(enforce_csrf_checks=True)
+        if "HTTP_X_CSRFTOKEN" not in extra:
+            seeded = client.get("/api/auth/config/")
+            token = next((v.value for k, v in seeded.cookies.items()
+                          if k.endswith("csrftoken")), "")
+            if token:
+                extra["HTTP_X_CSRFTOKEN"] = token
         return client, client.post(
             "/api/auth/token/",
             {"username": "mia", "password": PASSWORD}, format="json", **extra)
@@ -442,7 +459,13 @@ class CookieAuthTests(APITestBase):
     def test_refresh_reads_the_cookie_rotates_and_reissues(self):
         client, login = self.login()
         first = login.cookies["conformiti_refresh"].value
-        r = client.post("/api/auth/token/refresh/", {}, format="json")
+        # Renewing is CSRF-checked in cookie mode too, and signing in rotated
+        # the token, so the current one is read rather than the one that was
+        # sent to log in. The SPA reads the cookie on every call for this
+        # reason.
+        token = client.cookies["csrftoken"].value
+        r = client.post("/api/auth/token/refresh/", {}, format="json",
+                        HTTP_X_CSRFTOKEN=token)
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data, {"renewed": True}, "no tokens in the body")
         self.assertNotEqual(r.cookies["conformiti_refresh"].value, first,

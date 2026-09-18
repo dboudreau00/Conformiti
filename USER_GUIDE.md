@@ -157,15 +157,23 @@ it *provided*; the auditor accepts or returns it. Lines assigned to you are
 also listed on this page even if you cannot see the package itself.
 
 ### Settings
-- **Profile** — name, email (where reminders go), job title.
+- **Profile**: name and job title. Your email is shown but not editable:
+  it is where reminders go, and it is what single sign-on matches on, so
+  changing it is an administrator's job rather than a preference. Ask one, at
+  *Users*, and the change is recorded.
 - **Appearance** — theme packs, accent packs, a custom accent colour, live preview.
 - **Security** — change password; enable two-factor (setup key or `otpauth://`
   URI for any authenticator app, one-time backup codes), regenerate codes or
-  turn it off (password required); enrol **passkeys or security keys**, which
-  then satisfy the second step instead of a code. Adding and removing a key
-  both take your password — changing which keys can sign you in is itself a
-  security change. A key flagged as possibly cloned is disabled — remove it
-  with your password and enrol a fresh one.
+  turn it off; enrol **passkeys or security keys**, which then satisfy the
+  second step instead of a code. A key flagged as possibly cloned is disabled;
+  remove it and enrol a fresh one.
+
+  Every one of those asks you to confirm the account is yours first: your
+  password, or a code from a factor you already hold. Changing which factors
+  can sign you in is itself a security change, and somebody who has taken over
+  a session must not be able to make their authenticator the one you need. If
+  you sign in through your organisation's identity provider and have no
+  password here, a backup code answers instead.
 - **Notifications** — how reminders reach you.
 - **Role & access** — your capabilities.
 - **About** — version, frameworks loaded, whether demo data is present.

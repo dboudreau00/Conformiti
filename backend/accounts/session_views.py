@@ -13,6 +13,8 @@ person at that workstation would be signed back in silently. The clear endpoint
 therefore takes anyone, is CSRF-protected, and revokes opportunistically.
 """
 from django.conf import settings
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -87,6 +89,22 @@ class SessionClearView(APIView):
 
 
 def _blacklist_all(user):
+    """End every session this account has, both halves of it.
+
+    OutstandingToken holds refresh tokens only, so blacklisting them stops a
+    session renewing itself and leaves the access token already issued
+    answering until it expires: an hour, by default, after the password reset
+    or the forced sign-out that was supposed to end it. Stamping the account
+    draws a line under every access token minted before now, which
+    ``CookieJWTAuthentication`` then refuses (0.9.5f).
+    """
+    from django.utils import timezone
+
+    # Floored to the second: the ``iat`` claim is whole seconds, so a stamp
+    # carrying microseconds would refuse a token minted in the same second,
+    # which is the token the person signing in again has just been handed.
+    user.sessions_valid_from = timezone.now().replace(microsecond=0)
+    user.save(update_fields=["sessions_valid_from"])
     try:
         from rest_framework_simplejwt.token_blacklist.models import (
             BlacklistedToken, OutstandingToken,
@@ -101,11 +119,18 @@ def _blacklist_all(user):
 
 
 class AuthConfigView(APIView):
-    """What the SPA needs to know before it can sign anyone in."""
+    """What the SPA needs to know before it can sign anyone in.
+
+    Also where the CSRF cookie comes from. In cookie mode the login endpoint
+    checks CSRF (0.9.5f), and a visitor arriving at /login with no session has
+    no token to send: this is the request the SPA makes before that one, so
+    this is where Django is asked to set it.
+    """
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = []
 
+    @method_decorator(ensure_csrf_cookie)
     def get(self, request):
         from .oidc import config as oidc_config
         from .saml import config as saml_config

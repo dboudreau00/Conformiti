@@ -85,12 +85,38 @@ class UserWriteSerializer(serializers.ModelSerializer):
         Checked unscoped, and reported without saying where."""
         from accounts import tenancy
 
-        qs = User.objects.filter(username__iexact=value)
-        if self.instance is not None:
-            qs = qs.exclude(pk=self.instance.pk)
+        # Built inside the block, not outside it. A tenant queryset carries
+        # `workspace_id = ActiveWorkspace()`, which resolves when the query
+        # runs: built out here it was pinned to the caller's workspace, and
+        # running it unscoped compared the column to NULL and matched nothing.
+        # The check passed, the name reached the database's global unique
+        # constraint, and the 500 that came back was the disclosure this was
+        # written to remove.
         with tenancy.unscoped():
+            qs = User.objects.filter(username__iexact=value)
+            if self.instance is not None:
+                qs = qs.exclude(pk=self.instance.pk)
             if qs.exists():
                 raise serializers.ValidationError("That username is not available.")
+        return value
+
+    def validate_email(self, value):
+        """One address, one account, within the organisation.
+
+        Nothing enforced this, and an identity provider linking by verified
+        email gives up with ``ambiguous_email`` when two accounts answer to
+        one address, which locks that person out of single sign-on. Scoped to
+        the workspace on purpose: a consultant may hold an account in two
+        organisations on the same installation, under the same address."""
+        value = (value or "").strip()
+        if not value:
+            return value
+        qs = User.objects.filter(email__iexact=value)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "Another account in this workspace already uses that address.")
         return value
 
     class Meta:
@@ -147,11 +173,20 @@ class UserWriteSerializer(serializers.ModelSerializer):
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     """Fields a user may edit about themselves. Role and status are excluded so
-    a user can never escalate their own access through the account page."""
+    a user can never escalate their own access through the account page.
+
+    ``email`` is excluded for a subtler reason. With ``OIDC_LINK_BY_EMAIL`` on,
+    which is the default, an identity provider binds its subject to whichever
+    local account holds the address it asserts. A self-service edit therefore
+    decided who a colleague's first single sign-on would land on: claim an
+    address whose owner had not signed in through the provider yet, and their
+    first sign-in lands in the claimant's account. Any signed-in caller could
+    do it, the issued external auditor included. Changing an address is an
+    operator's act, at ``/users/{id}/``, where it is recorded (0.9.5f)."""
 
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email", "job_title", "digest"]
+        fields = ["first_name", "last_name", "job_title", "digest"]
 
 
 class PasswordChangeSerializer(serializers.Serializer):

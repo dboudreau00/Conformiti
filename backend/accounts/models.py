@@ -210,6 +210,16 @@ class User(AbstractUser, TenantModel):
     digest = models.CharField(max_length=8, choices=Digest.choices, default=Digest.OFF)
     digest_sent_at = models.DateTimeField(null=True, blank=True)
 
+    # --- the line under every session issued before it -------------------
+    # Revoking refresh tokens ends a session's ability to renew itself, and
+    # nothing more: the access token already in the attacker's tab keeps
+    # answering until it expires, which is an hour by default. So a password
+    # reset, a forced sign-out and an MFA reset all left the thing they were
+    # meant to end running for up to an hour. Every access token issued
+    # before this moment is refused (accounts/cookie_auth.py), which is what
+    # "signed out everywhere" has to mean to be worth saying.
+    sessions_valid_from = models.DateTimeField(null=True, blank=True, editable=False)
+
     # --- capability helpers (safe when role is None) -----------------------
     def _cap(self, flag):
         return self.is_superuser or bool(self.role and getattr(self.role, flag))

@@ -1,4 +1,4 @@
-import { test, expect, open, expectBrowserError } from "../fixtures.js";
+import { test, expect, open, expectBrowserError, DEMO } from "../fixtures.js";
 
 const SECTIONS = ["Profile", "Appearance", "Security", "Notifications", "Role & access", "About"];
 
@@ -121,6 +121,13 @@ test.describe("multi-factor authentication", () => {
     await expect(page.getByText("Authenticator app").first()).toBeVisible();
     const enable = page.getByRole("button", { name: "Enable", exact: true });
     await expect(enable).toBeVisible();
+
+    // Enrolling a factor takes the same proof removing one does (0.9.5f):
+    // a session somebody else is holding must not be able to make their
+    // authenticator the one this account needs. Adding a passkey has asked
+    // since 0.9.5; the authenticator app asked for nothing.
+    await expect(page.locator("#mfa-enable-password")).toBeVisible();
+    await page.locator("#mfa-enable-password").fill(DEMO.admin.password);
     await enable.click();
     await page.waitForLoadState("networkidle");
 
@@ -139,6 +146,19 @@ test.describe("multi-factor authentication", () => {
     await page.waitForLoadState("networkidle");
     await section(page, "Security").click();
     await expect(page.getByRole("button", { name: "Enable", exact: true })).toBeVisible();
+  });
+
+  test("enrolment without the password is refused", async ({ page }) => {
+    await open(page, "/settings", "Account");
+    await section(page, "Security").click();
+    await expect(page.getByText("Authenticator app").first()).toBeVisible();
+
+    expectBrowserError(page, /status of 403/);
+    await page.getByRole("button", { name: "Enable", exact: true }).click();
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.locator("#mfa-uri")).toHaveCount(0);
+    await expect(page.getByText(/confirm your password/i).first()).toBeVisible();
   });
 });
 

@@ -30,10 +30,15 @@ export function samlConfig() {
   return saml;
 }
 
-/** Ask the server which transport is live. Safe to call before signing in. */
+/** Ask the server which transport is live. Safe to call before signing in.
+ *  Also where the CSRF cookie arrives: in cookie mode the login endpoint
+ *  checks CSRF, and a visitor who has just opened /login has no token yet,
+ *  so this request is the one that seeds it. withCredentials is explicit
+ *  rather than relied upon, because the dev server serves the SPA from a
+ *  different port than the API. */
 export async function loadAuthConfig() {
   try {
-    const { data } = await axios.get("/api/auth/config/");
+    const { data } = await axios.get("/api/auth/config/", { withCredentials: true });
     transport = data.transport === "cookie" ? "cookie" : "header";
     oidc = { enabled: !!data.oidc?.enabled, label: data.oidc?.label || "Single sign-on" };
     saml = { enabled: !!data.saml?.enabled, label: data.saml?.label || "Sign in with SAML" };

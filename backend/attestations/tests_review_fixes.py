@@ -271,12 +271,18 @@ class PerWorkspaceKeyTests(PackageTestBase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["workspace"], "default")
         self.assertTrue(any(k["current"] for k in r.data["keys"]))
-        # A name nobody recognises gets the same answer as no name at all.
-        # The endpoint is unauthenticated, and a 404 here told anyone who
-        # asked which organisations exist on the server (REVIEW_095.md, S-8).
+        # A name nobody recognises answers exactly as an organisation that
+        # exists and has never signed anything: same status, same shape, empty
+        # list. 0.9.5b made it share the unnamed request's 400, which still
+        # left presence readable, because a slug that exists answered 200 and
+        # one that does not answered 400 (0.9.5f, L-2).
         unknown = self.client_for(self.manager).get("/api/signing-keys/", {"workspace": "nope"})
-        self.assertEqual(unknown.status_code, 400)
+        self.assertEqual(unknown.status_code, 200, unknown.data)
+        self.assertEqual(unknown.data["keys"], [])
+        self.assertIsNone(unknown.data["current"])
+        self.assertFalse(unknown.data["enabled"])
+        self.assertEqual(sorted(unknown.data), sorted(r.data),
+                         "the unknown answer must have the shape of the known one")
         Workspace.objects.create(name="Beta Ltd", slug="beta-ltd")
         unnamed = self.client_for(self.manager).get("/api/signing-keys/")
         self.assertEqual(unnamed.status_code, 400)
-        self.assertEqual(unknown.data["detail"], unnamed.data["detail"])
