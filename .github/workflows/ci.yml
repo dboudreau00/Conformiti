@@ -245,7 +245,16 @@ jobs:
         run: |
           set -euo pipefail
           jar=/tmp/cookies.txt
-          curl -fsS -c "$jar" -H 'Content-Type: application/json' \
+          # Signing in is CSRF-checked in cookie mode since 0.9.5f, because
+          # it is one of the two endpoints that SET the auth cookies and so
+          # never reached the check inside cookie authentication. This is the
+          # sequence INSTALL.md gives an API client, run here so the
+          # documentation and the product are tested by the same steps.
+          curl -fsS -c "$jar" http://localhost:8080/api/auth/config/ > /dev/null
+          login_csrf=$(awk '$6 ~ /csrftoken$/ {print $7}' "$jar" | tail -1)
+          test -n "$login_csrf"
+          curl -fsS -b "$jar" -c "$jar" -H "X-CSRFToken: $login_csrf" \
+            -H 'Content-Type: application/json' \
             -d "{\"username\":\"admin\",\"password\":\"$DEMO_PASSWORD\"}" \
             http://localhost:8080/api/auth/token/ > /tmp/login.json
           # Cookie mode keeps the tokens out of the body; only the CSRF token is readable.

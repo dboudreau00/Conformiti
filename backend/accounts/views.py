@@ -125,12 +125,12 @@ class UserViewSet(viewsets.ModelViewSet):
         removed = target.passkeys.count()
         target.passkeys.all().delete()
         target.backup_codes.all().delete()
-        from accounts.session_views import _blacklist_all
+        from accounts.session_views import end_all_sessions
         from audit.events import record_auth_event
 
         # This is the recovery path for a compromised or lost second factor,
         # so the existing sessions go with it.
-        _blacklist_all(target)
+        end_all_sessions(target)
         record_auth_event(request, target, "mfa",
                           f"MFA reset by {request.user.get_username()}: authenticator "
                           f"{'removed' if device else 'absent'}, {removed} passkey(s) removed, "

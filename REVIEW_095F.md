@@ -126,12 +126,22 @@ hour by default, after the password change, the administrator's reset or the
 MFA reset that was meant to end it. The Django admin's own password form did
 not call it at all.
 
-**Fixed.** `User.sessions_valid_from` is stamped when sessions are ended, and
-an access token issued before that moment is refused. The stamp is floored to
-the second because `iat` is whole seconds, which leaves a one-second window
-in which a token minted in the same second as the revocation survives; the
+**Fixed.** `User.sessions_valid_from` is stamped by `end_all_sessions`, and an
+access token issued before that moment is refused. The stamp is floored to the
+second because `iat` is whole seconds, which leaves a one-second window in
+which a token minted in the same second as the revocation survives; the
 alternative refuses the token the person signing in again has just been
 handed. `CustomUserAdmin.save_model` now ends sessions and records it.
+
+The first version of this fix stamped inside `_blacklist_all`, which every
+caller shared, including signing out. That made signing out of one browser
+close the session on the person's other device instantly, which is a product
+decision nobody asked for and not what this finding was about. CI found it the
+honest way, by holding a second session: the browser suite's stored session
+died the moment any test signed out. The two acts are now separate verbs, and
+a test holds a second session to keep them that way. Signing out still revokes
+every refresh token, as it has since 0.6.1, so no other session can renew
+itself.
 
 ### M-5: signing in was not CSRF-protected in cookie mode
 

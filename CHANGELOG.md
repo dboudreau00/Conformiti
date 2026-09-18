@@ -75,12 +75,16 @@ already did this.
   NULL and matched nothing. A name taken in another organisation therefore
   passed the check, hit the database's global constraint, and returned a 500,
   which is the disclosure the check was added in 0.9.4 to remove.
-- **"Signed out everywhere" now ends the session, not just its ability to
-  renew.** Blacklisting reaches refresh tokens; the access token in the
-  hijacked tab kept answering for up to an hour after the password reset or
-  the forced sign-out meant to end it. Every account carries the moment its
-  sessions were ended, and an access token issued before it is refused. The
-  Django admin's own password form does this too, which it never did.
+- **A password reset now ends the session, not just its ability to renew.**
+  Blacklisting reaches refresh tokens, so the access token in the hijacked tab
+  kept answering for up to an hour after the reset meant to end it. Each
+  account carries the moment its sessions were ended, and an access token
+  issued before it is refused. This applies to the three recovery paths: you
+  changing your own password, an administrator setting one, and an MFA reset.
+  The Django admin's own password form does it too, which it never did.
+  Signing out is unchanged: it revokes every refresh token, as it has since
+  0.6.1, and does not reach across and close the session on your other
+  device.
 - **Signing in was not CSRF-protected in cookie mode.** The check runs inside
   cookie authentication, so it only ever guarded a request that already had a
   session, and the two endpoints that *set* the cookies have none by

@@ -88,15 +88,19 @@ class SessionClearView(APIView):
         return response
 
 
-def _blacklist_all(user):
-    """End every session this account has, both halves of it.
+def end_all_sessions(user):
+    """End every session this account has, both halves of each one.
 
-    OutstandingToken holds refresh tokens only, so blacklisting them stops a
-    session renewing itself and leaves the access token already issued
-    answering until it expires: an hour, by default, after the password reset
-    or the forced sign-out that was supposed to end it. Stamping the account
-    draws a line under every access token minted before now, which
-    ``CookieJWTAuthentication`` then refuses (0.9.5f).
+    For the recovery paths only: a password change, an administrator setting a
+    password, an MFA reset. Those say the account may be in the wrong hands,
+    and revoking refresh tokens does not end the session already running -- the
+    access token in the hijacked tab keeps answering until it expires, an hour
+    by default, after the reset that was meant to end it (0.9.5f, M-4).
+
+    Signing out calls ``_blacklist_all`` instead. It revokes every refresh
+    token, which is belt and braces for an expired access cookie, but it does
+    not reach across to the person's other browser and close it mid-sentence:
+    that is a different act, and not the one the review was about.
     """
     from django.utils import timezone
 
@@ -105,6 +109,13 @@ def _blacklist_all(user):
     # which is the token the person signing in again has just been handed.
     user.sessions_valid_from = timezone.now().replace(microsecond=0)
     user.save(update_fields=["sessions_valid_from"])
+    return _blacklist_all(user)
+
+
+def _blacklist_all(user):
+    """Revoke every refresh token this account holds, so no session of it can
+    renew itself. The access tokens already issued are unaffected; see
+    :func:`end_all_sessions` for the paths where that is not enough."""
     try:
         from rest_framework_simplejwt.token_blacklist.models import (
             BlacklistedToken, OutstandingToken,

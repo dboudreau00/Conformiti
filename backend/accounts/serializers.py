@@ -158,10 +158,10 @@ class UserWriteSerializer(serializers.ModelSerializer):
             # every issued refresh token; this path used to leave them all
             # valid, so a hijacked session outlived the reset that was meant
             # to end it.
-            from accounts.session_views import _blacklist_all
+            from accounts.session_views import end_all_sessions
             from audit.events import record_auth_event
 
-            revoked = _blacklist_all(instance)
+            revoked = end_all_sessions(instance)
             request = self.context.get("request")
             if request is not None:
                 by = request.user.get_username() if request.user.is_authenticated else "?"
@@ -208,7 +208,7 @@ class PasswordChangeSerializer(serializers.Serializer):
         return value
 
     def save(self, **kwargs):
-        from accounts.session_views import _blacklist_all
+        from accounts.session_views import end_all_sessions
 
         user = self.context["request"].user
         user.set_password(self.validated_data["new_password"])
@@ -216,7 +216,7 @@ class PasswordChangeSerializer(serializers.Serializer):
         # A password change that leaves the old sessions alive is not a
         # password change: every refresh token issued before now is revoked,
         # so a stolen one cannot renew itself indefinitely.
-        _blacklist_all(user)
+        end_all_sessions(user)
         return user
 
 

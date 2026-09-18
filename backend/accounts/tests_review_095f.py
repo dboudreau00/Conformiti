@@ -320,6 +320,34 @@ class AccessTokenEpochTests(APITestBase):
 
         self.assertEqual(client.get("/api/users/me/").status_code, 401)
 
+    def test_signing_out_of_one_browser_leaves_the_others_alone(self):
+        """Ending every session is for the recovery paths, not for sign-out.
+
+        Signing out revokes every refresh token the account holds, which has
+        been true since 0.6.1, so no other session can renew itself. Reaching
+        across and refusing the access token another browser is holding is a
+        different act: it closes the person's other device mid-sentence, and
+        it is not what the review asked for. CI found this the honest way,
+        by holding a second session."""
+        phone = self.client_for(None)
+        signed_in = phone.post("/api/auth/token/",
+                               {"username": self.owner.username, "password": PASSWORD},
+                               format="json")
+        phone.credentials(HTTP_AUTHORIZATION=f"Bearer {signed_in.data['access']}")
+        self.assertEqual(phone.get("/api/users/me/").status_code, 200)
+
+        with self.later():
+            laptop = self.client_for(None)
+            other = laptop.post("/api/auth/token/",
+                                {"username": self.owner.username, "password": PASSWORD},
+                                format="json")
+            laptop.credentials(HTTP_AUTHORIZATION=f"Bearer {other.data['access']}")
+            laptop.post("/api/auth/token/clear/", {"refresh": other.data["refresh"]},
+                        format="json")
+
+        self.assertEqual(phone.get("/api/users/me/").status_code, 200,
+                         "signing out of one browser must not close the other")
+
     def test_an_untouched_account_keeps_its_session(self):
         client = self.client_for(None)
         signed_in = client.post("/api/auth/token/",

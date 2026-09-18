@@ -102,10 +102,10 @@ class CustomUserAdmin(UserAdmin):
         """
         super().save_model(request, obj, form, change)
         if change and "password" in (form.changed_data or ()):
-            from accounts.session_views import _blacklist_all
+            from accounts.session_views import end_all_sessions
             from audit.events import record_auth_event
 
-            revoked = _blacklist_all(obj)
+            revoked = end_all_sessions(obj)
             record_auth_event(request, obj, "password",
                               f"password set in the admin by {request.user.get_username()}; "
                               f"{revoked} refresh token(s) revoked and issued access tokens refused")
