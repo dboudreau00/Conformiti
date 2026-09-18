@@ -115,7 +115,11 @@ jobs:
             -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \
             conformiti-backend:ci
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/api/health/; then echo; exit 0; fi
+            # The code, not curl's exit status: `curl -f` succeeds on a 3xx,
+            # so a container redirecting everything to https looked healthy.
+            if [ "$(curl -s -o /tmp/bare.json -w '%{http_code}' http://localhost:8000/api/health/)" = 200 ]; then
+              cat /tmp/bare.json; echo; exit 0
+            fi
             sleep 2
           done
           docker logs bare
@@ -146,7 +150,9 @@ jobs:
             -e BEHIND_TLS=false -e SEED_DEMO_DATA=true -e EMAIL_PROVIDER=console \
             conformiti-backend:ci
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8001/api/health/; then echo; exit 0; fi
+            if [ "$(curl -s -o /tmp/seeded.json -w '%{http_code}' http://localhost:8001/api/health/)" = 200 ]; then
+              cat /tmp/seeded.json; echo; exit 0
+            fi
             sleep 2
           done
           docker logs api

@@ -11,6 +11,32 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5g], 2026-09-18
+
+One fix, in the image rather than in the application: a `docker run` of the
+0.9.5f image answered every request with a redirect to https. Nothing to do on
+upgrade, and nothing changes for an installation started with `docker compose`,
+which was never affected.
+
+### Fixed
+
+- **The published image redirected plain HTTP to https and nothing answered
+  there.** `BEHIND_TLS` defaults to "not DEBUG", so 0.9.5f pinning `DEBUG` off
+  in the image turned `SECURE_SSL_REDIRECT` on with it, and a container run on
+  its own became a 301 to a port with nothing behind it. The compose file this
+  image is built for sets `BEHIND_TLS=false`, because it serves plain HTTP on
+  the LAN until an operator puts TLS in front of it; the image now defaults the
+  same way, for the same reason. Set `BEHIND_TLS=true` once TLS is terminated
+  ahead of it, exactly as INSTALL.md's production section already says.
+- **A redirect is no longer mistaken for a working server.** `curl -f` fails on
+  a 4xx or a 5xx and succeeds on a 3xx, so the container's own healthcheck and
+  every boot check in both workflows accepted that 301 and called it healthy.
+  All of them now require a 200.
+
+The `0.9.5f` images on the registry predate this and redirect on plain HTTP.
+They run correctly under compose, which sets the variable; use `0.9.5g` or
+`latest` for anything else.
+
 ## [0.9.5f], 2026-09-18
 
 A security release, closing a fourth independent review. It found fourteen

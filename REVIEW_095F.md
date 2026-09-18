@@ -72,6 +72,15 @@ container and fail if the banner does not say `DEBUG=off` or if `/api/`
 serves the browsable API, and `tools/validate.py` refuses a Dockerfile that
 does not pin it.
 
+That fix had a second half, found by publishing it (0.9.5g). `BEHIND_TLS`
+defaults to "not DEBUG", so pinning DEBUG off turned `SECURE_SSL_REDIRECT` on
+with it, and the image answered plain HTTP with a 301 to a port nothing was
+listening on. The image now pins `BEHIND_TLS=false` as well, which is what the
+compose file it is built for has always set. Worth recording for the next
+person: `curl -f` succeeds on a 3xx, so the container's own healthcheck, and
+every boot check in both workflows, called that container healthy. They all
+require a 200 now.
+
 ---
 
 ## Medium

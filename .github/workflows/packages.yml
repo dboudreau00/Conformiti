@@ -153,7 +153,12 @@ jobs:
             "ghcr.io/${{ github.repository_owner }}/conformiti-backend:${version}"
           ok=
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/api/health/ -o /tmp/health.json; then ok=1; break; fi
+            # `curl -f` succeeds on a 3xx and writes nothing, so the published
+            # image answering 301 to https passed this and failed the version
+            # check below with an empty file (0.9.5f).
+            if [ "$(curl -s -o /tmp/health.json -w '%{http_code}' http://localhost:8000/api/health/)" = 200 ]; then
+              ok=1; break
+            fi
             sleep 2
           done
           if [ -z "${ok}" ]; then docker logs api; exit 1; fi
@@ -186,7 +191,9 @@ jobs:
             "ghcr.io/${{ github.repository_owner }}/conformiti-frontend:${version}"
           ok=
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8080/api/health/ -o /tmp/health.json; then ok=1; break; fi
+            if [ "$(curl -s -o /tmp/health.json -w '%{http_code}' http://localhost:8080/api/health/)" = 200 ]; then
+              ok=1; break
+            fi
             sleep 2
           done
           if [ -z "${ok}" ]; then docker logs web; docker logs backend; exit 1; fi
@@ -194,6 +201,6 @@ jobs:
           # Written to a file rather than piped: `grep -q` closes the pipe on
           # its first match, and under pipefail the SIGPIPE'd curl fails the
           # step it just passed.
-          curl -fsS http://localhost:8080/ -o /tmp/index.html
+          test "$(curl -s -o /tmp/index.html -w '%{http_code}' http://localhost:8080/)" = 200
           grep -qi '<div id="root"' /tmp/index.html \
             || { echo "nginx did not serve the built application"; docker logs web; exit 1; }
