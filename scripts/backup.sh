@@ -29,9 +29,8 @@ project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.
 
 # Everything written from here is the installation's secrets, its evidence and
 # its database. A backup that any local account can read is not a backup of a
-# system that encrypts anything (0.9.5h, L-3). The umask covers what this
-# shell creates; the tars are written by a container with its own, so they are
-# chmodded explicitly below.
+# system that encrypts anything (0.9.5h, L-3). This umask covers what this
+# shell creates, which is the database dump: the redirect below happens here.
 umask 077
 
 echo "backup: database"
@@ -40,14 +39,18 @@ gzip -f "$out/db.sql"
 
 for v in media secrets tree; do
   echo "backup: $v volume"
+  # The mode is set INSIDE the container, by the process that creates the
+  # file. The tar runs as root there, so on Linux the archive lands root:root
+  # 644 and a chmod afterwards from the user who invoked this script fails:
+  # 0.9.5h wrote that chmod, hid the failure with `|| true`, and printed a
+  # reassurance it had not earned (0.9.5i, L-2).
   docker run --rm -v "${project}_${v}:/src:ro" -v "$out:/out" alpine:3.20 \
-    tar czf "/out/$v.tgz" -C /src .
+    sh -c "umask 077 && tar czf /out/$v.tgz -C /src . && chmod 600 /out/$v.tgz"
 done
 
-# The archives come from a container running as root with its own umask, so
-# the mode is set here rather than assumed.
-chmod 600 "$out"/*.tgz "$out"/db.sql.gz 2>/dev/null || true
-chmod 700 "$out" 2>/dev/null || true
+# The directory too, and not quietly: if this cannot be set, the archives are
+# readable by anyone who can reach the path and the operator needs to know.
+chmod 700 "$out"
 
-echo "backup: written to $out (mode 600, in a 700 directory)"
+echo "backup: written to $out (archives 600, directory 700)"
 ls -l "$out"

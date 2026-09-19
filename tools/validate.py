@@ -441,6 +441,21 @@ def check_deploy():
         if secret not in ignored:
             err("deploy", f"backend/.dockerignore must exclude {secret}: COPY . . would "
                           f"bake a local key into a published image")
+
+    # The backup holds the signing key, the encryption ring and the
+    # package-signing key. Its tars are written by a container running as
+    # root, so the mode has to be set in there: a chmod afterwards, from the
+    # operator who invoked the script, fails on every Linux host, and 0.9.5h
+    # hid that failure with `|| true` while printing "mode 600" (0.9.5i).
+    backup = read(os.path.join(ROOT, "scripts", "backup.sh"))
+    if backup:
+        if re.search(r"^\s*chmod[^\n]*\|\|\s*true", backup, re.M):
+            err("deploy", "scripts/backup.sh hides a failing chmod behind `|| true`: a "
+                          "backup that cannot be secured must say so, not claim it was")
+        if "umask 077 && tar" not in backup:
+            err("deploy", "scripts/backup.sh must set the mode inside the container that "
+                          "writes the archive (umask 077 && tar ... && chmod 600), because "
+                          "the file lands root-owned and the host cannot change it")
     print(f" 10. deploy artifacts: compose/entrypoint present, DEBUG pinned off in the "
           f"image, {len(used)} env keys cross-checked")
 

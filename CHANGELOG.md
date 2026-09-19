@@ -11,6 +11,38 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5i], 2026-09-19
+
+A sixth review, three findings, two of them defects in fixes 0.9.5h shipped
+the same day. All three are fixed here with a test apiece. Nothing to do on
+upgrade: no migration, no configuration. Details in
+[REVIEW_095I.md](REVIEW_095I.md).
+
+### Fixed
+
+- **Filtering a list by a person said whether that person exists.** 0.9.5h
+  stopped an external auditor naming an account when raising a request and
+  left the filter on the same collection open: a foreign-key filter validates
+  the id, so one that belongs to somebody answered 200 and one that belongs to
+  nobody answered 400. The document register and the audit trail took a
+  person's id the same way, and the trail is readable by an issued auditor
+  with no live grant. All three filter on the number now, so an id nobody
+  holds returns an empty page exactly as a person with no rows does. Filtering
+  by a real id is unchanged. The auditor-surface suite walks every readable
+  collection and refuses a filter that validates a person, the way it already
+  walks the action routes.
+- **The backup could not set the mode it reported.** The archives are written
+  by a container running as root, so on Linux they land `root:root 644` and
+  the `chmod` 0.9.5h added ran afterwards as the operator and failed. `|| true`
+  hid that, and the script printed "mode 600" regardless. The mode is set
+  inside the container that writes the file now, and the directory `chmod` no
+  longer hides its own failure. The static validator refuses a backup script
+  that does either.
+- **A questionnaire link that is not open returns its state and nothing
+  else.** 0.9.5h removed the vendor's name, the sender and the private
+  message, and left the timestamps, so a dead link still said when the vendor
+  filed. The changelog sentence claimed otherwise; the code now matches it.
+
 ## [0.9.5h], 2026-09-18
 
 A security release, closing a fifth independent review. It found fourteen

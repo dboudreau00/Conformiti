@@ -5,13 +5,29 @@ it to the people who review it: administrators, auditors, and managers with
 view-all. There is deliberately no write/update/delete surface — the trail is
 immutable evidence.
 """
+import django_filters as filters
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
+from config.personfilters import person
+
 from .models import AuditLog
 from .serializers import AuditLogSerializer
+
+
+class AuditLogFilter(filters.FilterSet):
+    """``user`` as a number. The trail is readable by an issued auditor with
+    no live grant, by the product decision recorded in REVIEW_095F.md, so the
+    filter on it must not answer whether an id belongs to anybody
+    (0.9.5i, L-1)."""
+
+    user = person("user_id")
+
+    class Meta:
+        model = AuditLog
+        fields = ["action", "object_type", "user"]
 
 
 class CanViewAuditLog(BasePermission):
@@ -29,7 +45,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditLog.objects.select_related("user").all()
     serializer_class = AuditLogSerializer
     permission_classes = [CanViewAuditLog]
-    filterset_fields = ["action", "object_type", "user"]
+    filterset_class = AuditLogFilter
     search_fields = [
         "object_type", "object_id", "detail", "ip_address",
         "user__username", "user__first_name", "user__last_name",

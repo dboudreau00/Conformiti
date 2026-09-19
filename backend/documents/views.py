@@ -1,4 +1,5 @@
 """Document-management API: folders, permissions, documents, reviews, templates."""
+import django_filters as filters
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -15,6 +16,8 @@ from .models import (
     FolderPermission,
     FormTemplate,
 )
+from config.personfilters import person
+
 from .access import accessible_folder_ids
 from . import monitor
 from .downloads import serve_inline, serve_stored_file
@@ -186,10 +189,23 @@ class FolderPermissionViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+class DocumentFilter(filters.FilterSet):
+    """``owner`` as a number, for the same reason as the request list: an
+    auditor reads this collection, scoped to the folders granted with their
+    package, and a ModelChoiceFilter would answer whether an id is a person
+    (0.9.5i, L-1)."""
+
+    owner = person("owner_id")
+
+    class Meta:
+        model = Document
+        fields = ["folder", "status", "owner", "control", "review_cadence"]
+
+
 class DocumentViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentSerializer
     permission_classes = [IsAuthenticated, DocumentAccessPermission]
-    filterset_fields = ["folder", "status", "owner", "control", "review_cadence"]
+    filterset_class = DocumentFilter
     search_fields = ["name", "description"]
     ordering_fields = ["updated_at", "next_review_date", "name"]
 

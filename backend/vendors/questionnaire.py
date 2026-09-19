@@ -222,8 +222,12 @@ def public_state(invite, request=None):
     returned to whoever held the URL, for as long as the row existed (L-6).
     """
     if invite.status != "open":
-        return {"status": invite.status, "questions": [], "answers": {},
-                "expires_at": invite.expires_at, "submitted_at": invite.submitted_at}
+        # The state, and nothing else. 0.9.5h removed the names and left the
+        # timestamps, which still told whoever holds a dead URL when the
+        # vendor filed; the changelog sentence was wider than the code
+        # (0.9.5i, L-3). The page needs the state to say "this link has
+        # expired", and needs nothing more to say it.
+        return {"status": invite.status, "questions": [], "answers": {}}
     if invite.opened_at is None:
         invite.opened_at = timezone.now()
         invite.save(update_fields=["opened_at"])

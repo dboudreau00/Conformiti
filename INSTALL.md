@@ -80,14 +80,14 @@ It needs Compose v2.24 or newer.
 in both commands, because `pull` and `up` each read it:
 
 ```bash
-export CONFORMITI_VERSION=0.9.5h
+export CONFORMITI_VERSION=0.9.5i
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 A container will tell you what it is: `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
-`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5h` carries the
+`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5i` carries the
 commit it was built from in `org.opencontainers.image.revision`.
 
 Building from source remains the default, and stays supported: the images are
@@ -356,7 +356,7 @@ with `__Host-` / `__Secure-` prefixes over https. Upgrading from 0.6.0 or
 earlier signs everyone out once. Set `AUTH_TRANSPORT=header` to keep tokens in
 `localStorage` as before. API clients using a Bearer header are unaffected.
 
-**From 0.9.5h, signing in with cookies is CSRF-checked.** The check used to
+**From 0.9.5i, signing in with cookies is CSRF-checked.** The check used to
 run inside cookie authentication, which meant it only ever guarded a request
 that already had a session, and the endpoints that hand out the cookies have
 none by definition: a cross-site form post could sign a visitor's browser into

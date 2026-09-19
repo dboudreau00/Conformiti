@@ -34,6 +34,10 @@ from documents.downloads import serve_stored_file
 from notifications import webhooks
 
 from . import access
+import django_filters as filters
+
+from config.personfilters import person
+
 from .models import EvidencePackage, PackageGrant, PbcItem, PbcRequest
 from .serializers import PbcItemSerializer, PbcRequestSerializer
 from .snapshot import digest_and_size, stamp
@@ -52,10 +56,27 @@ def _side(user, package):
     return None
 
 
+class PbcRequestFilter(filters.FilterSet):
+    """``assignee`` as a number, so the filter cannot be asked who exists.
+
+    M-2 closed this on the write path in 0.9.5h and left it open here, which
+    is the same shape one door along: an auditor may GET this collection, and
+    a ModelChoiceFilter answers 400 for an id that is nobody and 200 for an id
+    that is somebody (0.9.5i, L-1)."""
+
+    assignee = person("assignee_id")
+
+    class Meta:
+        from .models import PbcRequest
+
+        model = PbcRequest
+        fields = ["package", "status", "assignee", "priority"]
+
+
 class PbcRequestViewSet(viewsets.ModelViewSet):
     serializer_class = PbcRequestSerializer
     permission_classes = [IsAuthenticated]
-    filterset_fields = ["package", "status", "assignee", "priority"]
+    filterset_class = PbcRequestFilter
     search_fields = ["reference", "title", "description", "control_ref"]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
