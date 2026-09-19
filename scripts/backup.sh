@@ -27,6 +27,13 @@ fi
 # normalises in ways that are easy to get wrong.
 project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$db")"
 
+# Everything written from here is the installation's secrets, its evidence and
+# its database. A backup that any local account can read is not a backup of a
+# system that encrypts anything (0.9.5h, L-3). The umask covers what this
+# shell creates; the tars are written by a container with its own, so they are
+# chmodded explicitly below.
+umask 077
+
 echo "backup: database"
 docker compose exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$out/db.sql"
 gzip -f "$out/db.sql"
@@ -37,5 +44,10 @@ for v in media secrets tree; do
     tar czf "/out/$v.tgz" -C /src .
 done
 
-echo "backup: written to $out"
+# The archives come from a container running as root with its own umask, so
+# the mode is set here rather than assumed.
+chmod 600 "$out"/*.tgz "$out"/db.sql.gz 2>/dev/null || true
+chmod 700 "$out" 2>/dev/null || true
+
+echo "backup: written to $out (mode 600, in a 700 directory)"
 ls -l "$out"

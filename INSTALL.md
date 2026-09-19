@@ -80,14 +80,14 @@ It needs Compose v2.24 or newer.
 in both commands, because `pull` and `up` each read it:
 
 ```bash
-export CONFORMITI_VERSION=0.9.5g
+export CONFORMITI_VERSION=0.9.5h
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 A container will tell you what it is: `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
-`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5g` carries the
+`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5h` carries the
 commit it was built from in `org.opencontainers.image.revision`.
 
 Building from source remains the default, and stays supported: the images are
@@ -102,12 +102,26 @@ pulls what it pushed and boots it before the run is allowed to pass.
    CSRF_TRUSTED_ORIGINS=https://grc.example.com
    CORS_ALLOWED_ORIGINS=https://grc.example.com
    BEHIND_TLS=true            # once TLS is terminated in front of nginx
+   NUM_PROXIES=2              # the terminator AND the shipped nginx
    SECURE_HSTS_SECONDS=31536000
    EMAIL_PROVIDER=smtp        # + EMAIL_HOST / EMAIL_HOST_USER / EMAIL_HOST_PASSWORD
    POSTGRES_PASSWORD=<something long>
    REDIS_PASSWORD=<letters and digits>
    ```
+   `NUM_PROXIES` is how many hops back along `X-Forwarded-For` the client's
+   address is. The default of 1 is the shipped nginx on its own. Put a TLS
+   terminator in front of it, which is the next step, and there are two:
+   leaving it at 1 makes the terminator's address every visitor's address, so
+   they share one rate-limit bucket and a single unauthenticated caller can
+   spend the installation's login budget for everybody. The stack warns at
+   boot if `BEHIND_TLS` is on and this is still 1. Set it to 1 if your
+   terminator replaces the header rather than appending to it, and 0 if the
+   API is exposed with nothing in front at all.
 2. Terminate TLS (Caddy, Traefik, a load balancer) in front of port 8080.
+   Your terminator must **set** `X-Forwarded-Proto: https`, not forward
+   whatever the client sent; all of them do by default. Conformiti only
+   believes that header once `BEHIND_TLS=true` says a terminator exists, so
+   one that forwards the client's value instead will redirect in a loop.
 3. Create your own administrator and retire the demo data:
    ```bash
    docker compose exec backend python manage.py createsuperuser
@@ -342,7 +356,7 @@ with `__Host-` / `__Secure-` prefixes over https. Upgrading from 0.6.0 or
 earlier signs everyone out once. Set `AUTH_TRANSPORT=header` to keep tokens in
 `localStorage` as before. API clients using a Bearer header are unaffected.
 
-**From 0.9.5g, signing in with cookies is CSRF-checked.** The check used to
+**From 0.9.5h, signing in with cookies is CSRF-checked.** The check used to
 run inside cookie authentication, which meant it only ever guarded a request
 that already had a session, and the endpoints that hand out the cookies have
 none by definition: a cross-site form post could sign a visitor's browser into

@@ -116,6 +116,11 @@ _ALSO_NOT_PUBLIC = tuple(ipaddress.ip_network(n) for n in (
     "192.0.0.0/24",       # RFC 6890, IETF protocol assignments
     "198.18.0.0/15",      # RFC 2544, benchmarking
     "64:ff9b::/96",       # RFC 6052, IPv4/IPv6 translation
+    # Deprecated site-local unicast. Python reports it as global, so every
+    # rule in ip_is_public missed it, and it is still routed on plenty of
+    # internal networks (0.9.5h, M-5). Listed explicitly rather than using
+    # ip.is_site_local, which the standard library deprecates with it.
+    "fec0::/10",          # RFC 3879, site-local
 ))
 
 
@@ -249,6 +254,17 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
         # Check the proxy itself: it is the address this process will dial.
         check_shape(proxy, allowed_hosts=None, allowed_ports=None,
                     deny_internal_names=False, allowed_schemes=("http", "https"))
+        # A proxy resolves names; it does not change what a literal address
+        # is. Returning here unconditionally meant https://169.254.169.254/
+        # left through the proxy unexamined whenever one was configured, on a
+        # URL a tenant administrator had typed (0.9.5h, M-5).
+        if require_public:
+            try:
+                literal = ipaddress.ip_address(host.strip("[]"))
+            except ValueError:
+                literal = None
+            if literal is not None and not ip_is_public(str(literal)):
+                raise OutboundError("private", "The host must resolve to a public address.")
         return None
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)

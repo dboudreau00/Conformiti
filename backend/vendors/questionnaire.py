@@ -213,8 +213,18 @@ def revoke(invite, request):
 # The vendor's side
 # --------------------------------------------------------------------------- #
 def public_state(invite, request=None):
-    """What the public page shows. Never the vendor's other data."""
-    if invite.status == "open" and invite.opened_at is None:
+    """What the public page shows. Never the vendor's other data.
+
+    A link that is no longer open says so and stops there. Until 0.9.5h the
+    draft answers were cleared for a revoked, expired or submitted invite
+    while the vendor's name, the organisation's name, the sender, the address
+    it was sent to and the private message that went with it were still
+    returned to whoever held the URL, for as long as the row existed (L-6).
+    """
+    if invite.status != "open":
+        return {"status": invite.status, "questions": [], "answers": {},
+                "expires_at": invite.expires_at, "submitted_at": invite.submitted_at}
+    if invite.opened_at is None:
         invite.opened_at = timezone.now()
         invite.save(update_fields=["opened_at"])
     org = tenancy.organisation_name()

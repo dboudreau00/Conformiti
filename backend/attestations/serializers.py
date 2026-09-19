@@ -37,6 +37,29 @@ class PbcRequestSerializer(serializers.ModelSerializer):
     days_until_due = serializers.SerializerMethodField()
     can = serializers.SerializerMethodField()
 
+    def __init__(self, *args, **kwargs):
+        """Narrow ``assignee`` to the people this caller may already name.
+
+        An external auditor may raise a request on a package they hold, which
+        is the point of the list, but the people are the organisation's. The
+        field used to accept any account in the workspace and answer with
+        ``assignee_name``, so an issued auditor read the staff directory that
+        ``/api/users/`` refuses them, one sequential pk at a time (0.9.5h).
+
+        An empty queryset rather than a permission check: it makes a pk that
+        exists and a pk that does not produce the same 400, and a check that
+        answered 403 for one and 400 for the other would be the same oracle
+        with different numbers.
+        """
+        super().__init__(*args, **kwargs)
+        from accounts.permissions import is_external_auditor
+
+        field = self.fields.get("assignee")
+        if field is not None:
+            user = getattr(self.context.get("request"), "user", None)
+            if is_external_auditor(user):
+                field.queryset = field.queryset.none()
+
     class Meta:
         model = PbcRequest
         fields = [
@@ -284,9 +307,23 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
         return PackageEvidence.objects.filter(package_control__package=obj).count()
 
     def get_live_grants(self, obj):
+        """Who holds this package, to the party that issued it.
+
+        ``PackageGrantViewSet`` filters a grantee to their own row on purpose.
+        This payload published every live grant to everyone who could read the
+        package, so two audit firms issued the same sealed package saw each
+        other's people by name (0.9.5h, L-1). An issued auditor sees their own
+        row; the organisation sees them all.
+        """
+        live = [g for g in obj.grants.all() if g.is_live]
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_authenticated", False) \
+                and not user.can_manage_frameworks:
+            live = [g for g in live if g.user_id == user.pk]
         return [
             {"username": g.username, "full_name": g.full_name, "expires_at": g.expires_at}
-            for g in obj.grants.all() if g.is_live
+            for g in live
         ]
 
     def get_successors(self, obj):

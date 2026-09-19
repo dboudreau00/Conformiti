@@ -11,6 +11,103 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5h], 2026-09-18
+
+A security release, closing a fifth independent review. It found fourteen
+things; thirteen are fixed here with a test apiece and one is deferred with
+its reasoning written down. Details, including the two places where the
+reviewer's suggested fix would have reintroduced an older defect, are in
+[REVIEW_095H.md](REVIEW_095H.md). One behaviour change is worth knowing about
+before you upgrade, and it is the third item below.
+
+### Fixed
+
+- **Signing in minted a refresh token before the second factor.** The login
+  serializer authenticated and issued in one call, so a correct password with
+  no code left a 7-day refresh token in the database, and moved `last_login`,
+  for a session no factor had authorised. The browser never received it: a
+  database dump, a read replica and the Django admin did, and unlike the TOTP
+  secret stored beside it a signed token needs no key to use. Tokens are now
+  issued after the factor is accepted, and nothing is written on a challenge
+  or a wrong code.
+- **An issued auditor could read the staff directory one name at a time.**
+  `/api/users/` refuses them, but the assignee field on a request-list line
+  accepted any account in the workspace and answered with that person's name,
+  so sequential ids returned the directory. An auditor now names nobody: they
+  raise the request, and the organisation routes it, which is how a request
+  list works anyway. An unknown id and a real one are refused identically.
+- **An auditor role could also hold capabilities, and they took effect.** The
+  shipped Auditor role is read-only and locked, but a custom one could be
+  given `view-all` or the folders capability beside it, and the capability
+  checks in folder and package access run before the auditor cap. Such an
+  account could be issued an engagement and then read every folder and every
+  package on the installation, drafts included, with no grant at all. A
+  capability now confers nothing on an auditor, wherever it is read from.
+  **This changes behaviour for anyone who did that deliberately**: the flags
+  are left exactly as configured, nothing is migrated or stripped, but they no
+  longer grant anything, and the combination is refused on new roles. If you
+  were using the auditor role to give staff access, those people need an
+  ordinary role.
+- **A client could tell the server it was on https when it was not.** The
+  proxy header was trusted whenever `DEBUG` was off, which includes the
+  shipped stack, where nginx serves plain HTTP. Nothing was stolen, because
+  cookie flags follow `BEHIND_TLS`, but absolute URLs came out as https, which
+  is not the address an OIDC redirect or a SAML ACS was registered at. It is
+  trusted now only when `BEHIND_TLS` says a terminator exists.
+- **The production checklist put every visitor in one rate-limit bucket.**
+  Step 2 says to terminate TLS in front of nginx and never mentioned
+  `NUM_PROXIES`, so after following it the throttles keyed on the
+  terminator's address: one unauthenticated caller could spend the
+  installation's login budget for everybody. It is in the checklist and in
+  `.env.example` now, and the stack warns at boot if `BEHIND_TLS` is on and
+  it is still 1.
+- **Two more addresses the outbound guard let through.** `fec0::/10` is
+  deprecated site-local unicast that Python reports as global, so every rule
+  missed it; and a URL naming a literal address was not checked at all when an
+  HTTP proxy was configured, because a proxy resolves names and the check was
+  skipped wholesale. The Jira base URL is the caller that matters: it takes
+  any public host, and whoever can manage users can set it.
+- **Signing out was the one cookie endpoint with no CSRF check.** 0.9.5f put
+  the check on the three that set the auth cookies and missed the one that
+  clears them, which is the endpoint whose whole purpose is the case where the
+  access cookie is gone, so the check inside cookie authentication never runs.
+  The effect was a forced sign-out, not a takeover.
+- **A sealed package published its recipient list.** The grant collection
+  filters a recipient to their own row on purpose; the package payload
+  returned every live grant with names and expiry, so two audit firms issued
+  the same package saw each other's people. An auditor sees their own row now.
+- **Changing the Jira host kept the saved token and sent it there.** An empty
+  token field means "keep the saved one", which is right for the same host and
+  wrong for a new one: a second administrator could point the integration at
+  themselves and collect the credential. Moving the host now clears the token
+  and disables the integration until a new one is supplied.
+- **An external auditor could edit a document they owned.** Folder writes are
+  capped at view for an auditor; document writes took the owner short-circuit
+  first. Ownership no longer overrides the cap.
+- **A dead questionnaire link still named everyone on it.** Draft answers were
+  cleared when a link expired, was revoked or was submitted; the vendor's
+  name, the organisation's name, the sender, the address it went to and the
+  private message were still returned to whoever held the URL. A link that is
+  not open says only that.
+- **The CSV guard read past its own rule.** A cell starting with whitespace
+  and then `=` was not prefixed, and a spreadsheet ignores that whitespace.
+  The value itself is still stored exactly as written: an export is evidence.
+- **The backup wrote the key ring world-readable.** `secrets.tgz` holds the
+  signing key, the field-encryption ring and the package-signing key, and the
+  archive was created 644 by a container running as root. The script now sets
+  a umask and the files to 600 in a 700 directory.
+
+### Deferred
+
+- **A passkey cannot yet be used as proof to change a factor.** Re-authenticating
+  takes a password, an authenticator code or a backup code, which an account
+  with only a passkey and no spent codes does not have. Accepting an assertion
+  here properly means a two-step ceremony with stored challenge state, origin
+  and clone detection, the same machine as signing in; anything less would be
+  a new way around the check rather than a fix for it. Enrolling a first
+  passkey issues backup codes, and an administrator's MFA reset remains the
+  recovery path. REVIEW_095H.md carries the reasoning.
+
 ## [0.9.5g], 2026-09-18
 
 One fix, in the image rather than in the application: a `docker run` of the

@@ -16,6 +16,45 @@ class RoleSerializer(serializers.ModelSerializer):
     # say so (400) instead of the database (500).
     workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
 
+    CAPABILITIES = ("can_manage_users", "can_manage_frameworks", "can_manage_documents",
+                    "can_manage_folders", "can_view_all")
+
+    def validate(self, attrs):
+        """An auditor role holds no capabilities.
+
+        The shipped Auditor role is ``is_auditor`` alone and is locked, but a
+        custom role was not: any combination stored, and ``PackageGrant`` only
+        asks for ``is_auditor``, so a role with ``can_view_all`` beside it
+        could be issued an engagement and then read the whole programme. The
+        capability short-circuits in documents.access and attestations.access
+        now run after the auditor cap, so such a role is contained at read
+        time too; this stops another one being made (0.9.5h, M-3).
+
+        Merged with the stored row because PATCH is partial: adding a
+        capability to an existing auditor role sends only that one field.
+        """
+        merged = dict(attrs)
+        if self.instance is not None:
+            for field in ("is_auditor", *self.CAPABILITIES):
+                merged.setdefault(field, getattr(self.instance, field))
+        if not (merged.get("is_auditor") and any(merged.get(c) for c in self.CAPABILITIES)):
+            return attrs
+        # A role that already holds the combination keeps it: renaming or
+        # redescribing one must not be refused, and refusing it would amount
+        # to making the operator strip flags that this release deliberately
+        # does not strip for them. What is refused is introducing the mix --
+        # creating one, or flipping either half onto a role that has the
+        # other. _cap contains the legacy rows at read time.
+        already = self.instance is not None and self.instance.is_auditor and any(
+            getattr(self.instance, c) for c in self.CAPABILITIES)
+        if already:
+            return attrs
+        held = ", ".join(c for c in self.CAPABILITIES if merged.get(c))
+        raise serializers.ValidationError({
+            "is_auditor": "An auditor role holds no capabilities of its own: the "
+                          f"engagement is what an auditor is granted. Remove {held}, "
+                          "or make this an ordinary role."})
+
     class Meta:
         model = Role
         fields = [
@@ -243,22 +282,48 @@ class MfaChallenge(APIException):
 class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
     """Standard username/password login, plus a second factor when the account
     has one: a TOTP code (``otp``) or a passkey assertion (``passkey``).
-    Password is verified first (by super()); the challenge step then names
-    the factors on offer and, when a passkey is among them, includes the
-    options for it. Tokens are only handed back on the final ``return``, so
-    nothing leaks on the challenge step."""
+
+    The password is checked first, by the grandparent, which authenticates and
+    stops there. Minting happens at the end, after the factor has been
+    accepted, because ``TokenObtainPairSerializer.validate`` does both at once:
+    calling it first left a refresh token in OutstandingToken, and moved
+    last_login, for a session the second factor had not authorised yet. The
+    browser never saw that token; a database dump, a replica and the admin do,
+    and a signed JWT needs no key ring to use, unlike the TOTP secret stored
+    beside it (0.9.5h, M-1).
+    """
+
+    def _authenticate_only(self, attrs):
+        """The password check, without the tokens.
+
+        ``TokenObtainSerializer.validate`` is the grandparent: it authenticates,
+        sets ``self.user`` and returns an empty dict. Addressed through the MRO
+        rather than imported, so a SimpleJWT that changes the hierarchy fails
+        here loudly rather than silently minting again.
+        """
+        return super(TokenObtainPairSerializer, self).validate(attrs)
+
+    def _issue(self):
+        """What the parent would have returned, now that a factor has passed."""
+        from django.contrib.auth.models import update_last_login
+        from rest_framework_simplejwt.settings import api_settings
+
+        refresh = self.get_token(self.user)
+        if api_settings.UPDATE_LAST_LOGIN:
+            update_last_login(None, self.user)
+        return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
     def validate(self, attrs):
         from . import passkeys
 
-        data = super().validate(attrs)  # authenticates; sets self.user; builds tokens
+        self._authenticate_only(attrs)  # sets self.user; mints nothing
         user = self.user
         if user.workspace_id and not user.is_superuser and not user.workspace.is_active:
             raise AuthenticationFailed("This workspace is archived.", "workspace_archived")
         device = getattr(user, "mfa_device", None)
         totp_on = bool(device and device.enabled)
         if not (totp_on or user.passkeys.exists()):
-            return data
+            return self._issue()
 
         request = self.context.get("request")
         otp = (self.initial_data.get("otp") or "").strip()
@@ -268,7 +333,7 @@ class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
             # which a passkey-only person also holds.
             if not ((totp_on and device.verify(otp)) or user.verify_backup_code(otp)):
                 raise AuthenticationFailed("Invalid authentication code.", "mfa_invalid")
-            return data
+            return self._issue()
         if assertion is not None:
             try:
                 passkeys.finish_login(user, request, assertion)
@@ -276,7 +341,7 @@ class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
                 from audit.events import record_auth_event
                 record_auth_event(request, user, "mfa", f"passkey refused ({exc.code})")
                 raise AuthenticationFailed(exc.message, "mfa_invalid")
-            return data
+            return self._issue()
         # 400 with a flag the login screen branches on to prompt for a factor.
         payload = {"mfa_required": True, "factors": passkeys.factors(user)}
         if payload["factors"]["passkey"]:

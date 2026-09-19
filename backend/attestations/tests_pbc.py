@@ -1,7 +1,8 @@
 """
 The PBC request list: who raises a line, who answers it, who judges it, and
 who can read what came back. The access tests are the ones that matter: the
-assignee route is a deliberate, narrow disclosure and must stay narrow.
+assignee route is a deliberate, narrow disclosure and must stay narrow, and
+the party that names a person is always the organisation.
 """
 from django.core import mail
 from django.test import override_settings
@@ -81,11 +82,65 @@ class RaiseAndEditTests(PbcBase):
         self.assertEqual(r.status_code, 400)
 
 
+class AssigneeDisclosureTests(PbcBase):
+    """M-2, 0.9.5h. /api/users/ is denied to an auditor because it is the
+    staff directory. `assignee` was a writable foreign key onto every account
+    in the workspace and the reply carried `assignee_name`, so an auditor with
+    a live grant read that directory one sequential pk at a time."""
+
+    def test_an_auditor_cannot_name_anybody(self):
+        r = self.raise_line(self.auditor_client, assignee=self.owner.pk)
+        self.assertEqual(r.status_code, 400, getattr(r, "data", r))
+        body = str(r.data)
+        self.assertNotIn("Owen", body)
+        self.assertNotIn(self.owner.username, body)
+
+    def test_a_real_pk_and_an_unknown_one_look_the_same(self):
+        """The refusal must not say which pks are people.
+
+        The message echoes the pk the caller sent, which tells them nothing
+        they did not already know; what matters is that the code and the
+        wording are identical either way, so the reply cannot be used to
+        enumerate."""
+        real = self.raise_line(self.auditor_client, assignee=self.owner.pk)
+        unknown = self.raise_line(self.auditor_client, assignee=999999)
+        self.assertEqual(real.status_code, unknown.status_code)
+        self.assertEqual(real.data["assignee"][0].code, unknown.data["assignee"][0].code)
+        self.assertEqual(str(real.data["assignee"][0]).replace(str(self.owner.pk), "N"),
+                         str(unknown.data["assignee"][0]).replace("999999", "N"))
+
+    def test_the_auditor_may_still_raise_a_line(self):
+        r = self.raise_line(self.auditor_client)
+        self.assertEqual(r.status_code, 201, getattr(r, "data", r))
+        self.assertEqual(r.data["assignee_name"], "")
+
+    def test_patching_an_assignee_onto_their_own_line_is_refused_too(self):
+        line = self.raise_line(self.auditor_client).data
+        r = self.auditor_client.patch(f"/api/pbc-requests/{line['id']}/",
+                                      {"assignee": self.owner.pk}, format="json")
+        self.assertEqual(r.status_code, 400, getattr(r, "data", r))
+
+    def test_the_organisation_assigns_as_before(self):
+        line = self.raise_line(self.auditor_client).data
+        r = self.manager_client.patch(f"/api/pbc-requests/{line['id']}/",
+                                      {"assignee": self.owner.pk}, format="json")
+        self.assertEqual(r.status_code, 200, getattr(r, "data", r))
+        self.assertEqual(r.data["assignee_name"], "Owen Tester")
+
+
 class AnswerTests(PbcBase):
     def setUp(self):
         super().setUp()
-        self.line = self.raise_line(self.auditor_client, assignee=self.owner.pk,
-                                    due_date=str(timezone.localdate() + timezone.timedelta(days=3))).data
+        # The auditor raises the line and names nobody: the staff list is the
+        # organisation's, and an auditor naming a person was how the directory
+        # they are refused at /api/users/ could be read one pk at a time
+        # (0.9.5h, M-2). The organisation routes it, which is the next line.
+        raised = self.raise_line(
+            self.auditor_client,
+            due_date=str(timezone.localdate() + timezone.timedelta(days=3))).data
+        self.line = self.manager_client.patch(
+            f"/api/pbc-requests/{raised['id']}/",
+            {"assignee": self.owner.pk}, format="json").data
         self.hidden = make_doc(self.tree.ctrl2, owner=self.manager, name="Hidden report", content=b"secret")
         grant(self.tree.ctrl1, user=self.owner, level=VIEW)   # Owen's own control folder
 

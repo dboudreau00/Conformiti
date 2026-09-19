@@ -271,3 +271,76 @@ class OneLiveLinkTests(APITestBase):
             any("FOR UPDATE" in q["sql"].upper() and '"vendors_vendor"' in q["sql"].lower()
                 for q in queries.captured_queries),
             "the vendor row was not locked before its live links were swapped")
+
+
+@override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local",
+                   ORGANISATION_NAME="Acme Ltd", PUBLIC_URL="https://grc.acme.example")
+class DeadLinkDisclosureTests(APITestBase):
+    """L-6, 0.9.5h. PUT and submit call ``_require_live``; GET did not. After
+    a link expired, was revoked or was submitted, the unauthenticated page
+    still returned the vendor's name, the organisation's name, the sender,
+    the address it was sent to and the private message that went with it. The
+    draft answers were cleared; the metadata was not."""
+
+    def setUp(self):
+        super().setUp()
+        self.vendor = _vendor(owner=self.owner)
+        r = self.client_for(self.manager).post(
+            f"/api/vendors/{self.vendor.pk}/questionnaire/send/",
+            {"message": "Please complete by Friday, Dana"}, format="json")
+        self.token = r.data["link"].rsplit("/", 1)[1]
+        self.invite = QuestionnaireInvite.objects.get(pk=r.data["id"])
+        self.anon = APIClient()
+
+    def kill(self, how):
+        """`status` is computed from the timestamps, so it is made dead the
+        way the product makes it dead."""
+        if how == "expired":
+            self.invite.expires_at = timezone.now() - timezone.timedelta(days=1)
+            self.invite.save(update_fields=["expires_at"])
+        elif how == "revoked":
+            self.invite.revoked_at = timezone.now()
+            self.invite.save(update_fields=["revoked_at"])
+        else:
+            self.invite.submitted_at = timezone.now()
+            self.invite.save(update_fields=["submitted_at"])
+        self.invite.refresh_from_db()
+        self.assertEqual(self.invite.status, how)
+
+    def revive(self):
+        """Back to open between the states, rather than re-running setUp,
+        which would send a second questionnaire to the same vendor and hit
+        the one-live-link rule."""
+        self.invite.expires_at = timezone.now() + timezone.timedelta(days=7)
+        self.invite.revoked_at = None
+        self.invite.submitted_at = None
+        self.invite.save(update_fields=["expires_at", "revoked_at", "submitted_at"])
+        self.invite.refresh_from_db()
+
+    def test_a_dead_link_names_nobody(self):
+        for how in ("expired", "revoked", "submitted"):
+            with self.subTest(state=how):
+                self.revive()
+                self.kill(how)
+                body = str(self.anon.get(f"/api/questionnaire/{self.token}/").data)
+                self.assertNotIn(self.vendor.name, body)
+                self.assertNotIn(self.invite.sent_to, body)
+                self.assertNotIn("Acme Ltd", body)
+                self.assertNotIn("Dana", body)
+
+    def test_it_still_says_which_state_it_is_in(self):
+        """The vendor has to be told the link is dead, which is not the same
+        as being told whose it was."""
+        self.kill("expired")
+        r = self.anon.get(f"/api/questionnaire/{self.token}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["status"], "expired")
+        self.assertEqual(r.data["answers"], {})
+        self.assertEqual(r.data["questions"], [])
+
+    def test_a_live_link_is_unchanged(self):
+        r = self.anon.get(f"/api/questionnaire/{self.token}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["vendor"], self.vendor.name)
+        self.assertTrue(r.data["questions"])
+        self.assertEqual(r.data["organisation"], "Acme Ltd")

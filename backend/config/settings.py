@@ -403,6 +403,13 @@ REST_FRAMEWORK = {
     # the right hop out of X-Forwarded-For; left unset it trusts the WHOLE
     # header, so an attacker varying it gets a fresh throttle bucket per
     # request and every limit below becomes decorative. 1 = the shipped nginx.
+    # How many proxies sit in front of this process. DRF takes the client's
+    # address from that many hops back along X-Forwarded-For, and every
+    # throttle keys on it. The default of 1 is the shipped nginx. Put a TLS
+    # terminator in front of that, which is what INSTALL.md's production
+    # section tells you to do, and there are two: leaving this at 1 makes the
+    # terminator's address the client for every visitor, so they share one
+    # login bucket and one caller can spend it for everybody (0.9.5h, M-4).
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
     # Throttling: limit anonymous traffic globally; the login endpoint adds a
     # tighter scoped limit (see config/urls.py) to blunt password brute-forcing.
@@ -583,9 +590,24 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 
 BEHIND_TLS = env_bool("BEHIND_TLS", not DEBUG)
-if not DEBUG:
-    # We sit behind nginx/another proxy that terminates TLS.
+if BEHIND_TLS:
+    # Trust X-Forwarded-Proto only where the operator has said a TLS
+    # terminator is in front. This used to be set whenever DEBUG was off,
+    # which includes the shipped compose stack, where BEHIND_TLS is false
+    # and nginx listens on plain HTTP: any client could then send
+    # `X-Forwarded-Proto: https` and make request.is_secure() true. Cookie
+    # Secure flags follow BEHIND_TLS so nothing was stolen, but
+    # build_absolute_uri emitted https for the OIDC redirect_uri and the SAML
+    # ACS, which are not the addresses those were registered at, and
+    # passkeys.origins() reads the same answer (0.9.5h, M-6).
+    #
+    # The forwarder itself is not the place for this. nginx cannot know which
+    # hop it can trust, and making it overwrite the header with $scheme puts
+    # 0.9.5f's L-4 back: this container listens on 80, so an outer
+    # terminator's https would die here. Your terminator must SET the header
+    # rather than forward the client's; every one of them does by default.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+if not DEBUG:
     SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", BEHIND_TLS)
     SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", BEHIND_TLS)
     CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", BEHIND_TLS)
@@ -593,6 +615,22 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 0)
     SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
     SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+
+if BEHIND_TLS and int(os.getenv("NUM_PROXIES", "1")) < 2 and not DEBUG:
+    # Not an error: a terminator that rewrites X-Forwarded-For to a single
+    # hop is a real configuration. It is a warning because the common case is
+    # that nobody thought about it, and the symptom -- everyone sharing one
+    # rate-limit bucket -- looks like an attack rather than a setting.
+    import warnings
+
+    warnings.warn(
+        "BEHIND_TLS is on and NUM_PROXIES is 1. With a TLS terminator in front of "
+        "the shipped nginx there are two hops before the client, and every rate "
+        "limit is keyed on the address at that depth: at 1 they all share the "
+        "terminator's. Set NUM_PROXIES=2 unless your terminator replaces "
+        "X-Forwarded-For rather than appending to it.",
+        RuntimeWarning, stacklevel=2,
+    )
 
 # --- Authentication transport -----------------------------------------------
 # "cookie"  the tokens travel as HttpOnly cookies, so script cannot read them,

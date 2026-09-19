@@ -66,6 +66,16 @@ class SessionClearView(APIView):
     def post(self, request):
         from audit.events import record_logout
 
+        # 0.9.5f put this on the three endpoints that SET the auth cookies and
+        # missed the one that clears them. The check inside cookie
+        # authentication only runs once an access cookie has authenticated,
+        # and the whole reason this endpoint exists is the case where that
+        # cookie is gone and the refresh cookie is not. SameSite=Lax covers
+        # most of it; Chrome's two-minute Lax+POST window does not (0.9.5h).
+        refused = cookie_auth.csrf_required(request)
+        if refused:
+            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
+
         revoked = 0
         raw = (request.data.get("refresh")
                or request.COOKIES.get(cookie_auth.refresh_cookie_name()))

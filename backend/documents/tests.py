@@ -353,6 +353,40 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(self.client_for().get("/api/folders/tree/").status_code, 401)
 
 
+class AuditorWriteTests(APITestBase):
+    """L-5, 0.9.5h. Folder writes go through effective_access, which caps an
+    external auditor at view. Document writes went round it: the owner
+    short-circuit returned True before anything asked what the caller was, so
+    an auditor made the owner of a document in a folder they had been granted
+    could edit its name, status and description."""
+
+    def setUp(self):
+        super().setUp()
+        self.doc = make_doc(self.tree.ctrl1, owner=self.auditor, name="Owned by the auditor")
+        grant(self.tree.ctrl1, user=self.auditor, level=VIEW)
+
+    def test_an_auditor_cannot_edit_a_document_they_own(self):
+        r = self.client_for(self.auditor).patch(
+            f"/api/documents/{self.doc.pk}/", {"name": "Renamed"}, format="json")
+        self.assertEqual(r.status_code, 403, getattr(r, "data", r))
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.name, "Owned by the auditor")
+
+    def test_an_auditor_can_still_read_it(self):
+        r = self.client_for(self.auditor).get(f"/api/documents/{self.doc.pk}/")
+        self.assertEqual(r.status_code, 200, getattr(r, "data", r))
+
+    def test_an_ordinary_owner_still_edits_their_own(self):
+        """The control is the owner short-circuit itself: it still works for
+        anyone who is not an external auditor. Owen needs sight of the folder
+        to reach the row at all, which is a different rule."""
+        grant(self.tree.ctrl1, user=self.owner, level=VIEW)
+        mine = make_doc(self.tree.ctrl1, owner=self.owner, name="Owned by Owen")
+        r = self.client_for(self.owner).patch(
+            f"/api/documents/{mine.pk}/", {"name": "Renamed"}, format="json")
+        self.assertEqual(r.status_code, 200, getattr(r, "data", r))
+
+
 class EvidenceDownloadTests(APITestBase):
     """Reading a stored file is an authorised, audited act.
 

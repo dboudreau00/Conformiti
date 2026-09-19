@@ -32,10 +32,22 @@ class JiraConfigSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data):
-        # An empty token field means "keep the saved one".
+        # An empty token field means "keep the saved one" -- but only for the
+        # host it was issued for. Moving base_url to another host while
+        # leaving the token box empty used to carry the saved credential
+        # across and send it to the new host on the next test, which defeats
+        # the write-only field for anyone who already holds this capability
+        # (0.9.5h, L-4).
+        from urllib.parse import urlsplit
+
         token = validated_data.pop("api_token", None)
+        new_url = validated_data.get("base_url", instance.base_url)
+        moved = urlsplit(new_url or "").netloc.lower() != urlsplit(instance.base_url or "").netloc.lower()
         if token:
             instance.api_token = token
+        elif moved and instance.api_token:
+            instance.api_token = ""
+            validated_data["enabled"] = False
         return super().update(instance, validated_data)
 
 

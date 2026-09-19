@@ -222,7 +222,26 @@ class User(AbstractUser, TenantModel):
 
     # --- capability helpers (safe when role is None) -----------------------
     def _cap(self, flag):
-        return self.is_superuser or bool(self.role and getattr(self.role, flag))
+        """Does this account hold a capability?
+
+        An external auditor holds none, whatever their role stores. The
+        shipped Auditor role is ``is_auditor`` alone and is locked, but a
+        custom role could carry both, and ``PackageGrant`` only asks for
+        ``is_auditor``: such an account could be issued an engagement and then
+        read every folder and every package through the capability
+        short-circuits, which sit above the auditor cap in both access
+        modules. Capping here rather than at those call sites keeps one
+        answer to what a capability means (0.9.5h, M-3).
+
+        A superuser is still a superuser. An auditor role on a superuser is a
+        misconfiguration that account can undo itself, and pretending
+        otherwise would only be surprising.
+        """
+        if self.is_superuser:
+            return True
+        if self.is_auditor:
+            return False
+        return bool(self.role and getattr(self.role, flag))
 
     @property
     def can_manage_users(self):

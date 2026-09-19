@@ -224,6 +224,52 @@ class BundleSignatureCoverageTests(PackageTestBase):
             self.assertIn("not listed in SHA256SUMS", r.stdout)
 
 
+class GrantListDisclosureTests(PackageTestBase):
+    """L-1, 0.9.5h. PackageGrantViewSet filters a grantee to their own row on
+    purpose; the package payload prefetched every grant and published each
+    live one, so two audit firms issued the same sealed package saw each
+    other's people by name."""
+
+    def _two_firms(self):
+        import datetime as dt
+
+        from django.utils import timezone
+
+        from accounts.models import Role
+        from attestations.models import PackageGrant
+        from testutils import make_user
+
+        # A grant only reaches a sealed package, which is the state a package
+        # is in when anybody outside the organisation can see it at all.
+        from attestations.models import EvidencePackage
+
+        self.package.status = EvidencePackage.Status.SEALED
+        self.package.save(update_fields=["status"])
+        other = make_user("second-firm", Role.objects.get(name="Auditor"),
+                          first_name="Bea", last_name="Second")
+        for person in (self.auditor, other):
+            PackageGrant.objects.create(
+                package=self.package, user=person, username=person.username,
+                full_name=person.get_full_name(),
+                expires_at=timezone.now() + dt.timedelta(days=7))
+        return other
+
+    def test_an_auditor_sees_only_their_own_grant(self):
+        self._two_firms()
+        body = str(self.client_for(self.auditor).get(
+            f"/api/evidence-packages/{self.package.pk}/").data)
+        self.assertIn(self.auditor.username, body)
+        self.assertNotIn("second-firm", body)
+        self.assertNotIn("Bea", body)
+
+    def test_the_organisation_still_sees_every_recipient(self):
+        self._two_firms()
+        body = str(self.manager_client.get(
+            f"/api/evidence-packages/{self.package.pk}/").data)
+        self.assertIn(self.auditor.username, body)
+        self.assertIn("second-firm", body)
+
+
 class PerWorkspaceKeyTests(PackageTestBase):
     """Each organisation signs with its own key, so the fingerprint an auditor
     is told to expect identifies the client, not the installation."""

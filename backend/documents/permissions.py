@@ -32,6 +32,15 @@ class DocumentAccessPermission(BasePermission):
         folder = obj.folder
         if request.method in SAFE_METHODS:
             return folder.can_view(request.user)
+        # Before the owner short-circuit. Folder writes go through
+        # effective_access, which caps an external auditor at view; document
+        # writes went round it, so an auditor who had been made the owner of a
+        # document in a granted folder could edit its name, status and
+        # description (0.9.5h, L-5).
+        from accounts.permissions import is_external_auditor
+
+        if is_external_auditor(request.user):
+            return False
         if request.method == "DELETE":
             return folder.can_manage(request.user)
         if obj.owner_id == request.user.id:
