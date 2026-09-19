@@ -33,24 +33,37 @@ project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.
 # shell creates, which is the database dump: the redirect below happens here.
 umask 077
 
+# The archives are written by a container running as root; these hand them
+# back to whoever ran this script, so the backup is readable by its owner and
+# by nobody else.
+owner_uid="$(id -u)"
+owner_gid="$(id -g)"
+
 echo "backup: database"
 docker compose exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$out/db.sql"
 gzip -f "$out/db.sql"
 
 for v in media secrets tree; do
   echo "backup: $v volume"
-  # The mode is set INSIDE the container, by the process that creates the
-  # file. The tar runs as root there, so on Linux the archive lands root:root
-  # 644 and a chmod afterwards from the user who invoked this script fails:
-  # 0.9.5h wrote that chmod, hid the failure with `|| true`, and printed a
-  # reassurance it had not earned (0.9.5i, L-2).
+  # Both the mode and the owner are set INSIDE the container, by the process
+  # that creates the file. The tar has to run as root, because the volumes
+  # belong to the unprivileged user the application runs as; that is what
+  # made the archive root-owned and 644, and what made the chmod 0.9.5h added
+  # afterwards fail silently behind `|| true` while the script printed
+  # "mode 600" regardless (0.9.5i, L-2).
+  #
+  # The chown is the other half. Without it the archive is 600 root:root and
+  # the operator who ran this cannot read their own backup without sudo,
+  # which is a different way of being unusable.
   docker run --rm -v "${project}_${v}:/src:ro" -v "$out:/out" alpine:3.20 \
-    sh -c "umask 077 && tar czf /out/$v.tgz -C /src . && chmod 600 /out/$v.tgz"
+    sh -c "umask 077 && tar czf /out/$v.tgz -C /src . \
+           && chown ${owner_uid}:${owner_gid} /out/$v.tgz \
+           && chmod 600 /out/$v.tgz"
 done
 
 # The directory too, and not quietly: if this cannot be set, the archives are
 # readable by anyone who can reach the path and the operator needs to know.
 chmod 700 "$out"
 
-echo "backup: written to $out (archives 600, directory 700)"
+echo "backup: written to $out (archives 600, owned by $(id -un), directory 700)"
 ls -l "$out"
