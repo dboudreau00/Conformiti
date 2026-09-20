@@ -1084,9 +1084,15 @@ export default function Vendors({ me }) {
         <div className="flex flex-col gap-4">
           <Panel className="overflow-hidden">
             <PanelHeader title="Vendor register" meta={`${vendors.length} total`}>
+              {/* The panel is already titled "Vendor register", so the noun was
+                  on screen twice and the button wrapped to two lines in the
+                  300px column. The accessible name keeps the full phrase: that
+                  is what a screen reader announces, and what the viewer test
+                  asserts is absent. */}
               {canManage ? (
-                <Button size="sm" variant={creating ? "secondary" : "primary"} aria-expanded={creating} onClick={() => setCreating((x) => !x)}>
-                  Register a vendor
+                <Button size="sm" variant={creating ? "secondary" : "primary"} aria-expanded={creating}
+                        aria-label="Register a vendor" onClick={() => setCreating((x) => !x)}>
+                  Register
                 </Button>
               ) : null}
             </PanelHeader>
@@ -1112,7 +1118,7 @@ export default function Vendors({ me }) {
             </div>
             {filtered.length === 0 ? (
               <Empty title={vendors.length ? "No vendors match" : "No vendors yet"}>
-                {vendors.length ? "Try another filter." : canManage ? "Register the third parties that touch your data or run your controls. Start with Register a vendor above." : "Nothing has been registered yet."}
+                {vendors.length ? "Try another filter." : canManage ? "Register the third parties that touch your data or run your controls. Start with Register above." : "Nothing has been registered yet."}
               </Empty>
             ) : (
               <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto">
