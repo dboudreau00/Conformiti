@@ -11,6 +11,15 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5ja], 2026-09-20
+
+### Changed
+
+- The vendor register's button says "Register". The panel above it is already
+  called "Vendor register", so the noun was on screen twice and the button
+  wrapped onto two lines in the column it sits in. Its accessible name keeps
+  the full phrase, which is what a screen reader announces.
+
 ## [0.9.5j], 2026-09-20
 
 A user-experience release. Three read-only analysts walked every screen the way
