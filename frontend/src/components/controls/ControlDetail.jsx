@@ -34,6 +34,7 @@ export function ControlDetail({
   const [linksLoading, setLinksLoading] = useState(true);
   const [linksError, setLinksError] = useState("");
   const [selDocs, setSelDocs] = useState([]);
+  const [docQuery, setDocQuery] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false); // attach / unlink in flight
   const [saving, setSaving] = useState(false); // status / owner PATCH in flight
@@ -99,6 +100,14 @@ export function ControlDetail({
     () => (docChoices || []).filter((d) => !linkedIds.has(d.id)),
     [docChoices, linkedIds]
   );
+  const visibleDocs = useMemo(() => {
+    const q = docQuery.trim().toLowerCase();
+    return !q ? available : available.filter((d) => `${d.name} ${d.path}`.toLowerCase().includes(q));
+  }, [available, docQuery]);
+  function toggleDoc(docId) {
+    const key = String(docId);
+    setSelDocs((ids) => (ids.includes(key) ? ids.filter((x) => x !== key) : [...ids, key]));
+  }
   const docName = (docId) => {
     const d = (docChoices || []).find((x) => x.id === docId);
     return d ? d.name : `Document #${docId}`;
@@ -137,6 +146,7 @@ export function ControlDetail({
       const skipped = data.skipped || [];
       if (created.length) onEvidenceDelta(id, created.length);
       setSelDocs([]);
+      setDocQuery("");
       setNote("");
       // Re-read the list so each new link carries its server-computed
       // can_unlink flag (the bulk response is serialized without it).
@@ -375,18 +385,38 @@ export function ControlDetail({
                   <p className="text-xs text-muted">Every document you can see is already linked to this control.</p>
                 ) : (
                   <>
-                    <select
+                    <input
                       id={`attach-docs-${id}`}
-                      multiple
-                      className="input h-auto min-h-[112px] py-1 font-mono text-xs"
-                      value={selDocs}
-                      onChange={(e) => setSelDocs(Array.from(e.target.selectedOptions).map((o) => o.value))}
-                    >
-                      {available.map((d) => (
-                        <option key={d.id} value={d.id}>{d.path} / {d.name}</option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-2xs text-faint">Hold Ctrl / ⌘ to select several documents.</p>
+                      className="input input-sm"
+                      placeholder="Find a document"
+                      value={docQuery}
+                      onChange={(e) => setDocQuery(e.target.value)}
+                    />
+                    <div className="mt-2 max-h-[200px] overflow-y-auto rounded-lg border border-line">
+                      {visibleDocs.length === 0 ? (
+                        <p className="px-3 py-3 text-xs text-muted">No documents match.</p>
+                      ) : (
+                        <ul className="divide-y divide-line">
+                          {visibleDocs.map((d) => (
+                            <li key={d.id}>
+                              <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 hover:bg-surface-2">
+                                <input
+                                  type="checkbox"
+                                  className="mt-1"
+                                  checked={selDocs.includes(String(d.id))}
+                                  onChange={() => toggleDoc(d.id)}
+                                  aria-label={`Attach ${d.name}`}
+                                />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[13px] text-ink">{d.name}</span>
+                                  <Label className="block truncate">{d.path}</Label>
+                                </span>
+                              </label>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   </>
                 )}
                 <div className="mt-3 flex flex-wrap items-end gap-2">

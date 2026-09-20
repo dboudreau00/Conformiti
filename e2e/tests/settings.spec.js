@@ -10,7 +10,7 @@ function section(page, name) {
 
 test.describe("account settings", () => {
   test.beforeEach(async ({ page }) => {
-    await open(page, "/settings", "Account");
+    await open(page, "/settings", "Settings");
   });
 
   test("every settings section is reachable", async ({ page }) => {
@@ -58,7 +58,7 @@ test.describe("account settings", () => {
 
 test.describe("appearance", () => {
   test.beforeEach(async ({ page }) => {
-    await open(page, "/settings", "Account");
+    await open(page, "/settings", "Settings");
     await section(page, "Appearance").click();
   });
 
@@ -112,7 +112,7 @@ test.describe("appearance", () => {
 
 test.describe("multi-factor authentication", () => {
   test("enrolment shows a secret and refuses a wrong code", async ({ page }) => {
-    await open(page, "/settings", "Account");
+    await open(page, "/settings", "Settings");
     await section(page, "Security").click();
     await page.waitForLoadState("networkidle");
 
@@ -149,7 +149,7 @@ test.describe("multi-factor authentication", () => {
   });
 
   test("enrolment without the password is refused", async ({ page }) => {
-    await open(page, "/settings", "Account");
+    await open(page, "/settings", "Settings");
     await section(page, "Security").click();
     await expect(page.getByText("Authenticator app").first()).toBeVisible();
 
@@ -180,7 +180,7 @@ test.describe("workspace chat channels", () => {
    *  deletes a working channel (REVIEW_095.md, S-1). */
   test("a saved webhook is shown as configured, never echoed, and survives an unrelated save",
     async ({ page }) => {
-      await open(page, "/settings", "Account");
+      await open(page, "/settings", "Settings");
       await section(page, "Role & access").click();
 
       const slack = page.locator("#workspace-slack");
@@ -217,7 +217,7 @@ test.describe("workspace chat channels", () => {
     });
 
   test("a webhook on someone else's host is refused", async ({ page }) => {
-    await open(page, "/settings", "Account");
+    await open(page, "/settings", "Settings");
     await section(page, "Role & access").click();
     expectBrowserError(page, /status of 400/);
     await page.locator("#workspace-slack").fill("https://hooks.slack.com.attacker.example/x");

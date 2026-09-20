@@ -8,13 +8,13 @@
  * screen never offers an action the API will refuse.
  */
 import { useEffect, useState } from "react";
-import { DownloadIcon, FileTextIcon, PaperclipIcon } from "lucide-react";
+import { DownloadIcon, FileTextIcon, PaperclipIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { Badge } from "../ui/Badge.jsx";
-import { Button } from "../ui/Button.jsx";
+import { Button, IconButton } from "../ui/Button.jsx";
 import { TextDialog, useConfirm } from "../ui/Dialog.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
 
 const STATUS = {
   open: { label: "Open", tone: "warning" },
@@ -29,6 +29,7 @@ const DATE = (iso) => (iso ? String(iso).slice(0, 10) : "");
 export function PbcList({ pkg, mine = false, controls = [], canRaise = false, canAssemble = false, onOpen, onMessage }) {
   const { ask, confirmDialog } = useConfirm();
   const [rows, setRows] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -42,7 +43,15 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   useEffect(() => {
     let live = true;
     setRows(null);
-    fetchAll(query).then((r) => live && setRows(r)).catch(() => live && setRows([]));
+    setFailed(false);
+    fetchAll(query)
+      .then((r) => { if (live) setRows(r); })
+      .catch((e) => {
+        if (!live) return;
+        setRows([]);
+        setFailed(true);
+        onMessage?.({ ok: false, text: errorText(e, "Couldn't load the request list.") });
+      });
     return () => { live = false; };
   }, [query]);
 
@@ -58,7 +67,17 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     }
   }, [attachTo, docs]);
 
-  const reload = async () => setRows(await fetchAll(query));
+  const reload = async () => {
+    try {
+      const r = await fetchAll(query);
+      setRows(r);
+      setFailed(false);
+    } catch (e) {
+      setRows([]);
+      setFailed(true);
+      onMessage?.({ ok: false, text: errorText(e, "Couldn't load the request list.") });
+    }
+  };
 
   async function act(key, fn, ok) {
     setBusy(key);
@@ -144,7 +163,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     ],
   });
 
-  if (mine && rows !== null && rows.length === 0) return null;
+  if (mine && rows !== null && rows.length === 0 && !failed) return null;
 
   const summary = (rows || []).reduce((acc, r) => {
     acc[r.status] = (acc[r.status] || 0) + 1;
@@ -221,6 +240,8 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
 
       {rows === null ? (
         <Loading />
+      ) : failed ? (
+        <LoadError what="The request list" onRetry={reload} />
       ) : rows.length === 0 ? (
         <Empty title="Nothing requested yet">
           {canRaise
@@ -275,7 +296,10 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                           {item.document_name}
                         </button>
                         {can.attach ? (
-                          <button type="button" className="link text-2xs" aria-label={`Detach ${item.document_name}`} disabled={busy === `detach-${item.id}`} onClick={() => detach(r, item)}>×</button>
+                          <IconButton label={`Detach ${item.document_name}`} className="h-6 w-6"
+                                      disabled={busy === `detach-${item.id}`} onClick={() => detach(r, item)}>
+                            <XIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+                          </IconButton>
                         ) : null}
                       </li>
                     ))}

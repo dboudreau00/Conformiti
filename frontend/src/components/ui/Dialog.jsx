@@ -25,7 +25,7 @@ import { Label } from "./Panel.jsx";
 
 const FOCUSABLE = 'input, textarea, select, button:not([data-dialog-close]), [href], [tabindex]:not([tabindex="-1"])';
 
-export function Dialog({ open, title, description, onClose, children, size = "md", className }) {
+export function Dialog({ open, title, description, onClose, children, size = "md", className, closeOnOverlay = true }) {
   const titleId = useId();
   const descId = useId();
   const frame = useRef(null);
@@ -75,7 +75,7 @@ export function Dialog({ open, title, description, onClose, children, size = "md
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: EASE }}
-          onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
+          onMouseDown={(e) => { if (closeOnOverlay && e.target === e.currentTarget) onClose?.(); }}
         >
           <motion.div
             ref={frame}
@@ -115,7 +115,7 @@ export function Dialog({ open, title, description, onClose, children, size = "md
 export function TextDialog({
   open, title, description, label, initial = "", placeholder = "", multiline = false,
   minLength = 0, maxLength = 2000, required = true, submitLabel = "Save", tone = "primary",
-  hint, onSubmit, onClose,
+  hint, onSubmit, onClose, closeOnOverlay = false,
 }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -147,7 +147,7 @@ export function TextDialog({
 
   const Field = multiline ? "textarea" : "input";
   return (
-    <Dialog open={open} title={title} description={description} onClose={busy ? undefined : onClose}>
+    <Dialog open={open} title={title} description={description} onClose={busy ? undefined : onClose} closeOnOverlay={closeOnOverlay}>
       <form onSubmit={submit} noValidate>
         <label htmlFor={fieldId} className="field-label">{label}</label>
         <Field

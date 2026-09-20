@@ -243,7 +243,7 @@ def run_scanner_watch(dry_run=False):
         if status.alerted_down_at is None or (status.down_since and status.alerted_down_at < status.down_since):
             if not dry_run:
                 send_templated_email(
-                    "[Alert] Malware scanner unreachable — evidence uploads are being refused",
+                    "[Alert] Malware scanner unreachable: evidence uploads are being refused",
                     "scanner_alert", {"down": True, "since": status.down_since or now},
                     [compliance_inbox()])
                 webhooks.post_event("scanner.down", "Malware scanner unreachable",
@@ -362,7 +362,7 @@ def post_daily_summary(today=None):
     facts = [("Documents overdue for review", docs), ("Risks past their due date", risks),
              ("Auditor requests overdue", pbc), ("Files in quarantine", held)]
     return webhooks.post_event(
-        "digest.daily", f"Conformiti daily summary — {today.isoformat()}",
+        "digest.daily", f"Conformiti daily summary: {today.isoformat()}",
         "Outstanding across the workspace this morning.",
         facts=[(k, v) for k, v in facts if v], path="/",
         severity="high" if (pbc or held) else "medium")

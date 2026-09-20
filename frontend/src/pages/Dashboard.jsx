@@ -7,6 +7,7 @@ import { ComplianceCalendar } from "../components/dashboard/ComplianceCalendar.j
 import { ReviewQueue } from "../components/dashboard/ReviewQueue.jsx";
 import { PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
+import { Button } from "../components/ui/Button.jsx";
 import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { Legend, Meter, SegmentBar } from "../components/ui/Meter.jsx";
 import { Empty, Label, Loading, Panel } from "../components/ui/Panel.jsx";
@@ -144,8 +145,9 @@ export default function Dashboard({ me }) {
       <Stack className="grid grid-cols-12 gap-4">
         {failed.length ? (
           <StackItem className="col-span-12">
-            <div className="notice notice-warn" role="status">
-              Couldn't load {joinNames(failed)}, so this shows what is available.
+            <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
+              <span>Couldn't load {joinNames(failed)}. Showing what is available.</span>
+              <Button size="sm" onClick={load}>Retry</Button>
             </div>
           </StackItem>
         ) : null}
@@ -207,7 +209,10 @@ export default function Dashboard({ me }) {
                 </div>
               </>
             ) : (
-              <Empty title="Readiness unavailable">The analytics summary could not be loaded.</Empty>
+              <Empty title="Readiness unavailable">
+                The analytics summary could not be loaded.
+                <Button size="sm" className="mt-3" onClick={load}>Try again</Button>
+              </Empty>
             )}
           </Panel>
         </StackItem>
@@ -243,7 +248,10 @@ export default function Dashboard({ me }) {
             </StatCard>
 
             <StatCard label="Reviews overdue" value={overdue} detail={`${due30} due in the next 30 days`} tone={overdue > 0 ? "danger" : undefined}>
-              <ArrowLink to="/documents">Resolve now</ArrowLink>
+              <a href="#review-queue" className="link mt-3">
+                Open the review queue
+                <ArrowUpRightIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+              </a>
             </StatCard>
 
             <Panel className="p-4 sm:col-span-2">
@@ -257,7 +265,7 @@ export default function Dashboard({ me }) {
                     </span>
                   </div>
                   <Meter value={withEvidence} total={controlTotal} className="mt-3" delay={0.1} ariaLabel="Evidence coverage" />
-                  <p className="mt-2 text-xs text-muted">{controls.evidence_links || 0} control-document links.</p>
+                  <p className="mt-2 text-xs text-muted">{controls.evidence_links || 0} links between controls and documents.</p>
                 </>
               ) : (
                 <p className="mt-2 text-xs text-muted">Unavailable until the analytics summary loads.</p>
@@ -290,11 +298,16 @@ export default function Dashboard({ me }) {
         </StackItem>
 
         <StackItem className="col-span-12 2xl:col-span-8">
-          <ComplianceCalendar refreshKey={version} />
+          <ComplianceCalendar refreshKey={version} me={me} onChanged={load} />
         </StackItem>
 
         <StackItem className="col-span-12 2xl:col-span-4">
-          <ReviewQueue me={me} reviews={reviews} onChanged={load} />
+          {/* Anchor for the "Open the review queue" link on the Reviews overdue
+           * card above: ReviewQueue itself is a shared component, so the id
+           * lives on this wrapper instead of inside it. */}
+          <div id="review-queue" className="h-full">
+            <ReviewQueue me={me} reviews={reviews} onChanged={load} />
+          </div>
         </StackItem>
       </Stack>
     </PanelTransition>

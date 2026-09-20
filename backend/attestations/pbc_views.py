@@ -124,7 +124,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
                 "pbc.raised", f"Auditor request {req.reference}: {req.title}",
                 f"Raised by {req.requested_by_name} in {package.name}."
                 f"{' Due ' + req.due_date.isoformat() + '.' if req.due_date else ''}",
-                facts=[("Assigned to", req.assignee_name or "nobody yet"), ("Control", req.control_ref or "—")],
+                facts=[("Assigned to", req.assignee_name or "nobody yet"), ("Control", req.control_ref or "-")],
                 path="/packages", severity="medium")
 
     # ------------------------------------------------------------- update

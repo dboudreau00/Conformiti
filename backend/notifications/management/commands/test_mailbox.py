@@ -49,7 +49,7 @@ class Command(BaseCommand):
         text = ("This is a test message from Conformiti's mailbox mailer. "
                 "If you received this, review reminders will reach document owners.")
         try:
-            send_mailbox_email("Conformiti — mailbox test", html, text, [to])
+            send_mailbox_email("Conformiti mailbox test", html, text, [to])
         except Exception as exc:  # noqa: BLE001
             raise CommandError(f"Test send failed: {exc}")
         self.stdout.write(self.style.SUCCESS(f"Test email sent to {to}."))

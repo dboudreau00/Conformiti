@@ -26,6 +26,7 @@ import { Button } from "../components/ui/Button.jsx";
 import { TextDialog, useConfirm } from "../components/ui/Dialog.jsx";
 import { Divider, Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ShowMore } from "../components/ui/ShowMore.jsx";
+import { PASSWORD_MIN } from "../components/users/NewUserForm.jsx";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: UserIcon },
@@ -351,8 +352,8 @@ function PasswordBlock() {
         <Field id="pw-current" label="Current password" className="sm:col-span-2">
           <input id="pw-current" type="password" autoComplete="current-password" className="input sm:max-w-[312px]" value={form.current_password} onChange={set("current_password")} />
         </Field>
-        <Field id="pw-new" label="New password">
-          <input id="pw-new" type="password" autoComplete="new-password" className="input" value={form.new_password} onChange={set("new_password")} />
+        <Field id="pw-new" label="New password" hint={`At least ${PASSWORD_MIN} characters.`}>
+          <input id="pw-new" type="password" autoComplete="new-password" minLength={PASSWORD_MIN} className="input" value={form.new_password} onChange={set("new_password")} />
         </Field>
         <Field id="pw-confirm" label="Confirm new password" hint={mismatch ? "Doesn't match the new password." : undefined} error={mismatch}>
           <input
@@ -733,6 +734,20 @@ function PasskeysBlock() {
         <Loading className="py-6 text-left" />
       ) : (
         <>
+          <div className="mt-4 max-w-[640px]">
+            <Field id="passkey-password" label="Confirm your password to add or remove a key">
+              <input id="passkey-password" type="password" autoComplete="current-password" className="input sm:max-w-[312px]"
+                     value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+            <p className="mt-2 text-xs text-muted">
+              Changing which keys can sign you in is itself a security change, so it takes your password either way.
+            </p>
+            {rows.length ? (
+              <p className="mt-2 text-xs text-muted">
+                Recovery if you lose this key: your backup codes (issued with your first factor; regenerate them under the authenticator block), a second passkey, the authenticator app, or an administrator's reset.
+              </p>
+            ) : null}
+          </div>
           {suspect ? (
             <div className="notice notice-err mt-4 max-w-[640px]" role="alert">
               {suspect === 1 ? "One passkey was" : `${suspect} passkeys were`} disabled because the signature counter went backwards, which means a copy of the key may exist. Remove {suspect === 1 ? "it" : "them"} with your password and enrol a fresh key.
@@ -755,7 +770,7 @@ function PasskeysBlock() {
                 </span>
                 <Badge tone={r.usable ? "success" : "danger"} dot>{r.usable ? "Active" : "Disabled"}</Badge>
                 {r.usable ? <Button size="sm" variant="ghost" onClick={() => rename(r)} disabled={busy}>Rename</Button> : null}
-                <Button size="sm" variant="danger" onClick={() => remove(r)} disabled={busy || !password} title={password ? "" : "Confirm your password below first"}>
+                <Button size="sm" variant="danger" onClick={() => remove(r)} disabled={busy || !password}>
                   Remove
                 </Button>
               </li>
@@ -778,22 +793,6 @@ function PasskeysBlock() {
         </form>
       ) : state && !supported ? (
         <p className="mt-3 max-w-[640px] text-xs text-muted">This browser cannot enrol passkeys (it needs a secure https address and a modern browser).</p>
-      ) : null}
-      {state ? (
-        <div className="mt-4 max-w-[640px]">
-          <Field id="passkey-password" label="Confirm your password to add or remove a key">
-            <input id="passkey-password" type="password" autoComplete="current-password" className="input sm:max-w-[312px]"
-                   value={password} onChange={(e) => setPassword(e.target.value)} />
-          </Field>
-          <p className="mt-2 text-xs text-muted">
-            Changing which keys can sign you in is itself a security change, so it takes your password either way.
-          </p>
-          {rows.length ? (
-            <p className="mt-2 text-xs text-muted">
-              Recovery if you lose this key: your backup codes (issued with your first factor; regenerate them under the authenticator block), a second passkey, the authenticator app, or an administrator's reset.
-            </p>
-          ) : null}
-        </div>
       ) : null}
       <TextDialog
         open={!!renaming}

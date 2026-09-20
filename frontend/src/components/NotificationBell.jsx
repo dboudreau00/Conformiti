@@ -114,7 +114,7 @@ export default function NotificationBell() {
                     initial={{ opacity: 0, x: 6 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1], delay: 0.03 * idx }}
-                    className={cn("group flex items-start gap-2.5 px-3 py-2.5", !i.read && "bg-accent/[0.05]")}
+                    className={cn("flex items-start gap-2.5 px-3 py-2.5", !i.read && "bg-accent/[0.05]")}
                   >
                     <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", TONE_FILL[SEV_TONE[i.severity] || "muted"])} aria-hidden="true" />
                     <button type="button" onClick={() => go(i)} className="min-w-0 flex-1 text-left">
@@ -125,7 +125,7 @@ export default function NotificationBell() {
                       type="button"
                       onClick={(e) => dismiss(e, i.key)}
                       aria-label="Dismiss"
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint opacity-0 transition-opacity hover:bg-surface-2 hover:text-ink group-hover:opacity-100 focus-visible:opacity-100"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint opacity-60 transition-opacity hover:bg-surface-2 hover:text-ink hover:opacity-100 focus-visible:opacity-100"
                     >
                       <XIcon className="h-3.5 w-3.5" strokeWidth={2} />
                     </button>

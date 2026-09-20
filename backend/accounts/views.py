@@ -52,7 +52,7 @@ class RoleViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Built-in roles cannot be deleted.")
         if instance.users.exists():
             raise ValidationError(
-                {"detail": "This role is assigned to users — reassign them first."}
+                {"detail": "This role is assigned to users. Reassign them first."}
             )
         instance.delete()
 
@@ -93,7 +93,7 @@ class UserViewSet(viewsets.ModelViewSet):
             if "is_active" in data and data["is_active"] is False:
                 raise PermissionDenied("You cannot deactivate your own account.")
             if "role" in data and data["role"] != target.role:
-                raise PermissionDenied("You cannot change your own role — ask another administrator.")
+                raise PermissionDenied("You cannot change your own role. Ask another administrator.")
 
         # Never allow the org to end up with zero active administrators.
         deactivating = data.get("is_active") is False
@@ -105,7 +105,7 @@ class UserViewSet(viewsets.ModelViewSet):
         if (deactivating or loses_admin) and not target.is_superuser:
             if (target.role and target.role.can_manage_users) and not self._other_active_admins(target):
                 raise PermissionDenied(
-                    "This is the last active administrator — assign the role to "
+                    "This is the last active administrator. Assign the role to "
                     "someone else before removing it."
                 )
         serializer.save()
@@ -142,7 +142,7 @@ class UserViewSet(viewsets.ModelViewSet):
         if instance.pk == actor.pk:
             raise PermissionDenied("You cannot delete your own account.")
         if instance.is_superuser:
-            raise PermissionDenied("Superuser accounts cannot be deleted through the API — deactivate instead.")
+            raise PermissionDenied("Superuser accounts cannot be deleted through the API. Deactivate instead.")
         if instance.role and instance.role.can_manage_users and not self._other_active_admins(instance):
             raise PermissionDenied("This is the last active administrator and cannot be deleted.")
         instance.delete()
@@ -285,7 +285,7 @@ class MfaVerifyView(APIView):
         # so the code that switched the factor on cannot then be replayed to
         # sign in with it.
         if not device.verify(code):
-            return Response({"detail": "That code isn't valid — check your authenticator and try again."}, status=400)
+            return Response({"detail": "That code isn't valid. Check your authenticator and try again."}, status=400)
         from django.utils import timezone
         device.enabled = True
         device.confirmed_at = timezone.now()

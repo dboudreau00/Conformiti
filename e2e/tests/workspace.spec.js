@@ -46,8 +46,11 @@ test.describe("dashboard", () => {
   test("the calendar type filters toggle without breaking the grid", async ({ page }) => {
     const calendar = panel(page, "Compliance calendar");
     const filters = calendar.getByRole("group", { name: /filter calendar by item type/i });
-    for (const type of ["Review", "Audit", "Task", "Other"]) {
-      await filters.getByRole("button", { name: type, exact: true }).click();
+    const chips = filters.getByRole("button");
+    const count = await chips.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i += 1) {
+      await chips.nth(i).click();
     }
     // Everything deselected: the month grid still renders, with no items.
     await expect(calendar.getByRole("button", { name: /, 0 items$/ }).first()).toBeVisible();
@@ -66,7 +69,7 @@ test.describe("dashboard", () => {
 
   test("the evidence coverage meter is populated", async ({ page }) => {
     await expect(page.getByRole("progressbar", { name: /evidence coverage/i })).toBeVisible();
-    await expect(page.getByText(/control-document links/)).toBeVisible();
+    await expect(page.getByText(/links between controls and documents/)).toBeVisible();
   });
 });
 

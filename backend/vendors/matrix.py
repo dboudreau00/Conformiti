@@ -57,7 +57,7 @@ PROVIDER_WORDS = {"provider", "tpsp", "vendor", "supplier", "service provider", 
 CUSTOMER_WORDS = {"customer", "merchant", "client", "you", "user", "user entity", "entity"}
 SHARED_WORDS = {"shared", "both", "joint", "jointly", "split", "co-owned", "provider and customer",
                 "customer and provider"}
-NA_WORDS = {"n/a", "na", "not applicable", "none", "-", "—", "not in scope", "out of scope"}
+NA_WORDS = {"n/a", "na", "not applicable", "none", "-", "-", "not in scope", "out of scope"}
 MARK_YES = {"x", "✓", "✔", "yes", "y", "true", "1", "responsible", "r"}
 MARK_NO = {"no", "n", "false", "0", "✗", "✘"}
 

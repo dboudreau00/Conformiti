@@ -6,6 +6,7 @@ import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
@@ -28,6 +29,7 @@ function fmtDate(iso) {
 }
 
 const EMPTY_SERIES = { name: "", required: "4", owner: "", description: "" };
+const EMPTY_SERIES_EDIT = { name: "", required: "4", owner: "", active: true };
 const EMPTY_MINUTE = { date: "", title: "", attendees: "", notes: "" };
 
 function Notice({ msg, className }) {
@@ -66,11 +68,17 @@ export default function Meetings({ me }) {
   const [seriesBusy, setSeriesBusy] = useState(false);
   const [seriesMsg, setSeriesMsg] = useState(null);
 
+  const [editingSeries, setEditingSeries] = useState(false);
+  const [es, setEs] = useState(EMPTY_SERIES_EDIT);
+  const [seriesEditBusy, setSeriesEditBusy] = useState(false);
+  const [seriesEditMsg, setSeriesEditMsg] = useState(null);
+
   const [mf, setMf] = useState(EMPTY_MINUTE);
   const [file, setFile] = useState(null);
   const fileRef = useRef(null);
   const [minuteBusy, setMinuteBusy] = useState(false);
   const [minuteMsg, setMinuteMsg] = useState(null);
+  const [deletingMinute, setDeletingMinute] = useState(null);
 
   // Guards against a slow minutes response for a previously selected series overwriting the current one.
   const minutesReq = useRef(0);
@@ -82,6 +90,7 @@ export default function Meetings({ me }) {
     if (!keep) {
       setMinutes([]);
       setMinuteMsg(null);
+      setEditingSeries(false);
     }
     const req = ++minutesReq.current;
     setMinutesLoading(true);
@@ -160,6 +169,39 @@ export default function Meetings({ me }) {
     }
   }
 
+  function openEditSeries() {
+    setEs({
+      name: active.name,
+      required: String(active.required_per_year),
+      owner: active.owner ? String(active.owner) : "",
+      active: active.active !== false,
+    });
+    setSeriesEditMsg(null);
+    setEditingSeries(true);
+  }
+
+  async function saveSeriesEdit(e) {
+    e.preventDefault();
+    if (!active || seriesEditBusy || !es.name.trim()) return;
+    setSeriesEditBusy(true);
+    setSeriesEditMsg(null);
+    const payload = {
+      name: es.name.trim(),
+      required_per_year: Number(es.required) || 4,
+      owner: es.owner ? Number(es.owner) : null,
+      active: es.active,
+    };
+    try {
+      const { data } = await api.patch(`/meeting-series/${active.id}/`, payload);
+      setEditingSeries(false);
+      await loadSeries(data.id, true);
+    } catch (ex) {
+      setSeriesEditMsg({ kind: "err", text: errorText(ex, "The series couldn't be updated. Please try again.") });
+    } finally {
+      setSeriesEditBusy(false);
+    }
+  }
+
   async function addMinute(e) {
     e.preventDefault();
     if (!active || !mf.date || minuteBusy) return;
@@ -219,7 +261,7 @@ export default function Meetings({ me }) {
                   <Label className="tabular">{series.length} series</Label>
                   <Button
                     size="sm"
-                    variant={showNewSeries ? "ghost" : "secondary"}
+                    variant={showNewSeries ? "ghost" : "primary"}
                     onClick={toggleNewSeries}
                     aria-expanded={showNewSeries}
                     aria-controls="new-series-form"
@@ -431,10 +473,87 @@ export default function Meetings({ me }) {
                         <Badge tone={activeStatus.tone} dot>
                           {activeStatus.label}
                         </Badge>
+                        {canEdit ? (
+                          <Button size="sm" variant="ghost" onClick={openEditSeries}>
+                            Edit
+                          </Button>
+                        ) : null}
                       </div>
                     </PanelHeader>
 
-                    {active.description ? (
+                    {editingSeries ? (
+                      <form onSubmit={saveSeriesEdit} noValidate className="space-y-3 border-b border-line bg-surface-2 p-4">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                          <div>
+                            <label htmlFor="es-name" className="field-label">
+                              Name
+                            </label>
+                            <input
+                              id="es-name"
+                              className="input input-sm"
+                              required
+                              value={es.name}
+                              onChange={(e) => setEs({ ...es, name: e.target.value })}
+                              maxLength={160}
+                              disabled={seriesEditBusy}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="es-required" className="field-label">
+                              Required per year
+                            </label>
+                            <input
+                              id="es-required"
+                              type="number"
+                              min="1"
+                              max="52"
+                              inputMode="numeric"
+                              className="input input-sm tabular"
+                              value={es.required}
+                              onChange={(e) => setEs({ ...es, required: e.target.value })}
+                              disabled={seriesEditBusy}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="es-owner" className="field-label">
+                              Owner
+                            </label>
+                            <select
+                              id="es-owner"
+                              className="input input-sm"
+                              value={es.owner}
+                              onChange={(e) => setEs({ ...es, owner: e.target.value })}
+                              disabled={seriesEditBusy}
+                            >
+                              <option value="">Unassigned</option>
+                              {users.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.full_name || u.username}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 text-[13px] text-ink">
+                          <input
+                            type="checkbox"
+                            checked={es.active}
+                            onChange={(e) => setEs({ ...es, active: e.target.checked })}
+                            disabled={seriesEditBusy}
+                          />
+                          This forum is still active
+                        </label>
+                        <Notice msg={seriesEditMsg} />
+                        <div className="flex justify-end gap-2">
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setEditingSeries(false)} disabled={seriesEditBusy}>
+                            Cancel
+                          </Button>
+                          <Button type="submit" size="sm" variant="primary" disabled={seriesEditBusy || !es.name.trim()}>
+                            {seriesEditBusy ? "Saving…" : "Save"}
+                          </Button>
+                        </div>
+                      </form>
+                    ) : active.description ? (
                       <p className="border-b border-line px-5 py-3 text-[13px] leading-snug text-muted">{active.description}</p>
                     ) : null}
 
@@ -502,16 +621,23 @@ export default function Meetings({ me }) {
                               ) : null}
                               {m.created_by_name ? <Label className="mt-1.5 block">Recorded by {m.created_by_name}</Label> : null}
                             </div>
-                            {m.download_url ? (
-                              <button
-                                type="button"
-                                className="link shrink-0 md:mt-0.5"
-                                onClick={() => downloadFile(m.download_url, `${m.title || "minutes"}`)}
-                              >
-                                <PaperclipIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
-                                Open file
-                              </button>
-                            ) : null}
+                            <div className="flex shrink-0 items-center gap-3 md:mt-0.5">
+                              {m.download_url ? (
+                                <button
+                                  type="button"
+                                  className="link"
+                                  onClick={() => downloadFile(m.download_url, `${m.title || "minutes"}`)}
+                                >
+                                  <PaperclipIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                                  Open file
+                                </button>
+                              ) : null}
+                              {canEdit ? (
+                                <Button size="sm" variant="ghost" onClick={() => setDeletingMinute(m)}>
+                                  Delete
+                                </Button>
+                              ) : null}
+                            </div>
                           </motion.li>
                         ))}
                       </ul>
@@ -559,7 +685,7 @@ export default function Meetings({ me }) {
                             id="mm-attendees"
                             name="attendees"
                             className="input"
-                            placeholder="Ada Admin, Mia Manager…"
+                            placeholder="Names, separated by commas"
                             value={mf.attendees}
                             onChange={(e) => setMf({ ...mf, attendees: e.target.value })}
                           />
@@ -609,6 +735,18 @@ export default function Meetings({ me }) {
           </AnimatePresence>
         </StackItem>
       </Stack>
+
+      <ConfirmDialog
+        open={!!deletingMinute}
+        onClose={() => setDeletingMinute(null)}
+        title="Delete these minutes?"
+        description="The cadence count for this year drops by one."
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          await api.delete(`/meeting-minutes/${deletingMinute.id}/`);
+          await loadSeries(active.id, true);
+        }}
+      />
     </PanelTransition>
   );
 }

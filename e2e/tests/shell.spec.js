@@ -15,7 +15,7 @@ const ROUTES = [
   ["/groups", "Champion groups"],
   ["/risks", "Risk register"],
   ["/jira", "Jira boards"],
-  ["/settings", "Account"],
+  ["/settings", "Settings"],
 ];
 
 test.describe("application shell", () => {

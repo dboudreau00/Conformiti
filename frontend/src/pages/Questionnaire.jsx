@@ -11,6 +11,7 @@ import { ConformitiMark } from "../components/brand/ConformitiMark.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
 import { Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
@@ -51,6 +52,7 @@ export default function Questionnaire() {
   const [title, setTitle] = useState("");
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const url = `/api/questionnaire/${encodeURIComponent(token || "")}/`;
 
   useEffect(() => {
@@ -92,8 +94,7 @@ export default function Questionnaire() {
     }
   }
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit() {
     setMsg(null);
     setBusy(true);
     try {
@@ -130,7 +131,7 @@ export default function Questionnaire() {
     );
   } else {
     body = (
-      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <form onSubmit={(e) => e.preventDefault()} noValidate className="flex flex-col gap-4">
         <Panel className="p-6">
           <Header vendor={data.vendor} organisation={data.organisation} />
           <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">Security questionnaire for {data.vendor}</h1>
@@ -186,13 +187,22 @@ export default function Questionnaire() {
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" disabled={busy || !name.trim() || answered === 0}>
+            <Button type="button" variant="primary" onClick={() => setConfirming(true)} disabled={busy || !name.trim() || answered === 0}>
               {busy ? "Sending…" : "Submit questionnaire"}
             </Button>
             <Button type="button" onClick={saveDraft} disabled={busy}>Save draft</Button>
             <Badge tone="muted">Submits once; the link closes afterwards</Badge>
           </div>
         </Panel>
+        <ConfirmDialog
+          open={confirming}
+          onClose={() => setConfirming(false)}
+          title="Submit your answers?"
+          description={`${answered} of ${questions.length} questions answered${answered < questions.length ? `, ${questions.length - answered} left blank` : ""}. The link closes once you submit and nothing can be changed afterwards.`}
+          confirmLabel="Submit"
+          tone="primary"
+          onConfirm={submit}
+        />
       </form>
     );
   }

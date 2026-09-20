@@ -343,7 +343,7 @@ def main(root, allow_unsigned=False):
             print(f"exported by  : {sums_fp[:16]}  fingerprint sha256:{sums_fp}")
 
     if problems:
-        print(f"\nFAIL — {len(problems)} problem(s):")
+        print(f"\nFAIL: {len(problems)} problem(s):")
         for problem in problems:
             print(f"  - {problem}")
         return 1
@@ -352,23 +352,23 @@ def main(root, allow_unsigned=False):
                                         ("SHA256SUMS.sig", sums_signature))
                if state == "unsigned"]
     if missing and not allow_unsigned:
-        print(f"\nUNSIGNED — {' and '.join(missing)} missing.")
+        print(f"\nUNSIGNED: {' and '.join(missing)} missing.")
         print("Every file matches its checksum, but nothing proves who produced this bundle,")
         print("and a file list without a signature can be rewritten to match any change.")
         print("Compare the manifest digest above with the one the organisation gave you")
         print("directly, and re-run with --allow-unsigned to accept the bundle deliberately.")
         return 3
 
-    print("\nOK — every file matches both the bundle checksums and the sealed manifest.")
+    print("\nOK: every file matches both the bundle checksums and the sealed manifest.")
     if signature == "valid" and sums_signature == "valid":
         print("Both signatures verify: the sealed manifest, and the file list covering every")
-        print("other member — including controls.csv and samples.csv, which hold the")
+        print("other member, including controls.csv and samples.csv, which hold the")
         print("conclusions recorded after the seal. Compare the fingerprint above with the one")
         print("the organisation published; if they match, the bundle is theirs and unchanged.")
     elif signature == "valid":
         print("The sealed manifest is signed and verifies. NOTE: this bundle carries no")
-        print("signature over SHA256SUMS, so the files written after sealing — controls.csv,")
-        print("samples.csv and trail.csv, which carry the auditor's conclusions — are covered")
+        print("signature over SHA256SUMS, so the files written after sealing (controls.csv,")
+        print("samples.csv and trail.csv, which carry the auditor's conclusions) are covered")
         print("by checksums only. Their contents are consistent with this bundle, but nothing")
         print("proves the bundle itself was exported by the organisation.")
     else:

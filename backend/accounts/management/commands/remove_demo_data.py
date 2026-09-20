@@ -143,7 +143,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Seeded access reviews {verb} be deleted: {reviews.count()}")
         self.stdout.write(f"Seeded evidence packages {verb} be deleted: {packages.count()}")
         if dry:
-            self.stdout.write(self.style.WARNING("Dry run — nothing changed."))
+            self.stdout.write(self.style.WARNING("Dry run: nothing changed."))
             return
 
         from analytics.models import ReadinessSnapshot

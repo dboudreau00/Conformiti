@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import api from "../api/client.js";
 import { BarChart } from "../components/charts/BarChart.jsx";
 import { DonutLegend } from "../components/charts/Donut.jsx";
+import DocumentViewer from "../components/documents/DocumentViewer.jsx";
 import { PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Legend, Meter, SegmentBar } from "../components/ui/Meter.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { ShowMore } from "../components/ui/ShowMore.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
@@ -74,6 +76,7 @@ export default function Analytics({ me }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [viewing, setViewing] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,6 +136,12 @@ export default function Analytics({ me }) {
   const readinessPct = readiness.pct ?? pctOf(implemented, applicable);
   const delta = readiness.delta_pts;
 
+  // Worst-first: the panel exists to prompt action, and with 25 frameworks in
+  // arrival order the ones needing attention are wherever the API put them.
+  const sortedFrameworks = [...frameworks].sort(
+    (a, b) => (a.pct ?? pctOf(a.implemented, a.applicable)) - (b.pct ?? pctOf(b.implemented, b.applicable))
+  );
+
   const controlSlices = slicesFrom(CONTROL_STATUS, cs);
   const docSlices = slicesFrom(DOC_STATUS, ds);
   const withEvidence = controls.with_evidence || 0;
@@ -189,34 +198,40 @@ export default function Analytics({ me }) {
         {/* Per-framework readiness */}
         <StackItem>
           <Panel>
-            <PanelHeader title="Framework readiness" meta="Implemented ÷ applicable" />
+            <PanelHeader title="Framework readiness" meta="Least ready first" />
             {frameworks.length === 0 ? (
               <Empty title="No frameworks loaded">Readiness per standard appears once a framework is imported.</Empty>
             ) : (
-              <div className="space-y-5 p-5">
-                {frameworks.map((f, i) => {
-                  const pct = f.pct ?? pctOf(f.implemented, f.applicable);
-                  return (
-                    <div key={f.key || f.name}>
-                      <div className="mb-2 flex items-baseline justify-between gap-3">
-                        <h3 className="flex min-w-0 items-baseline gap-2 text-[13px] font-semibold text-ink">
-                          <span className="truncate">{f.name}</span>
-                          {f.version ? <Label>{f.version}</Label> : null}
-                        </h3>
-                        <span className="tabular shrink-0 font-mono text-2xs uppercase tracking-label text-muted">
-                          {pct}% · {f.implemented}/{f.applicable}
-                        </span>
-                      </div>
-                      <SegmentBar
-                        total={f.total}
-                        delay={i * 0.06}
-                        segments={slicesFrom(CONTROL_STATUS, f.by_status)}
-                        ariaLabel={`${f.name}: ${pct}% of applicable controls implemented`}
-                      />
+              <div className="p-5">
+                <ShowMore total={sortedFrameworks.length} initial={8} noun="frameworks">
+                  {(n) => (
+                    <div className="space-y-5">
+                      {sortedFrameworks.slice(0, n).map((f, i) => {
+                        const pct = f.pct ?? pctOf(f.implemented, f.applicable);
+                        return (
+                          <div key={f.key || f.name}>
+                            <div className="mb-2 flex items-baseline justify-between gap-3">
+                              <h3 className="flex min-w-0 items-baseline gap-2 text-[13px] font-semibold text-ink">
+                                <span className="truncate">{f.name}</span>
+                                {f.version ? <Label>{f.version}</Label> : null}
+                              </h3>
+                              <span className="tabular shrink-0 font-mono text-2xs uppercase tracking-label text-muted">
+                                {pct}% · {f.implemented}/{f.applicable}
+                              </span>
+                            </div>
+                            <SegmentBar
+                              total={f.total}
+                              delay={i * 0.06}
+                              segments={slicesFrom(CONTROL_STATUS, f.by_status)}
+                              ariaLabel={`${f.name}: ${pct}% of applicable controls implemented`}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-                <Legend items={controlSlices} className="border-t border-line pt-4 sm:grid-cols-4" />
+                  )}
+                </ShowMore>
+                <Legend items={controlSlices} className="mt-5 border-t border-line pt-4 sm:grid-cols-4" />
               </div>
             )}
           </Panel>
@@ -295,7 +310,20 @@ export default function Analytics({ me }) {
                       {d.days_overdue}d
                     </Badge>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-medium leading-tight text-ink">{d.name}</p>
+                      <button
+                        type="button"
+                        className="block truncate text-left text-[13px] font-medium leading-tight text-ink hover:text-accent"
+                        onClick={() =>
+                          setViewing({
+                            title: d.name,
+                            previewUrl: `/documents/${d.id}/preview/`,
+                            downloadUrl: `/documents/${d.id}/download/`,
+                            filename: d.name,
+                          })
+                        }
+                      >
+                        {d.name}
+                      </button>
                       <p className="truncate font-mono text-2xs uppercase tracking-label text-faint">{d.folder_path || "-"}</p>
                     </div>
                     <span className={cn("shrink-0 font-mono text-2xs", d.owner ? "text-muted" : "text-faint")}>{d.owner || "unassigned"}</span>
@@ -313,6 +341,8 @@ export default function Analytics({ me }) {
           </Panel>
         </StackItem>
       </Stack>
+
+      <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
     </PanelTransition>
   );
 }

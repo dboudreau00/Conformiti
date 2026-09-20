@@ -436,14 +436,14 @@ class RiskViewSet(viewsets.ModelViewSet):
                     owner = owner_lookup.get(rec["owner"].lower())
                     if owner is None:
                         issues.append({"row": rec["row"], "field": "owner",
-                                       "message": f"Owner {rec['owner']!r} not found — left unassigned"})
+                                       "message": f"Owner {rec['owner']!r} not found, left unassigned"})
                 control = None
                 if rec["control"]:
                     matches = control_lookup.get(rec["control"].lower(), [])
                     if len(matches) == 1:
                         control = matches[0]
                     else:
-                        reason = "not found" if not matches else "ambiguous — prefix with framework key like soc2:CC6.1"
+                        reason = "not found" if not matches else "ambiguous, prefix with framework key like soc2:CC6.1"
                         issues.append({"row": rec["row"], "field": "control",
                                        "message": f"Control {rec['control']!r} {reason}"})
                 risk = Risk.objects.create(

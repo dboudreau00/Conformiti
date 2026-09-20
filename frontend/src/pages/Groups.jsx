@@ -4,6 +4,7 @@ import { FlagIcon, PlusIcon, UserIcon, UserPlusIcon, XIcon } from "lucide-react"
 import api, { fetchAll } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { errorText } from "../utils/a11y.js";
@@ -49,6 +50,15 @@ export default function Groups({ me }) {
   const [gBusy, setGBusy] = useState(false);
   const [gNotice, setGNotice] = useState(null);
 
+  // Edit/delete the selected group
+  const [editingGroup, setEditingGroup] = useState(false);
+  const [egName, setEgName] = useState("");
+  const [egPurpose, setEgPurpose] = useState("");
+  const [egOwner, setEgOwner] = useState("");
+  const [egBusy, setEgBusy] = useState(false);
+  const [egNotice, setEgNotice] = useState(null);
+  const [deletingGroup, setDeletingGroup] = useState(null);
+
   // Add-champion form (right column)
   const [mUser, setMUser] = useState("");
   const [mDept, setMDept] = useState("");
@@ -56,6 +66,13 @@ export default function Groups({ me }) {
   const [mBusy, setMBusy] = useState(false);
   const [mNotice, setMNotice] = useState(null);
   const [removingId, setRemovingId] = useState(null);
+  const [removing, setRemoving] = useState(null);
+
+  // Edit a champion's department/note in place
+  const [editingMemberId, setEditingMemberId] = useState(null);
+  const [emDept, setEmDept] = useState("");
+  const [emNote, setEmNote] = useState("");
+  const [emBusy, setEmBusy] = useState(false);
 
   function open(g) {
     const switching = g.id !== activeIdRef.current;
@@ -66,6 +83,8 @@ export default function Groups({ me }) {
       setMembersLoading(true);
       setMNotice(null);
       setMUser("");
+      setEditingGroup(false);
+      setEditingMemberId(null);
     }
     setMembersErr("");
     const req = ++membersReq.current;
@@ -132,6 +151,31 @@ export default function Groups({ me }) {
     }
   }
 
+  function openEditGroup() {
+    setEgName(active.name);
+    setEgPurpose(active.purpose || "");
+    setEgOwner(active.owner ? String(active.owner) : "");
+    setEgNotice(null);
+    setEditingGroup(true);
+  }
+
+  async function saveGroup(e) {
+    e.preventDefault();
+    if (!canEdit || !active || egBusy || !egName.trim()) return;
+    setEgBusy(true);
+    setEgNotice(null);
+    const payload = { name: egName.trim(), purpose: egPurpose.trim(), owner: egOwner ? Number(egOwner) : null };
+    try {
+      const { data } = await api.patch(`/champion-groups/${active.id}/`, payload);
+      setEditingGroup(false);
+      await loadGroups(data.id);
+    } catch (ex) {
+      setEgNotice({ kind: "err", text: errorText(ex) });
+    } finally {
+      setEgBusy(false);
+    }
+  }
+
   async function addMember(e) {
     e.preventDefault();
     if (!canEdit || !active || mBusy || !mUser || !mDept.trim()) return;
@@ -167,8 +211,35 @@ export default function Groups({ me }) {
       await loadGroups(active.id);
     } catch (ex) {
       setMNotice({ kind: "err", text: errorText(ex) });
+      // The confirm dialog closes on a resolved promise, so swallowing this
+      // read as a removal that had worked.
+      return false;
     } finally {
       setRemovingId(null);
+    }
+    return true;
+  }
+
+  function openEditMember(m) {
+    setEditingMemberId(m.id);
+    setEmDept(m.department || "");
+    setEmNote(m.note || "");
+    setMNotice(null);
+  }
+
+  async function saveMember(e, m) {
+    e.preventDefault();
+    if (!canEdit || emBusy || !emDept.trim()) return;
+    setEmBusy(true);
+    setMNotice(null);
+    try {
+      await api.patch(`/group-members/${m.id}/`, { department: emDept.trim(), note: emNote.trim() });
+      setEditingMemberId(null);
+      await loadGroups(active.id);
+    } catch (ex) {
+      setMNotice({ kind: "err", text: memberErrorText(ex) });
+    } finally {
+      setEmBusy(false);
     }
   }
 
@@ -231,34 +302,34 @@ export default function Groups({ me }) {
               <form onSubmit={addGroup} className="space-y-2 border-t border-line p-3" aria-labelledby="new-group-label">
                 <Label id="new-group-label" as="p">New group</Label>
                 <div>
-                  <label htmlFor="cg-name" className="sr-only">Group name</label>
+                  <label htmlFor="cg-name" className="field-label">Group name</label>
                   <input
                     id="cg-name"
                     className="input input-sm"
                     value={gName}
                     onChange={(e) => setGName(e.target.value)}
-                    placeholder="Group name, e.g. Privacy Champions"
+                    placeholder="Privacy Champions"
                     required
                     maxLength={160}
                     disabled={gBusy}
                   />
                 </div>
                 <div>
-                  <label htmlFor="cg-purpose" className="sr-only">Purpose</label>
+                  <label htmlFor="cg-purpose" className="field-label">Purpose</label>
                   <input
                     id="cg-purpose"
                     className="input input-sm"
                     value={gPurpose}
                     onChange={(e) => setGPurpose(e.target.value)}
-                    placeholder="Purpose: what this group is accountable for"
+                    placeholder="What this group is accountable for"
                     disabled={gBusy}
                   />
                 </div>
                 {users.length > 0 ? (
                   <div>
-                    <label htmlFor="cg-owner" className="sr-only">Accountable owner</label>
+                    <label htmlFor="cg-owner" className="field-label">Accountable owner</label>
                     <select id="cg-owner" className="input input-sm" value={gOwner} onChange={(e) => setGOwner(e.target.value)} disabled={gBusy}>
-                      <option value="">Accountable owner: unassigned</option>
+                      <option value="">Unassigned</option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>{displayName(u)}</option>
                       ))}
@@ -313,14 +384,67 @@ export default function Groups({ me }) {
               >
                 <Panel className="overflow-hidden">
                   <PanelHeader title={active.name}>
-                    <Label className="flex items-center gap-1">
-                      <UserIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
-                      Owner: {active.owner_name || "unassigned"}
-                    </Label>
+                    <div className="flex items-center gap-3">
+                      <Label className="flex items-center gap-1">
+                        <UserIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+                        Owner: {active.owner_name || "unassigned"}
+                      </Label>
+                      {canEdit ? (
+                        <div className="flex items-center gap-1.5">
+                          <Button size="sm" variant="ghost" onClick={openEditGroup}>Edit group</Button>
+                          <Button size="sm" variant="danger" onClick={() => setDeletingGroup(active)}>Delete group</Button>
+                        </div>
+                      ) : null}
+                    </div>
                   </PanelHeader>
-                  <p className={cn("border-b border-line px-5 py-3 text-[13px] leading-snug", active.purpose ? "text-muted" : "italic text-faint")}>
-                    {active.purpose || "No stated purpose yet."}
-                  </p>
+
+                  {editingGroup ? (
+                    <form onSubmit={saveGroup} className="space-y-2 border-b border-line bg-surface-2 px-5 py-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="eg-name" className="field-label">Group name</label>
+                          <input
+                            id="eg-name"
+                            className="input input-sm"
+                            value={egName}
+                            onChange={(e) => setEgName(e.target.value)}
+                            required
+                            maxLength={160}
+                            disabled={egBusy}
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="eg-owner" className="field-label">Accountable owner</label>
+                          <select id="eg-owner" className="input input-sm" value={egOwner} onChange={(e) => setEgOwner(e.target.value)} disabled={egBusy}>
+                            <option value="">Unassigned</option>
+                            {users.map((u) => (
+                              <option key={u.id} value={u.id}>{displayName(u)}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="eg-purpose" className="field-label">Purpose</label>
+                        <input
+                          id="eg-purpose"
+                          className="input input-sm"
+                          value={egPurpose}
+                          onChange={(e) => setEgPurpose(e.target.value)}
+                          placeholder="What this group is accountable for"
+                          disabled={egBusy}
+                        />
+                      </div>
+                      {egNotice ? <Notice notice={egNotice} /> : null}
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setEditingGroup(false)} disabled={egBusy}>Cancel</Button>
+                        <Button type="submit" size="sm" variant="primary" disabled={egBusy || !egName.trim()}>{egBusy ? "Saving…" : "Save"}</Button>
+                      </div>
+                    </form>
+                  ) : (
+                    <p className={cn("border-b border-line px-5 py-3 text-[13px] leading-snug", active.purpose ? "text-muted" : "italic text-faint")}>
+                      {active.purpose || "No stated purpose yet."}
+                    </p>
+                  )}
 
                   {mNotice ? <div className="px-5 pt-3"><Notice notice={mNotice} /></div> : null}
 
@@ -336,7 +460,7 @@ export default function Groups({ me }) {
                             <th scope="col" className="table-head px-5 py-2 font-normal">Champion</th>
                             <th scope="col" className="table-head px-5 py-2 font-normal">Department</th>
                             <th scope="col" className="table-head px-5 py-2 font-normal">Note</th>
-                            {canEdit ? <th scope="col" className="table-head w-[90px] px-5 py-2 text-right font-normal"><span className="sr-only">Actions</span></th> : null}
+                            {canEdit ? <th scope="col" className="table-head w-[170px] px-5 py-2 text-right font-normal"><span className="sr-only">Actions</span></th> : null}
                           </tr>
                         </thead>
                         <tbody>
@@ -355,23 +479,68 @@ export default function Groups({ me }) {
                                   <p className="font-mono text-2xs text-faint">{m.username}</p>
                                 </td>
                                 <td className="px-5 py-3 align-top">
-                                  <Badge>{m.department}</Badge>
+                                  {editingMemberId === m.id ? (
+                                    <input
+                                      className="input input-sm"
+                                      value={emDept}
+                                      onChange={(e) => setEmDept(e.target.value)}
+                                      required
+                                      maxLength={120}
+                                      disabled={emBusy}
+                                      aria-label={`Department for ${m.user_name || m.username}`}
+                                    />
+                                  ) : (
+                                    <Badge>{m.department}</Badge>
+                                  )}
                                 </td>
                                 <td className="max-w-[320px] px-5 py-3 align-top text-xs leading-snug text-muted">
-                                  {m.note ? <span className="line-clamp-2">{m.note}</span> : <span className="text-faint">-</span>}
+                                  {editingMemberId === m.id ? (
+                                    <input
+                                      className="input input-sm"
+                                      value={emNote}
+                                      onChange={(e) => setEmNote(e.target.value)}
+                                      maxLength={200}
+                                      disabled={emBusy}
+                                      aria-label={`Note for ${m.user_name || m.username}`}
+                                    />
+                                  ) : m.note ? (
+                                    <span className="line-clamp-2">{m.note}</span>
+                                  ) : (
+                                    <span className="text-faint">-</span>
+                                  )}
                                 </td>
                                 {canEdit ? (
                                   <td className="px-5 py-2 text-right align-top">
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => removeMember(m)}
-                                      disabled={removingId !== null}
-                                      aria-label={`Remove ${m.user_name || m.username} from ${active.name}`}
-                                      icon={<XIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
-                                    >
-                                      {removingId === m.id ? "Removing…" : "Remove"}
-                                    </Button>
+                                    {editingMemberId === m.id ? (
+                                      <div className="flex justify-end gap-1.5">
+                                        <Button size="sm" variant="ghost" onClick={() => setEditingMemberId(null)} disabled={emBusy}>Cancel</Button>
+                                        <Button size="sm" variant="primary" onClick={(e) => saveMember(e, m)} disabled={emBusy || !emDept.trim()}>
+                                          {emBusy ? "Saving…" : "Save"}
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex justify-end gap-1.5">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => openEditMember(m)}
+                                          disabled={removingId !== null}
+                                          aria-label={`Edit ${m.user_name || m.username} in ${active.name}`}
+                                        >
+                                          Edit
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => setRemoving(m)}
+                                          disabled={removingId !== null}
+                                          aria-label={`Remove ${m.user_name || m.username} from ${active.name}`}
+                                          icon={<XIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+                                        >
+                                          Remove
+                                        </Button>
+                                      </div>
+                                    )}
                                   </td>
                                 ) : null}
                               </motion.tr>
@@ -456,6 +625,35 @@ export default function Groups({ me }) {
           ) : null}
         </StackItem>
       </Stack>
+
+      <ConfirmDialog
+        open={!!deletingGroup}
+        onClose={() => setDeletingGroup(null)}
+        title={`Delete ${deletingGroup?.name}?`}
+        description="Its champions are unassigned. This cannot be undone."
+        confirmLabel="Delete group"
+        onConfirm={async () => {
+          try {
+            await api.delete(`/champion-groups/${deletingGroup.id}/`);
+          } catch (e) {
+            throw new Error(errorText(e, "Couldn't delete that group."));
+          }
+          await loadGroups();
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        title={`Remove ${removing?.user_name || removing?.username} from ${active?.name}?`}
+        description="Their department tag and note are deleted with the membership."
+        confirmLabel="Remove"
+        onConfirm={async () => {
+          if (!(await removeMember(removing))) {
+            throw new Error("Couldn't remove that champion.");
+          }
+        }}
+      />
     </PanelTransition>
   );
 }

@@ -46,6 +46,11 @@ test.describe("questionnaire sent to the vendor", () => {
       await vendor.locator("#q-name").fill("Nia Vendor");
       await vendor.locator("#q-title").fill("CISO");
       await vendor.getByRole("button", { name: "Submit questionnaire" }).click();
+      // Submitting closes the link for good, so it asks first and says how
+      // many questions are still blank. Exact, or this also matches the
+      // "Submit questionnaire" button behind the dialog.
+      await expect(vendor.getByRole("heading", { name: "Submit your answers?" })).toBeVisible();
+      await vendor.getByRole("button", { name: "Submit", exact: true }).click();
       await expect(vendor.getByRole("heading", { name: "Thank you" })).toBeVisible();
 
       // Submits once: the link is now closed.

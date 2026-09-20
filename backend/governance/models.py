@@ -134,7 +134,7 @@ class MeetingMinute(TenantModel):
         ordering = ["-date"]
 
     def __str__(self):
-        return f"{self.series.name} — {self.date}"
+        return f"{self.series.name}: {self.date}"
 
 
 # --------------------------------------------------------------------------- #

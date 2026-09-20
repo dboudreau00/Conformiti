@@ -42,6 +42,7 @@ export default function Risks({ me }) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const fileRef = useRef(null);
+  const detailRef = useRef(null);
 
   const canManage = !!me?.capabilities?.manage_frameworks;
   const canEditRisk = (r) => canManage || (r?.owner != null && r.owner === me?.id);
@@ -75,6 +76,12 @@ export default function Risks({ me }) {
     fetchAll("/users/").then(setUsers).catch((e) => setUsersErr(errorText(e, "Owner directory unavailable.")));
     api.get("/control-evidence/choices/").then((r) => setControls(r.data.controls || [])).catch(() => setControls([]));
   }, [loadRisks]);
+
+  // A row can sit well below the fold in a long register; walk the reader down
+  // to the detail that just opened instead of leaving them to find it.
+  useEffect(() => {
+    if (selectedId) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [selectedId]);
 
   // Notes for the selected risk.
   useEffect(() => {
@@ -227,11 +234,11 @@ export default function Risks({ me }) {
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={downloadTemplate} icon={<FileSpreadsheetIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
-              Template
-            </Button>
             {canManage ? (
               <>
+                <Button size="sm" onClick={downloadTemplate} icon={<FileSpreadsheetIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                  Import template
+                </Button>
                 <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={doImport} aria-label="Import risks from CSV or XLSX" />
                 <Button size="sm" onClick={() => fileRef.current?.click()} disabled={importing} icon={<UploadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
                   {importing ? "Importing…" : "Import CSV/XLSX"}
@@ -388,7 +395,7 @@ export default function Risks({ me }) {
 
         <AnimatePresence initial={false}>
           {selected ? (
-            <motion.div key={`detail-${selected.id}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease: EASE }}>
+            <motion.div ref={detailRef} key={`detail-${selected.id}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease: EASE }}>
               <RiskDetail
                 risk={selected}
                 canEdit={canEditRisk(selected)}
@@ -411,7 +418,7 @@ export default function Risks({ me }) {
         {!loading && !error ? (
           <StackItem>
             <Label className="block px-1">
-              Ratings use the 5×5 banding: 1 to 4 low · 5 to 9 moderate · 10 to 15 high · 16 to 25 critical. Owners may edit their own risks; framework managers may edit, create, import and delete.
+              Ratings use the 5×5 banding: 1 to 4 low · 5 to 9 moderate · 10 to 15 high · 16 to 25 critical. Owners may edit their own risks; framework managers may edit, create and import.
             </Label>
           </StackItem>
         ) : null}

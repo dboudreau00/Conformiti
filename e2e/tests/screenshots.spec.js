@@ -83,7 +83,7 @@ test("vendors", async ({ page }) => {
   if (await aws.count()) {
     await aws.click().catch(() => {});
     await page.waitForTimeout(600);
-    await page.getByText("Responsibility matrix", { exact: true }).click().catch(() => {});
+    await page.locator("main").getByText("Responsibility matrix", { exact: true }).click().catch(() => {});
     await page.waitForTimeout(900);
   }
   await shot(page, "vendors");

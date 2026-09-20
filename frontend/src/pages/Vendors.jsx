@@ -19,9 +19,10 @@ import { Collapse, EASE, PanelTransition } from "../components/layout/PanelTrans
 import DocumentViewer from "../components/documents/DocumentViewer.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
 import { useConfirm } from "../components/ui/Dialog.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText } from "../utils/a11y.js";
@@ -612,10 +613,38 @@ function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
   );
 }
 
+/** The control cell of an import row: a matched row shows compact text with
+ * a way to change it, so a 200-row file does not render 200 native selects
+ * each scrolling through the framework's whole catalogue. */
+function ImportControlCell({ r, fw, controls, open, onOpen, onPick }) {
+  const chosen = r.control_id ? controls.find((c) => c.id === r.control_id) : null;
+  if (chosen && !open) {
+    return (
+      <div className="flex items-baseline gap-2">
+        <span className="min-w-0 truncate"><span className="font-mono text-accent">{chosen.label}</span>: {chosen.title}</span>
+        <button type="button" className="shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink" onClick={onOpen}>
+          Change
+        </button>
+      </div>
+    );
+  }
+  return (
+    <ControlPicker
+      id={`import-control-${r.key}`}
+      label={`Control for line ${r.line}`}
+      placeholder={chosen ? "Find a different control" : "Not matched, find a control"}
+      controls={controls}
+      framework={fw}
+      onPick={onPick}
+    />
+  );
+}
+
 function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onConfirm, onCancel, setMsg }) {
   const fileRef = useRef(null);
   const [parsing, setParsing] = useState(false);
   const [review, setReview] = useState(null);
+  const [openKeys, setOpenKeys] = useState(() => new Set());
   // A bare "6.1" is a PCI requirement, an ISO clause and a SOC 2 point of
   // focus; the file is about one of them and only the person knows which.
   // `frameworks` is [key, name] pairs; one framework means one obvious choice.
@@ -632,6 +661,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
     try {
       const { data } = await api.post(`/vendors/${vendor.id}/matrix/parse/`, fd);
       setReview({ ...data, file_name: file.name, rows: data.rows.map((r, i) => ({ ...r, key: i, include: r.matched && !!r.responsibility })) });
+      setOpenKeys(new Set());
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't read that file.") });
     } finally {
@@ -639,6 +669,10 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
     }
   }
   const patch = (key, p) => setReview((cur) => ({ ...cur, rows: cur.rows.map((r) => (r.key === key ? { ...r, ...p } : r)) }));
+  const pickControl = (key, c) => {
+    patch(key, { control_id: c.id, matched: true, include: true });
+    setOpenKeys((cur) => { const next = new Set(cur); next.delete(key); return next; });
+  };
   const ready = review ? review.rows.filter((r) => r.include && r.control_id && r.responsibility) : [];
 
   return (
@@ -704,11 +738,11 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                         <td className="px-2 py-1.5"><input type="checkbox" checked={r.include} aria-label={`Import line ${r.line}`} onChange={(e) => patch(r.key, { include: e.target.checked })} /></td>
                         <td className="px-2 py-1.5 font-mono text-muted">{r.raw_ref}</td>
                         <td className="px-2 py-1.5">
-                          <select className="input input-sm" aria-label={`Control for line ${r.line}`} value={r.control_id || ""}
-                                  onChange={(e) => patch(r.key, { control_id: e.target.value ? Number(e.target.value) : null, matched: !!e.target.value, include: !!e.target.value })}>
-                            <option value="">{r.matched ? "" : "Not matched, choose"}</option>
-                            {controls.filter((c) => !fw || c.framework === fw).map((c) => <option key={c.id} value={c.id}>{c.label}: {c.title}</option>)}
-                          </select>
+                          <ImportControlCell
+                            r={r} fw={fw} controls={controls} open={openKeys.has(r.key)}
+                            onOpen={() => setOpenKeys((cur) => new Set(cur).add(r.key))}
+                            onPick={(c) => pickControl(r.key, c)}
+                          />
                         </td>
                         <td className="px-2 py-1.5">
                           <select className={cn("input input-sm", !r.responsibility && "border-warning")} aria-label={`Responsibility for line ${r.line}`} value={r.responsibility || ""}
@@ -750,14 +784,16 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   const [edits, setEdits] = useState({});
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState(null); // "prompt" | "import"
+  const [loadErr, setLoadErr] = useState(false);
 
   async function load() {
+    setLoadErr(false);
     try {
       const { data: d } = await api.get(`/vendors/${vendor.id}/matrix/`);
       setData(d);
-    } catch (e) {
-      setData({ rows: [], summary: { controls: 0, stated: 0, unstated: 0 } });
-      setMsg({ ok: false, text: errorText(e, "Couldn't load the responsibility matrix.") });
+    } catch {
+      setData(null);
+      setLoadErr(true);
     }
   }
   useEffect(() => { setEdits({}); load(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [vendor.id]);
@@ -809,6 +845,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
     if (await put(rows, "manual", `${rows.length} control(s) saved.`)) setEdits({});
   };
 
+  if (loadErr) return <Panel><LoadError what="The responsibility matrix" onRetry={load} /></Panel>;
   if (!data) return <Panel><Loading /></Panel>;
   const s = data.summary;
 
@@ -870,13 +907,12 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
           <input id="matrix-search" className="input input-sm ml-auto w-56" placeholder="Search controls…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-xs">
+          <table className="w-full min-w-[720px] text-xs">
             <thead className="bg-surface-2">
               <tr>
                 <th className="px-4 py-2 text-left font-normal text-faint" scope="col">Control</th>
                 <th className="px-2 py-2 text-left font-normal text-faint" scope="col">Responsibility</th>
-                <th className="px-2 py-2 text-left font-normal text-faint" scope="col">{vendor.name} does</th>
-                <th className="px-2 py-2 text-left font-normal text-faint" scope="col">We do</th>
+                <th className="px-2 py-2 text-left font-normal text-faint" scope="col" colSpan={2}>Statements</th>
                 <th className="px-2 py-2 text-left font-normal text-faint" scope="col">Source</th>
               </tr>
             </thead>
@@ -893,17 +929,27 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
                     {canManage ? <RespPicker compact label={`Responsibility for ${r.control_id}`} value={r.responsibility} disabled={busy} onChange={(v) => edit(r.control, { responsibility: v })} />
                       : r.responsibility ? <Badge tone={RESP_TONE[r.responsibility]}>{RESP_LABEL[r.responsibility]}</Badge> : <span className="text-faint">-</span>}
                   </td>
-                  <td className="px-2 py-2">
+                  <td className="px-2 py-2" colSpan={2}>
                     {canManage ? (
-                      <textarea className="input input-sm min-h-[40px] w-full" rows={1} aria-label={`What ${vendor.name} does for ${r.control_id}`} value={r.provider_statement || ""} disabled={busy}
+                      <label htmlFor={`matrix-provider-${r.control}`} className="field-label">{vendor.name} does</label>
+                    ) : (
+                      <Label as="p">{vendor.name} does</Label>
+                    )}
+                    {canManage ? (
+                      <textarea id={`matrix-provider-${r.control}`} aria-label={`${vendor.name} does for ${r.control_id}`}
+                                className="input input-sm min-h-[40px] w-full" rows={1} value={r.provider_statement || ""} disabled={busy}
                                 onChange={(e) => edit(r.control, { provider_statement: e.target.value })} />
-                    ) : <span className="whitespace-pre-line text-muted">{r.provider_statement || "-"}</span>}
-                  </td>
-                  <td className="px-2 py-2">
+                    ) : <span className="block whitespace-pre-line text-muted">{r.provider_statement || "-"}</span>}
                     {canManage ? (
-                      <textarea className="input input-sm min-h-[40px] w-full" rows={1} aria-label={`What we do for ${r.control_id}`} value={r.customer_statement || ""} disabled={busy}
+                      <label htmlFor={`matrix-customer-${r.control}`} className="field-label mt-2">We do</label>
+                    ) : (
+                      <Label as="p" className="mt-2">We do</Label>
+                    )}
+                    {canManage ? (
+                      <textarea id={`matrix-customer-${r.control}`} aria-label={`We do for ${r.control_id}`}
+                                className="input input-sm min-h-[40px] w-full" rows={1} value={r.customer_statement || ""} disabled={busy}
                                 onChange={(e) => edit(r.control, { customer_statement: e.target.value })} />
-                    ) : <span className="whitespace-pre-line text-muted">{r.customer_statement || "-"}</span>}
+                    ) : <span className="block whitespace-pre-line text-muted">{r.customer_statement || "-"}</span>}
                   </td>
                   <td className="w-[90px] px-2 py-2">
                     {r.dirty ? <Badge tone="accent" mono>unsaved</Badge> : r.source ? <Badge tone="faint" mono>{r.source}</Badge> : null}
@@ -939,6 +985,7 @@ export default function Vendors({ me }) {
   const [vendors, setVendors] = useState(null);
   const [selectedId, setSelectedId] = useState(() => Number(params.get("vendor")) || null);
   const [detail, setDetail] = useState(null);
+  const [detailErr, setDetailErr] = useState(false);
   const [tab, setTab] = useState(() => (TABS.some((t) => t.id === params.get("tab")) ? params.get("tab") : "overview"));
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -957,12 +1004,13 @@ export default function Vendors({ me }) {
     setSelectedId(next ? next.id : null);
   }
   async function loadDetail(id) {
+    setDetailErr(false);
     try {
       const { data } = await api.get(`/vendors/${id}/`);
       setDetail(data);
-    } catch (e) {
+    } catch {
       setDetail(null);
-      setMsg({ ok: false, text: errorText(e, "Couldn't load that vendor.") });
+      setDetailErr(true);
     }
   }
 
@@ -1035,10 +1083,28 @@ export default function Vendors({ me }) {
         {/* ------------------------------------------------------------ register */}
         <div className="flex flex-col gap-4">
           <Panel className="overflow-hidden">
-            <PanelHeader title="Vendor register" meta={`${vendors.length} total`} />
+            <PanelHeader title="Vendor register" meta={`${vendors.length} total`}>
+              {canManage ? (
+                <Button size="sm" variant={creating ? "secondary" : "primary"} aria-expanded={creating} onClick={() => setCreating((x) => !x)}>
+                  Register a vendor
+                </Button>
+              ) : null}
+            </PanelHeader>
+            {canManage && creating ? (
+              <div className="border-b border-line bg-surface-2 px-4 py-4">
+                <VendorForm users={users} busy={busy} submitLabel="Register vendor" onCancel={() => setCreating(false)}
+                            onSubmit={(body) => act(async () => {
+                              const { data } = await api.post("/vendors/", body);
+                              setCreating(false);
+                              await loadVendors(data.id);
+                              setTab("matrix");
+                              setIntent("prompt");
+                            }, "Vendor registered. Next: state which controls they cover.")} />
+              </div>
+            ) : null}
             <div className="space-y-2 border-b border-line bg-surface-2 px-3 py-2.5">
               <label htmlFor="vendor-search" className="sr-only">Search vendors</label>
-              <input id="vendor-search" className="input input-sm" placeholder="Search…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />
+              <input id="vendor-search" className="input input-sm" placeholder="Search vendors, categories or data handled" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />
               <div className="flex flex-wrap gap-1">
                 <Chip active={!filter.tier} onClick={() => setFilter((f) => ({ ...f, tier: "" }))}>All</Chip>
                 {TIERS.map(([k, l]) => <Chip key={k} active={filter.tier === k} tone={TIER_TONE[k]} onClick={() => setFilter((f) => ({ ...f, tier: f.tier === k ? "" : k }))}>{l}</Chip>)}
@@ -1046,7 +1112,7 @@ export default function Vendors({ me }) {
             </div>
             {filtered.length === 0 ? (
               <Empty title={vendors.length ? "No vendors match" : "No vendors yet"}>
-                {vendors.length ? "Try another filter." : canManage ? "Register the third parties that touch your data or run your controls." : "Nothing has been registered yet."}
+                {vendors.length ? "Try another filter." : canManage ? "Register the third parties that touch your data or run your controls. Start with Register a vendor above." : "Nothing has been registered yet."}
               </Empty>
             ) : (
               <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto">
@@ -1085,30 +1151,21 @@ export default function Vendors({ me }) {
               ))}
             </ul>
           </Panel>
-
-          {canManage ? (
-            <Panel className="p-4">
-              {creating ? (
-                <VendorForm users={users} busy={busy} submitLabel="Register vendor" onCancel={() => setCreating(false)}
-                            onSubmit={(body) => act(async () => {
-                              const { data } = await api.post("/vendors/", body);
-                              setCreating(false);
-                              await loadVendors(data.id);
-                              setTab("matrix");
-                              setIntent("prompt");
-                            }, "Vendor registered. Next: state which controls they cover.")} />
-              ) : (
-                <Button size="sm" variant="primary" className="w-full" onClick={() => setCreating(true)}>Register a vendor</Button>
-              )}
-            </Panel>
-          ) : null}
         </div>
 
         {/* -------------------------------------------------------------- detail */}
         <div className="flex min-w-0 flex-col gap-4">
           <Notice msg={msg} onClose={() => setMsg(null)} />
           {!selectedId || !detail ? (
-            <Panel>{selectedId ? <Loading /> : <Empty title="Select a vendor">Pick a vendor on the left to see their assurance and responsibility matrix.</Empty>}</Panel>
+            <Panel>
+              {!selectedId ? (
+                <Empty title="Select a vendor">Pick a vendor on the left to see their assurance and responsibility matrix.</Empty>
+              ) : detailErr ? (
+                <LoadError what="This vendor" onRetry={() => loadDetail(selectedId)} />
+              ) : (
+                <Loading />
+              )}
+            </Panel>
           ) : (
             <>
               <Panel className="p-5">

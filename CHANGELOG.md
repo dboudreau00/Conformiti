@@ -11,6 +11,86 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5j], 2026-09-20
+
+A user-experience release. Three read-only analysts walked every screen the way
+a person uses one, arrival, list, primary action, form, destructive action, and
+what follows success or failure, and returned 172 findings. The best of them
+shipped in 0.9.5d. This closes the sixty-nine that were still open against the
+core's own screens. Nothing to do on upgrade: no migration, no configuration
+change, no API change.
+
+### Fixed
+
+- **A screen that could not load its data said there was none.** Nine screens
+  turned a failed request into an empty state, so a request list that did not
+  arrive read as "Nothing requested yet", a responsibility matrix that failed
+  read as "No controls match", and a vendor whose detail failed showed a
+  spinner for ever. All nine now say what could not be loaded and offer to
+  try again, and the summary counters beside them show a dash rather than a
+  confident zero. Six of them do it through the shared `LoadError` panel:
+  the control register, audit packages, the request list, vendors, the
+  responsibility matrix and documents. The dashboard, the analytics and the
+  compliance calendar keep their own panels, because each sits inside a
+  surrounding frame that has to stay drawn.
+- **Irreversible actions that asked nothing now ask.** Completing an access
+  review freezes an attestation for good and took one click; revoking a live
+  auditor grant cut somebody off mid-fieldwork with no dialog, while Withdraw
+  beside it asked for a reason. Those two, plus removing a control from a
+  draft package, removing a champion from a group, deleting a meeting minute,
+  removing a party from a control, removing a Jira board and submitting a
+  vendor questionnaire, all pass through the product's own confirmation dialog
+  now. The questionnaire's says how many questions are still blank.
+- **A click outside a dialog discarded what had been typed into it.** That is
+  the one failure the text dialog exists to prevent, so it no longer closes on
+  an overlay click. The plain dialog still does, because a dialog with nothing
+  typed in it has nothing to lose.
+- **Three screens were unusable at laptop width.** At 1366 by 768 the access
+  review's decision and justification columns, the two a reviewer uses on every
+  row, sat past the right edge; so did the document table and the vendor
+  responsibility matrix. All three fit now.
+- **Buttons that led nowhere.** The dashboard's "Resolve now" promised to
+  resolve overdue reviews and opened a folder picker that has no notion of
+  them; it points at the review queue on the same page. The risk register's
+  footer promised a delete no screen offered. A compliance calendar entry named
+  a document and would not open it. "No controls match" offered no way to clear
+  the filter that caused it.
+- **Records that could not be corrected.** A meeting series, a champion group
+  and a group membership could be created and never edited, so a typo was
+  permanent. All three are editable, and a meeting minute can be deleted with
+  the consequence spelled out. Attestations and sealed packages stay immutable:
+  those are evidence.
+
+### Changed
+
+- **Sidebar labels match the pages they open.** Responsibility is
+  "Responsibility matrix", Groups is "Champion groups", and the page that the
+  menu calls Settings no longer calls itself Account.
+- **The sidebar folds.** Twenty-five control libraries and the paid overlay
+  push it to thirty-three entries, past the height of a laptop screen, so
+  sections collapse and remember it, and the section holding the current page
+  is always open. The compact navigation labels its icons.
+- **The dashboard, the analytics and the calendar can be retried** after a
+  failure, instead of needing a full browser reload.
+- Analytics sorts frameworks worst first and pages them, rather than listing
+  twenty-five at full height. The audit trail's empty state describes the
+  filter you applied rather than the unfiltered case. A control's evidence
+  picker is a filterable list rather than a native multi-select with a
+  control-click hint. The passkey removal explains what the password field is
+  for instead of hiding it in a tooltip. The sign-in page says what to do about
+  a forgotten password.
+- **Thirty-five messages a person can read carried an em dash**, and none do
+  now: the standalone verifier an auditor runs against a sealed bundle, the
+  daily digest subject, six email templates, the malware-scanner alert, and a
+  scattering of API refusals. Found with the parser rather than with grep,
+  because one of them was written as an escape and no byte search would have
+  seen it. Comments and docstrings are a separate sweep and are untouched.
+- A click outside a confirmation on the champion groups page reported success
+  when the removal had failed, and a refused deletion showed the raw HTTP
+  message instead of a sentence. The sidebar section holding the page you are
+  on no longer offers a collapse control that cannot do anything, and "Clear
+  filters" on the control register clears the framework as well.
+
 ## [0.9.5i], 2026-09-19
 
 A sixth review, three findings, two of them defects in fixes 0.9.5h shipped

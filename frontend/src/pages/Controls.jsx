@@ -298,6 +298,9 @@ export default function Controls({ me }) {
                       <Empty title="No controls match these filters">
                         Clear the search or widen the status selection.
                       </Empty>
+                      <div className="pb-8 text-center">
+                        <Button size="sm" onClick={() => { setQuery(""); setStatus("all"); setFramework("all"); }}>Clear filters</Button>
+                      </div>
                     </li>
                   ) : null}
                   {page.remaining ? (

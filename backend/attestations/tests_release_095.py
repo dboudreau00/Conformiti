@@ -58,7 +58,7 @@ class UnsignedBundleTests(PackageTestBase):
             r = run_verifier(tmp)
             self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
             self.assertIn("UNSIGNED", r.stdout)
-            self.assertNotIn("OK —", r.stdout)
+            self.assertNotIn("OK:", r.stdout)
 
             # Accepting an unsigned bundle is a deliberate act, and says so.
             allowed = run_verifier(tmp, "--allow-unsigned")

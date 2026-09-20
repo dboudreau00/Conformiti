@@ -129,7 +129,7 @@ def _tls_context():
     """A verifying TLS context.
 
     imaplib/poplib default to ssl._create_stdlib_context(), which is an
-    *unverified* context (CERT_NONE, check_hostname=False) — the mailbox
+    *unverified* context (CERT_NONE, check_hostname=False): the mailbox
     password would be handed to anyone who can present any certificate.
     """
     return ssl.create_default_context()
@@ -213,7 +213,7 @@ def verify_mailbox():
         try:
             typ, data = conn.list()
             boxes = len(data) if data else 0
-            return f"IMAP OK ({settings.MAILBOX_HOST}:{settings.MAILBOX_PORT}) — {boxes} mailboxes visible"
+            return f"IMAP OK ({settings.MAILBOX_HOST}:{settings.MAILBOX_PORT}): {boxes} mailboxes visible"
         finally:
             try:
                 conn.logout()
@@ -223,7 +223,7 @@ def verify_mailbox():
         conn = _pop3_connect()
         try:
             count, size = conn.stat()
-            return f"POP3 OK ({settings.MAILBOX_HOST}:{settings.MAILBOX_PORT}) — {count} messages, {size} bytes"
+            return f"POP3 OK ({settings.MAILBOX_HOST}:{settings.MAILBOX_PORT}): {count} messages, {size} bytes"
         finally:
             try:
                 conn.quit()

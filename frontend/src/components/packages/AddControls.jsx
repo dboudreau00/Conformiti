@@ -89,7 +89,10 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
       <Panel className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <PanelHeader title="Scope" meta={`${inScopeIds.size} in scope`} />
+            <div className="flex items-center gap-3">
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Scope</h2>
+              <Label>{inScopeIds.size} in scope</Label>
+            </div>
             <p className="mt-1 text-xs text-muted">Choose the controls this audit covers. Evidence already linked to each one is pinned as it is today.</p>
           </div>
           <Button size="sm" variant="primary" onClick={() => setOpen(true)}

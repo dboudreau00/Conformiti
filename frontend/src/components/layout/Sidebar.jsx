@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { LogOutIcon } from "lucide-react";
+import { ChevronDownIcon, LogOutIcon } from "lucide-react";
 import { navSections } from "../../nav.js";
 import { useShell } from "../../shell.js";
 import { cn } from "../../utils/cn.js";
@@ -11,6 +12,31 @@ import { NavIcon } from "./NavIcon.jsx";
 export function Sidebar({ onSignOut }) {
   const { pathname } = useLocation();
   const { me, counts } = useShell();
+  // Which nav sections the viewer has folded away, kept per browser so it
+  // survives a reload. The section holding the current page can never be
+  // in this set for long: it is forced open below, so nobody loses their
+  // place by collapsing the section they are standing in.
+  const [closed, setClosed] = useState(() => {
+    try {
+      return new Set(JSON.parse(window.localStorage.getItem("nav.closed") || "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+
+  function toggleSection(id) {
+    setClosed((was) => {
+      const next = new Set(was);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem("nav.closed", JSON.stringify([...next]));
+      } catch {
+        /* a convenience only */
+      }
+      return next;
+    });
+  }
 
   return (
     <nav
@@ -45,51 +71,71 @@ export function Sidebar({ onSignOut }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">
-        {navSections(me).map((section) => (
-          <div key={section.id} className="mb-5">
-            <Label className="mb-2 block px-2">{section.label}</Label>
-            <ul className="space-y-0.5">
-              {section.items.map((item) => {
-                const isActive = pathname === item.path;
-                const badge = item.badge ? counts[item.badge] : undefined;
-                return (
-                  <li key={item.id}>
-                    <NavLink
-                      to={item.path}
-                      aria-current={isActive ? "page" : undefined}
-                      className={cn(
-                        "group relative flex h-9 items-center gap-2.5 rounded-lg px-2.5",
-                        "transition-colors duration-150 ease-out",
-                        isActive ? "text-accent-ink" : "text-muted hover:bg-ink/[0.04] hover:text-ink"
-                      )}
-                    >
-                      {isActive ? (
-                        <motion.span
-                          layoutId="nav-active-pill"
-                          className="absolute inset-0 rounded-lg bg-accent"
-                          transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.7 }}
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                      <NavIcon name={item.icon} className="relative h-4 w-4 shrink-0" />
-                      <span className="relative text-[13px] font-medium">{item.label}</span>
-                      {badge ? (
-                        <span
+        {navSections(me).map((section) => {
+          const holdsActive = section.items.some((item) => item.path === pathname);
+          const open = holdsActive || !closed.has(section.id);
+          return (
+            <div key={section.id} className="mb-5">
+              <button
+                type="button"
+                aria-expanded={open}
+                // The section you are standing in stays open, so its toggle
+                // would write a preference and change nothing until you
+                // navigated away. Say so rather than appearing broken.
+                disabled={holdsActive}
+                title={holdsActive ? "This section holds the page you are on" : undefined}
+                onClick={() => toggleSection(section.id)}
+                className={cn("mb-2 flex w-full items-center justify-between rounded-md px-2 py-1",
+                              holdsActive ? "cursor-default" : "hover:bg-ink/[0.04]")}
+              >
+                <Label>{section.label}</Label>
+                <ChevronDownIcon className={cn("h-3 w-3 text-faint transition-transform duration-150", !open && "-rotate-90")} aria-hidden="true" />
+              </button>
+              {open ? (
+                <ul className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const isActive = pathname === item.path;
+                    const badge = item.badge ? counts[item.badge] : undefined;
+                    return (
+                      <li key={item.id}>
+                        <NavLink
+                          to={item.path}
+                          aria-current={isActive ? "page" : undefined}
                           className={cn(
-                            "tabular relative ml-auto rounded-full px-1.5 py-px font-mono text-2xs",
-                            isActive ? "bg-accent-ink/20 text-accent-ink" : "bg-grid text-faint"
+                            "group relative flex h-9 items-center gap-2.5 rounded-lg px-2.5",
+                            "transition-colors duration-150 ease-out",
+                            isActive ? "text-accent-ink" : "text-muted hover:bg-ink/[0.04] hover:text-ink"
                           )}
                         >
-                          {badge}
-                        </span>
-                      ) : null}
-                    </NavLink>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
+                          {isActive ? (
+                            <motion.span
+                              layoutId="nav-active-pill"
+                              className="absolute inset-0 rounded-lg bg-accent"
+                              transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.7 }}
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <NavIcon name={item.icon} className="relative h-4 w-4 shrink-0" />
+                          <span className="relative text-[13px] font-medium">{item.label}</span>
+                          {badge ? (
+                            <span
+                              className={cn(
+                                "tabular relative ml-auto rounded-full px-1.5 py-px font-mono text-2xs",
+                                isActive ? "bg-accent-ink/20 text-accent-ink" : "bg-grid text-faint"
+                              )}
+                            >
+                              {badge}
+                            </span>
+                          ) : null}
+                        </NavLink>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
 
       <div className="border-t border-line px-5 py-4">
@@ -120,13 +166,13 @@ export function MobileNav({ onSignOut }) {
           key={item.id}
           to={item.path}
           aria-current={pathname === item.path ? "page" : undefined}
-          title={item.label}
           className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+            "flex h-12 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg text-[10px] font-medium",
             pathname === item.path ? "bg-accent text-accent-ink" : "text-muted hover:bg-ink/[0.04] hover:text-ink"
           )}
         >
           <NavIcon name={item.icon} className="h-4 w-4" />
+          <span className="truncate">{item.label}</span>
         </NavLink>
       ))}
       <button type="button" onClick={onSignOut} className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:text-danger" aria-label="Sign out">

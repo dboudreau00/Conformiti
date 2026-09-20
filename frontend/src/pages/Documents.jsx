@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DownloadIcon, FileUpIcon, FolderPlusIcon, KeyRoundIcon, Link2Icon, SearchIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
+import { DownloadIcon, FileUpIcon, FolderPlusIcon, KeyRoundIcon, MoreHorizontalIcon, SearchIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import DocumentViewer, { documentViewerProps } from "../components/documents/DocumentViewer.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Badge, Dot } from "../components/ui/Badge.jsx";
 import { Button, IconButton } from "../components/ui/Button.jsx";
 import { useConfirm } from "../components/ui/Dialog.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { FolderTree } from "../components/documents/FolderTree.jsx";
@@ -103,7 +103,116 @@ function RenameEditor({ doc, value, onChange, onSubmit, onCancel, busy }) {
   );
 }
 
-function AccessEditor({ perms, roles, users, busy, grantBy, onGrantBy, grant, onGrantChange, onGrant, onRemove }) {
+/** Trigger for the per-row actions menu. The menu itself renders at the page
+ * root (see DocActionsMenu below): the row lives inside an overflow-x-auto
+ * table and a framer-motion element with its own transform, either of which
+ * would clip or mis-place a popover nested directly inside the row. */
+function RowActionsTrigger({ doc, open, busy, onToggle }) {
+  return (
+    <IconButton
+      label={`Actions for ${doc.name}`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      disabled={busy}
+      data-actions-trigger="true"
+      onClick={(e) => onToggle(doc, e.currentTarget.getBoundingClientRect())}
+    >
+      <MoreHorizontalIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+    </IconButton>
+  );
+}
+
+/** Map, Rename, Mark reviewed and Upload new version behind one menu button,
+ * so the row's last column stays one button wide at laptop width. Positioned
+ * from the trigger's own rect and rendered outside the scrolling table. */
+function DocActionsMenu({ doc, anchor, mapOpen, renameOpen, onMap, onRename, onMarkReviewed, onNewVersion, onClose }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const onDown = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (e.target.closest?.("[data-actions-trigger]")) return;
+      onClose();
+    };
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+
+  function pick(fn) {
+    onClose();
+    fn();
+  }
+
+  return (
+    <motion.div
+      ref={ref}
+      role="menu"
+      aria-label={`Actions for ${doc.name}`}
+      initial={{ opacity: 0, y: -6, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -4, scale: 0.98 }}
+      transition={{ duration: 0.16, ease: EASE }}
+      style={{ position: "fixed", top: anchor.top, right: anchor.right, zIndex: 50 }}
+      className="w-[200px] origin-top-right overflow-hidden rounded-xl border border-line bg-surface shadow-pop"
+    >
+      <ul className="p-1.5">
+        <li>
+          <button
+            type="button"
+            role="menuitem"
+            aria-pressed={mapOpen}
+            onClick={() => pick(onMap)}
+            className={cn("block w-full rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors duration-150 ease-out", mapOpen ? "bg-accent/10 text-accent" : "text-ink hover:bg-surface-2")}
+          >
+            Map to controls
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            role="menuitem"
+            aria-pressed={renameOpen}
+            onClick={() => pick(onRename)}
+            className={cn("block w-full rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors duration-150 ease-out", renameOpen ? "bg-accent/10 text-accent" : "text-ink hover:bg-surface-2")}
+          >
+            Rename
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => pick(onMarkReviewed)}
+            className="block w-full rounded-lg px-2.5 py-2 text-left text-[13px] text-ink transition-colors duration-150 ease-out hover:bg-surface-2"
+          >
+            Mark reviewed
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => pick(onNewVersion)}
+            className="block w-full rounded-lg px-2.5 py-2 text-left text-[13px] text-ink transition-colors duration-150 ease-out hover:bg-surface-2"
+          >
+            Upload new version
+          </button>
+        </li>
+      </ul>
+    </motion.div>
+  );
+}
+
+function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, onGrantBy, grant, onGrantChange, onGrant, onRemove }) {
   const list = grantBy === "role" ? roles : users;
   return (
     <div id="folder-access" className="border-b border-line bg-surface-2 px-5 py-4">
@@ -111,7 +220,9 @@ function AccessEditor({ perms, roles, users, busy, grantBy, onGrantBy, grant, on
         <Label>Folder access · inherited by subfolders</Label>
         {perms ? <Label>{perms.length} {perms.length === 1 ? "grant" : "grants"}</Label> : null}
       </div>
-      {perms === null ? (
+      {permsErr ? (
+        <LoadError what="Folder access" onRetry={onRetry} className="py-4" />
+      ) : perms === null ? (
         <Loading className="py-4" />
       ) : perms.length === 0 ? (
         <p className="text-xs text-faint">No explicit grants. Access here comes from parent folders and role capabilities.</p>
@@ -169,6 +280,7 @@ export default function Documents({ me }) {
   const [folderId, setFolderId] = useState(null);
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [docsErr, setDocsErr] = useState("");
   const [msg, setMsg] = useState(null); // {ok, text}
   const [busy, setBusy] = useState(false);
 
@@ -181,12 +293,14 @@ export default function Documents({ me }) {
   const [upload, setUpload] = useState(EMPTY_UPLOAD);
   const [showPerms, setShowPerms] = useState(false);
   const [perms, setPerms] = useState(null);
+  const [permsErr, setPermsErr] = useState("");
   const [grantBy, setGrantBy] = useState("role");
   const [grant, setGrant] = useState({ target: "", level: "view" });
   const [editor, setEditor] = useState(null); // { id, mode: "map" | "rename" }
   const [renameValue, setRenameValue] = useState("");
   const [newFolder, setNewFolder] = useState("");
   const [viewing, setViewing] = useState(null); // props for the in-browser viewer
+  const [actionsFor, setActionsFor] = useState(null); // { doc, anchor: {top, right} }
 
   const fileRef = useRef(null);
   const versionRef = useRef(null);
@@ -241,13 +355,14 @@ export default function Documents({ me }) {
   async function loadDocs(id, { silent = false } = {}) {
     const req = ++docsReq.current;
     if (!silent) setDocsLoading(true);
+    setDocsErr("");
     try {
       const rows = await fetchAll(`/documents/?folder=${id}`);
       if (req === docsReq.current) setDocs(rows);
     } catch (e) {
       if (req === docsReq.current) {
         setDocs([]);
-        setMsg({ ok: false, text: errorText(e, "Couldn't load documents for that folder.") });
+        setDocsErr(errorText(e, "Couldn't load documents for that folder."));
       }
     } finally {
       if (req === docsReq.current) setDocsLoading(false);
@@ -262,7 +377,13 @@ export default function Documents({ me }) {
     setEditor(null);
     setShowUpload(false);
     setMsg(null);
+    setActionsFor(null);
     loadDocs(node.id);
+  }
+  function toggleActions(doc, rect) {
+    setActionsFor((cur) => (cur?.doc.id === doc.id
+      ? null
+      : { doc, anchor: { top: rect.bottom + 6, right: window.innerWidth - rect.right } }));
   }
   const refreshDocs = () => { if (folderId != null) loadDocs(folderId, { silent: true }); };
 
@@ -408,6 +529,15 @@ export default function Documents({ me }) {
     const ok = await run(() => api.post(`/documents/${d.id}/mark_reviewed/`), "Marked as reviewed.");
     if (ok) refreshDocs();
   }
+  function confirmMarkReviewed(d) {
+    ask({
+      title: `Mark ${d.name} reviewed?`,
+      description: "Today becomes the review date and the next one is scheduled from the cadence. This is written to the audit trail.",
+      confirmLabel: "Mark reviewed",
+      tone: "primary",
+      onConfirm: () => markReviewed(d),
+    });
+  }
 
   function pickVersion(d) {
     versionDoc.current = d;
@@ -426,12 +556,12 @@ export default function Documents({ me }) {
 
   // --- folder access --------------------------------------------------------------
   async function loadPerms(id) {
+    setPermsErr("");
     try {
       const r = await api.get(`/folders/${id}/permissions/`);
       setPerms(r.data);
     } catch (e) {
-      setPerms([]);
-      setMsg({ ok: false, text: errorText(e, "Couldn't load folder access.") });
+      setPermsErr(errorText(e, "Couldn't load folder access."));
     }
   }
   function togglePerms() {
@@ -439,6 +569,7 @@ export default function Documents({ me }) {
     setShowPerms(next);
     if (next) {
       setPerms(null);
+      setPermsErr("");
       loadPerms(folder.id);
       ensureRoles();
       ensureUsers();
@@ -502,8 +633,8 @@ export default function Documents({ me }) {
     [docs]
   );
   const cols = canEdit
-    ? "minmax(220px, 1.5fr) 110px 130px 130px 64px minmax(150px, 1fr) auto"
-    : "minmax(220px, 1.5fr) 110px 130px 130px 64px minmax(150px, 1fr)";
+    ? "minmax(200px, 1.5fr) 100px 120px minmax(110px, 1fr) 56px minmax(130px, 1fr) auto"
+    : "minmax(200px, 1.5fr) 100px 120px minmax(110px, 1fr) 56px minmax(130px, 1fr)";
   const meName = me?.full_name || me?.username || "Me";
 
   return (
@@ -570,85 +701,11 @@ export default function Documents({ me }) {
               />
             )}
             <div className="border-t border-line p-3">
-              <Button
-                size="sm"
-                variant="primary"
-                className="w-full"
-                icon={<UploadIcon className="h-3.5 w-3.5" strokeWidth={2} />}
-                disabled={!canEdit || busy}
-                aria-expanded={showUpload}
-                aria-controls={showUpload ? "doc-upload-form" : undefined}
-                onClick={toggleUpload}
-              >
-                Upload document
-              </Button>
-              {!canEdit ? (
-                <p className="mt-2 text-center text-2xs text-faint">
-                  {folder ? "This folder is view-only for you." : "Select a folder you can edit."}
-                </p>
+              {!folder ? (
+                <p className="text-center text-2xs text-faint">Select a folder to upload</p>
+              ) : !canEdit ? (
+                <p className="text-center text-2xs text-faint">This folder is view-only for you.</p>
               ) : null}
-              <AnimatePresence initial={false}>
-                {showUpload && canEdit ? (
-                  <Collapse key="upload" open>
-                    <form id="doc-upload-form" onSubmit={submitUpload} className="mt-3 space-y-3 rounded-lg border border-line bg-surface-2 p-3">
-                      <Label className="block truncate">Upload into {folder.name}</Label>
-                      <div>
-                        <label htmlFor="upload-name" className="field-label">Document name</label>
-                        <input
-                          id="upload-name"
-                          className="input input-sm"
-                          placeholder="e.g. Access Control Policy"
-                          value={upload.name}
-                          onChange={(e) => setUpload((u) => ({ ...u, name: e.target.value }))}
-                          required
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label htmlFor="upload-cadence" className="field-label">Review cadence</label>
-                          <select id="upload-cadence" className="input input-sm" value={upload.cadence} onChange={(e) => setUpload((u) => ({ ...u, cadence: e.target.value }))}>
-                            {CADENCE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label htmlFor="upload-owner" className="field-label">Owner</label>
-                          <select id="upload-owner" className="input input-sm" value={upload.owner} onChange={(e) => setUpload((u) => ({ ...u, owner: e.target.value }))}>
-                            <option value="">{meName} (me)</option>
-                            {(users || []).filter((u) => u.id !== me?.id).map((u) => (
-                              <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <input
-                          ref={fileRef}
-                          id="upload-file"
-                          type="file"
-                          className="sr-only"
-                          aria-label="Document file"
-                          onChange={(e) => setUpload((u) => ({ ...u, file: e.target.files?.[0] || null }))}
-                        />
-                        <Button
-                          size="sm"
-                          className="w-full justify-start"
-                          icon={<FileUpIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />}
-                          onClick={() => fileRef.current?.click()}
-                          disabled={busy}
-                        >
-                          <span className={cn("truncate", !upload.file && "text-muted")}>{upload.file ? upload.file.name : "Choose file…"}</span>
-                        </Button>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="primary" type="submit" className="flex-1" disabled={busy || !upload.name.trim() || !upload.file}>
-                          {busy ? "Uploading…" : "Upload"}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setShowUpload(false)} disabled={busy}>Cancel</Button>
-                      </div>
-                    </form>
-                  </Collapse>
-                ) : null}
-              </AnimatePresence>
             </div>
           </Panel>
 
@@ -679,7 +736,7 @@ export default function Documents({ me }) {
                   type="search"
                   className="input input-sm pl-8"
                   value={query}
-                  placeholder="Search every folder you can see: name or description"
+                  placeholder="Search documents by name or description"
                   aria-label="Search documents"
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -754,6 +811,19 @@ export default function Documents({ me }) {
               <>
                 <PanelHeader title={folder.name}>
                   <div className="flex flex-wrap items-center justify-end gap-2">
+                    {canEdit ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={<UploadIcon className="h-3.5 w-3.5" strokeWidth={2} />}
+                        aria-expanded={showUpload}
+                        aria-controls={showUpload ? "doc-upload-form" : undefined}
+                        onClick={toggleUpload}
+                        disabled={busy}
+                      >
+                        Upload document
+                      </Button>
+                    ) : null}
                     <Label>{docs.length} {docs.length === 1 ? "document" : "documents"}</Label>
                     <Badge tone={ACCESS_TONE[folder.my_access] || "faint"} mono>{folder.my_access || "no access"}</Badge>
                     {folder.is_seeded ? <Badge tone="faint" mono>framework</Badge> : null}
@@ -778,10 +848,74 @@ export default function Documents({ me }) {
                 </PanelHeader>
 
                 <AnimatePresence initial={false}>
+                  {showUpload && canEdit ? (
+                    <Collapse key="upload" open>
+                      <form id="doc-upload-form" onSubmit={submitUpload} className="space-y-3 border-b border-line bg-surface-2 px-5 py-4">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="sm:col-span-2">
+                            <label htmlFor="upload-name" className="field-label">Document name</label>
+                            <input
+                              id="upload-name"
+                              className="input input-sm"
+                              placeholder="e.g. Access Control Policy"
+                              value={upload.name}
+                              onChange={(e) => setUpload((u) => ({ ...u, name: e.target.value }))}
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="upload-cadence" className="field-label">Review cadence</label>
+                            <select id="upload-cadence" className="input input-sm" value={upload.cadence} onChange={(e) => setUpload((u) => ({ ...u, cadence: e.target.value }))}>
+                              {CADENCE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label htmlFor="upload-owner" className="field-label">Owner</label>
+                            <select id="upload-owner" className="input input-sm" value={upload.owner} onChange={(e) => setUpload((u) => ({ ...u, owner: e.target.value }))}>
+                              <option value="">{meName} (me)</option>
+                              {(users || []).filter((u) => u.id !== me?.id).map((u) => (
+                                <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <input
+                            ref={fileRef}
+                            id="upload-file"
+                            type="file"
+                            className="sr-only"
+                            aria-label="Document file"
+                            onChange={(e) => setUpload((u) => ({ ...u, file: e.target.files?.[0] || null }))}
+                          />
+                          <Button
+                            size="sm"
+                            className="w-full max-w-md justify-start"
+                            icon={<FileUpIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />}
+                            onClick={() => fileRef.current?.click()}
+                            disabled={busy}
+                          >
+                            <span className={cn("truncate", !upload.file && "text-muted")}>{upload.file ? upload.file.name : "Choose file…"}</span>
+                          </Button>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="primary" type="submit" disabled={busy || !upload.name.trim() || !upload.file}>
+                            {busy ? "Uploading…" : "Upload"}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setShowUpload(false)} disabled={busy}>Cancel</Button>
+                        </div>
+                      </form>
+                    </Collapse>
+                  ) : null}
+                </AnimatePresence>
+
+                <AnimatePresence initial={false}>
                   {showPerms && canManage ? (
                     <Collapse key="perms" open>
                       <AccessEditor
                         perms={perms}
+                        permsErr={permsErr}
+                        onRetry={() => loadPerms(folder.id)}
                         roles={roles}
                         users={users}
                         busy={busy}
@@ -797,7 +931,7 @@ export default function Documents({ me }) {
                 </AnimatePresence>
 
                 <div className="overflow-x-auto">
-                  <div className="min-w-[880px]">
+                  <div className="min-w-[760px]">
                     <div className="grid gap-4 border-b border-line bg-surface-2 px-5 py-2" style={{ gridTemplateColumns: cols }}>
                       <Label>Document</Label>
                       <Label>Status</Label>
@@ -809,6 +943,8 @@ export default function Documents({ me }) {
                     </div>
                     {docsLoading ? (
                       <Loading />
+                    ) : docsErr ? (
+                      <LoadError what="This folder's documents" onRetry={() => loadDocs(folderId)} />
                     ) : docs.length === 0 ? (
                       <Empty title="No documents in this folder">
                         {canEdit ? "Use Upload document to add the first one." : "Nothing has been uploaded here yet."}
@@ -871,22 +1007,13 @@ export default function Documents({ me }) {
                                     {chips.length > MAX_CHIPS ? <Badge tone="muted" mono>+{chips.length - MAX_CHIPS}</Badge> : null}
                                   </span>
                                   {canEdit ? (
-                                    <span className="flex items-center justify-end gap-1">
-                                      <Button
-                                        size="sm"
-                                        variant={mode === "map" ? "secondary" : "ghost"}
-                                        icon={<Link2Icon className="h-3.5 w-3.5" strokeWidth={2} />}
-                                        aria-expanded={mode === "map"}
-                                        onClick={() => toggleMap(d)}
-                                        disabled={busy}
-                                      >
-                                        Map
-                                      </Button>
-                                      <Button size="sm" variant={mode === "rename" ? "secondary" : "ghost"} aria-expanded={mode === "rename"} onClick={() => toggleRename(d)} disabled={busy}>
-                                        Rename
-                                      </Button>
-                                      <Button size="sm" variant="ghost" onClick={() => markReviewed(d)} disabled={busy}>Reviewed</Button>
-                                      <Button size="sm" variant="ghost" onClick={() => pickVersion(d)} disabled={busy}>Version</Button>
+                                    <span className="flex items-center justify-end">
+                                      <RowActionsTrigger
+                                        doc={d}
+                                        busy={busy}
+                                        open={actionsFor?.doc.id === d.id}
+                                        onToggle={toggleActions}
+                                      />
                                     </span>
                                   ) : null}
                                 </div>
@@ -939,6 +1066,22 @@ export default function Documents({ me }) {
       </Stack>
 
       <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
+
+      <AnimatePresence>
+        {actionsFor ? (
+          <DocActionsMenu
+            doc={actionsFor.doc}
+            anchor={actionsFor.anchor}
+            mapOpen={editor?.id === actionsFor.doc.id && editor.mode === "map"}
+            renameOpen={editor?.id === actionsFor.doc.id && editor.mode === "rename"}
+            onMap={() => toggleMap(actionsFor.doc)}
+            onRename={() => toggleRename(actionsFor.doc)}
+            onMarkReviewed={() => confirmMarkReviewed(actionsFor.doc)}
+            onNewVersion={() => pickVersion(actionsFor.doc)}
+            onClose={() => setActionsFor(null)}
+          />
+        ) : null}
+      </AnimatePresence>
 
       {/* Single hidden picker for "Version": the row button records which document, then opens it. */}
       <input

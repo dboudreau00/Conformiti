@@ -12,7 +12,8 @@ import api, { downloadFile, fetchAll } from "../api/client.js";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { useConfirm } from "../components/ui/Dialog.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { usePage } from "../components/ui/ShowMore.jsx";
@@ -56,7 +57,9 @@ function PartyChip({ x, canManage, onRemove }) {
 
 export default function Responsibilities({ me }) {
   const canManage = !!(me?.is_superuser || me?.capabilities?.manage_frameworks);
+  const { ask, confirmDialog } = useConfirm();
   const [data, setData] = useState(null);
+  const [loadErr, setLoadErr] = useState(false);
   const [fw, setFw] = useState("");
   const [q, setQ] = useState("");
   const [gapsOnly, setGapsOnly] = useState(false);
@@ -68,12 +71,13 @@ export default function Responsibilities({ me }) {
   const [form, setForm] = useState(EMPTY);
 
   async function load(framework = fw) {
+    setLoadErr(false);
     try {
       const { data: d } = await api.get(`/responsibilities/matrix/${framework ? `?framework=${encodeURIComponent(framework)}` : ""}`);
       setData(d);
-    } catch (e) {
-      setData({ rows: [], gaps: { no_accountable: 0, no_responsible: 0 }, count: 0 });
-      setMsg({ ok: false, text: errorText(e, "Couldn't load the responsibility matrix.") });
+    } catch {
+      setData(null);
+      setLoadErr(true);
     }
   }
   useEffect(() => { load(fw); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [fw]);
@@ -118,6 +122,7 @@ export default function Responsibilities({ me }) {
 
   return (
     <PanelTransition>
+      {confirmDialog}
       {msg ? (
         <div className={cn("notice mb-4 flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
           <span>{msg.text}</span>
@@ -151,7 +156,9 @@ export default function Responsibilities({ me }) {
             <label htmlFor="raci-search" className="sr-only">Search controls</label>
             <input id="raci-search" className="input input-sm ml-auto w-56" placeholder="Search controls…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          {!data ? <Loading /> : rows.length === 0 ? (
+          {loadErr ? (
+            <LoadError what="The responsibility matrix" onRetry={() => load(fw)} />
+          ) : !data ? <Loading /> : rows.length === 0 ? (
             <Empty title="No controls match">Clear the filters to see the whole matrix.</Empty>
           ) : (
             <div className="overflow-x-auto">
@@ -182,7 +189,12 @@ export default function Responsibilities({ me }) {
                             <span className="flex flex-wrap gap-1">
                               {r[k].map((x, i) => (
                                 <PartyChip key={x.id || `implicit-${x.kind}-${x.party_id}-${i}`} x={x} canManage={canManage}
-                                           onRemove={(p) => act(() => api.delete(`/responsibilities/${p.id}/`), `${p.name} removed.`)} />
+                                           onRemove={(p) => ask({
+                                             title: `Remove ${p.name}?`,
+                                             description: "They are no longer recorded for this control. Implied entries from ownership or a vendor matrix stay.",
+                                             confirmLabel: "Remove",
+                                             onConfirm: () => act(() => api.delete(`/responsibilities/${p.id}/`), `${p.name} removed.`),
+                                           })} />
                               ))}
                             </span>
                           )}

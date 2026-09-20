@@ -220,7 +220,7 @@ def parse_upload(filename, data):
         return _read_csv(data)
     if name.endswith(".xlsx"):
         return _read_xlsx(data)
-    raise ValueError("Unsupported file type — upload a .csv or .xlsx file.")
+    raise ValueError("Unsupported file type: upload a .csv or .xlsx file.")
 
 
 # --------------------------------------------------------------------------
@@ -261,7 +261,7 @@ def _norm_choice(value, aliases, field, row_n, issues, default=None):
     if v in aliases:
         return aliases[v]
     issues.append({"row": row_n, "field": field,
-                   "message": f"Unrecognized {field} {value!r} — using default"})
+                   "message": f"Unrecognized {field} {value!r}, using default"})
     return default
 
 
@@ -329,7 +329,7 @@ def normalize(rows):
         title = rec["title"][:255].strip()
         if not title:
             issues.append({"row": offset, "field": "title",
-                           "message": "Row skipped — no title."})
+                           "message": "Row skipped: no title."})
             continue
 
         records.append({

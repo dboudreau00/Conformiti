@@ -1,4 +1,6 @@
 """Jira integration: configuration gating, token secrecy and the SSRF guard."""
+from unittest import mock
+
 from django.test import override_settings
 
 from integrations.admin import JiraIntegrationAdmin
@@ -34,6 +36,56 @@ class JiraConfigTests(APITestBase):
         r = v.get(f"/api/integrations/jira/boards/{r.data['id']}/issues/")
         self.assertEqual(r.status_code, 502)
         self.assertIn("detail", r.data)
+
+
+class JiraIssueRowTests(APITestBase):
+    """The issues proxy is the only place the browser learns where an issue
+    lives: base_url sits behind the manager-only configuration endpoint, so a
+    viewer can only open the issue in Jira if the row carries the link."""
+
+    def setUp(self):
+        super().setUp()
+        a = self.client_for(self.admin)
+        # Trailing slash on purpose -- it must not survive into the links.
+        a.patch("/api/integrations/jira/config/", {
+            "base_url": "https://team.atlassian.net/", "email": "a@b.co",
+            "api_token": "tok", "enabled": True,
+        }, format="json")
+        self.board = a.post("/api/integrations/jira/boards/",
+                            {"board_id": 12, "name": "Security backlog"}, format="json").data
+
+    def _issues(self, payload, user=None):
+        with mock.patch("integrations.jira._request", return_value=payload):
+            return self.client_for(user or self.viewer).get(
+                f"/api/integrations/jira/boards/{self.board['id']}/issues/")
+
+    def test_every_row_carries_a_well_formed_link_to_the_issue(self):
+        r = self._issues({"total": 2, "issues": [
+            {"key": "SEC-1", "fields": {
+                "summary": "Rotate the signing key", "status": {"name": "In Progress"},
+                "issuetype": {"name": "Task"}, "priority": {"name": "High"},
+                "assignee": {"displayName": "Ada Tester"}, "updated": "2026-09-01T10:00:00.000+0000"}},
+            {"key": "SEC-2", "fields": {
+                "summary": "Close the open bucket", "status": {"name": "Done"},
+                "issuetype": {"name": "Bug"}, "priority": None,
+                "assignee": None, "updated": "2026-09-02T10:00:00.000+0000"}},
+        ]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([i["url"] for i in r.data["issues"]], [
+            "https://team.atlassian.net/browse/SEC-1",
+            "https://team.atlassian.net/browse/SEC-2",
+        ])
+        for issue in r.data["issues"]:
+            self.assertTrue(issue["url"].startswith("https://team.atlassian.net/browse/"), issue["url"])
+            self.assertNotIn("//browse", issue["url"])
+            self.assertTrue(issue["url"].endswith(issue["key"]))
+
+    def test_a_row_without_a_key_gets_no_link_rather_than_the_wrong_one(self):
+        """`{base}/browse/` is the Jira home page, not an issue. An empty url
+        is what the page falls back to plain text on."""
+        r = self._issues({"total": 1, "issues": [{"fields": {"summary": "No key at all"}}]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["issues"][0]["url"], "")
 
 
 class SsrfGuardTests(APITestBase):

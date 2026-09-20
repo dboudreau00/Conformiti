@@ -59,9 +59,9 @@ test.describe("vendor register", () => {
     // A seeded statement is in the grid, editable by a frameworks manager.
     // The framework filter is a select since 0.9.5d: twenty-five chips wrapped.
     await page.locator("#matrix-framework").selectOption("pci_dss_v4");
-    await expect(page.getByLabel("What Amazon Web Services does for 1.3", { exact: true })).toHaveValue(/Edge network controls/);
+    await expect(page.getByLabel("Amazon Web Services does for 1.3", { exact: true })).toHaveValue(/Edge network controls/);
     // Typing marks the row unsaved until Save is pressed.
-    await page.getByLabel("What we do for 12.1", { exact: true }).fill("Our policy, our review cycle.");
+    await page.getByLabel("We do for 12.1", { exact: true }).fill("Our policy, our review cycle.");
     await expect(page.getByText("unsaved", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /Save 1 change/ }).click();
     await expect(page.getByText("1 control(s) saved.")).toBeVisible();

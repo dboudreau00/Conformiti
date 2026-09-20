@@ -4,6 +4,7 @@ import { CheckCircle2, Download, Plus, X } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
@@ -21,10 +22,9 @@ const REVIEW_STATUS = {
   open: { label: "Open", tone: "info" },
   completed: { label: "Completed", tone: "success" },
 };
-const COLUMNS = ["User", "Role", "Active", "Last login", "Grants", "Capabilities", "Decision", "Notes"];
+const COLUMNS = ["User", "Role", "Capabilities", "Decision", "Notes"];
 // One template for the header row and every body row so the columns stay aligned.
-const GRID =
-  "grid-cols-[minmax(220px,1.4fr)_minmax(130px,0.9fr)_84px_104px_72px_minmax(170px,1fr)_240px_minmax(200px,1fr)]";
+const GRID = "grid-cols-[minmax(220px,1.4fr)_minmax(130px,0.9fr)_minmax(150px,1fr)_240px_minmax(200px,1fr)]";
 
 function fmtDate(s) {
   return s ? s.slice(0, 10) : "never";
@@ -100,6 +100,7 @@ export default function UserAudit({ me }) {
   const [itemsLoading, setItemsLoading] = useState(false);
   const [busy, setBusy] = useState(null); // "start" | "complete" | "export"
   const [savingId, setSavingId] = useState(null);
+  const [confirmComplete, setConfirmComplete] = useState(false);
   const loadSeq = useRef(0);
 
   async function selectReview(rev) {
@@ -221,8 +222,8 @@ export default function UserAudit({ me }) {
     return (
       <PanelTransition>
         <Panel>
-          <Empty title="Access reviews are limited to administrators and auditors.">
-            Ask an administrator if you need this.
+          <Empty title="Access reviews are restricted">
+            They are visible to administrators and auditors. Ask an administrator if you need this.
           </Empty>
         </Panel>
       </PanelTransition>
@@ -239,6 +240,15 @@ export default function UserAudit({ me }) {
 
   return (
     <PanelTransition>
+      <ConfirmDialog
+        open={confirmComplete}
+        onClose={() => setConfirmComplete(false)}
+        title="Complete this review?"
+        description="Every decision becomes read-only evidence. Nothing can be changed afterwards."
+        confirmLabel="Complete review"
+        tone="primary"
+        onConfirm={complete}
+      />
       <Stack className="flex flex-col gap-4">
         <StackItem className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -298,7 +308,7 @@ export default function UserAudit({ me }) {
                   variant="primary"
                   icon={<CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} />}
                   disabled={busy === "complete" || itemsLoading || pending > 0}
-                  onClick={complete}
+                  onClick={() => setConfirmComplete(true)}
                 >
                   {busy === "complete"
                     ? "Completing…"
@@ -374,7 +384,7 @@ export default function UserAudit({ me }) {
                   </Empty>
                 ) : (
                   <div className="overflow-x-auto">
-                    <div className="min-w-[1240px]">
+                    <div className="min-w-[900px]">
                       <div className={cn("grid gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
                         {COLUMNS.map((h) => <Label key={h}>{h}</Label>)}
                       </div>
@@ -396,18 +406,14 @@ export default function UserAudit({ me }) {
                                   <span className="text-accent">{it.username}</span>
                                   {it.email ? ` · ${it.email}` : ""}
                                 </span>
+                                <span className="block truncate font-mono text-2xs text-muted">
+                                  {it.is_active ? "active" : "inactive"} · last login {fmtDate(it.last_login)} · {it.folder_grants ?? 0} grants
+                                </span>
                               </span>
                               <span className="min-w-0">
                                 <span className="block truncate text-xs text-ink">{it.role_name || "-"}</span>
                                 {it.job_title ? <span className="block truncate text-2xs text-muted">{it.job_title}</span> : null}
                               </span>
-                              <span>
-                                {it.is_active
-                                  ? <Badge tone="success" dot mono>yes</Badge>
-                                  : <Badge tone="danger" dot mono>no</Badge>}
-                              </span>
-                              <span className="tabular font-mono text-xs text-muted">{fmtDate(it.last_login)}</span>
-                              <span className="tabular font-mono text-xs text-ink">{it.folder_grants ?? 0}</span>
                               <span className="truncate text-xs text-muted" title={it.capabilities || undefined}>
                                 {it.capabilities || "-"}
                               </span>

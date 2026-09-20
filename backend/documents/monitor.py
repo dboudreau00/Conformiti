@@ -122,7 +122,7 @@ def scan_document(document, user=None):
                 "document.quarantined", f"File quarantined: {document.name}",
                 f"The malware scanner matched {exc.signature} on a stored file (v{document.version}). "
                 "It is kept for investigation and refused on every route.",
-                facts=[("Folder", document.folder.path if document.folder_id else "—")],
+                facts=[("Folder", document.folder.path if document.folder_id else "-")],
                 path="/documents", severity="critical")
         return document.scan_status
     except clamav.LimitsExceededError as exc:

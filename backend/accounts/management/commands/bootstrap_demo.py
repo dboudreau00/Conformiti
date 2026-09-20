@@ -368,7 +368,7 @@ class Command(BaseCommand):
                  last_reviewed=today - timedelta(days=200),
                  assessments=[
                      ("soc2_type2", "SOC 2 Type II (Spring report)", -120, 245, "satisfactory"),
-                     ("pci_aoc", "PCI DSS 4.0 AOC — service provider", -90, 275, "satisfactory"),
+                     ("pci_aoc", "PCI DSS 4.0 AOC, service provider", -90, 275, "satisfactory"),
                  ],
                  matrix=[
                      ("pci_dss_v4", "1.3", "shared",

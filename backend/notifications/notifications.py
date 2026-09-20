@@ -239,7 +239,7 @@ def build(user):
             since = state["down_since"]
             items.append(_n(
                 "scanner-down", "system", "critical",
-                "Malware scanner unreachable — uploads are being refused",
+                "Malware scanner unreachable: uploads are being refused",
                 f"clamd has not answered since {since.isoformat(timespec='minutes') if since else 'the last check'}. "
                 "Evidence cannot be filed until it is back.",
                 "/documents", today,

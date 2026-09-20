@@ -37,6 +37,19 @@ const ROLE_COLS = [
   { id: "caps", label: "Capabilities", className: "w-[340px]" },
 ];
 
+// Labels the create-user form itself uses, so a rejected field reads the
+// same way here as it did under the input the person just typed in.
+const FIELD_LABELS = {
+  username: "Username",
+  email: "Email",
+  password: "Temporary password",
+  role: "Role",
+  first_name: "First name",
+  last_name: "Last name",
+  job_title: "Job title",
+  non_field_errors: "",
+};
+
 const cell = "px-5 py-3 align-middle";
 const headCell = "table-head px-5 py-2 text-left font-normal";
 
@@ -180,8 +193,11 @@ export default function Users({ me }) {
       setFormErr(
         d && typeof d === "object"
           ? Object.entries(d)
-              .map(([k, v]) => `${k}: ${[].concat(v).join(" ")}`)
-              .join(" · ")
+              .map(([k, v]) => {
+                const label = FIELD_LABELS[k] ?? k;
+                return `${label ? `${label}: ` : ""}${[].concat(v).join(" ")}`;
+              })
+              .join(" ")
           : errorText(err, "Could not create the user.")
       );
     } finally {

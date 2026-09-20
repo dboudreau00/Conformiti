@@ -15,8 +15,8 @@ import { PbcList } from "../components/packages/PbcList.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { TextDialog } from "../components/ui/Dialog.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { ConfirmDialog, TextDialog } from "../components/ui/Dialog.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
@@ -62,6 +62,7 @@ export default function Packages({ me }) {
   const [rows, setRows] = useState([]);
   const [grants, setGrants] = useState([]);
   const [integrity, setIntegrity] = useState(null);
+  const [detailErr, setDetailErr] = useState(null);
   const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -109,31 +110,49 @@ export default function Packages({ me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Controls, grants and the integrity check for the selected package. A
+  // failed load must not read as an empty package: the caller is often an
+  // auditor forming a view of this organisation's access control, so the two
+  // panels below check `detailErr` before they show "No controls yet" or
+  // "Not issued yet".
+  async function loadDetail(id) {
+    const [controls, issued] = await Promise.all([
+      fetchAll(`/package-controls/?package=${id}`),
+      fetchAll(`/package-grants/?package=${id}`),
+    ]);
+    setRows(controls);
+    setGrants(issued);
+    try {
+      const { data } = await api.get(`/evidence-packages/${id}/verify/`);
+      setIntegrity(data);
+    } catch {
+      setIntegrity(null);
+    }
+  }
+
   useEffect(() => {
     if (!selectedId) {
       setRows([]);
       setGrants([]);
       setIntegrity(null);
+      setDetailErr(null);
       return;
     }
     let live = true;
-    (async () => {
-      const [controls, issued] = await Promise.all([
-        fetchAll(`/package-controls/?package=${selectedId}`),
-        fetchAll(`/package-grants/?package=${selectedId}`),
-      ]);
+    setDetailErr(null);
+    loadDetail(selectedId).catch((e) => {
       if (!live) return;
-      setRows(controls);
-      setGrants(issued);
-      try {
-        const { data } = await api.get(`/evidence-packages/${selectedId}/verify/`);
-        if (live) setIntegrity(data);
-      } catch {
-        if (live) setIntegrity(null);
-      }
-    })().catch(() => {});
+      setRows([]);
+      setGrants([]);
+      setDetailErr(errorText(e, "Couldn't load this package's controls and grants."));
+    });
     return () => { live = false; };
   }, [selectedId]);
+
+  const retryDetail = () => {
+    setDetailErr(null);
+    loadDetail(selectedId).catch((e) => setDetailErr(errorText(e, "Couldn't load this package's controls and grants.")));
+  };
 
   async function act(kind, fn, okText) {
     setBusy(kind);
@@ -252,11 +271,15 @@ export default function Packages({ me }) {
       {/* ---------------------------------------------------------- list */}
       <div className="flex flex-col gap-4">
         <Panel className="overflow-hidden">
-          <PanelHeader title="Evidence packages" meta={`${packages.length} total`} />
+          <PanelHeader title="Evidence packages" meta={`${packages.length} total`}>
+            {canAssemble && !creating ? (
+              <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New package</Button>
+            ) : null}
+          </PanelHeader>
           {packages.length === 0 ? (
             <Empty title="No packages yet">
               {canAssemble
-                ? "Assemble the controls and evidence for an audit, seal it, and issue it to the auditor."
+                ? "Assemble the controls and evidence for an audit, seal it, and issue it to the auditor. Start with New package above."
                 : "Packages issued to you will appear here."}
             </Empty>
           ) : (
@@ -293,49 +316,43 @@ export default function Packages({ me }) {
           <PbcList mine onOpen={setViewing} onMessage={setMsg} />
         ) : null}
 
-        {canAssemble ? (
+        {canAssemble && creating ? (
           <Panel className="p-4">
-            {creating ? (
-              <form onSubmit={createPackage} className="grid gap-2.5">
-                <div>
-                  <label className="field-label" htmlFor="pkg-name">Name</label>
-                  <input id="pkg-name" className="input" required value={draft.name}
-                         placeholder="SOC 2 Type II fieldwork"
-                         onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="pkg-engagement">Engagement</label>
-                  <input id="pkg-engagement" className="input" value={draft.engagement}
-                         onChange={(e) => setDraft({ ...draft, engagement: e.target.value })} />
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="pkg-firm">Audit firm</label>
-                  <input id="pkg-firm" className="input" value={draft.audit_firm}
-                         onChange={(e) => setDraft({ ...draft, audit_firm: e.target.value })} />
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="pkg-assurance">Assurance type</label>
-                  <select id="pkg-assurance" className="input" value={draft.assurance_type}
-                          onChange={(e) => setDraft({ ...draft, assurance_type: e.target.value })}>
-                    {ASSURANCE.map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mt-1 flex gap-2">
-                  <Button type="submit" variant="primary" size="sm" disabled={busy === "create"}>
-                    {busy === "create" ? "Opening…" : "Open package"}
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setCreating(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <Button variant="primary" size="sm" className="w-full" onClick={() => setCreating(true)}>
-                New package
-              </Button>
-            )}
+            <form onSubmit={createPackage} className="grid gap-2.5">
+              <div>
+                <label className="field-label" htmlFor="pkg-name">Name</label>
+                <input id="pkg-name" className="input" required value={draft.name}
+                       placeholder="SOC 2 Type II fieldwork"
+                       onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="pkg-engagement">Engagement</label>
+                <input id="pkg-engagement" className="input" value={draft.engagement}
+                       onChange={(e) => setDraft({ ...draft, engagement: e.target.value })} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="pkg-firm">Audit firm</label>
+                <input id="pkg-firm" className="input" value={draft.audit_firm}
+                       onChange={(e) => setDraft({ ...draft, audit_firm: e.target.value })} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="pkg-assurance">Assurance type</label>
+                <select id="pkg-assurance" className="input" value={draft.assurance_type}
+                        onChange={(e) => setDraft({ ...draft, assurance_type: e.target.value })}>
+                  {ASSURANCE.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-1 flex gap-2">
+                <Button type="submit" variant="primary" size="sm" disabled={busy === "create"}>
+                  {busy === "create" ? "Opening…" : "Open package"}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setCreating(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
           </Panel>
         ) : null}
       </div>
@@ -469,7 +486,9 @@ export default function Packages({ me }) {
                   }} onError={(text) => setMsg({ ok: false, text })} />
                 ) : null}
               </PanelHeader>
-              {grants.length === 0 ? (
+              {detailErr ? (
+                <LoadError what="This package's access list" onRetry={retryDetail} />
+              ) : grants.length === 0 ? (
                 <Empty title="Not issued yet">
                   Seal the package, then issue it to the auditor's account. They will see exactly
                   these files and nothing else, until the access expires or you withdraw it.
@@ -492,10 +511,7 @@ export default function Packages({ me }) {
                           {g.is_live ? "Live" : "Closed"}
                         </Badge>
                         {canAssemble && g.is_live ? (
-                          <Button size="sm" variant="ghost" onClick={() => act(`revoke-${g.id}`, async () => {
-                            await api.delete(`/package-grants/${g.id}/`);
-                            setGrants(await fetchAll(`/package-grants/?package=${selected.id}`));
-                          }, "Access revoked.")}>
+                          <Button size="sm" variant="ghost" onClick={() => setAsk({ kind: "revoke", grant: g })}>
                             Revoke
                           </Button>
                         ) : null}
@@ -521,7 +537,9 @@ export default function Packages({ me }) {
             {/* ------------------------------------------------ workpaper */}
             <Panel className="overflow-hidden">
               <PanelHeader title="Controls in scope" meta={`${rows.length} rows`} />
-              {rows.length === 0 ? (
+              {detailErr ? (
+                <LoadError what="This package's controls" onRetry={retryDetail} />
+              ) : rows.length === 0 ? (
                 <Empty title="No controls yet">
                   {canAssemble
                     ? "Use Add controls above to choose the controls this audit covers."
@@ -594,7 +612,7 @@ export default function Packages({ me }) {
                         ) : null}
 
                         <div className="mt-2.5 flex flex-wrap gap-1.5">
-                          {["no_exceptions", "exceptions", "not_tested"].map((value) => (
+                          {isGrantee ? ["no_exceptions", "exceptions", "not_tested"].map((value) => (
                             <Button
                               key={value}
                               size="sm"
@@ -604,7 +622,7 @@ export default function Packages({ me }) {
                             >
                               {CONCLUSION[value].label}
                             </Button>
-                          ))}
+                          )) : null}
                           {canAssemble && row.operating_conclusion === "exceptions" && !row.risk ? (
                             <Button size="sm" variant="danger"
                                     onClick={() => act(`row-${row.id}`, async () => {
@@ -617,7 +635,7 @@ export default function Packages({ me }) {
                           {row.risk ? <Badge tone="info">Tracked as a risk</Badge> : null}
                           {canAssemble && selected.status === "draft" ? (
                             <Button size="sm" variant="ghost" disabled={busy === `row-${row.id}`}
-                                    onClick={() => removeControl(row)} aria-label={`Remove ${row.control_ref} from the package`}>
+                                    onClick={() => setAsk({ kind: "remove", row })} aria-label={`Remove ${row.control_ref} from the package`}>
                               Remove
                             </Button>
                           ) : null}
@@ -684,6 +702,25 @@ export default function Packages({ me }) {
       submitLabel="Record"
       onSubmit={submitNotTested}
     />
+    <ConfirmDialog
+      open={ask?.kind === "revoke"}
+      onClose={() => setAsk(null)}
+      title={`Revoke ${ask?.grant?.full_name || ask?.grant?.username || "this"} access?`}
+      description="They lose the package immediately. Issue it again to restore access."
+      confirmLabel="Revoke"
+      onConfirm={() => act(`revoke-${ask.grant.id}`, async () => {
+        await api.delete(`/package-grants/${ask.grant.id}/`);
+        setGrants(await fetchAll(`/package-grants/?package=${selected.id}`));
+      }, "Access revoked.")}
+    />
+    <ConfirmDialog
+      open={ask?.kind === "remove"}
+      onClose={() => setAsk(null)}
+      title={`Take ${ask?.row?.control_ref} out of scope?`}
+      description="Its pinned evidence and any sample items listed for it are dropped from this draft."
+      confirmLabel="Remove"
+      onConfirm={() => removeControl(ask.row)}
+    />
     </PanelTransition>
   );
 }
@@ -702,6 +739,7 @@ function YearOverYear({ pkg }) {
     return () => { live = false; };
   }, [pkg.id]);
   const t = diff?.totals;
+  const cap = (xs) => (xs.length > 8 ? `${xs.slice(0, 8).join(", ")} and ${xs.length - 8} more` : xs.join(", "));
   return (
     <Panel className="overflow-hidden" aria-label="Year over year" role="region">
       <PanelHeader title="Year over year" meta={diff ? `vs ${diff.prior.name}` : ""}>
@@ -724,9 +762,9 @@ function YearOverYear({ pkg }) {
           </div>
           {(diff.scope.added.length || diff.scope.removed.length) ? (
             <p className="border-t border-line px-5 py-2 text-xs text-muted">
-              Scope: {diff.scope.added.length ? `added ${diff.scope.added.join(", ")}` : ""}
+              Scope: {diff.scope.added.length ? `added ${cap(diff.scope.added)}` : ""}
               {diff.scope.added.length && diff.scope.removed.length ? " · " : ""}
-              {diff.scope.removed.length ? `dropped ${diff.scope.removed.join(", ")}` : ""}
+              {diff.scope.removed.length ? `dropped ${cap(diff.scope.removed)}` : ""}
             </p>
           ) : null}
           {open ? (

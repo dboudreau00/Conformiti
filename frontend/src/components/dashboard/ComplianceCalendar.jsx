@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import api from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
 import { TONE_FILL, TONE_TEXT, TONE_WASH } from "../../utils/tone.js";
+import DocumentViewer from "../documents/DocumentViewer.jsx";
 import { Collapse, EASE } from "../layout/PanelTransition.jsx";
 import { Button, IconButton } from "../ui/Button.jsx";
 import { Label, Panel } from "../ui/Panel.jsx";
@@ -51,7 +52,7 @@ const longDate = (d) => `${DAYS_LONG[d.getDay()]} ${d.getDate()} ${MONTHS[d.getM
 
 /** Month calendar fed by GET /calendar/feed/ for the visible grid. Re-fetches
  * when the month changes or the parent bumps `refreshKey`. */
-export function ComplianceCalendar({ refreshKey = 0 }) {
+export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [direction, setDirection] = useState(1);
   const [selected, setSelected] = useState(null);
@@ -59,8 +60,17 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [viewing, setViewing] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [actionError, setActionError] = useState("");
   const reqRef = useRef(0);
   const [todayKey] = useState(() => localKey(new Date()));
+
+  // Marking a review done needs edit access to its folder, the API returns
+  // 403 otherwise, so the action is only offered to users who can manage
+  // documents or folders (same rule ReviewQueue applies on the dashboard).
+  const canReview = !!(me?.capabilities?.manage_documents || me?.capabilities?.manage_folders);
 
   const days = useMemo(() => monthGrid(cursor), [cursor]);
   const rangeStart = localKey(days[0]);
@@ -83,7 +93,17 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
       .finally(() => {
         if (id === reqRef.current) setLoading(false);
       });
-  }, [rangeStart, rangeEnd, refreshKey]);
+  }, [rangeStart, rangeEnd, refreshKey, attempt]);
+
+  // Audit, task and other events can only be created through the API today,
+  // so most workspaces never see one; showing a chip that always empties the
+  // grid is a dead control. Only chips for kinds actually present survive,
+  // and a filter dropped this way is cleared rather than left hiding a grid
+  // with no visible reason why.
+  const presentKinds = useMemo(() => new Set(events.map((e) => e.type)), [events]);
+  useEffect(() => {
+    if (filter && !presentKinds.has(filter)) setFilter(null);
+  }, [filter, presentKinds]);
 
   const visibleEvents = useMemo(() => (filter ? events.filter((e) => e.type === filter) : events), [events, filter]);
 
@@ -115,6 +135,20 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
     setSelected(null);
   }
 
+  async function markReviewed(event) {
+    const name = event.title.replace(/^Review due: /, "");
+    setActionError("");
+    setBusyId(event.document);
+    try {
+      await api.post(`/documents/${event.document}/mark_reviewed/`);
+      onChanged?.();
+    } catch (e) {
+      setActionError(errorText(e, `Couldn't mark "${name}" reviewed. Please try again.`));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <Panel className="flex flex-col overflow-hidden" aria-busy={loading}>
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
@@ -124,7 +158,7 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1" role="group" aria-label="Filter calendar by item type">
-            {KINDS.map((kind) => {
+            {KINDS.filter((kind) => presentKinds.has(kind)).map((kind) => {
               const on = filter === kind;
               const { label, tone } = KIND_META[kind];
               return (
@@ -165,8 +199,9 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
       </header>
 
       {error ? (
-        <div className="notice notice-err mx-5 mt-3" role="alert">
-          {error}
+        <div className="notice notice-err mx-5 mt-3 flex items-center justify-between gap-3" role="alert">
+          <span>{error}</span>
+          <Button size="sm" onClick={() => setAttempt((a) => a + 1)}>Retry</Button>
         </div>
       ) : null}
 
@@ -267,6 +302,11 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
                 <h3 className="text-[13px] font-semibold text-ink">{longDate(parseKey(selected))}</h3>
                 <Label>{selectedEvents.length} scheduled</Label>
               </div>
+              {actionError ? (
+                <div className="notice notice-err mb-2" role="alert">
+                  {actionError}
+                </div>
+              ) : null}
               {selectedEvents.length === 0 ? (
                 <p className="text-xs text-muted">Nothing scheduled on this day.</p>
               ) : (
@@ -274,6 +314,7 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
                   {selectedEvents.map((event, i) => {
                     const tone = eventTone(event);
                     const kind = kindOf(event);
+                    const docName = event.title.replace(/^Review due: /, "");
                     return (
                       <motion.li
                         key={event.id}
@@ -284,7 +325,24 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
                       >
                         <span className={cn("h-6 w-1 shrink-0 rounded-full", TONE_FILL[tone])} aria-hidden="true" />
                         <span className="min-w-0 flex-1">
-                          <span className={cn("block truncate text-[13px] font-medium text-ink", event.completed && "line-through text-muted")}>{event.title}</span>
+                          {event.document ? (
+                            <button
+                              type="button"
+                              className={cn("block truncate text-left text-[13px] font-medium text-ink hover:text-accent", event.completed && "line-through text-muted")}
+                              onClick={() =>
+                                setViewing({
+                                  title: docName,
+                                  previewUrl: `/documents/${event.document}/preview/`,
+                                  downloadUrl: `/documents/${event.document}/download/`,
+                                  filename: docName,
+                                })
+                              }
+                            >
+                              {event.title}
+                            </button>
+                          ) : (
+                            <span className={cn("block truncate text-[13px] font-medium text-ink", event.completed && "line-through text-muted")}>{event.title}</span>
+                          )}
                           <span className="block font-mono text-2xs uppercase tracking-label text-faint">
                             {kind.label}
                             {event.overdue ? " / overdue" : ""}
@@ -292,6 +350,18 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
                             {event.end_date && event.end_date !== event.date ? ` / until ${event.end_date}` : ""}
                           </span>
                         </span>
+                        {canReview && event.type === "review_due" && !event.completed ? (
+                          <Button
+                            size="sm"
+                            className="shrink-0"
+                            disabled={busyId != null}
+                            aria-label={`Mark ${docName} reviewed`}
+                            onClick={() => markReviewed(event)}
+                            icon={<CheckIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />}
+                          >
+                            {busyId === event.document ? "Marking…" : "Mark reviewed"}
+                          </Button>
+                        ) : null}
                         <span className="hidden text-xs text-muted sm:block">{event.assignee || "Unassigned"}</span>
                       </motion.li>
                     );
@@ -302,6 +372,8 @@ export function ComplianceCalendar({ refreshKey = 0 }) {
           </Collapse>
         ) : null}
       </AnimatePresence>
+
+      <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
     </Panel>
   );
 }

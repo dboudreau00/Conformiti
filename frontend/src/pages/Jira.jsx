@@ -5,6 +5,7 @@ import api, { fetchAll } from "../api/client.js";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
@@ -46,6 +47,7 @@ export default function Jira({ me }) {
   const [boardMsg, setBoardMsg] = useState(null); // tracked boards feedback
   const [busy, setBusy] = useState(null); // "save" | "test" | "add" | "remove"
   const [newBoard, setNewBoard] = useState({ board_id: "", name: "" });
+  const [removing, setRemoving] = useState(null);
   const issueReq = useRef(0);
 
   useEffect(() => {
@@ -303,7 +305,7 @@ export default function Jira({ me }) {
               </div>
             ) : boards.length === 0 ? (
               <Empty title="No boards tracked yet">
-                {isManager ? "Track a board below to bring its issues in." : "An administrator can track a Jira board from this page."}
+                {isManager ? "Track a board below to bring its issues in." : "Ask an administrator to track a board; the form appears here for them."}
               </Empty>
             ) : (
               <ul className="p-2">
@@ -347,7 +349,7 @@ export default function Jira({ me }) {
                             size="sm"
                             variant="ghost"
                             className="relative mr-1 shrink-0"
-                            onClick={() => removeBoard(b)}
+                            onClick={() => setRemoving(b)}
                             disabled={!!busy}
                             aria-label={`Remove ${b.name}`}
                             icon={<XIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
@@ -437,13 +439,13 @@ export default function Jira({ me }) {
             ) : !active ? (
               configured ? (
                 <Empty title="No board selected">
-                  {isManager ? "Track a board on the left to see its issues here." : "An administrator can track a Jira board from this page."}
+                  {isManager ? "Track a board on the left to see its issues here." : "Ask an administrator to track a board; the form appears here for them."}
                 </Empty>
               ) : (
                 <Empty title="Jira isn't connected yet">
                   {isManager
                     ? "Enter the workspace URL, account email and API token on the left, then enable the integration."
-                    : "An administrator can connect Jira from this page."}
+                    : "Ask an administrator to connect Jira; the connection settings appear here for them."}
                 </Empty>
               )
             ) : issueErr ? (
@@ -485,7 +487,19 @@ export default function Jira({ me }) {
                         className="transition-colors duration-150 ease-out hover:bg-surface-2"
                       >
                         <td className={CELL}>
-                          <span className="font-mono text-xs text-accent">{i.key}</span>
+                          {/* An older backend sends no url; the key still reads as it always did. */}
+                          {i.url ? (
+                            <a
+                              href={i.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="font-mono text-xs text-accent hover:underline"
+                            >
+                              {i.key}
+                            </a>
+                          ) : (
+                            <span className="font-mono text-xs text-accent">{i.key}</span>
+                          )}
                         </td>
                         <td className={cn(CELL, "min-w-0")} title={i.summary}>
                           <span className="block truncate text-[13px] text-ink">{i.summary}</span>
@@ -512,6 +526,14 @@ export default function Jira({ me }) {
           </Panel>
         </StackItem>
       </Stack>
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        title={`Stop tracking ${removing?.name}?`}
+        description="Its issues disappear from this page. Nothing changes in Jira."
+        confirmLabel="Stop tracking"
+        onConfirm={() => removeBoard(removing)}
+      />
     </PanelTransition>
   );
 }

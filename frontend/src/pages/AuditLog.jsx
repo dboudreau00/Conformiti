@@ -241,7 +241,9 @@ export default function AuditLog({ me }) {
               <Loading>Loading audit trail…</Loading>
             ) : rows.length === 0 ? (
               <Empty title={filtered ? "No entries match these filters" : "No entries yet"}>
-                New entries appear automatically as people sign in and create, update, or delete records.
+                {filtered
+                  ? "Clear the filters, or widen the time range."
+                  : "New entries appear automatically as people sign in and create, update, or delete records."}
               </Empty>
             ) : (
               <div className="overflow-x-auto">

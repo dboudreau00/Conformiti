@@ -314,6 +314,9 @@ export default function Login({ onDone }) {
                 </span>
               </p>
             ) : null}
+            {!mfaStep ? (
+              <p className="mt-4 text-center text-xs text-muted">Forgotten your password? An administrator can set a new one for you from the Users page.</p>
+            ) : null}
           </form>
         </Panel>
         <p className="mt-4 text-center font-mono text-2xs uppercase tracking-label text-faint">{health?.version ? `Conformiti v${health.version}` : ""}</p>

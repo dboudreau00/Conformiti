@@ -28,7 +28,7 @@ _MESSAGES = {
     "scheme": "Jira base URL must start with https:// (e.g. https://your-team.atlassian.net).",
     "userinfo": "Jira base URL must not carry a username or password.",
     "host": "Jira base URL must be a public host.",
-    "dns": "Could not resolve the Jira host \u2014 check the base URL.",
+    "dns": "Could not resolve the Jira host. Check the base URL.",
     "private": "Jira base URL must resolve to a public host.",
     "address": "Jira host resolved to an invalid address.",
     "redirect": "Jira endpoint attempted a redirect; refusing it for security.",
@@ -80,12 +80,12 @@ def _request(config, path, params=None):
         if exc.code in (401, 403):
             raise JiraError("Jira rejected the credentials (check the email and API token).")
         if exc.code == 404:
-            raise JiraError("Jira returned 404 — check the base URL and board ID.")
+            raise JiraError("Jira returned 404. Check the base URL and board ID.")
         raise JiraError(f"Jira returned HTTP {exc.code}.")
     except urllib.error.URLError as exc:
         raise JiraError(f"Could not reach Jira: {getattr(exc, 'reason', exc)}")
     except json.JSONDecodeError:
-        raise JiraError("Jira returned a response that wasn't JSON — check the base URL.")
+        raise JiraError("Jira returned a response that wasn't JSON. Check the base URL.")
 
 
 def verify(config):
@@ -105,11 +105,17 @@ def board_issues(config, board_id, max_results=50):
             "fields": "summary,status,assignee,priority,issuetype,updated",
         },
     )
+    # The browser never sees the base URL (it belongs to the manager-only
+    # configuration), so each row carries its own link to the issue rather
+    # than the page assembling one.
+    base = config.base_url.rstrip("/")
     rows = []
     for issue in data.get("issues", []):
         f = issue.get("fields", {}) or {}
+        key = issue.get("key", "")
         rows.append({
-            "key": issue.get("key", ""),
+            "key": key,
+            "url": f"{base}/browse/{urllib.parse.quote(key)}" if key else "",
             "summary": f.get("summary", ""),
             "type": (f.get("issuetype") or {}).get("name", ""),
             "status": (f.get("status") or {}).get("name", ""),
