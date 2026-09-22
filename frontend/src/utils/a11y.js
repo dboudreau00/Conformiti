@@ -9,6 +9,20 @@ export function onActivate(fn) {
   };
 }
 
+/** What a LoadError should say about a failed load, or "" to keep its default.
+ *
+ * LoadError's own sentence ("The request did not come back ... trying again is
+ * safe") is only true when no response arrived. A server that answered with a
+ * refusal or an error deserves its own words, and a raw HTML error page never
+ * reaches the screen. */
+export function loadFailReason(e) {
+  const r = e?.response;
+  if (!r) return "";
+  if (r.status < 500 && r.data && typeof r.data === "object") return errorText(e);
+  if (r.status === 403) return "You don't have permission to see this.";
+  return `The server returned an error (${r.status}). Nothing has changed, so trying again is safe.`;
+}
+
 /** Extract a human-readable message from a failed axios call. */
 export function errorText(e, fallback = "Something went wrong. Please try again.") {
   const d = e?.response?.data;

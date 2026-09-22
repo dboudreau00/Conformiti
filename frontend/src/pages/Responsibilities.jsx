@@ -31,7 +31,9 @@ const ROLES = [
 const PARTY = [{ id: "user", label: "Person" }, { id: "vendor", label: "Vendor" }];
 const EMPTY = { control: "", kind: "user", party: "", role: "responsible", note: "" };
 
-function PartyChip({ x, canManage, onRemove }) {
+// `role` is the column's label: one chip is one assignment, and a party can
+// hold several roles on the same control, so its X names the role it removes.
+function PartyChip({ x, role, canManage, onRemove }) {
   const tone = x.kind === "vendor" ? "info" : "accent";
   const title = [x.kind === "vendor" ? "Vendor" : "Person", x.note].filter(Boolean).join(" · ");
   return (
@@ -46,7 +48,7 @@ function PartyChip({ x, canManage, onRemove }) {
       <span className="truncate">{x.name}</span>
       {x.kind === "vendor" ? <span className="text-[9px] uppercase tracking-label opacity-70">vendor</span> : null}
       {!x.implicit && canManage && x.id ? (
-        <button type="button" aria-label={`Remove ${x.name}`} onClick={() => onRemove(x)}
+        <button type="button" aria-label={`Remove ${x.name} as ${role}`} onClick={() => onRemove(x)}
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full opacity-70 transition-opacity hover:opacity-100">
           <XIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />
         </button>
@@ -119,6 +121,16 @@ export default function Responsibilities({ me }) {
       setBusy(false);
     }
   }
+  // For a confirm dialog: it closes when onConfirm resolves, and `act`
+  // resolves on a failure too, so a refused removal closed as if it had
+  // worked. This throws the failure on, and the dialog shows it in place.
+  async function actOrThrow(fn, okText) {
+    let failed = null;
+    await act(async () => {
+      try { await fn(); } catch (e) { failed = e; throw e; }
+    }, okText);
+    if (failed) throw new Error(errorText(failed));
+  }
 
   return (
     <PanelTransition>
@@ -139,7 +151,7 @@ export default function Responsibilities({ me }) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Panel className="overflow-hidden">
-          <PanelHeader title="Responsibility matrix" meta={`Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}`}>
+          <PanelHeader title="Responsibility matrix" meta={data ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}` : "-"}>
             <Button size="sm" variant="ghost" icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                     onClick={() => downloadFile(`/responsibilities/export/${fw ? `?framework=${encodeURIComponent(fw)}` : ""}`, "responsibility-matrix.csv")}>
               Export
@@ -159,7 +171,16 @@ export default function Responsibilities({ me }) {
           {loadErr ? (
             <LoadError what="The responsibility matrix" onRetry={() => load(fw)} />
           ) : !data ? <Loading /> : rows.length === 0 ? (
-            <Empty title="No controls match">Clear the filters to see the whole matrix.</Empty>
+            fw || q || gapsOnly ? (
+              <Empty title="No controls match"
+                     action={<Button size="sm" onClick={() => { setFw(""); setQ(""); setGapsOnly(false); }}>Clear filters</Button>}>
+                Clear the filters to see the whole matrix.
+              </Empty>
+            ) : (
+              <Empty title="No controls yet">
+                Install a compliance pack, or load the framework library, and every control gets a row here.
+              </Empty>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-xs">
@@ -179,7 +200,7 @@ export default function Responsibilities({ me }) {
                         <span className="block text-[13px] text-ink">{r.title}</span>
                         {r.shared ? <Badge tone="info" mono className="mt-1">shared with vendor</Badge> : null}
                       </td>
-                      {ROLES.map(([k]) => (
+                      {ROLES.map(([k, l]) => (
                         <td key={k} className="px-2 py-2">
                           {r[k].length === 0 ? (
                             <span className={cn("text-2xs", k === "accountable" ? "text-danger" : k === "responsible" ? "text-warning" : "text-faint")}>
@@ -188,12 +209,12 @@ export default function Responsibilities({ me }) {
                           ) : (
                             <span className="flex flex-wrap gap-1">
                               {r[k].map((x, i) => (
-                                <PartyChip key={x.id || `implicit-${x.kind}-${x.party_id}-${i}`} x={x} canManage={canManage}
+                                <PartyChip key={x.id || `implicit-${x.kind}-${x.party_id}-${i}`} x={x} role={l} canManage={canManage}
                                            onRemove={(p) => ask({
-                                             title: `Remove ${p.name}?`,
-                                             description: "They are no longer recorded for this control. Implied entries from ownership or a vendor matrix stay.",
+                                             title: `Remove ${p.name} as ${l}?`,
+                                             description: `Only this ${l} entry goes. Any other role ${p.name} holds on this control stays, and so do implied entries from ownership or a vendor matrix.`,
                                              confirmLabel: "Remove",
-                                             onConfirm: () => act(() => api.delete(`/responsibilities/${p.id}/`), `${p.name} removed.`),
+                                             onConfirm: () => actOrThrow(() => api.delete(`/responsibilities/${p.id}/`), `${p.name} removed as ${l}.`),
                                            })} />
                               ))}
                             </span>

@@ -855,6 +855,10 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
         """Revoking is a fact, not an absence: the row stays, marked revoked."""
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You need the frameworks capability to revoke access.")
+        if instance.revoked_at is not None:
+            # A second revoke (a stale tab, or a grant Withdraw already closed)
+            # must not overwrite who revoked it and when, or log it twice.
+            raise ValidationError({"detail": "This access was already revoked."})
         instance.revoked_at = timezone.now()
         instance.revoked_by = self.request.user
         instance.save(update_fields=["revoked_at", "revoked_by"])

@@ -12,6 +12,9 @@ import axios from "axios";
 let transport = "header";
 let oidc = { enabled: false, label: "" };
 let saml = { enabled: false, label: "" };
+// The operator sets the password minimum (PASSWORD_MIN_LENGTH). null while
+// the server has not reported one, and the getter then answers 12, its default.
+let passwordMin = null;
 
 export function authTransport() {
   return transport;
@@ -30,6 +33,13 @@ export function samlConfig() {
   return saml;
 }
 
+/** The shortest password the server accepts. Every screen that sets a
+ *  password advertises and checks this one number, so none of them can
+ *  promise 12 while the server wants 16, or block an 8 it would take. */
+export function passwordMinLength() {
+  return passwordMin ?? 12;
+}
+
 /** Ask the server which transport is live. Safe to call before signing in.
  *  Also where the CSRF cookie arrives: in cookie mode the login endpoint
  *  checks CSRF, and a visitor who has just opened /login has no token yet,
@@ -42,10 +52,13 @@ export async function loadAuthConfig() {
     transport = data.transport === "cookie" ? "cookie" : "header";
     oidc = { enabled: !!data.oidc?.enabled, label: data.oidc?.label || "Single sign-on" };
     saml = { enabled: !!data.saml?.enabled, label: data.saml?.label || "Sign in with SAML" };
+    const min = data.password_min_length;
+    passwordMin = Number.isInteger(min) && min > 0 ? min : null;
   } catch {
     transport = "header";
     oidc = { enabled: false, label: "" };
     saml = { enabled: false, label: "" };
+    passwordMin = null;
   }
   return transport;
 }

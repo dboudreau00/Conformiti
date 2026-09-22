@@ -222,6 +222,27 @@ class DisclosureBoundaryTests(PackageTestBase):
         # The grant survives as a record of what happened.
         self.assertIsNotNone(PackageGrant.objects.get().revoked_at)
 
+    def test_revoking_twice_keeps_the_first_stamp(self):
+        """A second DELETE (a stale tab, or after Withdraw) is refused, and the
+        original who-and-when survives it with no second trail entry."""
+        row = PackageGrant.objects.get()
+        url = f"/api/package-grants/{row.pk}/"
+        self.assertEqual(self.manager_client.delete(url).status_code, 204)
+        row.refresh_from_db()
+        first_at, first_by = row.revoked_at, row.revoked_by_id
+        self.assertIsNotNone(first_at)
+        self.assertEqual(first_by, self.manager.pk)
+        revokes = AuditLog.objects.filter(object_type="evidence-packages", action="delete").count()
+
+        r = self.client_for(self.admin).delete(url)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("already revoked", str(r.data["detail"]))
+        row.refresh_from_db()
+        self.assertEqual((row.revoked_at, row.revoked_by_id), (first_at, first_by))
+        self.assertEqual(
+            AuditLog.objects.filter(object_type="evidence-packages", action="delete").count(),
+            revokes)
+
     def test_an_expired_grant_stops_working_without_anyone_acting(self):
         PackageGrant.objects.update(expires_at=timezone.now() - timezone.timedelta(minutes=1))
         self.assertEqual(

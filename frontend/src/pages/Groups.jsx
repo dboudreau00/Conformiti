@@ -25,6 +25,13 @@ function memberErrorText(e) {
   return /unique/i.test(msg) ? "That person is already a champion in this group." : msg;
 }
 
+/** Group names are unique per workspace; DRF's "unique set" error names the
+ * internal workspace field, so say what it means instead. */
+function groupErrorText(e) {
+  const msg = errorText(e);
+  return /unique/i.test(msg) ? "A group with that name already exists." : msg;
+}
+
 const displayName = (u) => u?.full_name || u?.username || "";
 
 export default function Groups({ me }) {
@@ -145,7 +152,7 @@ export default function Groups({ me }) {
       setGNotice({ kind: "ok", text: `Created “${data.name}”.` });
       await loadGroups(data.id);
     } catch (ex) {
-      setGNotice({ kind: "err", text: errorText(ex) });
+      setGNotice({ kind: "err", text: groupErrorText(ex) });
     } finally {
       setGBusy(false);
     }
@@ -167,10 +174,15 @@ export default function Groups({ me }) {
     const payload = { name: egName.trim(), purpose: egPurpose.trim(), owner: egOwner ? Number(egOwner) : null };
     try {
       const { data } = await api.patch(`/champion-groups/${active.id}/`, payload);
+      // Show what the server saved now rather than after the refetch: that can
+      // fail, and the next edit seeds from `active`, so stale values left here
+      // would be sent back and undo this save.
+      setActive(data);
+      setGroups((list) => list.map((g) => (g.id === data.id ? data : g)));
       setEditingGroup(false);
       await loadGroups(data.id);
     } catch (ex) {
-      setEgNotice({ kind: "err", text: errorText(ex) });
+      setEgNotice({ kind: "err", text: groupErrorText(ex) });
     } finally {
       setEgBusy(false);
     }
@@ -201,23 +213,29 @@ export default function Groups({ me }) {
     }
   }
 
+  /** Runs inside the confirm dialog, which closes on a resolved promise and
+   * shows a thrown error's message, so a failure throws the server's reason
+   * rather than leaving it behind the modal. */
   async function removeMember(m) {
-    if (!canEdit || !active || removingId) return;
+    if (!canEdit || !active || removingId) throw new Error("Couldn't remove that champion.");
+    const name = m.user_name || m.username;
     setRemovingId(m.id);
     setMNotice(null);
     try {
-      await api.delete(`/group-members/${m.id}/`);
-      setMNotice({ kind: "ok", text: `Removed ${m.user_name || m.username} from ${active.name}.` });
+      let text = `Removed ${name} from ${active.name}.`;
+      try {
+        await api.delete(`/group-members/${m.id}/`);
+      } catch (ex) {
+        // Already gone (another administrator removed them first): what was
+        // asked for is true, so refresh instead of refusing over a ghost row.
+        if (ex?.response?.status !== 404) throw new Error(errorText(ex, "Couldn't remove that champion."));
+        text = `${name} had already been removed from ${active.name}.`;
+      }
+      setMNotice({ kind: "ok", text });
       await loadGroups(active.id);
-    } catch (ex) {
-      setMNotice({ kind: "err", text: errorText(ex) });
-      // The confirm dialog closes on a resolved promise, so swallowing this
-      // read as a removal that had worked.
-      return false;
     } finally {
       setRemovingId(null);
     }
-    return true;
   }
 
   function openEditMember(m) {
@@ -233,7 +251,10 @@ export default function Groups({ me }) {
     setEmBusy(true);
     setMNotice(null);
     try {
-      await api.patch(`/group-members/${m.id}/`, { department: emDept.trim(), note: emNote.trim() });
+      const { data } = await api.patch(`/group-members/${m.id}/`, { department: emDept.trim(), note: emNote.trim() });
+      // As in saveGroup: show the saved row now, so a failed refetch cannot
+      // leave the old values on screen for the next edit to send back.
+      setMembers((list) => list.map((x) => (x.id === data.id ? data : x)));
       setEditingMemberId(null);
       await loadGroups(active.id);
     } catch (ex) {
@@ -246,6 +267,9 @@ export default function Groups({ me }) {
   const memberIds = new Set(members.map((m) => m.user));
   const addable = users.filter((u) => !memberIds.has(u.id));
   const memberLabel = (n) => `${n} ${n === 1 ? "member" : "members"}`;
+  // A save to the selected group ends by reselecting it and reports its error
+  // in that group's panel, so the list stays put until the save lands.
+  const saving = egBusy || emBusy || mBusy;
 
   return (
     <PanelTransition>
@@ -272,9 +296,11 @@ export default function Groups({ me }) {
                       <button
                         type="button"
                         onClick={() => open(g)}
+                        disabled={saving}
                         aria-current={on ? "true" : undefined}
                         className={cn(
                           "relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 ease-out",
+                          "disabled:cursor-not-allowed disabled:opacity-60",
                           on ? "text-accent" : "text-muted hover:bg-surface-2 hover:text-ink"
                         )}
                       >
@@ -417,6 +443,12 @@ export default function Groups({ me }) {
                           <label htmlFor="eg-owner" className="field-label">Accountable owner</label>
                           <select id="eg-owner" className="input input-sm" value={egOwner} onChange={(e) => setEgOwner(e.target.value)} disabled={egBusy}>
                             <option value="">Unassigned</option>
+                            {/* Until /users/ arrives (or when it failed) the current owner is not in
+                                the list, and a select whose value matches no option shows the first
+                                one: "Unassigned" on screen while Save kept the owner. */}
+                            {active.owner && !users.some((u) => u.id === active.owner) ? (
+                              <option value={String(active.owner)}>{active.owner_name || "Current owner"}</option>
+                            ) : null}
                             {users.map((u) => (
                               <option key={u.id} value={u.id}>{displayName(u)}</option>
                             ))}
@@ -636,7 +668,10 @@ export default function Groups({ me }) {
           try {
             await api.delete(`/champion-groups/${deletingGroup.id}/`);
           } catch (e) {
-            throw new Error(errorText(e, "Couldn't delete that group."));
+            // A 404 means another administrator deleted it first: the outcome
+            // asked for already holds, so refresh rather than keep a ghost
+            // group that every retry fails on.
+            if (e?.response?.status !== 404) throw new Error(errorText(e, "Couldn't delete that group."));
           }
           await loadGroups();
         }}
@@ -648,11 +683,7 @@ export default function Groups({ me }) {
         title={`Remove ${removing?.user_name || removing?.username} from ${active?.name}?`}
         description="Their department tag and note are deleted with the membership."
         confirmLabel="Remove"
-        onConfirm={async () => {
-          if (!(await removeMember(removing))) {
-            throw new Error("Couldn't remove that champion.");
-          }
-        }}
+        onConfirm={() => removeMember(removing)}
       />
     </PanelTransition>
   );

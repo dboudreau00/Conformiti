@@ -12,4 +12,4 @@ Returned by the auditor: {{ request.returned_note }}
 {% endif %}
 Attach the document(s) and mark it provided in Conformiti (Audit packages > {{ package.name }} > Request list).
 
--- Conformiti
+Conformiti

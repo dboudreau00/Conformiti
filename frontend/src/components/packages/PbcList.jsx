@@ -129,7 +129,15 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     title: `Withdraw ${r.reference}?`,
     description: "The line stays on the list, marked withdrawn, so the auditor can see it was asked for and then dropped.",
     confirmLabel: "Withdraw the request",
-    onConfirm: () => act(`withdraw-${r.id}`, () => api.post(`/pbc-requests/${r.id}/withdraw/`), `${r.reference} withdrawn.`),
+    // Rethrown for the same reason as the notes: `act` resolves on a failure,
+    // which would close the dialog as if the withdrawal had gone through.
+    onConfirm: async () => {
+      let failed = null;
+      await act(`withdraw-${r.id}`, async () => {
+        try { await api.post(`/pbc-requests/${r.id}/withdraw/`); } catch (e) { failed = e; throw e; }
+      }, `${r.reference} withdrawn.`);
+      if (failed) throw new Error(errorText(failed));
+    },
   });
   const attachDoc = (e, r) => {
     e.preventDefault();
@@ -176,7 +184,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   return (
     <Panel className="overflow-hidden" aria-label={title} role="region">
       {confirmDialog}
-      <PanelHeader title={title} meta={rows ? `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}` : ""}>
+      <PanelHeader title={title} meta={failed ? "- lines" : rows ? `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}` : ""}>
         <span className="flex items-center gap-2">
           {!mine && rows && rows.length ? (
             <Button size="sm" variant="ghost" onClick={() => downloadFile(`/pbc-requests/export/?package=${pkg.id}`, "pbc-requests.csv")}

@@ -29,8 +29,28 @@ function fmtDate(iso) {
 }
 
 const EMPTY_SERIES = { name: "", required: "4", owner: "", description: "" };
-const EMPTY_SERIES_EDIT = { name: "", required: "4", owner: "", active: true };
+const EMPTY_SERIES_EDIT = { name: "", required: "4", owner: "", description: "", active: true };
 const EMPTY_MINUTE = { date: "", title: "", attendees: "", notes: "" };
+
+/**
+ * "Required per year" as a whole number from 1 (yearly) to 52 (weekly), or
+ * null for anything else. The forms are noValidate, so min/max on the input
+ * enforce nothing, and a cleared field must not quietly become some default.
+ */
+function parseRequired(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 52 ? n : null;
+}
+const REQUIRED_RANGE = "Required per year must be a whole number from 1 to 52.";
+
+/** What deleting a minute does to the cadence: only minutes dated this year count toward it. */
+function deleteConsequence(m) {
+  const year = Number(String(m?.date || "").slice(0, 4));
+  if (!year) return "This cannot be undone.";
+  return year === new Date().getFullYear()
+    ? "It counts toward this year's cadence, so the number held this year drops by one. This cannot be undone."
+    : `It is dated ${year}, so this year's cadence count does not change. This cannot be undone.`;
+}
 
 function Notice({ msg, className }) {
   if (!msg) return null;
@@ -62,6 +82,7 @@ export default function Meetings({ me }) {
   const [minutesLoading, setMinutesLoading] = useState(false);
   const [minutesErr, setMinutesErr] = useState("");
   const [users, setUsers] = useState([]);
+  const [usersErr, setUsersErr] = useState(false);
 
   const [showNewSeries, setShowNewSeries] = useState(false);
   const [ns, setNs] = useState(EMPTY_SERIES);
@@ -79,6 +100,7 @@ export default function Meetings({ me }) {
   const [minuteBusy, setMinuteBusy] = useState(false);
   const [minuteMsg, setMinuteMsg] = useState(null);
   const [deletingMinute, setDeletingMinute] = useState(null);
+  const [deleteMsg, setDeleteMsg] = useState(null);
 
   // Guards against a slow minutes response for a previously selected series overwriting the current one.
   const minutesReq = useRef(0);
@@ -90,6 +112,7 @@ export default function Meetings({ me }) {
     if (!keep) {
       setMinutes([]);
       setMinuteMsg(null);
+      setDeleteMsg(null);
       setEditingSeries(false);
     }
     const req = ++minutesReq.current;
@@ -132,12 +155,19 @@ export default function Meetings({ me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The user directory is only needed for the owner picker on the new-series form.
+  // The user directory is only needed for the owner pickers on the new-series and edit-series forms.
+  // A failed load is remembered so the edit form can say why its picker offers no one else.
   useEffect(() => {
     if (!canEdit) return;
     fetchAll("/users/")
-      .then(setUsers)
-      .catch(() => setUsers([]));
+      .then((list) => {
+        setUsers(list);
+        setUsersErr(false);
+      })
+      .catch(() => {
+        setUsers([]);
+        setUsersErr(true);
+      });
   }, [canEdit]);
 
   function toggleNewSeries() {
@@ -148,11 +178,16 @@ export default function Meetings({ me }) {
   async function addSeries(e) {
     e.preventDefault();
     if (!ns.name.trim() || seriesBusy) return;
+    const required = parseRequired(ns.required);
+    if (required == null) {
+      setSeriesMsg({ kind: "err", text: REQUIRED_RANGE });
+      return;
+    }
     setSeriesBusy(true);
     setSeriesMsg(null);
     const payload = {
       name: ns.name.trim(),
-      required_per_year: Number(ns.required) || 4,
+      required_per_year: required,
       description: ns.description.trim(),
     };
     if (ns.owner) payload.owner = Number(ns.owner);
@@ -174,6 +209,7 @@ export default function Meetings({ me }) {
       name: active.name,
       required: String(active.required_per_year),
       owner: active.owner ? String(active.owner) : "",
+      description: active.description || "",
       active: active.active !== false,
     });
     setSeriesEditMsg(null);
@@ -183,12 +219,18 @@ export default function Meetings({ me }) {
   async function saveSeriesEdit(e) {
     e.preventDefault();
     if (!active || seriesEditBusy || !es.name.trim()) return;
+    const required = parseRequired(es.required);
+    if (required == null) {
+      setSeriesEditMsg({ kind: "err", text: REQUIRED_RANGE });
+      return;
+    }
     setSeriesEditBusy(true);
     setSeriesEditMsg(null);
     const payload = {
       name: es.name.trim(),
-      required_per_year: Number(es.required) || 4,
+      required_per_year: required,
       owner: es.owner ? Number(es.owner) : null,
+      description: es.description.trim(),
       active: es.active,
     };
     try {
@@ -207,6 +249,7 @@ export default function Meetings({ me }) {
     if (!active || !mf.date || minuteBusy) return;
     setMinuteBusy(true);
     setMinuteMsg(null);
+    setDeleteMsg(null);
     const fd = new FormData();
     fd.append("series", active.id);
     fd.append("date", mf.date);
@@ -228,7 +271,35 @@ export default function Meetings({ me }) {
     }
   }
 
+  // ConfirmDialog stays open on a throw and shows its message, so a failure is
+  // thrown as the sentence to read, not as axios's "Request failed with status code".
+  async function deleteMinute(m) {
+    let alreadyGone = false;
+    try {
+      await api.delete(`/meeting-minutes/${m.id}/`);
+    } catch (ex) {
+      // A 404 means another tab or another manager deleted it first. What was
+      // asked for is already true, so refresh the list instead of leaving a row
+      // whose Delete can only ever fail.
+      if (ex?.response?.status !== 404) throw new Error(errorText(ex, "The minutes couldn't be deleted. Please try again."));
+      alreadyGone = true;
+    }
+    // A "Minutes recorded" notice may be describing the very record just deleted.
+    setMinuteMsg(null);
+    setDeleteMsg({
+      kind: "ok",
+      text: alreadyGone
+        ? `Minutes for ${fmtDate(m.date)} had already been deleted.`
+        : `Minutes for ${fmtDate(m.date)} deleted.`,
+    });
+    await loadSeries(m.series, true);
+  }
+
   const activeStatus = active ? CADENCE[active.cadence_status] || CADENCE.behind : null;
+  // A controlled select whose value matches no option shows its first one, "Unassigned",
+  // while Save re-sends the real owner. Keep an option for the saved owner even when the
+  // directory failed to load or does not list them.
+  const savedOwnerMissing = !!active?.owner && !users.some((u) => u.id === active.owner);
   const detailKey = loading ? "loading" : active ? `series-${active.id}` : "none";
 
   return (
@@ -524,15 +595,38 @@ export default function Meetings({ me }) {
                               value={es.owner}
                               onChange={(e) => setEs({ ...es, owner: e.target.value })}
                               disabled={seriesEditBusy}
+                              aria-describedby={usersErr ? "es-owner-hint" : undefined}
                             >
                               <option value="">Unassigned</option>
+                              {savedOwnerMissing ? (
+                                <option value={String(active.owner)}>{active.owner_name || "Current owner"}</option>
+                              ) : null}
                               {users.map((u) => (
                                 <option key={u.id} value={u.id}>
                                   {u.full_name || u.username}
                                 </option>
                               ))}
                             </select>
+                            {usersErr ? (
+                              <p id="es-owner-hint" className="mt-1.5 text-xs text-muted">
+                                The user list couldn't be loaded, so the owner can only be kept or cleared.
+                              </p>
+                            ) : null}
                           </div>
+                        </div>
+                        <div>
+                          <label htmlFor="es-description" className="field-label">
+                            Description
+                          </label>
+                          <textarea
+                            id="es-description"
+                            rows={2}
+                            className="input input-sm"
+                            placeholder="What this meeting covers"
+                            value={es.description}
+                            onChange={(e) => setEs({ ...es, description: e.target.value })}
+                            disabled={seriesEditBusy}
+                          />
                         </div>
                         <label className="flex items-center gap-2 text-[13px] text-ink">
                           <input
@@ -578,6 +672,8 @@ export default function Meetings({ me }) {
                         {minutesErr}
                       </div>
                     ) : null}
+
+                    <Notice msg={deleteMsg} className="mx-5 mb-4" />
 
                     {minutesLoading && minutes.length === 0 ? (
                       <Loading>Loading minutes…</Loading>
@@ -633,7 +729,12 @@ export default function Meetings({ me }) {
                                 </button>
                               ) : null}
                               {canEdit ? (
-                                <Button size="sm" variant="ghost" onClick={() => setDeletingMinute(m)}>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setDeletingMinute(m)}
+                                  aria-label={`Delete the minutes of ${fmtDate(m.date)}${m.title ? `, ${m.title}` : ""}`}
+                                >
                                   Delete
                                 </Button>
                               ) : null}
@@ -739,13 +840,14 @@ export default function Meetings({ me }) {
       <ConfirmDialog
         open={!!deletingMinute}
         onClose={() => setDeletingMinute(null)}
-        title="Delete these minutes?"
-        description="The cadence count for this year drops by one."
+        title={
+          deletingMinute?.title
+            ? `Delete “${deletingMinute.title}” (${fmtDate(deletingMinute.date)})?`
+            : `Delete the minutes of ${fmtDate(deletingMinute?.date)}?`
+        }
+        description={deleteConsequence(deletingMinute)}
         confirmLabel="Delete"
-        onConfirm={async () => {
-          await api.delete(`/meeting-minutes/${deletingMinute.id}/`);
-          await loadSeries(active.id, true);
-        }}
+        onConfirm={() => deleteMinute(deletingMinute)}
       />
     </PanelTransition>
   );

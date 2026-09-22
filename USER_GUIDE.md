@@ -116,8 +116,11 @@ administrator.
 ### User audit *(administrators; auditors read-only)*
 **Start new review** snapshots every account (role, last login, folder grants,
 capabilities). Record a decision and a note per row, **Export CSV**, then
-**Complete review** — refused while any row is pending; completed reviews are
-read-only evidence.
+**Complete review**, which is refused while any row is pending. Completing
+deactivates every account marked Revoke and signs it out of its sessions. It
+skips your own account, superusers, accounts already inactive and accounts
+since deleted, and lists each skipped row on screen with the reason. Completed
+reviews are read-only evidence.
 
 ### Audit log *(administrators, auditors, view-all managers)*
 Filter by action, record type, user and time window; search detail, record or

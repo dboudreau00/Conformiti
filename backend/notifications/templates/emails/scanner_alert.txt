@@ -7,4 +7,4 @@ While it is unreachable every evidence upload is refused (scanning fails closed)
 
 This message is sent once per outage; a follow-up confirms recovery.{% else %}The malware scanner is answering again (as of {{ since }}). Uploads are accepted once more.{% endif %}
 
--- Conformiti
+Conformiti

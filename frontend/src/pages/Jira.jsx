@@ -163,10 +163,16 @@ export default function Jira({ me }) {
     setBoardMsg(null);
     try {
       await api.delete(`/integrations/jira/boards/${b.id}/`);
-      setActive(null);
-      setIssues(null);
-      setIssueErr(null);
-      await loadBoards();
+      if (active && b.id !== active.id) {
+        // Another board went: the one being read stays open with its issues,
+        // rather than the page jumping to the first board and asking Jira again.
+        setBoards((list) => (list || []).filter((x) => x.id !== b.id));
+      } else {
+        setActive(null);
+        setIssues(null);
+        setIssueErr(null);
+        await loadBoards();
+      }
     } catch (err) {
       setBoardMsg({ ok: false, text: errorText(err, "Couldn't remove that board.") });
     } finally {
@@ -174,7 +180,10 @@ export default function Jira({ me }) {
     }
   }
 
-  const configured = config ? !!(config.enabled && config.base_url && config.has_token) : (boards?.length || 0) > 0;
+  // Whether Jira is connected is known only once a manager's configuration
+  // has loaded. For anyone else, or while it loads, or when it failed, this
+  // stays null and the copy below does not guess from the list of boards.
+  const connected = config ? !!(config.enabled && config.base_url && config.has_token) : null;
   const dirty =
     !!config &&
     (form.base_url !== (config.base_url || "") ||
@@ -437,15 +446,19 @@ export default function Jira({ me }) {
             {boards === null ? (
               <Loading>Loading boards…</Loading>
             ) : !active ? (
-              configured ? (
-                <Empty title="No board selected">
-                  {isManager ? "Track a board on the left to see its issues here." : "Ask an administrator to track a board; the form appears here for them."}
-                </Empty>
-              ) : (
+              boardsErr ? (
+                <Empty title="No board to show">The tracked boards did not load. Reload the page to try again.</Empty>
+              ) : connected === false ? (
                 <Empty title="Jira isn't connected yet">
-                  {isManager
-                    ? "Enter the workspace URL, account email and API token on the left, then enable the integration."
-                    : "Ask an administrator to connect Jira; the connection settings appear here for them."}
+                  Enter the workspace URL, account email and API token on the left, then enable the integration.
+                </Empty>
+              ) : connected ? (
+                <Empty title="No board selected">Track a board on the left to see its issues here.</Empty>
+              ) : isManager && !configErr ? (
+                <Loading>Loading configuration…</Loading>
+              ) : (
+                <Empty title="No board to show">
+                  {isManager ? "Track a board on the left to see its issues here." : "Issues appear here once an administrator tracks a Jira board."}
                 </Empty>
               )
             ) : issueErr ? (

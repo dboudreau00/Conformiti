@@ -1,6 +1,12 @@
-"""Per-user notification feed and the review-reminder scan."""
+"""Per-user notification feed, the review-reminder scan and the email copy."""
+import html
+import re
+from pathlib import Path
+from types import SimpleNamespace
+
 from django.core import mail
-from django.test import override_settings
+from django.template.loader import render_to_string
+from django.test import SimpleTestCase, override_settings
 
 from documents.models import Document
 from notifications.tasks import OVERDUE, run_review_scan
@@ -86,3 +92,63 @@ class ReviewScanTests(APITestBase):
             self.assertEqual(run_review_scan(), 1)
         # the failed document was left untouched so it retries next time
         self.assertEqual(Document.objects.filter(reminders_sent=[]).count(), 1)
+
+
+def _email_context(on):
+    """Every variable the emails read, each optional part present (on) or
+    absent (off), so both sides of every {% if %} get rendered."""
+    ns = SimpleNamespace
+
+    def opt(value):
+        return value if on else ""
+
+    return {
+        "owner_name": "Owen", "assignee_name": "Ada", "sender": "Mia", "organisation": opt("Acme"),
+        "user": ns(first_name=opt("Owen"), username="owen"), "cadence": "daily", "today": "22 Sep 2026",
+        "count": 2, "base": opt("https://grc.example"),
+        "groups": [("high", [{"title": "Access policy", "detail": "Review overdue", "to": opt("/documents/1")}]),
+                   ("low", [{"title": "Backup test", "detail": "Due in 5 days", "to": ""}])],
+        "vendor": ns(name="Northwind", contact_email=opt("sec@northwind.example"),
+                     get_tier_display="High", data_handled=opt("Customer PII")),
+        "report": ns(get_kind_display="SOC 2 Type II"), "lapsed_on": "1 Sep 2026", "days": 3 if on else 1,
+        "request": ns(reference="PBC-1", title="Access review", control_ref=opt("CC6.1"),
+                      due_date="30 Sep 2026", requested_by_name="Ann", get_requested_by_side_display="Auditor",
+                      description=opt("Q3 export"), status="returned" if on else "open",
+                      returned_note=opt("Wrong quarter")),
+        "package": ns(name="SOC 2 2026", audit_firm=opt("Example LLP")), "overdue": on,
+        "questions": [1, 2], "message": opt("Thanks for your help."), "link": "https://grc.example/q/abc",
+        "deadline": "1 Oct 2026",
+        "invite": ns(respondent_name="Rita", respondent_title=opt("CISO"), sent_to="rita@northwind.example"),
+        "answered": 2, "total": 2, "noes": 1 if on else 0,
+        "document": ns(name="Access policy", get_review_cadence_display="Annual", next_review_date="1 Oct 2026"),
+        "folder_path": "Policies / Access", "down": on, "since": "09:00 UTC",
+    }
+
+
+class EmailCopyTests(SimpleTestCase):
+    """What a recipient reads, in both parts of every email. The 0.9.5j dash
+    sweep turned "&mdash; Conformiti" into ", Conformiti" and "request &mdash;
+    please" into "request , please", and nothing rendered the templates."""
+
+    EMAILS = Path(__file__).resolve().parent / "templates" / "emails"
+    # Block tags break a line where the mail client would; inline ones do not.
+    BLOCK_TAG = re.compile(r"<(?:br|/?(?:p|div|li|ul|ol|h[1-6]|tr|td|th|table|blockquote|pre|body|html))\b[^>]*>", re.I)
+    ANY_TAG = re.compile(r"<[^>]+>")
+
+    def _lines(self, name, body):
+        if name.endswith(".html"):
+            body = html.unescape(self.ANY_TAG.sub("", self.BLOCK_TAG.sub("\n", body)))
+        return body.splitlines()
+
+    def test_no_email_line_opens_with_a_comma_or_carries_a_dash(self):
+        names = sorted(p.name for p in self.EMAILS.iterdir() if p.suffix in (".html", ".txt"))
+        self.assertTrue(names)
+        for name in names:
+            for on in (True, False):
+                with self.subTest(template=name, optional_parts=on):
+                    for line in self._lines(name, render_to_string(f"emails/{name}", _email_context(on))):
+                        self.assertFalse(line.strip().startswith(","), line)
+                        self.assertNotIn(" ,", line)
+                        self.assertNotRegex(line, "[\u2013\u2014]")
+                        # "--" standing in for a dash, as the old plain-text sign-offs had it
+                        self.assertNotRegex(line, r"(?:^|\s)--(?:\s|$)")

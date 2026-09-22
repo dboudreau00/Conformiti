@@ -10,7 +10,7 @@ import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { Legend, Meter, SegmentBar } from "../components/ui/Meter.jsx";
-import { Empty, Label, Loading, Panel } from "../components/ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ShowMore, joinAll, joinSome } from "../components/ui/ShowMore.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { cn } from "../utils/cn.js";
@@ -48,9 +48,12 @@ function ArrowLink({ to, children, className }) {
 const BIG = "tabular text-[30px] font-semibold leading-none tracking-[-0.03em] text-ink";
 
 export default function Dashboard({ me }) {
+  // null until its request has succeeded once: a source that never arrived is
+  // unknown, which is not the same as empty, and the figures built from it
+  // show a dash rather than a zero.
   const [summary, setSummary] = useState(null);
-  const [frameworks, setFrameworks] = useState([]);
-  const [reviews, setReviews] = useState([]);
+  const [frameworks, setFrameworks] = useState(null);
+  const [reviews, setReviews] = useState(null);
   const [docCount, setDocCount] = useState(null);
   const [failed, setFailed] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,8 +92,9 @@ export default function Dashboard({ me }) {
   const revs = summary?.reviews;
   const risks = summary?.risks;
 
-  const fwList = frameworks.length ? frameworks : summary?.frameworks || [];
+  const fwList = frameworks?.length ? frameworks : summary?.frameworks || [];
   const fwNames = fwList.map((f) => f.name);
+  const fwKnown = frameworks !== null || Array.isArray(summary?.frameworks);
 
   const statusSegments = useMemo(() => {
     const by = controls?.by_status || {};
@@ -123,9 +127,9 @@ export default function Dashboard({ me }) {
     ];
   }, [readiness]);
 
-  const overdue = revs?.overdue ?? reviews.filter((r) => r.days_until_review < 0).length;
-  const due30 = revs?.due_30 ?? reviews.filter((r) => r.days_until_review >= 0 && r.days_until_review <= 30).length;
-  const docTotal = docs?.total ?? docCount ?? 0;
+  const overdue = revs?.overdue ?? (reviews ? reviews.filter((r) => r.days_until_review < 0).length : null);
+  const due30 = revs?.due_30 ?? (reviews ? reviews.filter((r) => r.days_until_review >= 0 && r.days_until_review <= 30).length : null);
+  const docTotal = docs?.total ?? docCount;
   const docBy = docs?.by_status || {};
 
   const controlTotal = controls?.total || 0;
@@ -220,7 +224,11 @@ export default function Dashboard({ me }) {
         {/* Supporting metrics */}
         <StackItem className="col-span-12 xl:col-span-7">
           <div className="grid h-full grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard label="Frameworks" value={fwList.length} detail={fwNames.length ? joinSome(fwNames, 3) : "No frameworks loaded"}>
+            <StatCard
+              label="Frameworks"
+              value={fwKnown ? fwList.length : "-"}
+              detail={fwNames.length ? joinSome(fwNames, 3) : fwKnown ? "No frameworks loaded" : "Unavailable until the framework list loads"}
+            >
               {fwList.length ? (
                 <ShowMore total={fwList.length} initial={8} noun="frameworks" className="mt-3">
                   {(n) => (
@@ -241,13 +249,18 @@ export default function Dashboard({ me }) {
 
             <StatCard
               label="Documents"
-              value={docTotal}
+              value={docTotal ?? "-"}
               detail={docs ? `${docBy.approved || 0} approved · ${docBy.in_review || 0} in review · ${docBy.expired || 0} expired` : "Policies, procedures and evidence"}
             >
               <ArrowLink to="/documents">Open folders</ArrowLink>
             </StatCard>
 
-            <StatCard label="Reviews overdue" value={overdue} detail={`${due30} due in the next 30 days`} tone={overdue > 0 ? "danger" : undefined}>
+            <StatCard
+              label="Reviews overdue"
+              value={overdue ?? "-"}
+              detail={due30 != null ? `${due30} due in the next 30 days` : "Unavailable until upcoming reviews load"}
+              tone={overdue > 0 ? "danger" : undefined}
+            >
               <a href="#review-queue" className="link mt-3">
                 Open the review queue
                 <ArrowUpRightIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
@@ -304,9 +317,19 @@ export default function Dashboard({ me }) {
         <StackItem className="col-span-12 2xl:col-span-4">
           {/* Anchor for the "Open the review queue" link on the Reviews overdue
            * card above: ReviewQueue itself is a shared component, so the id
-           * lives on this wrapper instead of inside it. */}
+           * lives on this wrapper instead of inside it. Until the upcoming
+           * reviews have loaded once, the queue is not drawn: given nothing, it
+           * says every scheduled review is attested, and the link would land
+           * the reader on that claim. */}
           <div id="review-queue" className="h-full">
-            <ReviewQueue me={me} reviews={reviews} onChanged={load} />
+            {reviews ? (
+              <ReviewQueue me={me} reviews={reviews} onChanged={load} />
+            ) : (
+              <Panel className="flex h-full flex-col">
+                <PanelHeader title="Reviews coming up" meta="Next 120 days" />
+                <LoadError what="Upcoming reviews" onRetry={load} />
+              </Panel>
+            )}
           </div>
         </StackItem>
       </Stack>

@@ -17,7 +17,7 @@
  * from the bytes on screen, the same digest a sealed package manifest
  * records, so a reviewer can compare the two without downloading anything.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DownloadIcon, FingerprintIcon, PanelRightIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 import * as pdfjs from "pdfjs-dist";
@@ -317,7 +317,16 @@ export default function DocumentViewer({
   const [digest, setDigest] = useState(null);
   const [zoom, setZoom] = useState("fit");
   const [aside, setAside] = useState(true);
+  const [downloadError, setDownloadError] = useState("");
   const closeRef = useRef(null);
+  // The latest onClose, read by Escape. Every caller passes an inline arrow,
+  // so depending on onClose itself re-ran the effect below on each parent
+  // render and pulled focus back to the close button mid-read.
+  const onCloseRef = useRef(onClose);
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  });
+  const viewing = useRef(0);   // bumped when the file shown changes or the viewer closes
 
   // Fetch through the API client, never by pointing a frame at the URL: the
   // media location behind nginx forces download and denies framing on
@@ -329,6 +338,7 @@ export default function DocumentViewer({
     setState({ status: "loading" });
     setDigest(null);
     setZoom("fit");
+    setDownloadError("");
     (async () => {
       try {
         const r = await api.get(previewUrl, { responseType: "blob" });
@@ -347,6 +357,7 @@ export default function DocumentViewer({
     })();
     return () => {
       live = false;
+      viewing.current += 1;
       // The PDF viewer inside the frame may still be reading the blob as the
       // dialog unmounts; revoking a moment later avoids an aborted fetch.
       if (url) {
@@ -368,7 +379,7 @@ export default function DocumentViewer({
     if (!open) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    const onKey = (e) => { if (e.key === "Escape") onCloseRef.current?.(); };
     document.addEventListener("keydown", onKey);
     const t = setTimeout(() => closeRef.current?.focus(), 30);
     return () => {
@@ -376,7 +387,7 @@ export default function DocumentViewer({
       document.removeEventListener("keydown", onKey);
       clearTimeout(t);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   async function computeDigest() {
     setDigest("computing");
@@ -385,6 +396,20 @@ export default function DocumentViewer({
       setDigest((await sha256Hex(r.data)) || "unavailable");
     } catch {
       setDigest("unavailable");
+    }
+  }
+
+  // A file deleted, moved or withdrawn while the viewer is open answers the
+  // download with a 403 or a 404. Say so here rather than let it fall through
+  // as an unhandled rejection with nothing on screen.
+  async function download() {
+    const shown = viewing.current;
+    setDownloadError("");
+    try {
+      await downloadFile(downloadUrl, filename || title);
+    } catch (e) {
+      const detail = await detailFromError(e, "Couldn't download this file.");
+      if (viewing.current === shown) setDownloadError(detail);
     }
   }
 
@@ -401,7 +426,7 @@ export default function DocumentViewer({
         </p>
         {downloadUrl ? (
           <Button size="sm" variant="primary" icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
-                  onClick={() => downloadFile(downloadUrl, filename || title)}>
+                  onClick={download}>
             Download
           </Button>
         ) : null}
@@ -467,7 +492,7 @@ export default function DocumentViewer({
                   </Button>
                 ) : null}
                 {downloadUrl ? (
-                  <Button size="sm" onClick={() => downloadFile(downloadUrl, filename || title)}
+                  <Button size="sm" onClick={download}
                           icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
                     Download
                   </Button>
@@ -481,6 +506,9 @@ export default function DocumentViewer({
                 </Button>
               </div>
             </header>
+            {downloadError ? (
+              <p className="notice notice-err mx-4 mt-3 shrink-0" role="alert">{downloadError}</p>
+            ) : null}
 
             <div className="flex min-h-0 flex-1">
               <div className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-surface-2">{body}</div>

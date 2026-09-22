@@ -584,3 +584,36 @@ class TransportDefaultTests(APITestBase):
             for name in ("__Host-conformiti_access", "__Secure-conformiti_refresh",
                          "conformiti_access", "conformiti_refresh"):
                 self.assertEqual(out.cookies[name]["max-age"], 0, name)
+
+
+class PasswordPolicyConfigTests(APITestBase):
+    """/api/auth/config/ states the minimum the validator enforces, so the
+    interface's hint stays right on an install that changed it."""
+
+    def test_the_minimum_is_one_setting_shared_with_the_validator(self):
+        from django.conf import settings
+        from django.contrib.auth.password_validation import (
+            MinimumLengthValidator, get_default_password_validators,
+        )
+        enforced = [v.min_length for v in get_default_password_validators()
+                    if isinstance(v, MinimumLengthValidator)]
+        self.assertEqual(enforced, [settings.PASSWORD_MIN_LENGTH])
+        self.assertEqual(APIClient().get("/api/auth/config/").data["password_min_length"],
+                         settings.PASSWORD_MIN_LENGTH)
+
+    def test_the_config_endpoint_reports_a_changed_minimum(self):
+        from django.conf import settings
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError
+
+        validators = [
+            {**v, "OPTIONS": {"min_length": 16}} if v["NAME"].endswith(".MinimumLengthValidator") else v
+            for v in settings.AUTH_PASSWORD_VALIDATORS
+        ]
+        with override_settings(PASSWORD_MIN_LENGTH=16, AUTH_PASSWORD_VALIDATORS=validators):
+            r = APIClient().get("/api/auth/config/")
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.data["password_min_length"], 16)
+            # ...and what it reports is what is enforced: 13 characters now fail.
+            with self.assertRaises(ValidationError):
+                validate_password("Tq8#vLm2@Rz5k")

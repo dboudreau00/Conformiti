@@ -47,9 +47,12 @@ test.describe("questionnaire sent to the vendor", () => {
       await vendor.locator("#q-title").fill("CISO");
       await vendor.getByRole("button", { name: "Submit questionnaire" }).click();
       // Submitting closes the link for good, so it asks first and says how
-      // many questions are still blank. Exact, or this also matches the
-      // "Submit questionnaire" button behind the dialog.
-      await expect(vendor.getByRole("heading", { name: "Submit your answers?" })).toBeVisible();
+      // many questions are still blank: the two answered above, ten not.
+      const confirm = vendor.getByRole("dialog", { name: "Submit your answers?" });
+      await expect(confirm).toBeVisible();
+      await expect(confirm).toHaveAccessibleDescription(/^2 of 12 questions answered, 10 left blank\./);
+      // Exact, or this also matches the "Submit questionnaire" button behind
+      // the dialog.
       await vendor.getByRole("button", { name: "Submit", exact: true }).click();
       await expect(vendor.getByRole("heading", { name: "Thank you" })).toBeVisible();
 

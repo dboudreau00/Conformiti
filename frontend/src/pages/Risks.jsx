@@ -18,6 +18,14 @@ import { errorText } from "../utils/a11y.js";
 
 const displayName = (u) => u.full_name || u.username || `User ${u.id}`;
 
+// Named states for the detail panel, so onAnimationComplete can tell its
+// entrance from its exit.
+const DETAIL_MOTION = {
+  enter: { opacity: 0, y: 10 },
+  shown: { opacity: 1, y: 0 },
+  leave: { opacity: 0, y: -6 },
+};
+
 export default function Risks({ me }) {
   const { refreshCounts } = useShell();
   const [risks, setRisks] = useState([]);
@@ -78,10 +86,16 @@ export default function Risks({ me }) {
   }, [loadRisks]);
 
   // A row can sit well below the fold in a long register; walk the reader down
-  // to the detail that just opened instead of leaving them to find it.
-  useEffect(() => {
-    if (selectedId) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [selectedId]);
+  // to the detail that just opened instead of leaving them to find it. This
+  // waits for the panel to finish entering: a target measured when the
+  // selection changes still counts the height of whatever is leaving above it
+  // (the New risk form collapsing after Create risk), and is stale by the time
+  // that has gone. The previous risk's panel is not a factor, because the
+  // presence below runs in "wait" mode and mounts the next one after it left.
+  // scroll-mt on the panel keeps its heading clear of the sticky 60px top bar.
+  function revealDetail(definition) {
+    if (definition === "shown") detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   // Notes for the selected risk.
   useEffect(() => {
@@ -393,9 +407,9 @@ export default function Risks({ me }) {
           </div>
         </StackItem>
 
-        <AnimatePresence initial={false}>
+        <AnimatePresence initial={false} mode="wait">
           {selected ? (
-            <motion.div ref={detailRef} key={`detail-${selected.id}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease: EASE }}>
+            <motion.div ref={detailRef} key={`detail-${selected.id}`} className="scroll-mt-20" variants={DETAIL_MOTION} initial="enter" animate="shown" exit="leave" transition={{ duration: 0.22, ease: EASE }} onAnimationComplete={revealDetail}>
               <RiskDetail
                 risk={selected}
                 canEdit={canEditRisk(selected)}
@@ -417,7 +431,7 @@ export default function Risks({ me }) {
 
         {!loading && !error ? (
           <StackItem>
-            <Label className="block px-1">
+            <Label className="block whitespace-normal px-1">
               Ratings use the 5×5 banding: 1 to 4 low · 5 to 9 moderate · 10 to 15 high · 16 to 25 critical. Owners may edit their own risks; framework managers may edit, create and import.
             </Label>
           </StackItem>

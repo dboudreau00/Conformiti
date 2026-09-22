@@ -9,6 +9,6 @@ Answer it here (the link works until {{ deadline }}):
 
 {{ link }}
 
-You can save a draft and come back; submit once you are done. The link is personal to this request -- please do not forward it.
+You can save a draft and come back; submit once you are done. The link is personal to this request. Please do not forward it.
 
--- Conformiti{% if organisation %} for {{ organisation }}{% endif %}
+Conformiti{% if organisation %} for {{ organisation }}{% endif %}

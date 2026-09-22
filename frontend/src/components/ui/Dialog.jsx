@@ -15,7 +15,7 @@
  * Playwright drives them as ordinary dialogs (`getByRole("dialog")`), which
  * is also how a screen reader reaches them.
  */
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { XIcon } from "lucide-react";
 import { EASE } from "../layout/PanelTransition.jsx";
@@ -25,11 +25,24 @@ import { Label } from "./Panel.jsx";
 
 const FOCUSABLE = 'input, textarea, select, button:not([data-dialog-close]), [href], [tabindex]:not([tabindex="-1"])';
 
+// A disabled control matches the selector but cannot take focus.
+function firstField(root) {
+  return Array.from(root.querySelectorAll(FOCUSABLE)).find((n) => !n.disabled) || null;
+}
+
 export function Dialog({ open, title, description, onClose, children, size = "md", className, closeOnOverlay = true }) {
   const titleId = useId();
   const descId = useId();
   const frame = useRef(null);
   const restoreTo = useRef(null);
+  // Escape reads the latest onClose through a ref. Callers pass a fresh arrow,
+  // or `busy ? undefined : onClose`, on every render; as a dependency of the
+  // effect below it tore the trap down and rebuilt it whenever the page behind
+  // re-rendered, and each rebuild sent focus back to the first control.
+  const closeRef = useRef(onClose);
+  useLayoutEffect(() => {
+    closeRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return undefined;
@@ -37,32 +50,56 @@ export function Dialog({ open, title, description, onClose, children, size = "md
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     // Focus the first field, else the frame itself, once it is in the DOM.
+    // Content that loads after opening (a spinner, then the form) has no field
+    // yet, so the frame holds focus and the dialog is watched until one
+    // appears or is enabled. It takes focus only if the frame still has it:
+    // focus the user has moved stays where they put it.
+    let watch = null;
     const t = setTimeout(() => {
-      const first = frame.current?.querySelector(FOCUSABLE);
-      (first || frame.current)?.focus();
+      const node = frame.current;
+      if (!node) return;
+      const first = firstField(node);
+      if (first) { first.focus(); return; }
+      node.focus();
+      watch = new MutationObserver((_, observer) => {
+        const field = firstField(node);
+        if (!field) return;
+        observer.disconnect();
+        watch = null;
+        if (document.activeElement === node) field.focus();
+      });
+      watch.observe(node, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
     }, 0);
     const onKey = (e) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose?.();
+        closeRef.current?.();
       } else if (e.key === "Tab" && frame.current) {
-        // Keep Tab inside the dialog: the page behind it is inert for now.
-        const nodes = Array.from(frame.current.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled);
-        if (!nodes.length) return;
+        // Keep Tab inside the dialog. The page behind it is not inert, so
+        // focus that is anywhere but one of the dialog's own controls (the
+        // frame, the close button, the page) is brought back to the first or
+        // last one rather than left to walk onto the page. With none enabled
+        // (a request in flight, or a dialog that only informs) the close
+        // button, else the frame, holds it.
+        let nodes = Array.from(frame.current.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled);
+        if (!nodes.length) nodes = [frame.current.querySelector("[data-dialog-close]") || frame.current];
         const first = nodes[0];
         const last = nodes[nodes.length - 1];
-        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        const current = document.activeElement;
+        const within = nodes.includes(current);
+        if (e.shiftKey && (current === first || !within)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (current === last || !within)) { e.preventDefault(); first.focus(); }
       }
     };
     document.addEventListener("keydown", onKey);
     return () => {
       clearTimeout(t);
+      watch?.disconnect();
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
       restoreTo.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   const width = { sm: "max-w-[420px]", md: "max-w-[560px]", lg: "max-w-[760px]" }[size] || "max-w-[560px]";
 
@@ -75,7 +112,14 @@ export function Dialog({ open, title, description, onClose, children, size = "md
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: EASE }}
-          onMouseDown={(e) => { if (closeOnOverlay && e.target === e.currentTarget) onClose?.(); }}
+          // A press on the backdrop never takes focus: a dialog that stays open
+          // keeps its field focused, and one that closes keeps the focus it
+          // just handed back to the control that opened it.
+          onMouseDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            e.preventDefault();
+            if (closeOnOverlay) onClose?.();
+          }}
         >
           <motion.div
             ref={frame}

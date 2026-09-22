@@ -7,4 +7,4 @@ An auditor will ask for the bridge letter covering the gap between that report's
 Tier: {{ vendor.get_tier_display }}
 Data handled: {{ vendor.data_handled|default:"not stated" }}
 
--- Conformiti
+Conformiti

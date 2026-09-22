@@ -66,15 +66,19 @@ export function Empty({ title, children, action, className }) {
  * red banner describes a state the workspace is not in, and sends the reader
  * to fix something that is not broken. This says the load failed and offers
  * the only useful action.
+ *
+ * When the server answered, `reason` replaces the "did not come back" copy,
+ * because a refusal such as a 400 or a 403 is not a lost request and trying
+ * again only repeats it.
  */
-export function LoadError({ what = "This", onRetry, className }) {
+export function LoadError({ what = "This", reason, onRetry, className }) {
   return (
     <Empty
       title={`${what} could not be loaded`}
       className={className}
       action={onRetry ? <Button size="sm" variant="secondary" onClick={onRetry}>Try again</Button> : null}
     >
-      The request did not come back. Nothing has changed, so trying again is safe.
+      {reason || "The request did not come back. Nothing has changed, so trying again is safe."}
     </Empty>
   );
 }

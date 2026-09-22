@@ -52,19 +52,22 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
         start = parse_date(request.query_params.get("start", "")) or date.min
         end = parse_date(request.query_params.get("end", "")) or date.max
         items = []
+        visible = accessible_folder_ids(request.user)
 
-        # stored events
+        # stored events; a linked document in a folder the caller cannot open
+        # is not named, not even by id
         for e in self.get_queryset().filter(date__gte=start, date__lte=end):
+            doc = e.document
             items.append({
                 "id": f"event-{e.id}", "source": "event", "title": e.title,
                 "type": e.event_type, "date": e.date.isoformat(),
                 "end_date": e.end_date.isoformat() if e.end_date else None,
-                "completed": e.completed, "document": e.document_id,
+                "completed": e.completed,
+                "document": doc.id if doc is not None and doc.folder_id in visible else None,
                 "assignee": e.assignee.get_full_name() if e.assignee else None,
             })
 
         # virtual review-due events from visible documents
-        visible = accessible_folder_ids(request.user)
         docs = Document.objects.filter(
             folder_id__in=visible, next_review_date__isnull=False,
             next_review_date__gte=start, next_review_date__lte=end,

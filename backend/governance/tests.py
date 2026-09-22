@@ -173,3 +173,19 @@ class MeetingAndGroupTests(APITestBase):
         # duplicate membership is a 400, not a 500
         r = self.client_for(self.admin).post("/api/group-members/", {"group": g.data["id"], "user": self.owner.pk, "department": "Eng"}, format="json")
         self.assertEqual(r.status_code, 400)
+
+    def test_required_per_year_is_held_to_once_a_year_up_to_weekly(self):
+        """0 would read as "complete" at once and the model field takes up to
+        32767, so the API refuses both ends rather than storing them."""
+        m = self.client_for(self.manager)
+        for bad in (0, 53):
+            r = m.post("/api/meeting-series/", {"name": f"Bad {bad}", "required_per_year": bad}, format="json")
+            self.assertEqual(r.status_code, 400, bad)
+            self.assertIn("required_per_year", r.data)
+        r = m.post("/api/meeting-series/", {"name": "Weekly", "required_per_year": 52}, format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["required_per_year"], 52)
+        # an edit is held to the same range
+        r = m.patch(f"/api/meeting-series/{r.data['id']}/", {"required_per_year": 100}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("required_per_year", r.data)

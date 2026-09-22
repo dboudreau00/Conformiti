@@ -1,7 +1,6 @@
+import { passwordMinLength } from "../../api/client.js";
 import { Button } from "../ui/Button.jsx";
 import { Label, Panel, PanelHeader } from "../ui/Panel.jsx";
-
-export const PASSWORD_MIN = 12;
 
 export const BLANK_USER_FORM = { username: "", first: "", last: "", email: "", job: "", role: "", password: "" };
 
@@ -9,7 +8,8 @@ export const BLANK_USER_FORM = { username: "", first: "", last: "", email: "", j
  * successful create can reset it and collapse the panel. */
 export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, busy, error }) {
   const set = (k) => (e) => onChange({ ...form, [k]: e.target.value });
-  const valid = form.username.trim() && form.role && form.password.length >= PASSWORD_MIN;
+  const minLength = passwordMinLength();
+  const valid = form.username.trim() && form.role && form.password.length >= minLength;
 
   return (
     <Panel as="div" id={id}>
@@ -54,12 +54,12 @@ export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, bus
             className="input"
             autoComplete="new-password"
             required
-            minLength={PASSWORD_MIN}
+            minLength={minLength}
             value={form.password}
             onChange={set("password")}
           />
           <p className="mt-1.5 text-2xs text-faint">
-            At least {PASSWORD_MIN} characters. The user should change it after their first sign-in.
+            At least {minLength} characters. The user should change it after their first sign-in.
           </p>
         </div>
         <div className="flex items-end gap-2 md:justify-end">

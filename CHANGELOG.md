@@ -11,6 +11,97 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+A code review of 0.9.5j and 0.9.5ja: twenty-six reviewers, each finding put to
+a second reader told to refute it. 161 were reported, six were refuted, and
+this fixes the rest, with each fix read again by someone other than the person
+who made it. Several of the defects were introduced by 0.9.5j itself.
+
+**On upgrade.** No migration and no new configuration. Three API behaviours
+tighten: a meeting series' required-per-year must be a whole number from 1 to
+52; deleting a package grant that is already revoked is refused instead of
+overwriting the original revocation; and the calendar's list and detail
+routes withhold a linked document the reader cannot open, as its feed does.
+`PASSWORD_MIN_LENGTH` now reaches the screens that advertise it.
+
+### Fixed
+
+- **Six notification emails signed off with a stray comma**, the side effect
+  of 0.9.5j's dash sweep, and the vendor questionnaire invite told its
+  recipient the link was "personal to this request , please do not forward
+  it". Every email, HTML and plain text, reads as written now, and a test
+  renders them all.
+- **A vendor matrix cell holding only a dash stopped importing as not
+  applicable.** The same sweep rewrote a character the importer recognises in
+  spreadsheet cells, not a message. It is back, written as an escape so no
+  future sweep can reach it, with a test.
+- **The document table did not fit a 1366 by 768 screen**, although 0.9.5j
+  said it did; it does now, with its row actions inside the panel. Those
+  actions are a real menu that works from the keyboard. The folder list, the
+  search and the counters say when they failed to load instead of reading as
+  empty or zero, and Mark reviewed states exactly what it will change and
+  stays open with the reason when it is refused.
+- **Completing an access review deactivates the accounts marked Revoke and
+  ends their sessions**, and its confirmation now says so. It no longer counts
+  your own row, which is always skipped. What was deactivated and what was
+  skipped is shown afterwards instead of being discarded.
+- **Switching audit packages quickly could show the previous package's
+  grants and controls.** The revoke dialog promised that issuing access again
+  would restore it, which the API refuses; it now says what does. The
+  add-controls picker stopped fetching every framework on each page render.
+- **Error panels said "the request did not come back" when the server had
+  answered**, so a refusal read as a lost request that a retry would fix. The
+  panel now takes the server's reason, and the documents page, the control
+  register and the audit trail pass it.
+- **The password minimum was hard-coded as 12 on every screen**, while the
+  server enforced whatever `PASSWORD_MIN_LENGTH` said. The setting is exposed
+  and the account, users and new-user screens use it.
+- Pressing Register on the vendor register a second time closed the form and
+  threw away what had been typed; the button now opens the form and nothing
+  else. Compact sidebar labels overlapped their neighbours instead of
+  truncating. A dialog snatched focus back whenever its page re-rendered, and
+  never focused a field that arrived after it opened. The document viewer
+  did the first too, and a failed download there was silent.
+- Smaller: meeting series descriptions can be edited; removing a board you are
+  not viewing leaves your view alone; the calendar only offers Mark reviewed
+  and a document link on review entries that name a document; analytics ranks a
+  framework with nothing applicable last instead of as 0%; long names no
+  longer spill over their neighbours on the calendar and analytics; the audit
+  trail's failed load offers a retry rather than "Show all time"; a champion
+  group's rename and a membership edit show the saved value at once.
+
+### Changed
+
+- **CI fails on an undeclared name in the frontend.** Vite builds an
+  undeclared identifier as a global, so a handler passing a setter that does
+  not exist builds, deploys and throws on the first click. `tools/jscheck.mjs`
+  parses every source file with the parser Vite already ships and checks
+  every name resolves.
+- The laptop-width browser test measures the tables themselves. The old one
+  checked that the page did not scroll sideways, which was already true
+  before the fix, so it passed on the broken code. Several other tests
+  asserted less than their names promised and now assert it.
+- The README and the install guide pointed operators at 0.9.5i images; they
+  name 0.9.5j, the newest release with published images.
+
+### Corrections to the 0.9.5j notes
+
+- Five screens gained the shared error panel in 0.9.5j, not nine: audit
+  packages, the request list, vendors, the responsibility matrix and
+  documents. The dashboard and the calendar gained a retry. The control
+  register and analytics already had both.
+- Of the "eight irreversible actions that took one click", deleting a meeting
+  minute was new rather than newly confirmed, and marking a document reviewed
+  on the Documents page, which did gain a confirmation, was left out. The
+  dashboard's review queue and the calendar still mark a document reviewed in
+  one click.
+- "No API change" was not quite true: each row of a Jira board's issues now
+  carries a `url`, the issue's link built from the configured site address,
+  so anyone who can read the board sees that address.
+- The document table's fit and the documents counters' dash, both claimed,
+  arrived in this release rather than in 0.9.5j.
+
 ## [0.9.5ja], 2026-09-20
 
 ### Changed

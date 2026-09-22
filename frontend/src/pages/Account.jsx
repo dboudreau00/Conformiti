@@ -14,7 +14,7 @@ import {
   ShieldIcon,
   UserIcon,
 } from "lucide-react";
-import api, { chooseWorkspace, fetchAll } from "../api/client.js";
+import api, { chooseWorkspace, fetchAll, passwordMinLength } from "../api/client.js";
 import { createPasskey, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
 import { ACCENT_PACKS, THEME_PACKS, accentHex, useTheme } from "../theme.js";
 import { useShell } from "../shell.js";
@@ -26,7 +26,6 @@ import { Button } from "../components/ui/Button.jsx";
 import { TextDialog, useConfirm } from "../components/ui/Dialog.jsx";
 import { Divider, Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ShowMore } from "../components/ui/ShowMore.jsx";
-import { PASSWORD_MIN } from "../components/users/NewUserForm.jsx";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: UserIcon },
@@ -321,6 +320,10 @@ function PasswordBlock() {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const mismatch = form.confirm.length > 0 && form.new_password !== form.confirm;
 
+  // The minimum is an operator setting (PASSWORD_MIN_LENGTH). The server
+  // reported it in the auth config the app loads before any page renders.
+  const minLength = passwordMinLength();
+
   async function submit(e) {
     e.preventDefault();
     setMsg(null);
@@ -352,8 +355,8 @@ function PasswordBlock() {
         <Field id="pw-current" label="Current password" className="sm:col-span-2">
           <input id="pw-current" type="password" autoComplete="current-password" className="input sm:max-w-[312px]" value={form.current_password} onChange={set("current_password")} />
         </Field>
-        <Field id="pw-new" label="New password" hint={`At least ${PASSWORD_MIN} characters.`}>
-          <input id="pw-new" type="password" autoComplete="new-password" minLength={PASSWORD_MIN} className="input" value={form.new_password} onChange={set("new_password")} />
+        <Field id="pw-new" label="New password" hint={`At least ${minLength} characters.`}>
+          <input id="pw-new" type="password" autoComplete="new-password" minLength={minLength} className="input" value={form.new_password} onChange={set("new_password")} />
         </Field>
         <Field id="pw-confirm" label="Confirm new password" hint={mismatch ? "Doesn't match the new password." : undefined} error={mismatch}>
           <input

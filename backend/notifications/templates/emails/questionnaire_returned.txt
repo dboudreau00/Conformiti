@@ -4,4 +4,4 @@ Hello {{ owner_name }},
 
 It is filed against the vendor as a pending assessment. Review the answers and record the outcome in Conformiti (Vendors > {{ vendor.name }} > Questionnaire).
 
--- Conformiti
+Conformiti

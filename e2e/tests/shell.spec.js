@@ -10,6 +10,8 @@ const ROUTES = [
   ["/users", "Users"],
   ["/user-audit", "User audit"],
   ["/packages", "Audit packages"],
+  ["/vendors", "Vendors"],
+  ["/responsibilities", "Responsibility matrix"],
   ["/audit-log", "Audit log"],
   ["/meetings", "Meetings"],
   ["/groups", "Champion groups"],

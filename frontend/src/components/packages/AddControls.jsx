@@ -10,47 +10,66 @@
  * assembling the package cannot see it, which the API has always returned
  * and nothing displayed.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import api, { fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { CONTROL_STATUS } from "../../utils/tone.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
-import { Label, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
+import { Label, LoadError, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
 
 export function AddControls({ packageId, inScope, onAdded, onError }) {
   const [frameworks, setFrameworks] = useState(null);
   const [framework, setFramework] = useState("all");
   const [controls, setControls] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState("");
   const [chosen, setChosen] = useState(() => new Set());
   const [withEvidence, setWithEvidence] = useState(true);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
+  // The loads below report through the latest onError without depending on
+  // it. The parent passes a fresh arrow on every render, so as a dependency
+  // it re-fetched every framework's controls whenever the page re-rendered,
+  // and a failing fetch looped: the report re-rendered the parent, which
+  // re-ran the fetch, which failed again.
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onErrorRef.current = onError; });
+
+  // A failed load stays failed, shown in place with a retry, rather than
+  // reading as "No controls match." or loading for ever.
   useEffect(() => {
     if (!open || frameworks) return;
-    fetchAll("/frameworks/").then(setFrameworks).catch((e) => {
-      setFrameworks([]);
-      onError?.(errorText(e, "Couldn't load frameworks."));
-    });
-  }, [open, frameworks, onError]);
+    let alive = true;
+    setFailed(false);
+    fetchAll("/frameworks/")
+      .then((list) => { if (alive) setFrameworks(list); })
+      .catch((e) => {
+        if (!alive) return;
+        setFailed(true);
+        onErrorRef.current?.(errorText(e, "Couldn't load frameworks."));
+      });
+    return () => { alive = false; };
+  }, [open, frameworks, attempt]);
 
   useEffect(() => {
     if (!open || !frameworks) return;
     let alive = true;
     setControls(null);
+    setFailed(false);
     const keys = framework === "all" ? frameworks.map((f) => f.key) : [framework];
     Promise.all(keys.map((k) => api.get(`/frameworks/${k}/controls/`)))
       .then((rs) => { if (alive) setControls(rs.flatMap((r) => r.data.results || r.data)); })
       .catch((e) => {
         if (!alive) return;
-        setControls([]);
-        onError?.(errorText(e, "Couldn't load controls."));
+        setFailed(true);
+        onErrorRef.current?.(errorText(e, "Couldn't load controls."));
       });
     return () => { alive = false; };
-  }, [open, framework, frameworks, onError]);
+  }, [open, framework, frameworks, attempt]);
 
   const inScopeIds = useMemo(() => new Set((inScope || []).map((r) => r.control)), [inScope]);
   const visible = useMemo(() => {
@@ -133,7 +152,10 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
       </div>
 
       <div className="mt-3 max-h-[360px] overflow-y-auto rounded-lg border border-line">
-        {controls === null ? (
+        {failed ? (
+          <LoadError what={frameworks ? "The controls" : "The frameworks"} className="py-6"
+                     onRetry={() => setAttempt((n) => n + 1)} />
+        ) : controls === null ? (
           <Loading className="py-6">Loading controls…</Loading>
         ) : visible.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted">

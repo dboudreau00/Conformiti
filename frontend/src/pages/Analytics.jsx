@@ -138,9 +138,15 @@ export default function Analytics({ me }) {
 
   // Worst-first: the panel exists to prompt action, and with 25 frameworks in
   // arrival order the ones needing attention are wherever the API put them.
-  const sortedFrameworks = [...frameworks].sort(
-    (a, b) => (a.pct ?? pctOf(a.implemented, a.applicable)) - (b.pct ?? pctOf(b.implemented, b.applicable))
-  );
+  // A framework with nothing applicable (every control marked not applicable,
+  // or none imported) has no readiness to rank: the API's pct of 0 there means
+  // nothing to measure, so it goes last instead of topping the list.
+  const readinessOf = (f) => (f.applicable ? f.pct ?? pctOf(f.implemented, f.applicable) : null);
+  const sortedFrameworks = [...frameworks].sort((a, b) => {
+    const pa = readinessOf(a);
+    const pb = readinessOf(b);
+    return pa === null || pb === null ? (pa === null) - (pb === null) : pa - pb;
+  });
 
   const controlSlices = slicesFrom(CONTROL_STATUS, cs);
   const docSlices = slicesFrom(DOC_STATUS, ds);
@@ -207,7 +213,7 @@ export default function Analytics({ me }) {
                   {(n) => (
                     <div className="space-y-5">
                       {sortedFrameworks.slice(0, n).map((f, i) => {
-                        const pct = f.pct ?? pctOf(f.implemented, f.applicable);
+                        const pct = readinessOf(f);
                         return (
                           <div key={f.key || f.name}>
                             <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -216,14 +222,14 @@ export default function Analytics({ me }) {
                                 {f.version ? <Label>{f.version}</Label> : null}
                               </h3>
                               <span className="tabular shrink-0 font-mono text-2xs uppercase tracking-label text-muted">
-                                {pct}% · {f.implemented}/{f.applicable}
+                                {pct === null ? "None applicable" : `${pct}% · ${f.implemented}/${f.applicable}`}
                               </span>
                             </div>
                             <SegmentBar
                               total={f.total}
                               delay={i * 0.06}
                               segments={slicesFrom(CONTROL_STATUS, f.by_status)}
-                              ariaLabel={`${f.name}: ${pct}% of applicable controls implemented`}
+                              ariaLabel={pct === null ? `${f.name}: no applicable controls` : `${f.name}: ${pct}% of applicable controls implemented`}
                             />
                           </div>
                         );
@@ -312,7 +318,7 @@ export default function Analytics({ me }) {
                     <div className="min-w-0 flex-1">
                       <button
                         type="button"
-                        className="block truncate text-left text-[13px] font-medium leading-tight text-ink hover:text-accent"
+                        className="block min-w-0 max-w-full truncate text-left text-[13px] font-medium leading-tight text-ink hover:text-accent"
                         onClick={() =>
                           setViewing({
                             title: d.name,

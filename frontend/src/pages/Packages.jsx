@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DownloadIcon,
@@ -58,6 +58,7 @@ function Notice({ msg }) {
 
 export default function Packages({ me }) {
   const [packages, setPackages] = useState(null);
+  const [listErr, setListErr] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [rows, setRows] = useState([]);
   const [grants, setGrants] = useState([]);
@@ -98,15 +99,24 @@ export default function Packages({ me }) {
   async function loadPackages(keep = selectedId) {
     const data = await fetchAll("/evidence-packages/");
     setPackages(data);
+    setListErr(false);
     const next = data.find((p) => p.id === keep) || data[0] || null;
     setSelectedId(next ? next.id : null);
   }
 
-  useEffect(() => {
-    loadPackages().catch((e) => {
+  // A failed list load must not read as "0 total" and "No packages yet":
+  // `listErr` holds the count and the empty state back, and only a load that
+  // succeeds clears it, so a retry in flight does not read as empty either.
+  function loadList() {
+    return loadPackages().catch((e) => {
       setPackages([]);
+      setListErr(true);
       setMsg({ ok: false, text: errorText(e, "Couldn't load evidence packages.") });
     });
+  }
+
+  useEffect(() => {
+    loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -114,45 +124,62 @@ export default function Packages({ me }) {
   // failed load must not read as an empty package: the caller is often an
   // auditor forming a view of this organisation's access control, so the two
   // panels below check `detailErr` before they show "No controls yet" or
-  // "Not issued yet".
+  // "Not issued yet". Only the latest call may write: choosing another
+  // package does not cancel the previous one's requests, and /verify/
+  // re-hashes every pinned file, so the package the user left can answer
+  // last and would put its rows, its grants (with live Revoke buttons) and
+  // its verdict under the new one's header. `detailErr` is cleared only by a
+  // load that succeeds: cleared when a retry starts, the empty rows and
+  // grants the failure left would read as an empty package until it answers.
+  const detailSeq = useRef(0);
   async function loadDetail(id) {
-    const [controls, issued] = await Promise.all([
-      fetchAll(`/package-controls/?package=${id}`),
-      fetchAll(`/package-grants/?package=${id}`),
-    ]);
-    setRows(controls);
-    setGrants(issued);
+    const seq = ++detailSeq.current;
+    const current = () => seq === detailSeq.current;
+    let controls;
+    let issued;
     try {
-      const { data } = await api.get(`/evidence-packages/${id}/verify/`);
-      setIntegrity(data);
-    } catch {
-      setIntegrity(null);
-    }
-  }
-
-  useEffect(() => {
-    if (!selectedId) {
-      setRows([]);
-      setGrants([]);
-      setIntegrity(null);
-      setDetailErr(null);
-      return;
-    }
-    let live = true;
-    setDetailErr(null);
-    loadDetail(selectedId).catch((e) => {
-      if (!live) return;
+      [controls, issued] = await Promise.all([
+        fetchAll(`/package-controls/?package=${id}`),
+        fetchAll(`/package-grants/?package=${id}`),
+      ]);
+    } catch (e) {
+      if (!current()) return;
       setRows([]);
       setGrants([]);
       setDetailErr(errorText(e, "Couldn't load this package's controls and grants."));
-    });
-    return () => { live = false; };
-  }, [selectedId]);
-
-  const retryDetail = () => {
+      return;
+    }
+    if (!current()) return;
+    setRows(controls);
+    setGrants(issued);
     setDetailErr(null);
-    loadDetail(selectedId).catch((e) => setDetailErr(errorText(e, "Couldn't load this package's controls and grants.")));
-  };
+    try {
+      const { data } = await api.get(`/evidence-packages/${id}/verify/`);
+      if (current()) setIntegrity(data);
+    } catch {
+      if (current()) setIntegrity(null);
+    }
+  }
+
+  // Keyed on the status as well as the id: sealing and withdrawing change the
+  // grants and the integrity verdict, and a withdrawn package must not keep
+  // offering Revoke on grants the withdrawal has already closed. The verdict
+  // is cleared first so the card reads "Not checked" rather than the previous
+  // package's result while this one is re-hashed.
+  const selectedStatus = selected?.status;
+  useEffect(() => {
+    setIntegrity(null);
+    if (!selectedId) {
+      detailSeq.current += 1;
+      setRows([]);
+      setGrants([]);
+      setDetailErr(null);
+      return;
+    }
+    loadDetail(selectedId);
+  }, [selectedId, selectedStatus]);
+
+  const retryDetail = () => loadDetail(selectedId);
 
   async function act(kind, fn, okText) {
     setBusy(kind);
@@ -185,8 +212,8 @@ export default function Packages({ me }) {
     "Management asserts that the controls described in this package were designed and "
     + "implemented as described, and that the evidence attached is complete and accurate.";
 
-  // A thrown error keeps the dialog open with the text intact; `act` also
-  // shows it in the page notice.
+  // A thrown error keeps the dialog open, with the error in it and any text
+  // intact; `act` also shows it in the page notice.
   const rethrowing = (kind, fn, okText) => async () => {
     let failed = null;
     await act(kind, async () => {
@@ -237,12 +264,19 @@ export default function Packages({ me }) {
     setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
   })();
 
-  const removeControl = (row) =>
-    act(`row-${row.id}`, async () => {
-      await api.delete(`/package-controls/${row.id}/`);
-      setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
-      await loadPackages();
-    }, `${row.control_ref} taken out of scope.`);
+  // Both confirmations rethrow, so a refused request (the draft was sealed
+  // in another tab, say) is reported in the dialog instead of closing it as
+  // if it had worked, with the only trace in a notice scrolled out of view.
+  const removeControl = (row) => rethrowing(`row-${row.id}`, async () => {
+    await api.delete(`/package-controls/${row.id}/`);
+    setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
+    await loadPackages();
+  }, `${row.control_ref} taken out of scope.`)();
+
+  const submitRevoke = () => rethrowing(`revoke-${ask.grant.id}`, async () => {
+    await api.delete(`/package-grants/${ask.grant.id}/`);
+    setGrants(await fetchAll(`/package-grants/?package=${selectedId}`));
+  }, "Access revoked.")();
 
   const onControlsAdded = async (data) => {
     await reloadRows();
@@ -271,17 +305,62 @@ export default function Packages({ me }) {
       {/* ---------------------------------------------------------- list */}
       <div className="flex flex-col gap-4">
         <Panel className="overflow-hidden">
-          <PanelHeader title="Evidence packages" meta={`${packages.length} total`}>
+          <PanelHeader title="Evidence packages" meta={listErr ? "- total" : `${packages.length} total`}>
             {canAssemble && !creating ? (
               <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New package</Button>
             ) : null}
           </PanelHeader>
-          {packages.length === 0 ? (
-            <Empty title="No packages yet">
-              {canAssemble
-                ? "Assemble the controls and evidence for an audit, seal it, and issue it to the auditor. Start with New package above."
-                : "Packages issued to you will appear here."}
-            </Empty>
+          {/* The form opens under the header that holds its button, and takes
+              focus: below the list it mounted out of view on a laptop, and the
+              only visible effect of the click was the button disappearing. */}
+          {canAssemble && creating ? (
+            <form onSubmit={createPackage}
+                  className={cn("grid gap-2.5 p-4", packages.length || listErr ? "border-b border-line" : "")}>
+              <div>
+                <label className="field-label" htmlFor="pkg-name">Name</label>
+                <input id="pkg-name" className="input" required value={draft.name} autoFocus
+                       placeholder="SOC 2 Type II fieldwork"
+                       onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="pkg-engagement">Engagement</label>
+                <input id="pkg-engagement" className="input" value={draft.engagement}
+                       onChange={(e) => setDraft({ ...draft, engagement: e.target.value })} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="pkg-firm">Audit firm</label>
+                <input id="pkg-firm" className="input" value={draft.audit_firm}
+                       onChange={(e) => setDraft({ ...draft, audit_firm: e.target.value })} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="pkg-assurance">Assurance type</label>
+                <select id="pkg-assurance" className="input" value={draft.assurance_type}
+                        onChange={(e) => setDraft({ ...draft, assurance_type: e.target.value })}>
+                  {ASSURANCE.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-1 flex gap-2">
+                <Button type="submit" variant="primary" size="sm" disabled={busy === "create"}>
+                  {busy === "create" ? "Opening…" : "Open package"}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setCreating(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : null}
+          {listErr ? (
+            <LoadError what="The package list" onRetry={() => { setMsg(null); loadList(); }} />
+          ) : packages.length === 0 ? (
+            creating ? null : (
+              <Empty title="No packages yet">
+                {canAssemble
+                  ? "Assemble the controls and evidence for an audit, seal it, and issue it to the auditor. Start with New package above."
+                  : "Packages issued to you will appear here."}
+              </Empty>
+            )
           ) : (
             <ul className="divide-y divide-line">
               {packages.map((p) => {
@@ -314,46 +393,6 @@ export default function Packages({ me }) {
             assigned to them from here. */}
         {!canAssemble && !me?.role_detail?.is_auditor ? (
           <PbcList mine onOpen={setViewing} onMessage={setMsg} />
-        ) : null}
-
-        {canAssemble && creating ? (
-          <Panel className="p-4">
-            <form onSubmit={createPackage} className="grid gap-2.5">
-              <div>
-                <label className="field-label" htmlFor="pkg-name">Name</label>
-                <input id="pkg-name" className="input" required value={draft.name}
-                       placeholder="SOC 2 Type II fieldwork"
-                       onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="pkg-engagement">Engagement</label>
-                <input id="pkg-engagement" className="input" value={draft.engagement}
-                       onChange={(e) => setDraft({ ...draft, engagement: e.target.value })} />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="pkg-firm">Audit firm</label>
-                <input id="pkg-firm" className="input" value={draft.audit_firm}
-                       onChange={(e) => setDraft({ ...draft, audit_firm: e.target.value })} />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="pkg-assurance">Assurance type</label>
-                <select id="pkg-assurance" className="input" value={draft.assurance_type}
-                        onChange={(e) => setDraft({ ...draft, assurance_type: e.target.value })}>
-                  {ASSURANCE.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="mt-1 flex gap-2">
-                <Button type="submit" variant="primary" size="sm" disabled={busy === "create"}>
-                  {busy === "create" ? "Opening…" : "Open package"}
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setCreating(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </Panel>
         ) : null}
       </div>
 
@@ -477,9 +516,13 @@ export default function Packages({ me }) {
             </Panel>
 
             {/* -------------------------------------------------- grants */}
+            {/* While the detail load has failed neither list is known, so the
+                headers show "-" for the count (a "0" reads as an empty package),
+                and the Issue form and the picker below stay closed until a
+                retry loads what they would be adding to. */}
             <Panel className="overflow-hidden">
-              <PanelHeader title="Issued to" meta={`${grants.filter((g) => g.is_live).length} live`}>
-                {canAssemble && selected.status === "sealed" ? (
+              <PanelHeader title="Issued to" meta={detailErr ? "- live" : `${grants.filter((g) => g.is_live).length} live`}>
+                {canAssemble && selected.status === "sealed" && !detailErr ? (
                   <IssueForm packageId={selected.id} onDone={async () => {
                     setGrants(await fetchAll(`/package-grants/?package=${selected.id}`));
                     await loadPackages();
@@ -529,14 +572,14 @@ export default function Packages({ me }) {
                      canRaise={(canAssemble || isGrantee) && selected.status !== "withdrawn"}
                      canAssemble={canAssemble} onOpen={setViewing} onMessage={setMsg} />
 
-            {canAssemble && selected.status === "draft" ? (
+            {canAssemble && selected.status === "draft" && !detailErr ? (
               <AddControls key={`add-${selected.id}`} packageId={selected.id} inScope={rows}
                            onAdded={onControlsAdded} onError={(text) => setMsg({ ok: false, text })} />
             ) : null}
 
             {/* ------------------------------------------------ workpaper */}
             <Panel className="overflow-hidden">
-              <PanelHeader title="Controls in scope" meta={`${rows.length} rows`} />
+              <PanelHeader title="Controls in scope" meta={detailErr ? "- rows" : `${rows.length} rows`} />
               {detailErr ? (
                 <LoadError what="This package's controls" onRetry={retryDetail} />
               ) : rows.length === 0 ? (
@@ -705,13 +748,10 @@ export default function Packages({ me }) {
     <ConfirmDialog
       open={ask?.kind === "revoke"}
       onClose={() => setAsk(null)}
-      title={`Revoke ${ask?.grant?.full_name || ask?.grant?.username || "this"} access?`}
-      description="They lose the package immediately. Issue it again to restore access."
+      title={`Revoke ${ask?.grant?.full_name || ask?.grant?.username || "this auditor"}'s access?`}
+      description="They lose this package at once, and it cannot be issued to them again: the grant stays on record as revoked. To work with them again, roll the package forward, seal the new draft and issue that one."
       confirmLabel="Revoke"
-      onConfirm={() => act(`revoke-${ask.grant.id}`, async () => {
-        await api.delete(`/package-grants/${ask.grant.id}/`);
-        setGrants(await fetchAll(`/package-grants/?package=${selected.id}`));
-      }, "Access revoked.")}
+      onConfirm={submitRevoke}
     />
     <ConfirmDialog
       open={ask?.kind === "remove"}

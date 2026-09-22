@@ -113,6 +113,10 @@ class MeetingSeriesSerializer(serializers.ModelSerializer):
             "active", "held_this_year", "expected_to_date", "cadence_status", "created_at",
             "workspace",
         ]
+        # The model field accepts 0 (which reads as "complete" at once) and
+        # anything up to 32767. Hold the API to the range the interface offers:
+        # at least once a year, at most weekly.
+        extra_kwargs = {"required_per_year": {"min_value": 1, "max_value": 52}}
 
     def _held(self, obj):
         return obj.minutes.filter(date__year=timezone.localdate().year).count()

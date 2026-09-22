@@ -109,7 +109,7 @@ function Field({ id, label, children, className }) {
 
 // --- Register form --------------------------------------------------------------------
 
-function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "Save" }) {
+function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "Save", autoFocus = false }) {
   const [v, setV] = useState(() => ({ ...EMPTY_VENDOR, ...initial, owner: initial?.owner ?? "" }));
   const set = (k) => (e) => setV((cur) => ({ ...cur, [k]: e.target.value }));
   const id = (k) => `vendor-${k}`;
@@ -123,7 +123,7 @@ function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "S
       }}
     >
       <Field id={id("name")} label="Vendor name" className="sm:col-span-2">
-        <input id={id("name")} className="input input-sm" required value={v.name} onChange={set("name")} placeholder="Amazon Web Services" />
+        <input id={id("name")} className="input input-sm" required value={v.name} onChange={set("name")} placeholder="Amazon Web Services" autoFocus={autoFocus} />
       </Field>
       <Field id={id("category")} label="What they do for us">
         <input id={id("category")} className="input input-sm" value={v.category} onChange={set("category")} placeholder="Cloud hosting" />
@@ -615,28 +615,56 @@ function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
 
 /** The control cell of an import row: a matched row shows compact text with
  * a way to change it, so a 200-row file does not render 200 native selects
- * each scrolling through the framework's whole catalogue. */
-function ImportControlCell({ r, fw, controls, open, onOpen, onPick }) {
+ * each scrolling through the framework's whole catalogue. While a matched row
+ * is being changed its current control stays on screen, since that is still
+ * what the row imports to, with Keep to close the search without a pick. */
+function ImportControlCell({ r, fw, controls, open, onOpen, onClose, onPick }) {
   const chosen = r.control_id ? controls.find((c) => c.id === r.control_id) : null;
+  const pickerId = `import-control-${r.key}`;
+  const changeRef = useRef(null);
+  // The button that had focus is gone after the swap, so say where it goes:
+  // into the search after Change, back to Change after a pick or Keep.
+  const focusTo = useRef(null);
+  useEffect(() => {
+    if (focusTo.current === "picker") document.getElementById(pickerId)?.focus();
+    else if (focusTo.current === "change") changeRef.current?.focus();
+    focusTo.current = null;
+  }, [open, r.control_id, pickerId]);
+  const current = chosen ? (
+    <span className="min-w-0 truncate"><span className="font-mono text-accent">{chosen.label}</span>: {chosen.title}</span>
+  ) : null;
+  const linkClass = "shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink";
   if (chosen && !open) {
     return (
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 truncate"><span className="font-mono text-accent">{chosen.label}</span>: {chosen.title}</span>
-        <button type="button" className="shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink" onClick={onOpen}>
+        {current}
+        <button ref={changeRef} type="button" className={linkClass} aria-label={`Change the control for line ${r.line}`}
+                onClick={() => { focusTo.current = "picker"; onOpen(); }}>
           Change
         </button>
       </div>
     );
   }
   return (
-    <ControlPicker
-      id={`import-control-${r.key}`}
-      label={`Control for line ${r.line}`}
-      placeholder={chosen ? "Find a different control" : "Not matched, find a control"}
-      controls={controls}
-      framework={fw}
-      onPick={onPick}
-    />
+    <div className="space-y-1.5">
+      {chosen ? (
+        <div className="flex items-baseline gap-2">
+          {current}
+          <button type="button" className={linkClass} aria-label={`Keep ${chosen.label} for line ${r.line}`}
+                  onClick={() => { focusTo.current = "change"; onClose(); }}>
+            Keep
+          </button>
+        </div>
+      ) : null}
+      <ControlPicker
+        id={pickerId}
+        label={`Control for line ${r.line}`}
+        placeholder={chosen ? "Find a different control" : "Not matched, find a control"}
+        controls={controls}
+        framework={fw}
+        onPick={(c) => { focusTo.current = "change"; onPick(c); }}
+      />
+    </div>
   );
 }
 
@@ -669,9 +697,10 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
     }
   }
   const patch = (key, p) => setReview((cur) => ({ ...cur, rows: cur.rows.map((r) => (r.key === key ? { ...r, ...p } : r)) }));
+  const closeKey = (key) => setOpenKeys((cur) => { const next = new Set(cur); next.delete(key); return next; });
   const pickControl = (key, c) => {
     patch(key, { control_id: c.id, matched: true, include: true });
-    setOpenKeys((cur) => { const next = new Set(cur); next.delete(key); return next; });
+    closeKey(key);
   };
   const ready = review ? review.rows.filter((r) => r.include && r.control_id && r.responsibility) : [];
 
@@ -741,6 +770,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                           <ImportControlCell
                             r={r} fw={fw} controls={controls} open={openKeys.has(r.key)}
                             onOpen={() => setOpenKeys((cur) => new Set(cur).add(r.key))}
+                            onClose={() => closeKey(r.key)}
                             onPick={(c) => pickControl(r.key, c)}
                           />
                         </td>
@@ -918,7 +948,18 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
             </thead>
             <tbody className="divide-y divide-line">
               {visible.length === 0 ? (
-                <tr><td colSpan={5}><Empty title="No controls match">Clear the filters, or pick another framework.</Empty></td></tr>
+                <tr><td colSpan={5}>
+                  {fw || onlyUnstated || q ? (
+                    <Empty title="No controls match"
+                           action={<Button size="sm" onClick={() => { setFw(""); setOnlyUnstated(false); setQ(""); }}>Clear filters</Button>}>
+                      Clear the filters, or pick another framework.
+                    </Empty>
+                  ) : (
+                    <Empty title="No controls in scope">
+                      Install a compliance pack, or load the framework library, to state what {vendor.name} covers. Controls marked not applicable are left out.
+                    </Empty>
+                  )}
+                </td></tr>
               ) : visible.map((r) => (
                 <tr key={r.control} className={cn("align-top transition-colors duration-150 hover:bg-surface-2", r.dirty && "bg-accent/[0.04]")}>
                   <td className="w-[280px] px-4 py-2">
@@ -983,6 +1024,7 @@ export default function Vendors({ me }) {
   const { ask, confirmDialog } = useConfirm();
   const [params, setParams] = useSearchParams();
   const [vendors, setVendors] = useState(null);
+  const [vendorsErr, setVendorsErr] = useState(false);
   const [selectedId, setSelectedId] = useState(() => Number(params.get("vendor")) || null);
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(false);
@@ -996,12 +1038,32 @@ export default function Vendors({ me }) {
   const [viewing, setViewing] = useState(null);
   const [intent, setIntent] = useState(null);
   const canManage = !!(me?.is_superuser || me?.capabilities?.manage_frameworks);
+  // Register is hidden while the form is open, so when the form closes
+  // (Cancel, or a vendor registered) focus goes back to it rather than to
+  // the page: the button that had focus went with the form.
+  const registerRef = useRef(null);
+  const wasCreating = useRef(false);
+  useEffect(() => {
+    if (wasCreating.current && !creating) registerRef.current?.focus();
+    wasCreating.current = creating;
+  }, [creating]);
 
   async function loadVendors(keep = selectedId) {
     const rows = await fetchAll("/vendors/");
     setVendors(rows);
+    setVendorsErr(false);
     const next = rows.find((v) => v.id === keep) || (keep ? null : rows[0]) || rows[0] || null;
     setSelectedId(next ? next.id : null);
+  }
+  // A failed register load must not read as "0 total", "No vendors yet" and a
+  // risk mix of zeros: `vendorsErr` holds all three back, and only a load that
+  // succeeds clears it, so a retry in flight does not read as empty either.
+  function loadRegister() {
+    return loadVendors().catch((e) => {
+      setVendors([]);
+      setVendorsErr(true);
+      setMsg({ ok: false, text: errorText(e, "Couldn't load the vendor register.") });
+    });
   }
   async function loadDetail(id) {
     setDetailErr(false);
@@ -1015,7 +1077,7 @@ export default function Vendors({ me }) {
   }
 
   useEffect(() => {
-    loadVendors().catch((e) => { setVendors([]); setMsg({ ok: false, text: errorText(e, "Couldn't load the vendor register.") }); });
+    loadRegister();
     if (canManage) {
       fetchAll("/users/").then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setUsers([]));
       api.get("/control-evidence/choices/").then((r) => setDocs(r.data.documents || [])).catch(() => setDocs([]));
@@ -1083,22 +1145,24 @@ export default function Vendors({ me }) {
         {/* ------------------------------------------------------------ register */}
         <div className="flex flex-col gap-4">
           <Panel className="overflow-hidden">
-            <PanelHeader title="Vendor register" meta={`${vendors.length} total`}>
+            <PanelHeader title="Vendor register" meta={vendorsErr ? "- total" : `${vendors.length} total`}>
               {/* The panel is already titled "Vendor register", so the noun was
                   on screen twice and the button wrapped to two lines in the
                   300px column. The accessible name keeps the full phrase: that
                   is what a screen reader announces, and what the viewer test
-                  asserts is absent. */}
-              {canManage ? (
-                <Button size="sm" variant={creating ? "secondary" : "primary"} aria-expanded={creating}
-                        aria-label="Register a vendor" onClick={() => setCreating((x) => !x)}>
+                  asserts is absent. It is hidden while the form is open: the
+                  form has its own Cancel and "Register vendor", and a second
+                  click here used to close it and throw away what was typed. */}
+              {canManage && !creating ? (
+                <Button ref={registerRef} size="sm" variant="primary"
+                        aria-label="Register a vendor" onClick={() => setCreating(true)}>
                   Register
                 </Button>
               ) : null}
             </PanelHeader>
             {canManage && creating ? (
               <div className="border-b border-line bg-surface-2 px-4 py-4">
-                <VendorForm users={users} busy={busy} submitLabel="Register vendor" onCancel={() => setCreating(false)}
+                <VendorForm users={users} busy={busy} submitLabel="Register vendor" autoFocus onCancel={() => setCreating(false)}
                             onSubmit={(body) => act(async () => {
                               const { data } = await api.post("/vendors/", body);
                               setCreating(false);
@@ -1116,9 +1180,14 @@ export default function Vendors({ me }) {
                 {TIERS.map(([k, l]) => <Chip key={k} active={filter.tier === k} tone={TIER_TONE[k]} onClick={() => setFilter((f) => ({ ...f, tier: f.tier === k ? "" : k }))}>{l}</Chip>)}
               </div>
             </div>
-            {filtered.length === 0 ? (
+            {vendorsErr ? (
+              <LoadError what="The vendor register" onRetry={() => { setMsg(null); loadRegister(); }} />
+            ) : filtered.length === 0 ? (
               <Empty title={vendors.length ? "No vendors match" : "No vendors yet"}>
-                {vendors.length ? "Try another filter." : canManage ? "Register the third parties that touch your data or run your controls. Start with Register above." : "Nothing has been registered yet."}
+                {vendors.length ? "Try another filter."
+                  : !canManage ? "Nothing has been registered yet."
+                  : creating ? "Register the third parties that touch your data or run your controls, starting with the form above."
+                  : "Register the third parties that touch your data or run your controls. Start with Register above."}
               </Empty>
             ) : (
               <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto">
@@ -1152,7 +1221,7 @@ export default function Vendors({ me }) {
                 <li key={k} className="flex items-center gap-2 text-xs">
                   <span className="h-2 w-2 rounded-[3px]" style={{ backgroundColor: `rgb(var(--${r.tone}))` }} aria-hidden="true" />
                   <span className="flex-1 text-muted">{r.label}</span>
-                  <span className="tabular font-mono text-2xs text-ink">{counts[k] || 0}</span>
+                  <span className="tabular font-mono text-2xs text-ink">{vendorsErr ? "-" : counts[k] || 0}</span>
                 </li>
               ))}
             </ul>
@@ -1220,7 +1289,20 @@ export default function Vendors({ me }) {
                                   title: `Remove this ${KIND_LABEL[r.kind] || r.kind}?`,
                                   description: `It comes off ${detail.name}'s file, and any assurance date it carried stops counting.`,
                                   confirmLabel: "Remove it",
-                                  onConfirm: () => act(async () => { await api.delete(`/vendor-assessments/${r.id}/`); await refresh(); }, "Removed."),
+                                  // `act` resolves on a failure; a refused DELETE
+                                  // is rethrown so the dialog stays open with the
+                                  // error in it. Only the DELETE is guarded: once
+                                  // it succeeds the record is gone, and a reload
+                                  // that fails afterwards is `act`'s notice to
+                                  // report, not a refusal to show in the dialog.
+                                  onConfirm: async () => {
+                                    let refused = null;
+                                    await act(async () => {
+                                      try { await api.delete(`/vendor-assessments/${r.id}/`); } catch (e) { refused = e; throw e; }
+                                      await refresh();
+                                    }, "Removed.");
+                                    if (refused) throw new Error(errorText(refused));
+                                  },
                                 })} />
               ) : tab === "questionnaire" ? (
                 <QuestionnaireTab key={detail.id} vendor={detail} canManage={canManage} busy={busy} act={act} refresh={refresh}

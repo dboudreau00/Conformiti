@@ -11,6 +11,10 @@ import { Label, Loading } from "../ui/Panel.jsx";
 
 const STATUS_KEYS = Object.keys(CONTROL_STATUS);
 
+// /control-evidence/choices/ sends at most this many documents, the first by
+// name, so a list that long may not hold the one being looked for.
+const CHOICES_CAP = 500;
+
 /** Expanded body of a control register row: objective, status/owner fields,
  * the linked-evidence list and the attach form. Mounted only while the row is
  * open, so evidence state starts fresh on every expand.
@@ -33,8 +37,13 @@ export function ControlDetail({
   const [links, setLinks] = useState([]);
   const [linksLoading, setLinksLoading] = useState(true);
   const [linksError, setLinksError] = useState("");
+  // Ticked documents, kept whole: a search that no longer lists one still
+  // attaches it, and still knows its name if the server skips it.
   const [selDocs, setSelDocs] = useState([]);
   const [docQuery, setDocQuery] = useState("");
+  const [found, setFound] = useState(null); // server matches for docQuery, when the list is capped
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false); // attach / unlink in flight
   const [saving, setSaving] = useState(false); // status / owner PATCH in flight
@@ -96,22 +105,53 @@ export function ControlDetail({
   }, [id]);
 
   const linkedIds = useMemo(() => new Set(links.map((l) => l.document)), [links]);
+  const capped = (docChoices || []).length >= CHOICES_CAP;
   const available = useMemo(
     () => (docChoices || []).filter((d) => !linkedIds.has(d.id)),
     [docChoices, linkedIds]
   );
+
+  // Filtering a capped list in the browser answered "No documents match." for
+  // a document that sorts after the cap. When the list is capped, a search
+  // also asks the server, which matches the name across every document the
+  // caller can see, and its matches join the list.
+  useEffect(() => {
+    const term = docQuery.trim();
+    if (!capped || !term) {
+      setFound(null);
+      setSearching(false);
+      setSearchError("");
+      return undefined;
+    }
+    let alive = true;
+    setSearching(true);
+    setSearchError("");
+    const timer = setTimeout(() => {
+      api.get("/control-evidence/choices/", { params: { q: term } })
+        .then(({ data }) => { if (alive) setFound(data.documents || []); })
+        .catch((e) => { if (alive) setSearchError(errorText(e, "Couldn't search every document. Change the search to try again.")); })
+        .finally(() => { if (alive) setSearching(false); });
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [docQuery, capped]);
+
   const visibleDocs = useMemo(() => {
     const q = docQuery.trim().toLowerCase();
-    return !q ? available : available.filter((d) => `${d.name} ${d.path}`.toLowerCase().includes(q));
-  }, [available, docQuery]);
-  function toggleDoc(docId) {
-    const key = String(docId);
-    setSelDocs((ids) => (ids.includes(key) ? ids.filter((x) => x !== key) : [...ids, key]));
+    if (!q) return available;
+    // The server's matches for an earlier query can still be here while the
+    // next one is in flight, so the merged list goes through the same filter.
+    const listed = new Set(available.map((d) => d.id));
+    const more = (found || []).filter((d) => !listed.has(d.id) && !linkedIds.has(d.id));
+    return available.concat(more).filter((d) => `${d.name} ${d.path}`.toLowerCase().includes(q));
+  }, [available, found, linkedIds, docQuery]);
+  const picked = (docId) => selDocs.some((d) => d.id === docId);
+  const hiddenPicks = selDocs.filter((s) => !visibleDocs.some((d) => d.id === s.id)).length;
+  function toggleDoc(doc) {
+    setSelDocs((sel) => (sel.some((d) => d.id === doc.id) ? sel.filter((d) => d.id !== doc.id) : [...sel, doc]));
   }
-  const docName = (docId) => {
-    const d = (docChoices || []).find((x) => x.id === docId);
-    return d ? d.name : `Document #${docId}`;
-  };
 
   async function patch(field, value) {
     setSaving(true);
@@ -134,12 +174,14 @@ export function ControlDetail({
   async function attach(e) {
     e.preventDefault();
     if (!selDocs.length) return;
+    const chosen = selDocs;
+    const docName = (docId) => chosen.find((d) => d.id === docId)?.name || `Document #${docId}`;
     setBusy(true);
     setNotice(null);
     try {
       const { data } = await api.post("/control-evidence/bulk/", {
         control: id,
-        documents: selDocs.map(Number),
+        documents: chosen.map((d) => Number(d.id)),
         note,
       });
       const created = data.created || [];
@@ -375,26 +417,42 @@ export function ControlDetail({
         {canLink ? (
           <form onSubmit={attach} className="rounded-lg border border-line bg-surface p-3">
             <Label className="mb-2 block">Attach evidence</Label>
-            {choicesError ? <div className="notice notice-err mb-2" role="alert">{choicesError}</div> : null}
-            {!docChoices && !choicesError ? (
-              <Loading className="py-3">Loading documents…</Loading>
+            {/* A failed load leaves docChoices null. That is reported on its
+                own, not above a claim that every document is already linked,
+                and an error left over from before a retry filled the list is
+                stale, so it only shows while there is no list. */}
+            {!docChoices ? (
+              choicesError ? (
+                <div className="notice notice-err" role="alert">{choicesError}</div>
+              ) : (
+                <Loading className="py-3">Loading documents…</Loading>
+              )
             ) : (
               <>
                 <label htmlFor={`attach-docs-${id}`} className="field-label">Documents</label>
-                {available.length === 0 ? (
+                {available.length === 0 && !capped ? (
                   <p className="text-xs text-muted">Every document you can see is already linked to this control.</p>
                 ) : (
                   <>
+                    {/* The box sits inside the attach form, and Enter in a
+                        search box means search, not attach what is ticked. */}
                     <input
                       id={`attach-docs-${id}`}
                       className="input input-sm"
                       placeholder="Find a document"
                       value={docQuery}
                       onChange={(e) => setDocQuery(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
                     />
                     <div className="mt-2 max-h-[200px] overflow-y-auto rounded-lg border border-line">
                       {visibleDocs.length === 0 ? (
-                        <p className="px-3 py-3 text-xs text-muted">No documents match.</p>
+                        <p className="px-3 py-3 text-xs text-muted">
+                          {searching
+                            ? "Searching every document…"
+                            : searchError
+                              ? `No matches in the first ${CHOICES_CAP} documents.`
+                              : "No documents match."}
+                        </p>
                       ) : (
                         <ul className="divide-y divide-line">
                           {visibleDocs.map((d) => (
@@ -403,8 +461,8 @@ export function ControlDetail({
                                 <input
                                   type="checkbox"
                                   className="mt-1"
-                                  checked={selDocs.includes(String(d.id))}
-                                  onChange={() => toggleDoc(d.id)}
+                                  checked={picked(d.id)}
+                                  onChange={() => toggleDoc(d)}
                                   aria-label={`Attach ${d.name}`}
                                 />
                                 <span className="min-w-0">
@@ -417,6 +475,18 @@ export function ControlDetail({
                         </ul>
                       )}
                     </div>
+                    {searchError ? (
+                      <p className="mt-1.5 text-2xs text-danger" role="alert">{searchError}</p>
+                    ) : capped && !docQuery.trim() ? (
+                      <p className="mt-1.5 text-2xs text-faint">
+                        Showing the first {CHOICES_CAP} documents by name. Search to find the others.
+                      </p>
+                    ) : null}
+                    {hiddenPicks ? (
+                      <p className="mt-1.5 text-2xs text-faint">
+                        {hiddenPicks} ticked {hiddenPicks === 1 ? "document is" : "documents are"} not in the list above and will be attached too.
+                      </p>
+                    ) : null}
                   </>
                 )}
                 <div className="mt-3 flex flex-wrap items-end gap-2">

@@ -9,4 +9,4 @@ Your {{ cadence }} Conformiti digest for {{ today }}: {{ count }} item{{ count|p
 {% endfor %}{% endfor %}
 Change how often this arrives under Settings > Notifications.
 
--- Conformiti
+Conformiti

@@ -25,3 +25,37 @@ class CalendarTests(APITestBase):
         self.assertIn("Board", titles)
         window = self.client_for(self.viewer).get("/api/calendar/feed/?start=2099-01-01&end=2099-12-31").data
         self.assertEqual([i["title"] for i in window], ["Board"])
+
+    def test_feed_does_not_name_a_linked_document_the_caller_cannot_open(self):
+        hidden = make_doc(self.tree.ctrl1, self.owner, name="Hidden")
+        shown = make_doc(self.tree.ctrl2, self.owner, name="Shown")
+        grant(self.tree.ctrl2, user=self.viewer, level=VIEW)
+        m = self.client_for(self.manager)
+        for title, doc in (("Hidden audit", hidden), ("Shown audit", shown)):
+            r = m.post("/api/calendar/", {"title": title, "date": "2099-02-01", "document": doc.pk}, format="json")
+            self.assertEqual(r.status_code, 201)
+        window = "/api/calendar/feed/?start=2099-01-01&end=2099-12-31"
+        as_viewer = {i["title"]: i["document"] for i in self.client_for(self.viewer).get(window).data}
+        self.assertEqual(as_viewer, {"Hidden audit": None, "Shown audit": shown.pk})
+        as_manager = {i["title"]: i["document"] for i in m.get(window).data}
+        self.assertEqual(as_manager, {"Hidden audit": hidden.pk, "Shown audit": shown.pk})
+
+    def test_list_and_detail_withhold_the_document_the_feed_withholds(self):
+        hidden = make_doc(self.tree.ctrl1, self.owner, name="Hidden")
+        shown = make_doc(self.tree.ctrl2, self.owner, name="Shown")
+        grant(self.tree.ctrl2, user=self.viewer, level=VIEW)
+        m = self.client_for(self.manager)
+        ids = {}
+        for title, doc in (("Hidden audit", hidden), ("Shown audit", shown)):
+            r = m.post("/api/calendar/", {"title": title, "date": "2099-02-01", "document": doc.pk}, format="json")
+            self.assertEqual(r.status_code, 201)
+            ids[title] = r.data["id"]
+        v = self.client_for(self.viewer)
+        listed = v.get("/api/calendar/").data
+        rows = listed.get("results", listed) if isinstance(listed, dict) else listed
+        self.assertEqual({i["title"]: i["document"] for i in rows},
+                         {"Hidden audit": None, "Shown audit": shown.pk})
+        self.assertIsNone(v.get(f"/api/calendar/{ids['Hidden audit']}/").data["document"])
+        self.assertEqual(v.get(f"/api/calendar/{ids['Shown audit']}/").data["document"], shown.pk)
+        # The event itself still holds the link: only the reader's view changes.
+        self.assertEqual(m.get(f"/api/calendar/{ids['Hidden audit']}/").data["document"], hidden.pk)

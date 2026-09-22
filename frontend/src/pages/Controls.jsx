@@ -10,7 +10,7 @@ import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../compone
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { usePage } from "../components/ui/ShowMore.jsx";
 import { useShell } from "../shell.js";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
 import { CONTROL_STATUS, READINESS_BAND } from "../utils/tone.js";
 
@@ -56,7 +56,7 @@ export default function Controls({ me }) {
         if (!alive) return;
         setFrameworks([]);
         setLoading(false);
-        setLoadFailed(true);
+        setLoadFailed({ reason: loadFailReason(e) });
         setPageError(errorText(e, "Couldn't load frameworks."));
       });
     return () => {
@@ -77,7 +77,7 @@ export default function Controls({ me }) {
       .catch((e) => {
         if (!alive) return;
         setControls([]);
-        setLoadFailed(true);
+        setLoadFailed({ reason: loadFailReason(e) });
         setPageError(errorText(e, "Couldn't load controls."));
       })
       .finally(() => {
@@ -109,7 +109,10 @@ export default function Controls({ me }) {
     choicesRequested.current = true;
     api
       .get("/control-evidence/choices/")
-      .then((r) => setDocChoices(r.data.documents || []))
+      .then((r) => {
+        setChoicesError("");
+        setDocChoices(r.data.documents || []);
+      })
       .catch((e) => {
         choicesRequested.current = false;
         setChoicesError(errorText(e, "Couldn't load the document list."));
@@ -264,6 +267,7 @@ export default function Controls({ me }) {
               ) : loadFailed ? (
                 <LoadError
                   what="The control register"
+                  reason={loadFailed.reason}
                   onRetry={() => { setLoadFailed(false); setPageError(""); setLoading(true); setAttempt((a) => a + 1); }}
                 />
               ) : frameworks.length === 0 ? (

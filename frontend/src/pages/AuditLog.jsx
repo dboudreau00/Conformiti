@@ -4,9 +4,9 @@ import { Lock, Search, X } from "lucide-react";
 import api from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 
 // Every action the server records, mapped to a status tone. Unknown actions
 // fall back to "muted" so a new server-side verb never renders unstyled.
@@ -49,6 +49,10 @@ export default function AuditLog({ me }) {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [err, setErr] = useState(null);
+  // The first page failed, so there is no trail to show for these filters. A
+  // failed load is not an empty trail, and the empty states below must not
+  // stand in for it. Kept apart from `err`, which the facets request also sets.
+  const [loadFailed, setLoadFailed] = useState(false);
   const loadSeq = useRef(0);
 
   function query(p) {
@@ -65,6 +69,7 @@ export default function AuditLog({ me }) {
     const seq = ++loadSeq.current;
     setLoading(true);
     setErr(null);
+    setLoadFailed(false);
     try {
       const { data } = await api.get(query(p));
       if (seq !== loadSeq.current) return;
@@ -78,8 +83,19 @@ export default function AuditLog({ me }) {
       setPage(p);
     } catch (e) {
       if (seq !== loadSeq.current) return;
-      if (e?.response?.status === 403) setDenied(true);
-      else setErr(errorText(e, "Couldn't load the audit trail."));
+      if (e?.response?.status === 403) {
+        setDenied(true);
+        return;
+      }
+      setErr(errorText(e, "Couldn't load the audit trail."));
+      // A failed "Load more" keeps the rows already shown, and its button
+      // stays to try again. A failed first page leaves the previous filters'
+      // rows and count describing a query that did not run, so drop them.
+      if (p === 1) {
+        setList({ rows: [], from: 0 });
+        setNext(null);
+        setLoadFailed({ reason: loadFailReason(e) });
+      }
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
@@ -132,6 +148,9 @@ export default function AuditLog({ me }) {
 
   const { rows, from } = list;
   const filtered = !!(f.q || f.action || f.type || f.user);
+  // The time range is not one of the filters Clear resets, and it starts at 30
+  // days, so an empty page inside it is not an empty trail.
+  const range = f.days ? DAY_RANGES.find((d) => d.id === f.days) : null;
   const initialLoading = loading && rows.length === 0;
 
   return (
@@ -228,7 +247,7 @@ export default function AuditLog({ me }) {
             <PanelHeader
               title="Audit trail"
               meta={
-                initialLoading ? (
+                initialLoading || loadFailed ? (
                   "Append-only"
                 ) : (
                   <span className="tabular">
@@ -240,11 +259,24 @@ export default function AuditLog({ me }) {
             {initialLoading ? (
               <Loading>Loading audit trail…</Loading>
             ) : rows.length === 0 ? (
-              <Empty title={filtered ? "No entries match these filters" : "No entries yet"}>
-                {filtered
-                  ? "Clear the filters, or widen the time range."
-                  : "New entries appear automatically as people sign in and create, update, or delete records."}
-              </Empty>
+              loadFailed ? (
+                <LoadError what="The audit trail" reason={loadFailed.reason} onRetry={() => load(1)} />
+              ) : filtered ? (
+                <Empty title="No entries match these filters">
+                  {f.days ? "Clear the filters, or widen the time range." : "Clear the filters to see every entry."}
+                </Empty>
+              ) : f.days ? (
+                <Empty
+                  title={`No entries in the ${range ? range.label.toLowerCase() : "selected time range"}`}
+                  action={<Button size="sm" variant="secondary" onClick={() => setF({ ...f, days: "" })}>Show all time</Button>}
+                >
+                  Anything older falls outside the time range.
+                </Empty>
+              ) : (
+                <Empty title="No entries yet">
+                  New entries appear automatically as people sign in and create, update, or delete records.
+                </Empty>
+              )
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1040px] border-collapse text-left">

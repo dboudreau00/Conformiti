@@ -25,6 +25,11 @@ const REVIEW_STATUS = {
 const COLUMNS = ["User", "Role", "Capabilities", "Decision", "Notes"];
 // One template for the header row and every body row so the columns stay aligned.
 const GRID = "grid-cols-[minmax(220px,1.4fr)_minmax(130px,0.9fr)_minmax(150px,1fr)_240px_minmax(200px,1fr)]";
+// The narrowest those rows can be: the five track floors (940px), four 16px
+// gaps and 20px of padding each side. The scroll wrapper holds exactly this,
+// so a narrower panel scrolls instead of the cells running past the header
+// band and the row dividers. Change the two together.
+const GRID_MIN_W = "min-w-[1044px]";
 
 function fmtDate(s) {
   return s ? s.slice(0, 10) : "never";
@@ -101,6 +106,8 @@ export default function UserAudit({ me }) {
   const [busy, setBusy] = useState(null); // "start" | "complete" | "export"
   const [savingId, setSavingId] = useState(null);
   const [confirmComplete, setConfirmComplete] = useState(false);
+  // What completing a review did: { reviewId, revoked: [username], skipped: [{ username, reason }] }.
+  const [report, setReport] = useState(null);
   const loadSeq = useRef(0);
 
   async function selectReview(rev) {
@@ -196,9 +203,13 @@ export default function UserAudit({ me }) {
     setMsg(null);
     try {
       const { data } = await api.post(`/access-reviews/${review.id}/complete/`);
-      setReview(data);
-      setReviews((rs) => rs.map((r) => (r.id === data.id ? data : r)));
-      setMsg({ ok: true, text: "Review completed, the grid is now read-only evidence." });
+      // Completing deactivates every Revoke row it can and reports the rows
+      // it would not touch. That report is recorded nowhere else, so it stays
+      // on screen for the reviewer to finish those by hand.
+      const { applied, ...rev } = data;
+      setReview(rev);
+      setReviews((rs) => rs.map((r) => (r.id === rev.id ? rev : r)));
+      setReport({ reviewId: rev.id, revoked: applied?.revoked || [], skipped: applied?.skipped || [] });
     } catch (e) {
       setMsg({ ok: false, text: errorText(e, "Couldn't complete the review.") });
     } finally {
@@ -237,18 +248,50 @@ export default function UserAudit({ me }) {
   const editable = canWrite && !completed;
   const status = REVIEW_STATUS[review?.status] || REVIEW_STATUS.open;
   const allDecided = total > 0 && decided === total;
+  const revoking = items.filter((i) => i.decision === "revoke");
+  const isOwnRow = (it) => it.user != null && it.user === me?.id;
+  // The server never revokes the reviewer's own access, so that row does not
+  // count toward what completing will change.
+  const deactivating = revoking.filter((i) => !isOwnRow(i));
 
   return (
     <PanelTransition>
+      {/* Completing is not only a freeze: the backend deactivates the Revoke
+          rows it can and revokes their refresh tokens, and an inactive
+          account's access token is refused on its next request. The dialog
+          says so, names the accounts, and says which rows it leaves alone. */}
       <ConfirmDialog
         open={confirmComplete}
         onClose={() => setConfirmComplete(false)}
         title="Complete this review?"
-        description="Every decision becomes read-only evidence. Nothing can be changed afterwards."
+        description={deactivating.length
+          ? "The accounts marked Revoke are deactivated and signed out of all their sessions straight away. The decisions then become read-only evidence, and nothing can be changed afterwards."
+          : revoking.length
+            ? "No account will be deactivated: your own row is the only one marked Revoke, and a review never revokes its reviewer's access. Every decision becomes read-only evidence, and nothing can be changed afterwards."
+            : "No row is marked Revoke, so no account changes. Every decision becomes read-only evidence, and nothing can be changed afterwards."}
         confirmLabel="Complete review"
-        tone="primary"
+        tone={deactivating.length ? "danger" : "primary"}
         onConfirm={complete}
-      />
+      >
+        {revoking.length ? (
+          <>
+            <Label className="block">Marked Revoke ({revoking.length})</Label>
+            <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto text-[13px] text-ink">
+              {revoking.map((it) => (
+                <li key={it.id} className="truncate">
+                  {it.full_name || it.username}{" "}
+                  <span className="font-mono text-2xs text-muted">{it.username}</span>
+                  {isOwnRow(it) ? <span className="text-2xs text-muted"> (your account, skipped)</span> : null}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-muted">
+              Your own account, superusers, and accounts already inactive or deleted are left as they are and listed afterwards.
+              Keep and Modify rows change nothing.
+            </p>
+          </>
+        ) : null}
+      </ConfirmDialog>
       <Stack className="flex flex-col gap-4">
         <StackItem className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -329,6 +372,36 @@ export default function UserAudit({ me }) {
           </StackItem>
         ) : null}
 
+        {report && report.reviewId === review?.id ? (
+          <StackItem>
+            <div className={cn("notice flex items-start justify-between gap-3", report.skipped.length ? "notice-warn" : "notice-ok")} role="status">
+              <div className="min-w-0">
+                <p className="font-medium">Review completed. The grid is now read-only evidence.</p>
+                <p className="mt-1">
+                  {report.revoked.length
+                    ? `Deactivated and signed out of every session: ${report.revoked.join(", ")}.`
+                    : report.skipped.length
+                      ? "No account was deactivated."
+                      : "No row was marked Revoke, so no account changed."}
+                </p>
+                {report.skipped.length ? (
+                  <>
+                    <p className="mt-1">Marked Revoke but left as they were, so check each by hand:</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                      {report.skipped.map((s, i) => (
+                        <li key={`${s.username}-${i}`}><span className="font-mono">{s.username}</span>: {s.reason}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </div>
+              <button type="button" aria-label="Dismiss" onClick={() => setReport(null)} className="shrink-0 opacity-70 transition-opacity hover:opacity-100">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </StackItem>
+        ) : null}
+
         {loading ? (
           <StackItem>
             <Panel><Loading /></Panel>
@@ -384,7 +457,7 @@ export default function UserAudit({ me }) {
                   </Empty>
                 ) : (
                   <div className="overflow-x-auto">
-                    <div className="min-w-[900px]">
+                    <div className={GRID_MIN_W}>
                       <div className={cn("grid gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
                         {COLUMNS.map((h) => <Label key={h}>{h}</Label>)}
                       </div>
@@ -392,6 +465,10 @@ export default function UserAudit({ me }) {
                         {items.map((it, i) => {
                           const name = it.full_name || it.username;
                           const rowBusy = savingId === it.id;
+                          // Activity sits under the name; the grant count sits with the
+                          // capabilities, where a 220px User column cannot cut it off.
+                          const activity = `${it.is_active ? "active" : "inactive"} · last login ${fmtDate(it.last_login)}`;
+                          const grants = it.folder_grants ?? 0;
                           return (
                             <motion.li
                               key={it.id}
@@ -406,16 +483,21 @@ export default function UserAudit({ me }) {
                                   <span className="text-accent">{it.username}</span>
                                   {it.email ? ` · ${it.email}` : ""}
                                 </span>
-                                <span className="block truncate font-mono text-2xs text-muted">
-                                  {it.is_active ? "active" : "inactive"} · last login {fmtDate(it.last_login)} · {it.folder_grants ?? 0} grants
+                                <span className="block truncate font-mono text-2xs text-muted" title={activity}>
+                                  {activity}
                                 </span>
                               </span>
                               <span className="min-w-0">
                                 <span className="block truncate text-xs text-ink">{it.role_name || "-"}</span>
                                 {it.job_title ? <span className="block truncate text-2xs text-muted">{it.job_title}</span> : null}
                               </span>
-                              <span className="truncate text-xs text-muted" title={it.capabilities || undefined}>
-                                {it.capabilities || "-"}
+                              <span className="min-w-0">
+                                <span className="block truncate text-xs text-muted" title={it.capabilities || undefined}>
+                                  {it.capabilities || "-"}
+                                </span>
+                                <span className="block truncate text-2xs text-faint">
+                                  {grants} folder grant{grants === 1 ? "" : "s"}
+                                </span>
                               </span>
                               <span className="flex min-w-0 flex-col items-start gap-1">
                                 {editable ? (

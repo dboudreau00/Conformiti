@@ -261,11 +261,14 @@ else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 AUTH_USER_MODEL = "accounts.User"
+# A real setting, not only a validator option: /api/auth/config/ reports it so
+# the interface can state the rule before anyone types a password.
+PASSWORD_MIN_LENGTH = env_int("PASSWORD_MIN_LENGTH", 12)
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
      # PCI DSS v4.0.1 requirement 8.3.6 asks for at least 12 characters.
-     "OPTIONS": {"min_length": env_int("PASSWORD_MIN_LENGTH", 12)}},
+     "OPTIONS": {"min_length": PASSWORD_MIN_LENGTH}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]

@@ -8,6 +8,13 @@ function section(page, name) {
     .getByRole("button", { name, exact: true });
 }
 
+/** The heading an open section starts with. The nav listing every section,
+ *  and the card above it naming the user's role, sit inside <main> too, so
+ *  text found anywhere in main says nothing about which section rendered. */
+function heading(page, name) {
+  return page.getByRole("main").getByRole("heading", { name, exact: true, level: 2 });
+}
+
 test.describe("account settings", () => {
   test.beforeEach(async ({ page }) => {
     await open(page, "/settings", "Settings");
@@ -17,7 +24,7 @@ test.describe("account settings", () => {
     for (const name of SECTIONS) {
       await section(page, name).click();
       await expect(section(page, name)).toHaveAttribute("aria-current", "true");
-      await expect(page.getByRole("main")).toContainText(name);
+      await expect(heading(page, name)).toBeVisible();
     }
   });
 
@@ -37,7 +44,11 @@ test.describe("account settings", () => {
 
   test("the role section reports the signed-in user's capabilities", async ({ page }) => {
     await section(page, "Role & access").click();
-    await expect(page.getByRole("main")).toContainText("Administrator");
+    // The section's own panel: the card above the nav names the role
+    // whichever section is open.
+    const panel = page.getByRole("main").locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Role & access", exact: true, level: 2 }) });
+    await expect(panel).toContainText("Administrator");
   });
 
   test("the digest preference saves and survives a reload", async ({ page }) => {

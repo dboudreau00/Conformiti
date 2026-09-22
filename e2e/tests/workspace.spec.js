@@ -34,26 +34,70 @@ test.describe("dashboard", () => {
     await expect(page.getByRole("img", { name: /readiness trend/i })).toBeVisible();
   });
 
-  test("the calendar opens a day with an item on it", async ({ page }) => {
+  test("the calendar opens a day and its review entry opens the document", async ({ page }) => {
     const calendar = panel(page, "Compliance calendar");
     await expect(calendar).toBeVisible();
-    const day = calendar.getByRole("button", { name: /, 1 item$/ }).first();
+    // A day holding one review. Every seeded document falls due on a day of
+    // its own, and at least one of them lands on this month's grid.
+    const day = calendar.getByRole("button", { name: /, 1 item$/ }).filter({ hasText: "Review due:" }).first();
     await expect(day).toBeVisible();
+    const date = (await day.getAttribute("aria-label")).replace(/, 1 item$/, "");
+    const title = await day.locator("[title]").getAttribute("title");
+    const doc = title.replace(/^Review due: /, "");
     await day.click();
-    await expect(page.getByText(/Review due:|access review/i).first()).toBeVisible();
+    await expect(day).toHaveAttribute("aria-pressed", "true");
+
+    // The grid chip was on screen before the click, so only the day detail
+    // proves anything: its heading, its one entry and the entry's actions.
+    await expect(calendar.getByRole("heading", { level: 3, name: date })).toBeVisible();
+    const entry = calendar.getByRole("listitem");
+    await expect(entry).toHaveCount(1);
+    await expect(entry.getByRole("button", { name: `Mark ${doc} reviewed`, exact: true })).toBeVisible();
+
+    // A review entry names a document, and opens it.
+    const preview = page.waitForResponse((r) => r.url().includes("/preview/"));
+    await entry.getByRole("button", { name: title, exact: true }).click();
+    const viewer = page.getByRole("dialog", { name: `Viewing ${doc}` });
+    await expect(viewer).toBeVisible();
+    expect((await preview).status()).toBe(200);
+    await page.keyboard.press("Escape");
+    await expect(viewer).toBeHidden();
   });
 
-  test("the calendar type filters toggle without breaking the grid", async ({ page }) => {
+  test("each calendar type filter narrows the grid to its own kind", async ({ page }) => {
     const calendar = panel(page, "Compliance calendar");
     const filters = calendar.getByRole("group", { name: /filter calendar by item type/i });
     const chips = filters.getByRole("button");
+    // The entries on the month grid, each titled with its item's own title.
+    const entries = calendar.getByRole("button", { name: /, \d+ items?$/ }).locator("[title]");
+    const reviews = entries.filter({ hasText: /^Review due: / });
+    const monthCount = async () => Number(
+      (await calendar.getByText(/^\d+ items? this month$/).textContent()).match(/^\d+/)[0]);
+
+    // Only a kind on this month's grid gets a chip. The seed puts both of its
+    // audits 60 and 120 days out, past any month grid, so Audit gets none.
+    await expect(chips.first()).toBeVisible();
+    await expect(filters.getByRole("button", { name: "Audit" })).toHaveCount(0);
+    const total = await monthCount();
     const count = await chips.count();
-    expect(count).toBeGreaterThan(0);
+
+    let sum = 0;
     for (let i = 0; i < count; i += 1) {
-      await chips.nth(i).click();
+      const chip = chips.nth(i);
+      const review = /review/i.test(await chip.textContent());
+      await chip.click();
+      await expect(chip).toHaveAttribute("aria-pressed", "true");
+      // Filtered, the grid still has entries, and only ones of that kind.
+      await expect(entries.first()).toBeVisible();
+      await expect(reviews).toHaveCount(review ? await entries.count() : 0);
+      sum += await monthCount();
+      // The chips are single-select: pressing this one again clears it.
+      await chip.click();
+      await expect(chip).toHaveAttribute("aria-pressed", "false");
     }
-    // Everything deselected: the month grid still renders, with no items.
-    await expect(calendar.getByRole("button", { name: /, 0 items$/ }).first()).toBeVisible();
+    // Each item is of exactly one kind, so the kinds add up to the month.
+    expect(sum).toBe(total);
+    expect(await monthCount()).toBe(total);
   });
 
   test("the review queue marks a document reviewed", async ({ page }) => {
@@ -69,7 +113,10 @@ test.describe("dashboard", () => {
 
   test("the evidence coverage meter is populated", async ({ page }) => {
     await expect(page.getByRole("progressbar", { name: /evidence coverage/i })).toBeVisible();
-    await expect(page.getByText(/links between controls and documents/)).toBeVisible();
+    // The seed links documents to controls, so a count of zero means the
+    // summary lost its figures, not that there is nothing to count.
+    await expect(page.getByText(/^[1-9]\d*\/\d+ controls$/)).toBeVisible();
+    await expect(page.getByText(/^[1-9]\d* links between controls and documents\.$/)).toBeVisible();
   });
 });
 

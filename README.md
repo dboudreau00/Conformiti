@@ -293,11 +293,14 @@ audit package records, so a reviewer can compare by eye.
   the column names and word scales people actually use (Title/Risk,
   Likelihood/Probability, Impact/Severity, *High*, *Likely*, *Almost
   certain*…) and skips duplicates by title. CSV export that round-trips.
-- **User access reviews** — snapshot every account as it stands (role, last
+- **User access reviews**: snapshot every account as it stands (role, last
   login, folder grants, capabilities) into a keep / modify / revoke decision
   grid, so it cannot shift under you while you work through it. The API refuses
-  to complete a review while any row is pending; a completed review is
-  read-only evidence from that moment.
+  to complete a review while any row is pending. Completing it deactivates
+  every account marked revoke and ends its sessions, except your own account,
+  superusers, accounts already inactive and accounts since deleted, which are
+  listed for you instead. A completed review is read-only evidence from that
+  moment.
 - **Meeting cadences** with required-per-year tracking, where the status badge
   compares minutes recorded against what the calendar demands *so far* — a
   series is not marked behind in January for a meeting due in November.
@@ -540,16 +543,16 @@ a guided first hour in [GETTING_STARTED.md](GETTING_STARTED.md).
 
 Both are built for `linux/amd64` and `linux/arm64`, so the same tag runs on an
 Ampere or Graviton VPS and on an Apple Silicon laptop. Each release is tagged
-with its version (`0.9.5i`), with the first seven characters of the commit it
+with its version (`0.9.5j`), with the first seven characters of the commit it
 was built from (`sha-…`), and the newest release also answers to `latest`. The version an image carries
 is read out of `backend/config/version.py` at build time, which is the same
 string `/api/health/` reports, so a running container cannot claim a version
 its code is not.
 
 ```bash
-docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5i
+docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5j
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
-CONFORMITI_VERSION=0.9.5i docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+CONFORMITI_VERSION=0.9.5j docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 `docker-compose.ghcr.yml` only swaps the four built services for the published
@@ -763,7 +766,7 @@ for them, are in [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 scripts/backup.sh                 # first, always
-git fetch --tags && git checkout v0.9.5i
+git fetch --tags && git checkout v0.9.5j
 docker compose pull && docker compose up -d --build
 ```
 
@@ -772,9 +775,9 @@ compose file, the nginx configuration and the backup scripts come from it:
 
 ```bash
 scripts/backup.sh
-git fetch --tags && git checkout v0.9.5i
-CONFORMITI_VERSION=0.9.5i docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
-CONFORMITI_VERSION=0.9.5i docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+git fetch --tags && git checkout v0.9.5j
+CONFORMITI_VERSION=0.9.5j docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+CONFORMITI_VERSION=0.9.5j docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 The backend container applies the shipped migrations and re-seeds the control

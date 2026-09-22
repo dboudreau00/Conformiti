@@ -108,8 +108,13 @@ export function Sidebar({ onSignOut }) {
                           )}
                         >
                           {isActive ? (
+                            // The pill travels only when the page changes. Left
+                            // to measure on every render, folding a section
+                            // above it slid the pill across the rail while the
+                            // link's own text jumped straight to its new place.
                             <motion.span
                               layoutId="nav-active-pill"
+                              layoutDependency={pathname}
                               className="absolute inset-0 rounded-lg bg-accent"
                               transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.7 }}
                               aria-hidden="true"
@@ -166,13 +171,17 @@ export function MobileNav({ onSignOut }) {
           key={item.id}
           to={item.path}
           aria-current={pathname === item.path ? "page" : undefined}
+          title={item.label}
           className={cn(
             "flex h-12 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg text-[10px] font-medium",
             pathname === item.path ? "bg-accent text-accent-ink" : "text-muted hover:bg-ink/[0.04] hover:text-ink"
           )}
         >
           <NavIcon name={item.icon} className="h-4 w-4" />
-          <span className="truncate">{item.label}</span>
+          {/* Centred in a column, an unbounded span grows to its whole label
+              and spills over the neighbouring tiles, so it is held to the
+              tile's width for the ellipsis to take; the title carries the rest. */}
+          <span className="w-full min-w-0 truncate px-1 text-center">{item.label}</span>
         </NavLink>
       ))}
       <button type="button" onClick={onSignOut} className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:text-danger" aria-label="Sign out">

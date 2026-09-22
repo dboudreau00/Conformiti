@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PlusIcon, XIcon } from "lucide-react";
-import api, { fetchAll } from "../api/client.js";
+import api, { fetchAll, passwordMinLength } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { useConfirm } from "../components/ui/Dialog.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
-import { BLANK_USER_FORM, NewUserForm, PASSWORD_MIN } from "../components/users/NewUserForm.jsx";
+import { BLANK_USER_FORM, NewUserForm } from "../components/users/NewUserForm.jsx";
 import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
 
@@ -38,7 +38,9 @@ const ROLE_COLS = [
 ];
 
 // Labels the create-user form itself uses, so a rejected field reads the
-// same way here as it did under the input the person just typed in.
+// same way here as it did under the input the person just typed in. The
+// blank ones are not fields (DRF's form-wide errors, and the "detail" of a
+// refused or throttled request), so their message reads without a label.
 const FIELD_LABELS = {
   username: "Username",
   email: "Email",
@@ -48,6 +50,7 @@ const FIELD_LABELS = {
   last_name: "Last name",
   job_title: "Job title",
   non_field_errors: "",
+  detail: "",
 };
 
 const cell = "px-5 py-3 align-middle";
@@ -133,7 +136,7 @@ export default function Users({ me }) {
   }
 
   async function savePassword(u) {
-    if (pwValue.length < PASSWORD_MIN) return;
+    if (pwValue.length < passwordMinLength()) return;
     setBusyId(u.id);
     try {
       await api.patch(`/users/${u.id}/`, { password: pwValue });
@@ -429,7 +432,8 @@ function UserRow({
 }) {
   const self = u.id === me?.id;
   const initial = (u.full_name || u.username || "?").trim().charAt(0).toUpperCase();
-  const pwValid = pwValue.length >= PASSWORD_MIN;
+  const pwMin = passwordMinLength();
+  const pwValid = pwValue.length >= pwMin;
   const roleHint = self
     ? "You cannot change your own role, ask another administrator."
     : !touchable
@@ -495,10 +499,10 @@ function UserRow({
               type="password"
               className="input input-sm w-[170px] font-mono"
               aria-label={`New password for ${u.username}`}
-              placeholder={`New password (${PASSWORD_MIN}+ chars)`}
+              placeholder={`New password (${pwMin}+ chars)`}
               autoComplete="new-password"
               autoFocus
-              minLength={PASSWORD_MIN}
+              minLength={pwMin}
               value={pwValue}
               onChange={(e) => onPwChange(e.target.value)}
               onKeyDown={(e) => {

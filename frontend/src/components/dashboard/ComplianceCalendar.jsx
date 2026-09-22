@@ -63,7 +63,9 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   const [attempt, setAttempt] = useState(0);
   const [viewing, setViewing] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [actionError, setActionError] = useState("");
+  // What the last "Mark reviewed" came to, tied to the day it was clicked on,
+  // so a refusal on the 5th never reads as one for the 12th's items.
+  const [outcome, setOutcome] = useState(null);
   const reqRef = useRef(0);
   const [todayKey] = useState(() => localKey(new Date()));
 
@@ -88,6 +90,10 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       })
       .catch((e) => {
         if (id !== reqRef.current) return;
+        // What this range holds is unknown now. The previous feed belongs to
+        // another range or an older state, so it is dropped, and the counts
+        // below read as unknown rather than as a confident zero.
+        setEvents([]);
         setError(errorText(e, "Couldn't load the calendar feed."));
       })
       .finally(() => {
@@ -99,11 +105,12 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   // so most workspaces never see one; showing a chip that always empties the
   // grid is a dead control. Only chips for kinds actually present survive,
   // and a filter dropped this way is cleared rather than left hiding a grid
-  // with no visible reason why.
+  // with no visible reason why. A failed load empties the feed with a visible
+  // reason, so the filter survives it and applies again once a retry lands.
   const presentKinds = useMemo(() => new Set(events.map((e) => e.type)), [events]);
   useEffect(() => {
-    if (filter && !presentKinds.has(filter)) setFilter(null);
-  }, [filter, presentKinds]);
+    if (filter && !error && !presentKinds.has(filter)) setFilter(null);
+  }, [filter, presentKinds, error]);
 
   const visibleEvents = useMemo(() => (filter ? events.filter((e) => e.type === filter) : events), [events, filter]);
 
@@ -122,28 +129,42 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   const monthCount = useMemo(() => visibleEvents.filter((e) => (e.date || "").startsWith(cursorMonth)).length, [visibleEvents, cursorMonth]);
   const onCurrentMonth = cursorMonth === todayKey.slice(0, 7);
   const selectedEvents = selected ? byDate.get(selected) || [] : [];
+  // The feed for this range did not arrive, so no day's count is known.
+  const unknown = !!error;
 
+  // Every change of the open day goes through here, so an outcome shown under
+  // one day never carries over to another, or to the same day reopened.
+  function select(key) {
+    setSelected(key);
+    setOutcome(null);
+  }
   function move(delta) {
     setDirection(delta);
     setCursor((c) => addMonths(c, delta));
-    setSelected(null);
+    select(null);
   }
   function goToday() {
     const next = startOfMonth(new Date());
     setDirection(next > cursor ? 1 : -1);
     setCursor(next);
-    setSelected(null);
+    select(null);
   }
 
   async function markReviewed(event) {
     const name = event.title.replace(/^Review due: /, "");
-    setActionError("");
-    setBusyId(event.document);
+    setOutcome(null);
+    setBusyId(event.id);
     try {
       await api.post(`/documents/${event.document}/mark_reviewed/`);
-      onChanged?.();
+      // The review moves the document's next review date on, so the entry has
+      // left this day. It goes now: waiting for the dashboard and then the
+      // feed to reload left an enabled "Mark reviewed" on a row that was
+      // already attested, and a second click attested it again.
+      setEvents((list) => list.filter((e) => e.id !== event.id));
+      setOutcome({ day: event.date, ok: true, text: `Marked "${name}" reviewed.` });
+      await onChanged?.();
     } catch (e) {
-      setActionError(errorText(e, `Couldn't mark "${name}" reviewed. Please try again.`));
+      setOutcome({ day: event.date, ok: false, text: errorText(e, `Couldn't mark "${name}" reviewed. Please try again.`) });
     } finally {
       setBusyId(null);
     }
@@ -154,7 +175,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
         <div className="flex items-baseline gap-3">
           <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Compliance calendar</h2>
-          <Label>{loading ? "Loading…" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}</Label>
+          <Label>{loading ? "Loading…" : unknown ? "- items this month" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}</Label>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1" role="group" aria-label="Filter calendar by item type">
@@ -234,9 +255,11 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setSelected(isSelected ? null : key)}
+                  onClick={() => select(isSelected ? null : key)}
                   aria-pressed={isSelected}
-                  aria-label={`${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}, ${dayEvents.length} ${dayEvents.length === 1 ? "item" : "items"}`}
+                  aria-label={`${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}, ${
+                    unknown ? "items not loaded" : `${dayEvents.length} ${dayEvents.length === 1 ? "item" : "items"}`
+                  }`}
                   className={cn(
                     "relative flex h-[92px] flex-col gap-1 border-b border-r border-line p-1.5 text-left",
                     "transition-colors duration-150 ease-out",
@@ -300,20 +323,30 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
             <div className="px-5 py-4">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h3 className="text-[13px] font-semibold text-ink">{longDate(parseKey(selected))}</h3>
-                <Label>{selectedEvents.length} scheduled</Label>
+                <Label>{unknown ? "-" : selectedEvents.length} scheduled</Label>
               </div>
-              {actionError ? (
-                <div className="notice notice-err mb-2" role="alert">
-                  {actionError}
+              {outcome && outcome.day === selected ? (
+                <div className={cn("notice mb-2", outcome.ok ? "notice-ok" : "notice-err")} role={outcome.ok ? "status" : "alert"}>
+                  {outcome.text}
                 </div>
               ) : null}
-              {selectedEvents.length === 0 ? (
+              {unknown ? (
+                <p className="text-xs text-muted">What is scheduled on this day could not be loaded.</p>
+              ) : selectedEvents.length === 0 ? (
                 <p className="text-xs text-muted">Nothing scheduled on this day.</p>
               ) : (
                 <ul className="space-y-1.5">
                   {selectedEvents.map((event, i) => {
                     const tone = eventTone(event);
                     const kind = kindOf(event);
+                    // A review entry is the feed's own view of a document the
+                    // caller can open, named in its title. A stored event may
+                    // link a document in a folder the caller cannot see, and
+                    // its title is the event's, not the document's, so neither
+                    // the viewer nor "Mark reviewed" is offered for one. The
+                    // review_due type alone is not the test: a stored event can
+                    // carry it with no document, or with one it never completes.
+                    const review = event.source === "review" && event.document != null;
                     const docName = event.title.replace(/^Review due: /, "");
                     return (
                       <motion.li
@@ -325,10 +358,10 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                       >
                         <span className={cn("h-6 w-1 shrink-0 rounded-full", TONE_FILL[tone])} aria-hidden="true" />
                         <span className="min-w-0 flex-1">
-                          {event.document ? (
+                          {review ? (
                             <button
                               type="button"
-                              className={cn("block truncate text-left text-[13px] font-medium text-ink hover:text-accent", event.completed && "line-through text-muted")}
+                              className={cn("block min-w-0 max-w-full truncate text-left text-[13px] font-medium text-ink hover:text-accent", event.completed && "line-through text-muted")}
                               onClick={() =>
                                 setViewing({
                                   title: docName,
@@ -350,7 +383,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                             {event.end_date && event.end_date !== event.date ? ` / until ${event.end_date}` : ""}
                           </span>
                         </span>
-                        {canReview && event.type === "review_due" && !event.completed ? (
+                        {canReview && review && !event.completed ? (
                           <Button
                             size="sm"
                             className="shrink-0"
@@ -359,7 +392,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                             onClick={() => markReviewed(event)}
                             icon={<CheckIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />}
                           >
-                            {busyId === event.document ? "Marking…" : "Mark reviewed"}
+                            {busyId === event.id ? "Marking…" : "Mark reviewed"}
                           </Button>
                         ) : null}
                         <span className="hidden text-xs text-muted sm:block">{event.assignee || "Unassigned"}</span>

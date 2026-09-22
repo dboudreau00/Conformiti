@@ -386,6 +386,30 @@ class ImportRecognitionTests(APITestBase):
         self.assertEqual(roles["Customer"], "customer_statement")
         self.assertEqual({r["responsibility"] for r in out["rows"]}, {"provider"})
 
+    def test_an_em_dash_cell_is_read_as_na(self):
+        """A cell holding only an em dash means "not this side", as "-" does.
+        The 0.9.5j copy sweep turned the token into a second "-", which made a
+        tick column with em dash blanks read as statements and every row as
+        shared."""
+        dash = "\u2014"
+        csv = f"Requirement,AWS,Customer\nTC1.1,X,{dash}\nTC1.2,{dash},X\n".encode()
+        out = mx.recognise("m.csv", csv, "Amazon Web Services", self.refs)
+        roles = {c["column"]: c["role"] for c in out["columns"]}
+        self.assertEqual(roles["AWS"], "provider_mark")
+        self.assertEqual(roles["Customer"], "customer_mark")
+        by = {r["ref"]: r for r in out["rows"]}
+        self.assertEqual(by["TC1.1"]["responsibility"], "provider")
+        self.assertEqual(by["TC1.2"]["responsibility"], "customer")
+        self.assertEqual({(r["provider_statement"], r["customer_statement"]) for r in out["rows"]}, {("", "")})
+        # Under a statement column it is no statement at all ...
+        csv = f"Requirement,Provider statement,Customer statement\nTC1.1,We patch the platform,{dash}\n".encode()
+        row = mx.recognise("m.csv", csv, "Northwind", self.refs)["rows"][0]
+        self.assertEqual((row["responsibility"], row["customer_statement"]), ("provider", ""))
+        # ... and in a prose column it says not applicable.
+        csv = f"Requirement,Responsibility\nTC1.1,{dash}\n".encode()
+        self.assertEqual(mx.recognise("m.csv", csv, "Northwind", self.refs)["rows"][0]["responsibility"],
+                         "not_applicable")
+
     def test_a_file_past_the_row_limit_says_so(self):
         from governance.risk_import import MAX_ROWS
         lines = ["Requirement,Responsibility"] + [f"X{i},Provider" for i in range(MAX_ROWS + 5)]
