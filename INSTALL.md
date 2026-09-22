@@ -80,14 +80,14 @@ It needs Compose v2.24 or newer.
 in both commands, because `pull` and `up` each read it:
 
 ```bash
-export CONFORMITI_VERSION=0.9.5j
+export CONFORMITI_VERSION=0.9.5k
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 A container will tell you what it is: `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
-`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5j` carries the
+`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5k` carries the
 commit it was built from in `org.opencontainers.image.revision`.
 
 Building from source remains the default, and stays supported: the images are

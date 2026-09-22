@@ -11,7 +11,7 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5k], 2026-09-22
 
 A code review of 0.9.5j and 0.9.5ja: twenty-six reviewers, each finding put to
 a second reader told to refute it. 161 were reported, six were refuted, and
