@@ -102,7 +102,7 @@ demo = os.getenv("SEED_DEMO_DATA", "false").lower() in ("1", "true", "yes", "on"
 key_src = ("from the environment" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY")
            else "from the key file" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY_FILE")
            else "derived from the signing key")
-print(f"Conformiti {__version__} — DEBUG={'ON' if debug else 'off'}, demo data={'ON' if demo else 'off'}")
+print(f"Conformiti {__version__}: DEBUG={'ON' if debug else 'off'}, demo data={'ON' if demo else 'off'}")
 print(f"   field encryption: key ring {key_src}")
 if debug:
     print("!! DJANGO_DEBUG is on. Never expose this container to a network you don't trust.")

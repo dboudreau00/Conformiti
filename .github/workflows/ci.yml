@@ -135,7 +135,10 @@ jobs:
       - name: That container is not in DEBUG
         run: |
           set -euo pipefail
-          docker logs bare 2>&1 | grep -q "DEBUG=off" \
+          # A here-string, not a pipe: grep -q exits at its first match, and
+          # under pipefail the SIGPIPE'd `docker logs` failed this step with
+          # the banner present (0.9.5k CI).
+          grep -q "DEBUG=off" <<< "$(docker logs bare 2>&1)" \
             || { echo "the boot banner does not say DEBUG=off"; docker logs bare; exit 1; }
           # The browsable API is DEBUG-only, so it is the property under test
           # rather than the banner's opinion of itself.
@@ -284,13 +287,13 @@ jobs:
           grep -qi '^content-disposition: attachment' /tmp/dl.headers
           if grep -qi '^x-accel-redirect' /tmp/dl.headers; then echo "nginx passed the X-Accel header through"; exit 1; fi
           # The file is served by nginx from the internal location, never by gunicorn.
-          curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/protected-media/ | grep -q '^404$'
+          grep -q '^404$' <<< "$(curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/protected-media/)"
           curl -fsS -b "$jar" http://localhost:8080/api/signing-keys/ > /tmp/keys-before.json
       - name: Back up with the shipped script
         run: |
           scripts/backup.sh /tmp/backup
           for f in db.sql.gz media.tgz secrets.tgz tree.tgz; do test -s "/tmp/backup/$f"; done
-          tar tzf /tmp/backup/secrets.tgz | grep -q package_signing_key
+          grep -q package_signing_key <<< "$(tar tzf /tmp/backup/secrets.tgz)"
       - name: Destroy the installation and restore it
         run: |
           docker compose down -v

@@ -136,7 +136,7 @@ jobs:
             # match rather than being guessed at.
             raw=$(docker buildx imagetools inspect --raw "$ref" | tr -d ' \n')
             for arch in amd64 arm64; do
-              echo "$raw" | grep -q "\"architecture\":\"${arch}\"" \
+              grep -q "\"architecture\":\"${arch}\"" <<< "$raw" \
                 || { echo "${ref} has no linux/${arch}"; exit 1; }
             done
           done
@@ -167,7 +167,9 @@ jobs:
             || { echo "image reports a different version than ${version}"; exit 1; }
           # The published artefact is the one that has to be safe to run, and
           # it is the only caller that ever reached the code's DEBUG default.
-          docker logs api 2>&1 | grep -q "DEBUG=off" \
+          # A here-string, not a pipe: the same SIGPIPE-under-pipefail trap as
+          # below failed ci.yml's matching check with the banner present.
+          grep -q "DEBUG=off" <<< "$(docker logs api 2>&1)" \
             || { echo "the published image does not boot with DEBUG off"; docker logs api; exit 1; }
           curl -s -o /tmp/api.html -H 'Accept: text/html' http://localhost:8000/api/
           ! grep -qi 'django rest framework\|browsable' /tmp/api.html \
