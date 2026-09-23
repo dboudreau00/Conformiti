@@ -13,22 +13,31 @@ says what changed and what to expect on upgrade.
 
 ## [Unreleased]
 
-A clean-install test of 0.9.5k: the core installed from nothing the ways the
-README offers (Docker built from source, the published images, both install
-scripts on Linux and on Windows), each step taken as a stranger would take it
-from the documents alone. Every defect reported was checked by a second reader
-and fixed, and each fix was read again by someone other than its author.
+A clean-install test of 0.9.5k, run twice: the core installed from nothing
+the ways the README offers (Docker built from source, the published images,
+both install scripts on Linux and on Windows, and by hand on bare metal),
+each step taken as a stranger would take it from the documents alone. Every
+defect reported was checked by a second reader and fixed, and each fix was
+read again by someone other than its author. The second run confirmed every
+fix from the first and found the rest of what is below.
 
 **On upgrade.** Two migrations: `accounts` 0013 repairs administrators that
 `createsuperuser` left without a workspace, and `compliance` 0007 changes only
 a label. Docker Compose 2.24.0 or newer is now required by the installers,
 which the compose file already needed for its optional `.env`. A superuser's
 password must pass the password policy, with no bypass, and a refused
-`DJANGO_SUPERUSER_PASSWORD` now says so in the backend log. `GET /api/folders/`
-lists folders in clause order unless `?ordering=` is given. `test_mailbox`
+`DJANGO_SUPERUSER_PASSWORD` now says so in the backend log. On Docker,
+`DJANGO_ALLOWED_HOSTS` now adds to the stack's own names (`localhost`,
+`127.0.0.1`, `backend`) instead of replacing them, so list only your public
+host names. `GET /api/folders/` lists folders in clause order unless
+`?ordering=` is given, and the paginated lists of controls, risks, vendors,
+folder permissions and evidence packages have a fixed order. `test_mailbox`
 sends through any `EMAIL_PROVIDER` and needs `--to` for all but `mailbox`.
 The local development ports have their own variables, `CONFORMITI_DEV_PORT`
 and `CONFORMITI_DEV_API_PORT`, so a Docker port setting no longer moves them.
+With `DJANGO_DEBUG` off the backend now warns at start when `CACHE_URL` is
+unset (the rate limits are then counted per process), and warns about
+`NUM_PROXIES` only while it is unset.
 
 ### Fixed
 
@@ -85,6 +94,45 @@ and `CONFORMITI_DEV_API_PORT`, so a Docker port setting no longer moves them.
   file it polled when `LOG_LEVEL=DEBUG`.
 - `frontend/package-lock.json` carried an old version number; the validator
   now checks it with the others.
+- **On Docker, setting `DJANGO_ALLOWED_HOSTS` to your own host name kept the
+  stack from starting.** The backend's health check calls `127.0.0.1:8000`,
+  which the setting then refused, so the backend never turned healthy and
+  nothing that waits for it started. The compose file now adds the stack's own
+  names to yours, and CI runs the stack with a custom host name.
+- **Some paginated lists had no order.** Django drops a model's default
+  ordering on aggregated queries, so on PostgreSQL the controls, risks,
+  vendors, folder permissions and evidence packages could repeat or skip rows
+  from one page to the next. Each has a fixed order ending in its id, and the
+  test suite now fails on any unordered paginated list.
+- **Downloads came back as empty files behind anything but nginx.** With
+  `DJANGO_DEBUG` off the backend hands stored files to nginx, and IIS, Caddy
+  or waitress alone passed the empty hand-off to the browser, which saved a
+  0-byte file. The browser now refuses it and says to set
+  `MEDIA_INTERNAL=false`. Every download and export button reports a failure
+  (several did nothing), and a refused download shows the server's reason.
+- **Ctrl-C on `./install.sh` re-entered its own trap until bash crashed**,
+  printing thousands of lines; it now stops the servers once and exits 0. A
+  `.venv` left without pip (Debian or Ubuntu without `python3-venv`) is
+  rebuilt on the next run instead of failing at every run. CI presses Ctrl-C
+  and rebuilds such a `.venv` on every push.
+- **The demo advice sent people to a command that refuses.** The boot banner,
+  the seed output, both installers and the sign-in page said to run
+  `remove_demo_data`, which refuses until an administrator of your own exists;
+  they now say to create one first.
+- The installers' Docker `.env` held a generated `CONFORMITI_SECRET_KEY` under
+  a comment saying to leave it unset; new ones leave it unset, so the key lives
+  in the secrets volume as the README says (an existing `.env` is untouched).
+  The Docker banner asks you to create the first account only when none
+  exists, and says to note the demo password at once, since recreating the
+  backend starts a new log. `install.ps1` prints its commands in the
+  execution-policy form, and both installers warn about Python above 3.14 as
+  untested.
+- `scripts/restore.sh` printed about sixty PostgreSQL notices; it is quiet,
+  and says so when `.env` is missing. `scripts/backup.sh` on a machine without
+  the Docker stack points to the bare-metal backup section. The
+  `NUM_PROXIES` warning's advice was wrong for a single proxy. Local
+  development logged a traceback for every 404 under `DJANGO_DEBUG`, and the
+  test run printed tracebacks for failures it provokes on purpose.
 
 ### Changed
 
@@ -99,9 +147,22 @@ and `CONFORMITI_DEV_API_PORT`, so a Docker port setting no longer moves them.
   explained where `install.ps1` first appears; the database settings are the
   `POSTGRES_*` variables the core reads, not `DATABASE_URL`; bare metal gains
   the PostgreSQL and broker steps it was missing; a published-images install
-  is told how to keep using the images on every later command; production on
-  Windows is stated as unsupported (Windows is for development and
-  evaluation); test counts that went stale each release are gone.
+  is told how to keep using the images on every later command, restore
+  included (with `CONFORMITI_VERSION` pinned to the backup's release, or the
+  restored database is migrated forward to `latest`); production on Windows is
+  stated as unsupported (Windows is for development and evaluation); test
+  counts that went stale each release are gone.
+- The second walk added what bare metal was missing: a "Backups on bare
+  metal" section (the database, media, the evidence tree, the signing key and
+  the field-encryption key), `CACHE_URL`, `BEHIND_TLS`, `NUM_PROXIES`,
+  `MEDIA_INTERNAL` and `DJANGO_FIELD_ENCRYPTION_KEY_FILE` in the `.env` list,
+  a service user with a home directory for npm, and the nginx template's
+  edits (host name, the distribution's default site, TLS, the file aliases).
+  It also added the published images' nginx override, the corrected "Moving
+  the ports", and git, curl and `python3-venv` in the prerequisites, with
+  Python 3.11 to 3.14 stated the same way everywhere.
+- Every Markdown file and the shipped configuration are free of em and en
+  dashes, the release notes above included.
 
 ## [0.9.5k], 2026-09-22
 
@@ -665,7 +726,7 @@ the image or the checkout; there is no migration.
   query on every backend, and a regression test with 1,200 links on one
   document.
 
-## [0.9.5b] — 2026-09-15
+## [0.9.5b], 2026-09-15
 
 A security release, closing a third independent review. It found nine things;
 all nine were real, and all nine are fixed here with a test apiece. Details,
@@ -734,7 +795,7 @@ by default.
   that on its own sign-in page, which is right for a tour and wrong for a
   deployment. Ask for it with `SEED_DEMO_DATA=true`, or `--demo` / `-Demo`.
 
-## [0.9.5] — 2026-09-09
+## [0.9.5], 2026-09-09
 
 The feature-complete release of the open-source edition, and the close of a
 second independent review. Everything it found that was real is fixed here
@@ -823,33 +884,33 @@ untouched.
 
 ---
 
-## [0.9.4] — 2026-09-08
+## [0.9.4], 2026-09-08
 
 The eleven findings the adversarial review left open. Nothing is outstanding
 from it now; [REVIEW_090.md](REVIEW_090.md) carries the whole set with its
 status.
 
-### Fixed — security
+### Fixed: security
 
 - **The "Auditor" role read the whole programme.** It is described as a
   read-only outside party who sees granted folders, but every permission class
-  in the product granted reads to *any* authenticated account — and an
+  in the product granted reads to *any* authenticated account, and an
   external auditor is an authenticated account. The risk register, the vendor
   file, the control library, the user directory, the responsibility matrix,
   the meeting minutes and the shared calendar were all open to someone invited
   to look at one engagement. Reads are now refused by default: the DRF default
   permission is "signed in and not an external auditor", so a viewset that
-  says nothing refuses them, and the routes that make up an audit — the
+  says nothing refuses them, and the routes that make up an audit (the
   packages issued to them, the folders granted with them, their request list,
-  the access reviews and the trail — let them back in explicitly. The shipped
+  the access reviews and the trail) let them back in explicitly. The shipped
   role description now says what the code enforces, and the sidebar no longer
   offers pages the API refuses.
 - **A TOTP code was replayable for up to 90 seconds.** A code is valid for its
   own 30-second window plus a step of drift either way, and nothing recorded
-  which had been spent — so six digits read over a shoulder, lifted from a
+  which had been spent, so six digits read over a shoulder, lifted from a
   phishing form or replayed off a proxied login page worked again until they
   expired. Each authenticator now records the last time step it accepted and
-  refuses that one and anything earlier — including the code that switched
+  refuses that one and anything earlier, including the code that switched
   the factor on, which used to remain usable for a sign-in straight
   afterwards. The claim is a single conditional `UPDATE`, so two requests
   presenting the same code at the same moment are settled in the database
@@ -857,8 +918,8 @@ status.
 - **Sealing was a check-then-act with no row lock.** It read "this package is
   open", then snapshotted what was pinned, with nothing holding the row in
   between: evidence pinned in the gap landed inside the package but outside
-  the manifest — a bundle whose signature covers less than it contains, which
-  is the one thing a signed manifest exists to rule out. Sealing now re-reads
+  the manifest, leaving a bundle whose signature covers less than it
+  contains, which is the one thing a signed manifest exists to rule out. Sealing now re-reads
   the package under `SELECT … FOR UPDATE`, and pinning and unpinning take the
   same lock, so they queue instead of interleaving.
 - **In-app signature verification trusted the key stored beside the
@@ -874,19 +935,19 @@ status.
   checked and marked used in three steps with nothing between them. It is now
   claimed with a conditional `UPDATE` on the still-unused row.
 - **Enrolling a passkey asked for nothing**, while removing one asked for the
-  account password — so a hijacked session could not strip a factor but could
+  account password, so a hijacked session could not strip a factor but could
   quietly add the attacker's own key and keep the account for good. Enrolment
   now takes the same proof, before the ceremony starts: the password, or a
   code from a factor already enrolled (which is what an account signed in
   through an identity provider has instead).
 - **`SSO_MFA_ASSERTIONS` accepted two values that are not second factors.**
-  `amr=user` is a presence test — somebody touched the key — and `amr=pin` may
+  `amr=user` is a presence test (somebody touched the key), and `amr=pin` may
   well be the provider's *first* factor. Either satisfied the step-up
   requirement without a second factor being presented. Both are out of the
   default; add them back deliberately if your IdP means something stronger.
 - **A sliced queryset could escape its workspace.** `TenantQuerySet._pin()`
   skipped any query that was already sliced, so one built with no workspace
-  active and read inside one came back without the workspace condition —
+  active and read inside one came back without the workspace condition:
   every organisation's rows, silently. It now raises `tenancy.UnscopedRead`
   instead, and pins on every path that reaches the database, not only on the
   ones that derive a new queryset.
@@ -896,12 +957,12 @@ status.
 - **Every organisation's reminders went to one address.** Review, vendor and
   auditor-request emails all went to the installation-wide
   `COMPLIANCE_TEAM_EMAIL`, and their subject lines carry document names,
-  vendor names and request references — so a shared installation published
+  vendor names and request references, so a shared installation published
   every tenant's business to whoever ran the mailbox. A workspace now names
   its own address; the setting remains the fallback and is the whole answer
   for a single-organisation install.
 - **Every page fetched a webfont from Google**, including the anonymous login
-  screen and the vendor questionnaire link sent outside the company — telling
+  screen and the vendor questionnaire link sent outside the company, telling
   a third party the address of a self-hosted compliance installation, who was
   visiting it and when. No font is fetched now; typography falls back to the
   platform's own faces, and the shipped CSP drops both `fonts.*` entries, so
@@ -915,7 +976,7 @@ per-workspace notification address.
 Administrators should re-run `manage.py seed_frameworks --roles-only` to pick
 up the corrected "Auditor" role description; the capability flags are
 unchanged. If your organisation relies on an auditor account reading the risk
-register or the vendor file, give that person a Viewer role instead — the
+register or the vendor file, give that person a Viewer role instead: the
 Auditor role is now scoped to the engagement.
 
 Set a workspace's own reminder address under *Workspaces* (or leave it blank
@@ -925,16 +986,16 @@ returns only `amr=user` or `amr=pin`, step-up will now ask for a local factor.
 
 ---
 
-## [0.9.3] — 2026-09-07
+## [0.9.3], 2026-09-07
 
 The three findings the review rated highest and 0.9.2 left open. All of them
 concern what a bundle proves and who can get in.
 
-### Fixed — security
+### Fixed: security
 
 - **The signature covered `manifest.json` and nothing else.** The auditor's
   conclusions live in `controls.csv` and `samples.csv`, which are written
-  after the seal — so they sat outside the signature entirely, and `verify.py`
+  after the seal, so they sat outside the signature entirely, and `verify.py`
   still printed *signature: VALID … the bundle is theirs and unchanged* after
   they were rewritten. The export now also signs `SHA256SUMS`, which names
   every other member, so the whole bundle is covered transitively: alter any
@@ -944,15 +1005,15 @@ concern what a bundle proves and who can get in.
   longer claims origin for a bundle that carries only the manifest signature.
 - **One Ed25519 key signed every workspace's packages**, so on a shared
   installation one organisation could produce a bundle that verified under
-  exactly the fingerprint another organisation had published — the fingerprint
+  exactly the fingerprint another organisation had published: the fingerprint
   identified the installation, not the client. Each workspace now signs with
   its own key, derived from the installation key with HKDF-SHA256 over the
   workspace slug. There is still one secret to protect and rotate, the
   derivation is deterministic, and `GET /api/signing-keys/?workspace=<slug>`
   publishes the fingerprint for a named organisation.
 - **The Django admin login bypassed everything the API enforces.** It asked
-  for a password and nothing else — no second factor, no rate limit, no
-  archived-workspace refusal — and the session it created authenticated the
+  for a password and nothing else (no second factor, no rate limit, no
+  archived-workspace refusal), and the session it created authenticated the
   whole API through `SessionAuthentication`. The admin sign-in now demands the
   authenticator code (or a backup code) from any account with a factor
   enrolled, refuses an archived workspace, and is rate-limited per client;
@@ -961,8 +1022,8 @@ concern what a bundle proves and who can get in.
 ### Upgrading
 
 One migration (`attestations 0006`), which records which workspace a signing
-key belongs to. **Packages sealed before this release keep verifying** — the
-key that signed them travels inside the bundle — but new packages are signed
+key belongs to. **Packages sealed before this release keep verifying** (the
+key that signed them travels inside the bundle), but new packages are signed
 with a per-workspace key, so the fingerprint you publish changes. Re-publish
 it from *Settings › About* or `/api/signing-keys/?workspace=<slug>`.
 
@@ -971,16 +1032,16 @@ Administrators with an authenticator enrolled now need their code to reach
 
 ---
 
-## [0.9.2] — 2026-09-07
+## [0.9.2], 2026-09-07
 
 The rest of the adversarial review's confirmed findings. Twenty-one more are
 fixed here; [REVIEW_090.md](REVIEW_090.md) now carries the whole set with its
 status, and names the twelve still open.
 
-### Fixed — security
+### Fixed: security
 
 - **The demo dataset no longer ships a password.** Every fresh boot seeded
-  five accounts — one of them a superuser — with a constant printed in the
+  five accounts (one of them a superuser) with a constant printed in the
   README, the compose header, `.env.example` and both installers. The dataset
   stays, because the one-command demo is the point; the password is now
   generated per installation and printed once by the seeding step. Set
@@ -992,13 +1053,13 @@ status, and names the twelve still open.
   workspace, and an identity whose account belongs to another one is refused.
 - **The audit trail followed the actor, not the action.** A superuser working
   under `X-Workspace` filed the tenant's document and package names into their
-  own workspace's log and left nothing in the tenant's — including the
+  own workspace's log and left nothing in the tenant's, including the
   audit-trail extract inside the sealed bundle. Entries are now stamped with
   the workspace the action happened in; sign-in and single sign-on, which run
   before a workspace is resolved, pass it explicitly.
 - **A revoked or expired grant did not close the auditor's last door.** The
   request-list route admits whoever a line is assigned to, which exists so an
-  internal control owner can answer without package access — but an external
+  internal control owner can answer without package access, but an external
   auditor reaching it kept reading attachment bytes after revocation, and
   could assign a line to themselves. Auditors now read the request list
   through their grant and nothing else.
@@ -1006,7 +1067,7 @@ status, and names the twelve still open.
   account**, including an external auditor with a package grant, with no
   folder check. Both are closed to auditors.
 - **A sealed package could still gain evidence rows**, because the row's
-  parent was writable — and `/verify/` reported the result as intact.
+  parent was writable, and `/verify/` reported the result as intact.
 - **The sealed manifest now names the organisation.** One Ed25519 key serves
   the whole installation, so without it a bundle from one workspace verified
   identically to a bundle from another. Manifest version 4. A per-workspace
@@ -1016,7 +1077,7 @@ status, and names the twelve still open.
   active workspace, and says so when it is not theirs.
 - **A cross-workspace username oracle.** The uniqueness check DRF builds is
   workspace-scoped while the constraint is installation-wide, so a name taken
-  in another tenant returned 500 rather than 400 — a clean yes/no on whether
+  in another tenant returned 500 rather than 400: a clean yes/no on whether
   a named person has an account elsewhere on the installation. The same
   mismatch made single-sign-on provisioning die on the constraint.
 - **Changing a password revoked nothing.** A stolen refresh token kept working
@@ -1046,15 +1107,15 @@ replayable within their window.
 
 ---
 
-## [0.9.1] — 2026-09-07
+## [0.9.1], 2026-09-07
 
 A full adversarial review of the 0.9.0 tree, and the fixes it earned. Sixteen
 independent reviewers attacked the product across separate dimensions; every
 candidate finding was then attacked by three more with different lenses, and
-only those that survived are recorded. The complete set — including what is
-still open — is in [REVIEW_090.md](REVIEW_090.md).
+only those that survived are recorded. The complete set (including what is
+still open) is in [REVIEW_090.md](REVIEW_090.md).
 
-### Fixed — security
+### Fixed: security
 
 - **Rate limiting was decorative.** Django REST Framework identifies a client
   by the whole `X-Forwarded-For` header unless `NUM_PROXIES` is set, and the
@@ -1072,14 +1133,14 @@ still open — is in [REVIEW_090.md](REVIEW_090.md).
 - **A pinned artefact could be re-pointed.** `PATCH /api/package-evidence/{id}/`
   accepted a new `document` or `package_control`, which skipped the folder
   permission check that pinning performs and could move a row into a package
-  that was already sealed — which `/verify/` still reported as intact. Both
+  that was already sealed, which `/verify/` still reported as intact. Both
   fields are now fixed once pinned.
 - **Sampling rows could be rewritten by anyone who could read the package.**
   A body carrying neither a result nor an item field reached `save()` without
   meeting any permission check.
 - **A document's bytes could be replaced by a plain `PATCH`**, with no
   folder-edit check, no malware scan, no archived version and no version
-  bump — leaving the previous *clean* verdict attached to bytes nobody had
+  bump, leaving the previous *clean* verdict attached to bytes nobody had
   scanned. The field is refused; replacing evidence goes through
   `new_version`, which does all four.
 - **Quarantined bytes stayed reachable.** Uploading a new version archived the
@@ -1090,7 +1151,7 @@ still open — is in [REVIEW_090.md](REVIEW_090.md).
   the scanner matched after sealing was handed to the external auditor. The
   export now refuses and names the file.
 - **Folder ownership was a self-service promotion.** `owner` was writable with
-  *edit*, and the owner counts as a manager — which carries the folder's
+  *edit*, and the owner counts as a manager, which carries the folder's
   access map and a cascading delete. Changing the owner now needs *manage*.
 - **The login screen printed a working superuser password** to anonymous
   visitors whenever the demo accounts were still seeded. It now says the
@@ -1099,7 +1160,7 @@ still open — is in [REVIEW_090.md](REVIEW_090.md).
 ### Known and open
 
 `REVIEW_090.md` records 50 confirmed findings; the nine above are fixed. The
-rest are open and ordered by severity — the largest remaining themes are the
+rest are open and ordered by severity: the largest remaining themes are the
 Ed25519 signature covering only `manifest.json` rather than the whole bundle,
 one signing key shared across workspaces, single sign-on resolving accounts
 with no workspace active, and the shipped Docker stack seeding a superuser
@@ -1107,16 +1168,16 @@ with a published password by default.
 
 ---
 
-## [0.9.0] — 2026-09-06
+## [0.9.0], 2026-09-06
 
 One installation, several organisations, each seeing only its own.
 
 ### Added
 
-- **Workspaces.** Every organisation-owned row — frameworks and controls,
+- **Workspaces.** Every organisation-owned row (frameworks and controls,
   folders and documents, risks, vendors, packages and their request lists,
   reviews, meetings, groups, calendar, Jira, readiness history, the audit
-  trail, roles and people — belongs to a workspace, and every query is
+  trail, roles and people) belongs to a workspace, and every query is
   scoped to the one the signed-in person works in. Existing installations
   get a single workspace called *Default* holding everything they have;
   nothing changes for them.
@@ -1139,9 +1200,9 @@ One installation, several organisations, each seeing only its own.
 
 ### Changed
 
-- Names that were unique across the installation — role, framework key,
+- Names that were unique across the installation (role, framework key,
   vendor, meeting series, champion group, Jira board, readiness-snapshot
-  date — are unique per workspace.
+  date) are unique per workspace.
 - The login audit entry is written into the account's workspace so its
   administrators can see it.
 - An account with no workspace (a superuser created with `createsuperuser`)
@@ -1156,7 +1217,7 @@ transaction on PostgreSQL. Budget a few seconds per hundred thousand rows.
 
 ---
 
-## [0.8.0] — 2026-09-05
+## [0.8.0], 2026-09-05
 
 The tray only helps people who open the app. Now it reaches a channel, and
 an inbox.
@@ -1176,14 +1237,14 @@ an inbox.
   shown to administrators under *Settings › Notifications*, beside a *Send
   a test message* button. Built on `urllib`; no dependency added.
 - **Digest emails.** Each person chooses *Off*, *Daily* or *Weekly (Monday)*
-  under *Settings › Notifications* and receives their own tray — the same
-  items, minus what they dismissed, grouped by severity with links — after
+  under *Settings › Notifications* and receives their own tray (the same
+  items, minus what they dismissed, grouped by severity with links) after
   the morning scan. Nothing is sent when the tray is empty, and never more
   than once a day. `manage.py send_digests` for cron deployments.
 
 ---
 
-## [0.7.0] — 2026-09-05
+## [0.7.0], 2026-09-05
 
 The signature the bundle was missing, with the key-management story that
 was the reason for leaving it out.
@@ -1192,8 +1253,8 @@ was the reason for leaving it out.
 
 - **Detached signatures over the sealed manifest.** Every seal signs
   `manifest.json` (Ed25519) with a key that lives in a **file, never in the
-  database**: `SIGNING_KEY_FILE`, generated at 0600 on first use — in the
-  compose stack inside the `secrets` volume beside the Django secret key —
+  database**: `SIGNING_KEY_FILE`, generated at 0600 on first use (in the
+  compose stack inside the `secrets` volume beside the Django secret key)
   or the key itself in `SIGNING_KEY`. The bundle carries `manifest.sig` and
   `signing-key.pub`; `verify.py` now checks the signature with an Ed25519
   implementation of its own (RFC 8032, standard library only, tested
@@ -1219,7 +1280,7 @@ was the reason for leaving it out.
 
 ---
 
-## [0.6.1] — 2026-09-05
+## [0.6.1], 2026-09-05
 
 The four items 0.6.0 left on the "next" list: next year's package from last
 year's, backup codes that a passkey-only account holds too, a watch on the
@@ -1232,11 +1293,11 @@ malware scanner, and cookie transport as the default.
   re-snapshotted as they stand today with today's visible evidence pinned,
   and the old package recorded as the predecessor. Conclusions, samples and
   the request list stay with the year they were made in. Every package with
-  a predecessor gets a **Year over year** panel — scope and controls in and
+  a predecessor gets a **Year over year** panel: scope and controls in and
   out, evidence replaced (matched by document, compared by digest), last
-  year's exceptions and whether this year has concluded them — computed from
-  the two packages' own snapshots, so it works years later against sealed
-  rows. `GET /api/evidence-packages/{id}/diff/`,
+  year's exceptions and whether this year has concluded them. The panel is
+  computed from the two packages' own snapshots, so it works years later
+  against sealed rows. `GET /api/evidence-packages/{id}/diff/`,
   `POST /api/evidence-packages/{id}/roll_forward/`; `prior_package` is
   writable on a draft (must be sealed, must not loop). **Manifest version 3**
   names the predecessor and its manifest digest, so a chain of engagements
@@ -1254,8 +1315,8 @@ malware scanner, and cookie transport as the default.
   it is back; administrators and managers see an outage in the tray, with
   the reminder that uploads are being refused meanwhile. `manage.py
   scan_evidence` re-scans stored files (`--stale 30` by default, `--all`,
-  `--probe`, `--dry-run`) because signatures arrive after files do: a file
-  that now matches is **quarantined** — kept on disk, refused on every route
+  `--probe`, `--dry-run`) because signatures arrive after files do. A file
+  that now matches is **quarantined**: kept on disk, refused on every route
   that serves bytes, badged in the document list, counted in the tray, and
   recorded in the audit trail; a later clean re-scan releases it. Uploads
   record their clean verdict; a new version resets it. Settings › About
@@ -1279,10 +1340,10 @@ malware scanner, and cookie transport as the default.
 
 ---
 
-## [0.6.0] — 2026-09-05
+## [0.6.0], 2026-09-05
 
 The vendor answers their own questionnaire, passkeys as a second factor with
-the clone detector done right, and the auditor's request list — the other
+the clone detector done right, and the auditor's request list, the other
 half of the workflow the audit package started.
 
 ### Added
@@ -1307,7 +1368,7 @@ half of the workflow the audit package started.
   `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGINS` pin it; `WEBAUTHN_USER_VERIFICATION`
   can demand a PIN or biometric. The protocol side (CBOR, COSE, both
   ceremonies) is in `accounts/webauthn.py` on the `cryptography` package the
-  project already carried — no new dependency — and the test suite drives it
+  project already carried (no new dependency), and the test suite drives it
   with a fake authenticator for every algorithm. **The clone detector fails
   closed:** a signature counter that does not advance disables that key and
   refuses the sign-in, and the account keeps requiring a second factor; it is
@@ -1324,7 +1385,7 @@ half of the workflow the audit package started.
   when overdue, from the same daily scan as document reviews; the tray shows
   what each person owes, managers see the overdue and unowned lines, and the
   auditor sees how many answers await them. A control owner with no package
-  access sees exactly the lines assigned to them and answers from there —
+  access sees exactly the lines assigned to them and answers from there:
   the second, deliberate folder-permission bypass, documented beside the
   first in `attestations/access.py`. CSV export for the auditor's tracker.
 
@@ -1333,14 +1394,14 @@ half of the workflow the audit package started.
 - The sign-in challenge (`POST /api/auth/token/` with the right password)
   now names the factors on offer (`factors`) and, when a passkey is among
   them, carries the WebAuthn options; the SSO redeem step does the same.
-  `mfa_enabled` on a user now means "signing in takes a second factor" —
+  `mfa_enabled` on a user now means "signing in takes a second factor":
   authenticator app or passkey.
 - `manage.py send_review_reminders` (and the daily Celery task) also chases
   PBC requests.
 
 ---
 
-## [0.5.0] — 2026-09-05
+## [0.5.0], 2026-09-05
 
 Single sign-on for the providers that insist on SAML, a second factor that
 travels with SSO, a PDF viewer that never runs the PDF, and one production
@@ -1353,7 +1414,7 @@ bug that had made every download through nginx fail since 0.3.0.
   OIDC: the provider's signing certificate is the sole trust anchor, there
   is no metadata fetch. Every signature is verified against that certificate
   with asymmetric algorithms only, and **only the element the signature
-  covers is read** — a Response carrying a second, unsigned assertion yields
+  covers is read**: a Response carrying a second, unsigned assertion yields
   nothing from it (the wrapping attack). Issuer, audience, destination,
   recipient, `InResponseTo`, validity window with clock skew and bearer
   confirmation are all checked; an assertion id is accepted once, from a
@@ -1415,7 +1476,7 @@ bug that had made every download through nginx fail since 0.3.0.
 
 ---
 
-## [0.4.1] — 2026-09-05
+## [0.4.1], 2026-09-05
 
 The Type II workpaper, and the two loose ends of the vendor story.
 
@@ -1426,8 +1487,8 @@ The Type II workpaper, and the two loose ends of the vendor story.
   while the package is a draft; they are sealed into the manifest with the
   pinned artefact that supports each one (`manifest_version` 2). After
   sealing, the issued auditor adds their own selections and records **pass,
-  exception or not tested** per item — an exception without a note is
-  refused — plus a sampling note, all writable by the auditor alone, like the
+  exception or not tested** per item (an exception without a note is
+  refused) plus a sampling note, all writable by the auditor alone, like the
   conclusions beside them. `GET/POST/PATCH/DELETE /api/package-samples/`;
   `sample_summary` and the rows on every package control; `samples.csv` and
   new population/sample columns in `controls.csv` in the export bundle; the
@@ -1436,7 +1497,7 @@ The Type II workpaper, and the two loose ends of the vendor story.
   an exception.
 - **Responsibility matrix export in the vendor's own layout.** Confirming an
   import remembers the file's column layout on the vendor; **Export in their
-  layout** writes the stated matrix back under their headers — X marks where
+  layout** writes the stated matrix back under their headers: X marks where
   their marks were, our labels in their prose column, statements in their
   statement columns, and any column we never understood left blank rather
   than guessed.
@@ -1455,7 +1516,7 @@ The Type II workpaper, and the two loose ends of the vendor story.
 
 ---
 
-## [0.4.0] — 2026-09-04
+## [0.4.0], 2026-09-04
 
 The release that brings **third parties** into the picture and lets people
 **read evidence without downloading it**. Vendors get a register, the assurance
@@ -1470,24 +1531,24 @@ Connect provider, configured where an administrator cannot reach it.
 
 - **Vendor risk management** (`vendors` app, `/vendors`). A register with
   tier, status, data handled, services in scope, relationship owner and a
-  review cadence with an overdue clock. **Assurance on file** per vendor — SOC 2
+  review cadence with an overdue clock. **Assurance on file** per vendor (SOC 2
   Type I/II, ISO 27001 certificate, PCI DSS AOC, penetration test, DPA,
   contract, a copy of their own responsibility matrix, or a **security
-  questionnaire** answered in-app from a shipped 12-question set — each with
+  questionnaire** answered in-app from a shipped 12-question set), each with
   period, issue and expiry dates, our conclusion and the filed document.
   Assurance posture (current / partial / expired / unsatisfactory / none) and a
   **risk rating that crosses tier with posture** are computed, never typed. A
   risk can name its vendor. `GET /api/vendors/summary/`; CSV exports of the
   register and of every matrix.
 - **Shared responsibility matrix per vendor.** An in-browser grid over every
-  control in scope — provider / customer / shared / not applicable, with a
+  control in scope: provider / customer / shared / not applicable, with a
   statement for each side. Three ways to fill it: type into the grid, be
   **walked through the unstated controls** one at a time, or **import the
   vendor's own CSV/XLSX**. The importer recognises columns and values in the
-  layouts vendors actually send — an "AWS" column of X marks beside a
+  layouts vendors actually send (an "AWS" column of X marks beside a
   "Customer" column, a prose "Responsibility" column, "Provider statement /
   Merchant statement", references written `Req 8.3.6`, `PCI DSS 8.3.6.` or
-  `A5.15` — shows how every column was read, calls out every unmatched
+  `A5.15`), shows how every column was read, calls out every unmatched
   reference and unrecognised value for correction, and writes nothing until the
   person confirms.
 - **Onboarding prompt.** A vendor with no responsibilities stated raises an
@@ -1499,11 +1560,11 @@ Connect provider, configured where an administrator cannot reach it.
   Accountable, Consulted and Informed per control, for people *and* vendors.
   The control owner is the implied Accountable; a vendor whose matrix says it
   does or shares a control is the implied Responsible. **Exactly one
-  Accountable per control** — the API refuses a second. Gaps are counted, and
+  Accountable per control**: the API refuses a second. Gaps are counted, and
   readiness scoring's *owner* signal now also accepts an explicit Accountable
   row. CSV export.
 - **Open in browser.** PDFs and images (PNG, JPEG, GIF, WebP, BMP) stream
-  inline after a magic-byte check — a `report.pdf` that starts with `<html` is
+  inline after a magic-byte check: a `report.pdf` that starts with `<html` is
   refused. Word and Excel files are parsed on the server with the standard
   library into headings, runs, list items, tables and sheets, and rendered by
   the SPA from that vocabulary: **no HTML is ever produced from a file**, and no
@@ -1511,8 +1572,8 @@ Connect provider, configured where an administrator cannot reach it.
   controls the document satisfies, and a **SHA-256 computed in the browser from
   the bytes on screen**, which a reviewer can compare with the digest recorded
   in a sealed package. Reads are audited like downloads. Available from the
-  Documents page, from a control's linked evidence, and — under the auditor's
-  grant, through the package's own preview route — from an audit package.
+  Documents page, from a control's linked evidence, and (under the auditor's
+  grant, through the package's own preview route) from an audit package.
 - **Single sign-on (OpenID Connect).** Authorization code + PKCE against any
   OIDC provider (Okta, Entra ID, Google Workspace, Keycloak…), configured
   **from the environment only**. The 0.3.0 design was held back because a
@@ -1520,7 +1581,7 @@ Connect provider, configured where an administrator cannot reach it.
   removing the settable provider is what this design changes. ID tokens are
   verified against the provider's JWKS (issuer, audience, expiry, nonce;
   asymmetric algorithms only). A verified email links exactly one existing
-  account — never a superuser or staff account, which are linked only by the
+  account, never a superuser or staff account, which are linked only by the
   deliberate `manage.py link_oidc_identity --allow-privileged`. Optional
   auto-provisioning with a default role that is refused if it can manage users;
   optional email-domain allow-list; one-time, session-bound tickets hand the SPA
@@ -1548,7 +1609,7 @@ Connect provider, configured where an administrator cannot reach it.
 
 ---
 
-## [0.3.0] — 2026-09-04
+## [0.3.0], 2026-09-04
 
 The release that makes Conformiti useful **at audit time**, not just before
 one. Evidence can now be sealed and handed to an external auditor as a
@@ -1559,30 +1620,30 @@ keep its credentials where script cannot reach them.
 
 ### Added
 
-- **Audit packages — sealed evidence issued to a named external auditor.**
+- **Audit packages: sealed evidence issued to a named external auditor.**
   Assemble the controls in scope, pin their evidence, write the management
   assertion, and **seal**: every row is snapshotted (control text, status,
   owner, document name, version, size, SHA-256) into a canonical manifest with
   a digest. **Issue** it to one named auditor for a fixed period; they see that
   package and nothing else, record a **design** and an **operating** conclusion
   per control that nobody at the assessed organisation can edit, and leave with
-  a self-verifying ZIP — manifest, `SHA256SUMS`, workpaper and evidence CSVs, an
+  a self-verifying ZIP: manifest, `SHA256SUMS`, workpaper and evidence CSVs, an
   audit-trail extract, the files, and a stdlib-only `verify.py`. Exceptions
   promote into the risk register, which makes `Risk.Type.AUDIT_FINDING`
   reachable from the product for the first time. Access expires or is withdrawn
   in one click; what was disclosed, to whom, and every file they opened is
   permanent.
-  The bundle proves **integrity, not origin** — it carries no signature, and the
+  The bundle proves **integrity, not origin**: it carries no signature, and the
   README, `SECURITY.md` and the UI all say so.
-- **Per-control readiness scoring.** Six signals — implementation, owner,
-  evidence, evidence freshness, test recency, minus a penalty for open risks —
-  normalised to 0–100 and banded. Expanding a control explains the score
+- **Per-control readiness scoring.** Six signals (implementation, owner,
+  evidence, evidence freshness, test recency, minus a penalty for open risks)
+  normalised to 0 to 100 and banded. Expanding a control explains the score
   component by component and names the single change worth the most points.
   Controls gain `last_tested_on` and a retest interval, recorded with who and
   when. `GET /api/controls/{id}/readiness/` returns the breakdown; the CSV
   export carries the score, the band and the test date.
 - **Field encryption for secrets at rest.** The TOTP secret and the Jira API
-  token — the two values the server must be able to read back — are AES-256-GCM
+  token (the two values the server must be able to read back) are AES-256-GCM
   encrypted under a rotatable key ring, with associated data binding each
   ciphertext to its own row and column. `manage.py rotate_field_keys` moves rows
   onto a new key and reports rows per key.
@@ -1604,13 +1665,13 @@ keep its credentials where script cannot reach them.
 
 - **Uploaded evidence is no longer readable without authorisation.** nginx
   served the whole media volume as a plain alias, and upload paths are derived
-  predictably from the folder tree — so anyone who could reach the site and
+  predictably from the folder tree, so anyone who could reach the site and
   guess a path could fetch any document regardless of folder permissions, with
   nothing recorded. Reads now go through `GET /api/documents/<id>/download/`,
   which resolves folder access first and writes an audit row; both media
   locations are `internal`, and no serializer publishes a storage path.
 - **The auditor bypass is confined to one module.** `attestations/access.py` is
-  the only place folder permissions are bypassed, behind six gates — assembling
+  the only place folder permissions are bypassed, behind six gates: assembling
   is capability-gated, pinning re-checks the packager's own visibility so
   packaging cannot launder access, the recipient must hold the Auditor role,
   only sealed packages are visible to a grantee, grants are per user and
@@ -1624,7 +1685,7 @@ keep its credentials where script cannot reach them.
 
 - React 19, Vite 8, framer-motion 13 and lucide-react 1, verified by the new
   suite against the production bundle. Backend floors raised to the tested
-  versions. **Django stays on the 5.2 LTS line and Tailwind on 3** — both
+  versions. **Django stays on the 5.2 LTS line and Tailwind on 3**: both
   deliberate, both recorded in `.github/dependabot.yml` with the reason.
 - Base images: Python **3.14**, Node **26**, nginx **1.31**; the backend CI matrix
   now includes 3.14 so the image's runtime is a tested Python. GitHub Actions
@@ -1640,7 +1701,7 @@ keep its credentials where script cannot reach them.
 - `bootstrap_demo` never created an access review, so **User audit was empty on
   a fresh install** even though the README screenshot showed a populated one.
 - The SPA rendered the shell and fired every page's queries before the session
-  was confirmed — invisible with header auth, three console errors with cookie
+  was confirmed: invisible with header auth, three console errors with cookie
   auth.
 
 ### Upgrading from 0.2.x
@@ -1649,9 +1710,9 @@ keep its credentials where script cannot reach them.
    migrations apply automatically; the two that encrypt existing secrets are
    reversible.
 2. **Back up the `secrets` volume with your database.** It now holds the
-   field-encryption key as well as the signing key. Losing it degrades safely —
-   MFA is still demanded, backup codes still work, an administrator can reset a
-   user's enrollment — but enrolled authenticators become unreadable.
+   field-encryption key as well as the signing key. Losing it degrades safely
+   (MFA is still demanded, backup codes still work, an administrator can reset a
+   user's enrollment), but enrolled authenticators become unreadable.
 3. Nothing changes for existing sessions: the authentication transport still
    defaults to `header`.
 4. Saved `/media/...` links stop working, by design. Use the application.
@@ -1660,7 +1721,7 @@ keep its credentials where script cannot reach them.
 
 | Gate | Result |
 |---|---|
-| `tools/validate.py` (17 checks) | PASS — 0 errors, 0 warnings |
+| `tools/validate.py` (17 checks) | PASS: 0 errors, 0 warnings |
 | Backend suite | 215 tests, 0 failures |
 | End-to-end (both transports) | 67 + 66 tests, 0 console errors |
 | Frontend build + `npm audit` | clean, 0 vulnerabilities |
@@ -1670,7 +1731,7 @@ test has been performed.
 
 ---
 
-## [0.2.0] — 2026-09-03
+## [0.2.0], 2026-09-03
 
 The first release built to be *shipped* rather than evaluated: a full security
 and correctness review ([REVIEW.md](REVIEW.md)), an automated test suite and
@@ -1689,7 +1750,7 @@ dependencies, and a redesigned interface with four theme packs.
   log; the login/notification endpoints are excluded from body capture.
 - **Audit entries name what changed.** Mutating calls record the request's
   top-level field names (`fields=status,owner`), never values, plus the new
-  record's id on create — enough for an auditor to reconstruct *what* was
+  record's id on create, enough for an auditor to reconstruct *what* was
   touched without the trail leaking document text or secrets.
 - **Rate limits are shared across workers.** Throttle counters live in Redis
   when `CACHE_URL` is set (the compose stack sets it). Previously each gunicorn
@@ -1705,7 +1766,7 @@ dependencies, and a redesigned interface with four theme packs.
 - **Password minimum raised to 12 characters** (PCI DSS v4.0.1 requirement
   8.3.6). Tunable with `PASSWORD_MIN_LENGTH`.
 - **Deleting evidence is a manage-level act.** A document's owner may still edit
-  it, but deletion now requires *manage* on the folder — a control owner can no
+  it, but deletion now requires *manage* on the folder: a control owner can no
   longer make their own audit trail disappear.
 - **Folder tree integrity.** Re-parenting a folder requires *manage* on the
   folder and *edit* on the destination (moving a subtree exposes it to everyone
@@ -1721,7 +1782,7 @@ dependencies, and a redesigned interface with four theme packs.
 - **A development `.env` can no longer put the Docker stack into DEBUG.**
   Compose reads `./.env` both for `${...}` substitution and into the
   containers, and that file is what the *local* installer writes (DEBUG on, a
-  dev signing key) — so running `./install.sh` and then `docker compose up`
+  dev signing key), so running `./install.sh` and then `docker compose up`
   produced a DEBUG container signing tokens with the development key. The
   stack now reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a
   development `.env` never contains, and the validator fails the build if the
@@ -1765,15 +1826,15 @@ dependencies, and a redesigned interface with four theme packs.
 
 ### Added
 
-- **Automated test suite — 80 tests** across every app (auth, MFA, token
+- **Automated test suite: 80 tests** across every app (auth, MFA, token
   lifecycle, folder RBAC and tree integrity, evidence mapping, access reviews,
   risk import/export, calendar, analytics, audit middleware, review scan, demo
-  retirement, secret-key boot guard, SSRF guard) — `python manage.py test`.
+  retirement, secret-key boot guard, SSRF guard): `python manage.py test`.
 - **CI** (GitHub Actions): validator, backend tests on Python 3.11/3.12/3.13
   and on PostgreSQL 16, migration completeness, frontend build + `npm audit`,
   Docker image builds and a boot check against `/api/health/`. Dependabot for
   pip, npm, Docker and Actions.
-- **`GET /api/health/`** — unauthenticated, unthrottled liveness/readiness
+- **`GET /api/health/`**: unauthenticated, unthrottled liveness/readiness
   endpoint reporting version, database state and whether the demo accounts still
   exist. Used by the container healthchecks, the installers and the login screen.
 - **`manage.py remove_demo_data`** retires the demo dataset (deactivates or
@@ -1785,7 +1846,7 @@ dependencies, and a redesigned interface with four theme packs.
 - **Readiness history.** A daily `ReadinessSnapshot` (recorded by Celery beat,
   by `manage.py record_readiness`, or lazily on the first dashboard hit of the
   day) feeds the dashboard's readiness trend and month-over-month delta. A fresh
-  install shows one point — history is real, never illustrative.
+  install shows one point: history is real, never illustrative.
 - **Controls CSV export** (`GET /api/controls/export/`, honours the list
   filters, formula-injection safe).
 - **Redesigned interface.** A token-driven design system with four theme packs
@@ -1824,13 +1885,13 @@ dependencies, and a redesigned interface with four theme packs.
 
 ---
 
-## [0.1.1] — 2026-08-07
+## [0.1.1], 2026-08-07
 
-A second review pass over the areas 0.1.0 never examined — the installers,
+A second review pass over the areas 0.1.0 never examined: the installers,
 container tooling, seeding, email transports, documentation accuracy, and
 front-end error/permission/accessibility states.
 
-### Fixed — Docker deployment (data loss)
+### Fixed: Docker deployment (data loss)
 
 - **The Docker stack silently ran on SQLite, not PostgreSQL.** `settings.py`
   selects PostgreSQL only when `POSTGRES_DB` is set, but `docker-compose.yml`
@@ -1844,23 +1905,23 @@ front-end error/permission/accessibility states.
   services directly.
 - **Images baked in the developer's database and virtualenv.** With no
   `.dockerignore` in either build context, `COPY . .` copied `backend/db.sqlite3`
-  — real user rows and password hashes — plus a 123 MB host virtualenv and
+  (real user rows and password hashes) plus a 123 MB host virtualenv and
   `node_modules` into the images. Added `.dockerignore` to both.
 - **Uploaded evidence 404'd in production.** nginx proxied `/media/` to Django,
-  which only registers that route when `DEBUG` is on — so with the documented
+  which only registers that route when `DEBUG` is on, so with the documented
   `DJANGO_DEBUG=false`, every document, minute attachment and version download
   failed. nginx now serves `/media/` from the shared volume (keeping the
   attachment/nosniff headers).
 - **Document download links dropped the port.** nginx forwarded `Host $host`,
   which strips the port, so Django built absolute URLs like
-  `http://localhost/media/...` — broken whenever the app is served on any port
+  `http://localhost/media/...`, broken whenever the app is served on any port
   other than 80. Now forwards `$http_host`.
 - **Django admin rendered unstyled.** `collectstatic` ran on every boot but
   nothing served `STATIC_ROOT` under gunicorn. nginx now serves `/static/`.
 - **Uploads over 1 MB were rejected** by nginx's default `client_max_body_size`
   before reaching Django. Raised to 32 MB.
 
-### Fixed — security
+### Fixed: security
 
 - **The "refuses to boot on the placeholder secret key" guard never fired.**
   `settings.py` compared `SECRET_KEY` against `dev-insecure-change-me`, but
@@ -1874,7 +1935,7 @@ front-end error/permission/accessibility states.
   verification. Now uses `ssl.create_default_context()`, with STARTTLS/STLS on
   the non-implicit-TLS path, and applies `MAILBOX_TIMEOUT` to IMAP/POP3.
 
-### Fixed — correctness
+### Fixed: correctness
 
 - **Folder tree was empty for anyone without root access.** Folders whose
   parent is not visible are now treated as roots of that user's view.
@@ -1882,21 +1943,21 @@ front-end error/permission/accessibility states.
 - **IMAP Sent-folder filing always failed** for any folder name containing a
   space because the mailbox name was not quoted; failures are now logged.
 
-### Fixed — accessibility & interface
+### Fixed: accessibility & interface
 
 - Sidebar navigation, account link and Sign out became real buttons inside a
   labelled `<nav>`; sign-in fields got programmatic labels; document actions
   surface server errors; the dashboard survives a single failed panel; "Mark
   reviewed" is gated on capabilities; phones can sign out.
 
-### Fixed — seeded data integrity
+### Fixed: seeded data integrity
 
 - A framework update no longer duplicates the folder tree and orphans documents
   (folders carry `framework`/`category` foreign keys; controls are identified by
   `(framework, control_id)`); folder names are sanitised and length-capped;
   `generate_folder_tree` no longer overwrites `_control.md`.
 
-## [0.1.0] — 2026-07-25
+## [0.1.0], 2026-07-25
 
 First tagged release. Conformiti builds, boots and runs end-to-end on both
 supported paths (local SQLite and the Docker/PostgreSQL stack), with the whole

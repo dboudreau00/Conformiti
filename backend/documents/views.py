@@ -95,7 +95,7 @@ class FolderViewSet(viewsets.ModelViewSet):
         """Re-parenting is a structural change: it exposes the moved subtree
         to everyone with grants on the destination's ancestors. It therefore
         requires *manage* on the folder being moved and *edit* on the
-        destination — matching the folder-permission rules."""
+        destination, matching the folder-permission rules."""
         folder = serializer.instance
         user = self.request.user
         new_parent = serializer.validated_data.get("parent", folder.parent)
@@ -133,7 +133,7 @@ class FolderViewSet(viewsets.ModelViewSet):
         folders = _visible_folders(request.user)
         # A user granted access on a mid-tree folder cannot see its ancestors,
         # so bucketing strictly by parent_id would leave their folders orphaned
-        # under a parent key that is never rendered — an empty tree. Treat any
+        # under a parent key that is never rendered: an empty tree. Treat any
         # folder whose parent is not itself visible as a root of this user's view.
         visible_ids = {f.id for f in folders}
         by_parent = {}
@@ -187,10 +187,13 @@ class FolderPermissionViewSet(viewsets.ModelViewSet):
     filterset_fields = ["folder", "role", "user"]
 
     def get_queryset(self):
-        """Only expose grants on folders the caller can manage — the access-control
+        """Only expose grants on folders the caller can manage: the access-control
         map is itself sensitive, so it must not leak past folder permissions."""
         user = self.request.user
-        qs = FolderPermission.objects.select_related("folder", "role", "user")
+        # The model has no Meta.ordering, so without this the paged list has
+        # no ORDER BY and a grant may repeat or vanish between pages. The id is
+        # unique, so the order is stable.
+        qs = FolderPermission.objects.select_related("folder", "role", "user").order_by("id")
         if user.can_manage_folders or user.can_view_all or user.is_superuser:
             return qs
         manageable = [
@@ -296,8 +299,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         doc.compute_next_review()
         fields = ["next_review_date"]
         # A moved review clock is a new set of windows. The reminder scan
-        # records which windows it has already sent for the *old* date — and
-        # once the overdue sentinel is in that list, nothing fires again — so
+        # records which windows it has already sent for the *old* date, and
+        # once the overdue sentinel is in that list nothing fires again, so
         # an edit to the review date used to silence every later reminder
         # for good. Clearing the record lets the scan start over against the
         # new date, exactly as `mark_reviewed` and `new_version` already do.

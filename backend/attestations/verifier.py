@@ -29,8 +29,8 @@ That last one is deliberate. A bundle with its signatures stripped and its
 file list rewritten still has every checksum in agreement with itself, and a
 script that answered 0 to it would be telling an automated check that a
 forgery was fine. Pass --allow-unsigned to accept an unsigned bundle on
-purpose — for example one sealed by a release that predates bundle
-signatures — and compare the manifest digest with the one you were given.
+purpose (for example, one sealed by a release that predates bundle
+signatures) and compare the manifest digest with the one you were given.
 """
 import base64
 import hashlib

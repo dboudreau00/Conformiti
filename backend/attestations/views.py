@@ -4,7 +4,7 @@ The evidence-package API.
 Two rules run through everything here:
 
 * every read of a package, its rows or its bytes goes through
-  ``access.readable_packages`` — there is no second path;
+  ``access.readable_packages``; there is no second path;
 * every write is refused unless the package is still a draft, checked at the
   *view*, not in a serializer. ``AccessReviewItemSerializer`` guards its
   read-only rule in ``validate()``, which ``@action`` endpoints skip entirely;
@@ -97,12 +97,15 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
         # Counts annotated here, once, rather than two queries per package in
         # the serializer; the successors and PBC rows are prefetched for the
-        # same reason.
+        # same reason. The counts make it a GROUP BY query, which Django runs
+        # without Meta.ordering, so the order is explicit (Meta.ordering, then
+        # the id as a unique tie-break) or pages may repeat or skip a package.
         return (access.readable_packages(self.request.user)
                 .select_related("framework", "prior_package")
                 .prefetch_related("grants", "scope", "successors", "pbc_requests")
                 .annotate(control_count_annotated=Count("controls", distinct=True),
-                          evidence_count_annotated=Count("controls__evidence", distinct=True)))
+                          evidence_count_annotated=Count("controls__evidence", distinct=True))
+                .order_by("-created_at", "-id"))
 
     def _check_prior(self, prior, package=None):
         """A predecessor must be one the caller can read, no longer a draft,

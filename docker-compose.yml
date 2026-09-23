@@ -1,12 +1,14 @@
-# Conformiti — full stack: PostgreSQL · Redis · API · Celery worker/beat · nginx.
+# Conformiti full stack: PostgreSQL · Redis · API · Celery worker/beat · nginx.
 #
 #   docker compose up -d --build        # then open http://localhost:8080
 #
 # No .env is required: the defaults below are production-safe (DEBUG off, a
 # strong secret key generated on first boot and persisted in the `secrets`
 # volume, Redis-backed rate limits, API/admin reachable only through nginx).
-# Most keys in .env override these defaults — see .env.example — but DEBUG and
-# the signing key do not, on purpose (see the note on DJANGO_DEBUG below). The
+# Most keys in .env override these defaults (see .env.example), but DEBUG and
+# the signing key do not, on purpose (see the note on DJANGO_DEBUG below), and
+# DJANGO_ALLOWED_HOSTS adds your host names to the stack's own instead of
+# replacing them (see the note beside it). The
 # demo dataset is NOT seeded: set SEED_DEMO_DATA=true for the guided tour. Its
 # sign-in password is generated on first boot and printed once (docker compose
 # logs backend), and an installation carrying it says so on its sign-in page
@@ -15,7 +17,7 @@
 x-backend-env: &backend-env
   # DEBUG and the signing key are deliberately NOT read from DJANGO_DEBUG /
   # DJANGO_SECRET_KEY. Compose loads ./.env both for ${...} substitution *and*
-  # into the containers, and ./.env is what the LOCAL installer writes — with
+  # into the containers, and ./.env is what the LOCAL installer writes, with
   # DJANGO_DEBUG=true and a development signing key. Without this indirection a
   # developer who ran ./install.sh and then `docker compose up` would silently
   # get a DEBUG container issuing tokens signed with their dev key. Override the
@@ -44,7 +46,14 @@ x-backend-env: &backend-env
   CLAMAV_ENABLED: ${CONFORMITI_SCANNING:-false}
   CLAMAV_HOST: clamav
   CLAMAV_PORT: "3310"
-  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+  # Your public host name(s) from .env, then the stack's own names, always.
+  # The backend's healthcheck calls 127.0.0.1:8000, so a .env value that
+  # replaced the default (DJANGO_ALLOWED_HOSTS=grc.example.com, as a
+  # production install writes) left the backend unhealthy, and the worker,
+  # beat and nginx never started. When .env sets nothing, the value begins
+  # with an empty entry, which settings.py drops, so the list is the one it
+  # always was. A name listed twice is harmless.
+  DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-},localhost,127.0.0.1,backend"
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
   # Plain HTTP on the LAN by default. Set BEHIND_TLS=true once a TLS-terminating

@@ -196,7 +196,7 @@ account, Amazon SES (see `.env.example`).
 
 ```bash
 manage.py createsuperuser              # first real administrator (the password policy applies)
-manage.py remove_demo_data [--delete]  # retire the demo accounts and sample data
+manage.py remove_demo_data [--delete]  # retire the demo accounts and sample data (after createsuperuser)
 manage.py send_review_reminders [--dry-run]
 manage.py record_readiness             # today's readiness snapshot (cron)
 manage.py flushexpiredtokens           # prune the JWT blacklist (cron)

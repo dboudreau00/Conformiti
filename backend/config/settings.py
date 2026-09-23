@@ -8,6 +8,7 @@ documented in .env.example.
 """
 import os
 import secrets
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -48,9 +49,9 @@ _PLACEHOLDER_KEYS = {
 def _load_secret_key():
     """Resolve the secret key from, in order:
 
-    1. DJANGO_SECRET_KEY (a real value — placeholders are ignored here so a
+    1. DJANGO_SECRET_KEY (a real value: placeholders are ignored here so a
        copied .env.example never silently wins over the file below);
-    2. DJANGO_SECRET_KEY_FILE — read the key from that file, or generate a
+    2. DJANGO_SECRET_KEY_FILE: read the key from that file, or generate a
        strong one and write it there on first boot (0600). This is how the
        Docker stack gets a persistent, never-published key with zero config;
     3. the insecure development default (DEBUG only; refused otherwise).
@@ -114,6 +115,14 @@ def _load_field_encryption_keys():
     of DEBUG*: `dev-insecure-change-me` is published in this repository, and a
     ring derived from it would make "encrypted at rest" a false claim rather
     than a weak one.
+
+    Step 3 also ties the encrypted columns to SECRET_KEY, which is the usual
+    case on bare metal (a real DJANGO_SECRET_KEY and no key file). Changing
+    SECRET_KEY there makes every enrolled authenticator and stored credential
+    unreadable. Rotate it only after moving the ring off it: set
+    DJANGO_FIELD_ENCRYPTION_KEY to a new key followed by the old ring's entry,
+    which is the text `derived:` and the old SECRET_KEY, restart, and run
+    rotate_field_keys.
     """
     explicit = (os.getenv("DJANGO_FIELD_ENCRYPTION_KEY") or "").strip()
     if explicit:
@@ -259,6 +268,22 @@ if _cache_url:
     }
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    if not DEBUG:
+        # Said at boot because nothing else ever shows it: the login throttle
+        # still answers 429, only later than configured, so an operator who
+        # never set this believes 8/min is enforced while three workers allow
+        # 24. The compose stack sets CACHE_URL, and the test suite and the dev
+        # server run with DEBUG on, so neither prints this.
+        import warnings
+
+        warnings.warn(
+            "CACHE_URL is not set, so the rate limits (the login throttle included) are "
+            "counted in each process's own memory: under gunicorn with several workers each "
+            "one counts separately and the real limit is that many times the configured one. "
+            "Set CACHE_URL to a Redis database (for example redis://localhost:6379/2 beside "
+            "a local Redis) so every worker shares one count.",
+            RuntimeWarning, stacklevel=2,
+        )
 
 AUTH_USER_MODEL = "accounts.User"
 # A real setting, not only a validator option: /api/auth/config/ reports it so
@@ -340,6 +365,15 @@ ATTESTATION_GRANT_MAX_DAYS = env_int("ATTESTATION_GRANT_MAX_DAYS", 180)
 # so the storage path is neither guessable nor directly fetchable. Turn it off
 # only where no accelerator sits in front of Django (the dev server does this
 # automatically, because it defaults to the inverse of DEBUG).
+#
+# With DEBUG off it is ON unless set, and then something in front must act on
+# X-Accel-Redirect. The shipped nginx does, from an `internal` /protected-media/
+# location aliased to the media files (in the stack, the volume MEDIA_ROOT is
+# on; an nginx of your own needs that alias pointed at MEDIA_ROOT). Behind a
+# server that does not (IIS, waitress or gunicorn on their own, a Caddy with
+# no rule for the header), set MEDIA_INTERNAL=false so Django sends the bytes
+# itself: otherwise every download is an empty file with the right name, and
+# nothing logs an error.
 MEDIA_INTERNAL = env_bool("MEDIA_INTERNAL", not DEBUG)
 MEDIA_ACCEL_PREFIX = os.getenv("MEDIA_ACCEL_PREFIX", "/protected-media/")
 
@@ -402,17 +436,18 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
-    # How many reverse proxies sit in front of the API. DRF uses this to pick
-    # the right hop out of X-Forwarded-For; left unset it trusts the WHOLE
-    # header, so an attacker varying it gets a fresh throttle bucket per
-    # request and every limit below becomes decorative. 1 = the shipped nginx.
     # How many proxies sit in front of this process. DRF takes the client's
     # address from that many hops back along X-Forwarded-For, and every
-    # throttle keys on it. The default of 1 is the shipped nginx. Put a TLS
-    # terminator in front of that, which is what INSTALL.md's production
-    # section tells you to do, and there are two: leaving this at 1 makes the
-    # terminator's address the client for every visitor, so they share one
-    # login bucket and one caller can spend it for everybody (0.9.5h, M-4).
+    # throttle keys on it. DRF's own default (unset) trusts the WHOLE header,
+    # so a caller varying it would get a fresh bucket per request; hence a
+    # number is always set here. The default of 1 is one proxy: the shipped
+    # nginx on its own, or on bare metal a host nginx that terminates TLS
+    # itself. A separate TLS terminator in front of the shipped nginx, which
+    # is what INSTALL.md's production section does, makes two: leaving this at
+    # 1 there makes the terminator's address the client for every visitor, so
+    # they share one login bucket and one caller can spend it for everybody
+    # (0.9.5h, M-4). Setting 2 where there is only one hop is the opposite
+    # mistake: every limit is then keyed on an entry the client writes itself.
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
     # Throttling: limit anonymous traffic globally; the login endpoint adds a
     # tighter scoped limit (see config/urls.py) to blunt password brute-forcing.
@@ -619,19 +654,24 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
     SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
 
-if BEHIND_TLS and int(os.getenv("NUM_PROXIES", "1")) < 2 and not DEBUG:
-    # Not an error: a terminator that rewrites X-Forwarded-For to a single
-    # hop is a real configuration. It is a warning because the common case is
-    # that nobody thought about it, and the symptom -- everyone sharing one
-    # rate-limit bucket -- looks like an attack rather than a setting.
+if BEHIND_TLS and not DEBUG and os.getenv("NUM_PROXIES") is None:
+    # Not an error, and only when NUM_PROXIES is unset: the right number
+    # depends on the topology, which nothing here can see. One hop is right
+    # when this host's own nginx terminates TLS (the bare-metal recipe), two
+    # when a separate terminator sits in front of the shipped nginx. This used
+    # to fire on any value below 2 and advise 2, so a correct, deliberate 1
+    # warned on every start with advice that would have keyed the limits on a
+    # client-written address. It says so at boot because the symptom of the
+    # wrong number, everyone sharing one rate-limit bucket, looks like an
+    # attack rather than a setting.
     import warnings
 
     warnings.warn(
-        "BEHIND_TLS is on and NUM_PROXIES is 1. With a TLS terminator in front of "
-        "the shipped nginx there are two hops before the client, and every rate "
-        "limit is keyed on the address at that depth: at 1 they all share the "
-        "terminator's. Set NUM_PROXIES=2 unless your terminator replaces "
-        "X-Forwarded-For rather than appending to it.",
+        "BEHIND_TLS is on and NUM_PROXIES is not set, so every rate limit is keyed on the "
+        "address one proxy back along X-Forwarded-For. Set NUM_PROXIES to the number of "
+        "proxies between the client and Django: 1 when this host's own nginx terminates "
+        "TLS and passes requests straight to Django, 2 when a separate TLS terminator sits "
+        "in front of the shipped nginx.",
         RuntimeWarning, stacklevel=2,
     )
 
@@ -782,9 +822,15 @@ if WEBAUTHN_USER_VERIFICATION not in ("required", "preferred", "discouraged"):
     raise ImproperlyConfigured("WEBAUTHN_USER_VERIFICATION must be required, preferred or discouraged.")
 
 # --- Public address ---------------------------------------------------------------------
-# Where people outside the organisation reach this installation: the link in
-# a questionnaire emailed to a vendor is built from it. Defaults to the origin
-# the sending request arrived on, which behind the shipped nginx is right.
+# Where people outside the organisation reach this installation, as an origin
+# (https://grc.example.com). The link in a questionnaire emailed to a vendor is
+# built from it, and so are the links in the emailed digests and the Slack and
+# Teams posts. Required with DEBUG off: sending a questionnaire is refused
+# until it is set, because that link carries a bearer token and its host must
+# not come from the request (vendors/questionnaire.py, public_base). Only
+# under DEBUG does an unset value fall back to the sending request: its
+# Origin when CSRF_TRUSTED_ORIGINS or CORS_ALLOWED_ORIGINS names it, else the
+# host the request was sent to.
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").strip().rstrip("/")
 # Named in what vendors receive ("a security questionnaire from Acme Ltd").
 ORGANISATION_NAME = os.getenv("ORGANISATION_NAME", "").strip()
@@ -798,20 +844,32 @@ TEST_RUNNER = "config.testrunner.Runner"
 # first use (the compose stack keeps it in the `secrets` volume beside the
 # Django secret key), or SIGNING_KEY carries the key itself (PEM, or a base64
 # 32-byte seed). Unset both and packages seal unsigned, as before 0.7.0.
-# Back the key up with the secrets volume; rotate with
-# `manage.py rotate_signing_key`.
+# Back the key up with the secrets volume (scripts/backup.sh takes it); on
+# bare metal the file is backend/.package-signing-key unless SIGNING_KEY_FILE
+# says otherwise, and belongs in the backup beside the database dump. Rotate
+# with `manage.py rotate_signing_key`.
 SIGNING_ENABLED = env_bool("SIGNING_ENABLED", True)
 SIGNING_KEY = os.getenv("SIGNING_KEY", "")
 SIGNING_KEY_FILE = os.getenv("SIGNING_KEY_FILE", str(BASE_DIR / ".package-signing-key")).strip()
 
 # --- Logging ------------------------------------------------------------------
 # Plain, single-line console logging that docker/systemd/journald can ingest.
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if not DEBUG else "DEBUG").upper()
+# An empty LOG_LEVEL= line counts as unset rather than as an unknown level.
+_LOG_LEVEL_SET = (os.getenv("LOG_LEVEL") or "").strip().upper()
+LOG_LEVEL = _LOG_LEVEL_SET or ("DEBUG" if DEBUG else "INFO")
 # runserver's autoreloader logs one DEBUG line per watched file, well over a
 # thousand at every start and reload, which buries the startup line, the
 # request log and any real error. It never goes below INFO, so DEBUG (the
 # default under DJANGO_DEBUG, or LOG_LEVEL=DEBUG) still reaches everything else.
 _AUTORELOAD_LEVEL = "INFO" if LOG_LEVEL in ("DEBUG", "NOTSET") else LOG_LEVEL
+# django.template logs every variable a template fails to resolve, at DEBUG
+# and with a chained traceback. Django's own 404 page trips it on every
+# unknown URL (46 lines each in the dev server's terminal) and the email
+# templates trip it dozens of times in the test suite, so both read as if
+# something had crashed. Under the DEBUG default it is held at INFO like the
+# autoreloader; a LOG_LEVEL you set yourself applies to it as written, so
+# LOG_LEVEL=DEBUG brings those records back.
+_FRAMEWORK_LEVEL = LOG_LEVEL if _LOG_LEVEL_SET else _AUTORELOAD_LEVEL
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -826,6 +884,8 @@ LOGGING = {
         "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
         "django.utils.autoreload": {"handlers": ["console"], "level": _AUTORELOAD_LEVEL,
                                     "propagate": False},
+        "django.template": {"handlers": ["console"], "level": _FRAMEWORK_LEVEL,
+                            "propagate": False},
         # SQL echo is far too chatty even in DEBUG.
         "django.db.backends": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
@@ -834,3 +894,11 @@ LOGGING = {
         "signxml": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },
 }
+# The test suite answers hundreds of 4xx responses on purpose (refused
+# permissions, invalid input), and django.request logs each one as a WARNING:
+# the documented test gate scrolled over four hundred of them past the reader
+# before "OK", burying anything real. Under `manage.py test`, and unless you
+# set LOG_LEVEL yourself, it prints only its ERRORs (a 5xx) instead.
+if getattr(sys, "argv", [])[1:2] == ["test"] and not _LOG_LEVEL_SET:
+    LOGGING["loggers"]["django.request"] = {"handlers": ["console"], "level": "ERROR",
+                                           "propagate": False}

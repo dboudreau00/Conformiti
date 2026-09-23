@@ -43,7 +43,12 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """The counts the register shows come from annotations, so a page of
-        vendors is a handful of queries rather than three per row."""
+        vendors is a handful of queries rather than three per row.
+
+        Those counts make it a GROUP BY query, which Django runs without
+        Meta.ordering, so the order is explicit: Meta.ordering, then the id as
+        a unique tie-break, or pages may repeat or skip a vendor. A valid
+        ?ordering= still replaces it."""
         from django.db.models import Count, Prefetch, Q
 
         return (
@@ -57,6 +62,7 @@ class VendorViewSet(viewsets.ModelViewSet):
                 "assessments",
                 queryset=VendorAssessment.objects.select_related("document", "reviewed_by"),
             ))
+            .order_by("name", "id")
         )
 
     def get_serializer_context(self):

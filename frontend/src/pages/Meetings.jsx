@@ -100,7 +100,8 @@ export default function Meetings({ me }) {
   const [minuteBusy, setMinuteBusy] = useState(false);
   const [minuteMsg, setMinuteMsg] = useState(null);
   const [deletingMinute, setDeletingMinute] = useState(null);
-  const [deleteMsg, setDeleteMsg] = useState(null);
+  // The notice above the minutes list: a deletion, or a file that would not open.
+  const [listMsg, setListMsg] = useState(null);
 
   // Guards against a slow minutes response for a previously selected series overwriting the current one.
   const minutesReq = useRef(0);
@@ -112,7 +113,7 @@ export default function Meetings({ me }) {
     if (!keep) {
       setMinutes([]);
       setMinuteMsg(null);
-      setDeleteMsg(null);
+      setListMsg(null);
       setEditingSeries(false);
     }
     const req = ++minutesReq.current;
@@ -249,7 +250,7 @@ export default function Meetings({ me }) {
     if (!active || !mf.date || minuteBusy) return;
     setMinuteBusy(true);
     setMinuteMsg(null);
-    setDeleteMsg(null);
+    setListMsg(null);
     const fd = new FormData();
     fd.append("series", active.id);
     fd.append("date", mf.date);
@@ -286,13 +287,25 @@ export default function Meetings({ me }) {
     }
     // A "Minutes recorded" notice may be describing the very record just deleted.
     setMinuteMsg(null);
-    setDeleteMsg({
+    setListMsg({
       kind: "ok",
       text: alreadyGone
         ? `Minutes for ${fmtDate(m.date)} had already been deleted.`
         : `Minutes for ${fmtDate(m.date)} deleted.`,
     });
     await loadSeries(m.series, true);
+  }
+
+  // Minutes are stored files, so this can meet a server that hands them to
+  // an nginx that is not there. The notice says so (naming
+  // MEDIA_INTERNAL=false) instead of the button doing nothing.
+  async function openMinutesFile(m) {
+    setListMsg(null);
+    try {
+      await downloadFile(m.download_url, `${m.title || "minutes"}`);
+    } catch (ex) {
+      setListMsg({ kind: "err", text: errorText(ex, "Couldn't open the minutes.") });
+    }
   }
 
   const activeStatus = active ? CADENCE[active.cadence_status] || CADENCE.behind : null;
@@ -673,7 +686,7 @@ export default function Meetings({ me }) {
                       </div>
                     ) : null}
 
-                    <Notice msg={deleteMsg} className="mx-5 mb-4" />
+                    <Notice msg={listMsg} className="mx-5 mb-4" />
 
                     {minutesLoading && minutes.length === 0 ? (
                       <Loading>Loading minutes…</Loading>
@@ -722,7 +735,7 @@ export default function Meetings({ me }) {
                                 <button
                                   type="button"
                                   className="link"
-                                  onClick={() => downloadFile(m.download_url, `${m.title || "minutes"}`)}
+                                  onClick={() => openMinutesFile(m)}
                                 >
                                   <PaperclipIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                                   Open file

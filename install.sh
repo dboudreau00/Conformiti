@@ -120,6 +120,36 @@ port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 # stack_holds SERVICE CONTAINER-PORT HOST-PORT is true when this project's own
 # running SERVICE already publishes HOST-PORT, which is what a re-run finds.
 stack_holds() { grep -q ":$3\$" <<< "$(docker compose port "$1" "$2" 2>/dev/null | tr -d '\r')"; }
+# own_admin_state prints "yes" when the running stack's Default workspace has
+# an administrator that is not a demo account, "no" when it has none, and
+# nothing when the stack cannot say (it is not up, or its image is older than
+# the test). It is the question remove_demo_data asks before it will run.
+own_admin_state() {
+  docker compose exec -T backend python manage.py shell -v 0 -c "from accounts import tenancy; from accounts.management.commands.bootstrap_demo import own_administrator_present as f; print('own_admin=' + ('yes' if f(tenancy.from_option({})) else 'no'))" 2>/dev/null \
+    | tr -d '\r' | sed -n 's/^own_admin=//p' | tail -n 1
+}
+# retire_demo_advice PRINTER says, one PRINTER call per line, what to run
+# before real use. remove_demo_data refuses until an administrator of the
+# operator's own exists, so createsuperuser comes first unless the stack says
+# there already is one; when it cannot say, the advice covers both cases.
+retire_demo_advice() {
+  local p="$1" state
+  state=$(own_admin_state || true)
+  if [ "$state" = "yes" ]; then
+    "$p" "${YEL}Before real use:${RESET} docker compose exec backend python manage.py remove_demo_data"
+    return 0
+  fi
+  if [ "$state" = "no" ]; then
+    "$p" "${YEL}Before real use,${RESET} create an administrator of your own (remove_demo_data refuses"
+    "$p" "until one exists), then retire the demo accounts:"
+  else
+    "$p" "${YEL}Before real use,${RESET} create an administrator of your own if you have none yet"
+    "$p" "(remove_demo_data refuses until one exists), then retire the demo accounts:"
+  fi
+  "$p" "  docker compose exec backend python manage.py createsuperuser"
+  "$p" "  docker compose exec backend python manage.py remove_demo_data"
+}
+banner_line() { printf "%s\n" "  $*"; }
 
 wait_for_health() {  # $1 = url, $2 = seconds
   local url="$1" limit="${2:-180}" i=0
@@ -151,8 +181,6 @@ if [ "$MODE" = "docker" ]; then
   command -v curl >/dev/null 2>&1 || die "curl is required to wait for the stack to become healthy."
 
   if [ ! -f .env ]; then
-    PY=""; for cand in python3 python; do command -v "$cand" >/dev/null 2>&1 && { PY="$cand"; break; }; done
-    if [ -n "$PY" ]; then SECRET=$(gen_secret "$PY"); else SECRET=$(head -c 48 /dev/urandom | base64 | tr -d '=+/\n'); fi
     HOSTS="localhost,127.0.0.1,backend,$(hostname 2>/dev/null || echo conformiti)"
     cat > .env <<ENV
 # Written by install.sh --docker on $(date -u +%Y-%m-%dT%H:%MZ). Safe production-style
@@ -160,10 +188,10 @@ if [ "$MODE" = "docker" ]; then
 #
 # The Docker stack reads CONFORMITI_DEBUG / CONFORMITI_SECRET_KEY, not
 # DJANGO_DEBUG / DJANGO_SECRET_KEY: those two belong to the local dev path and
-# must never leak into a container. Leave CONFORMITI_SECRET_KEY unset to have
-# the container generate and persist its own key in the 'secrets' volume.
+# must never leak into a container. CONFORMITI_SECRET_KEY is left unset on
+# purpose: the container generates its own key and keeps it in the 'secrets'
+# volume, which scripts/backup.sh saves with the database.
 CONFORMITI_DEBUG=false
-CONFORMITI_SECRET_KEY=${SECRET}
 DJANGO_ALLOWED_HOSTS=${HOSTS}
 CSRF_TRUSTED_ORIGINS=http://localhost:${PORT},http://127.0.0.1:${PORT}
 CORS_ALLOWED_ORIGINS=http://localhost:${PORT}
@@ -173,9 +201,11 @@ EMAIL_PROVIDER=console
 SEED_DEMO_DATA=${DEMO}
 CONFORMITI_PORT=${PORT}
 ENV
-    # It holds a signing key and two service passwords: not world-readable.
+    # No secret in it yet, but mail and database passwords usually end up in
+    # this file later: not world-readable.
     chmod 600 .env 2>/dev/null || true
-    ok ".env written (DEBUG off, unique secret key, demo data ${DEMO}, mode 600)"
+    ok ".env written (DEBUG off, demo data ${DEMO}, mode 600)"
+    ok "no secret key in .env: the container generates one and keeps it in the 'secrets' volume"
   else
     ok ".env already present: using it"
     if grep -Eq '^CONFORMITI_DEBUG=(1|true|yes|on)' .env; then
@@ -199,8 +229,8 @@ ENV
           ok "--demo: set SEED_DEMO_DATA=true in .env (it was ${ENV_DEMO:-unset})"
         else
           ok "--no-demo: set SEED_DEMO_DATA=false in .env (it was ${ENV_DEMO})"
-          warn "demo accounts that already exist stay until you run:"
-          warn "  docker compose exec backend python manage.py remove_demo_data"
+          warn "demo accounts that already exist stay until remove_demo_data retires them."
+          retire_demo_advice warn
         fi
       fi
     fi
@@ -264,18 +294,30 @@ BANNER
     DEMO_PW=$(docker compose logs --no-color --no-log-prefix backend 2>/dev/null | tr -d '\r' | sed -n 's/.*Sign in as *admin *\/ *//p' | tail -n 1 || true)
     printf "%s\n" "  ${BOLD}Sign in${RESET}  admin   ${DIM}(also mia, owen, aria, val; same password)${RESET}"
     if [ -n "$DEMO_PW" ]; then
-      printf "%s\n" "  ${BOLD}Password${RESET} ${DEMO_PW}   ${DIM}(also in: docker compose logs backend | grep \"Sign in as\")${RESET}"
+      printf "%s\n" "  ${BOLD}Password${RESET} ${DEMO_PW}   ${DIM}(note it now)${RESET}"
+      printf "%s\n" "  ${DIM}The backend log keeps it only until that container is recreated, which --port,${RESET}"
+      printf "%s\n" "  ${DIM}an update or any .env change does.${RESET}"
     else
       printf "%s\n" "  ${DIM}Password: not in the current backend log. It is printed once, by the container that${RESET}"
       printf "%s\n" "  ${DIM}created the demo accounts. Set a new one for admin with:${RESET}"
       printf "%s\n" "  ${DIM}  docker compose exec backend python manage.py changepassword admin${RESET}"
     fi
-    printf "%s\n" "  ${YEL}Before real use:${RESET} docker compose exec backend python manage.py remove_demo_data"
+    retire_demo_advice banner_line
   else
     if [ "$DEMO" = "true" ]; then
       warn "--demo was given but the stack reports no demo accounts. Check: docker compose logs backend"
     fi
-    printf "%s\n" "  Create your first account: docker compose exec backend python manage.py createsuperuser"
+    # first_admin_needed is true only while no active account exists, so a
+    # re-run or an update on a used installation is not told to make one.
+    # An image older than the field says neither, hence the third wording.
+    case "$HEALTH" in
+      *'"first_admin_needed":true'*|*'"first_admin_needed": true'*)
+        printf "%s\n" "  Create your first account: docker compose exec backend python manage.py createsuperuser" ;;
+      *'"first_admin_needed":false'*|*'"first_admin_needed": false'*)
+        printf "%s\n" "  ${BOLD}Sign in${RESET}  with an existing account (this installation already has one)" ;;
+      *)
+        printf "%s\n" "  No account yet? docker compose exec backend python manage.py createsuperuser" ;;
+    esac
   fi
   printf "%s\n" "  ${DIM}Logs: docker compose logs -f    Stop: docker compose down    Update: ./install.sh --docker${RESET}"
   open_url "http://localhost:${PORT}"
@@ -289,7 +331,12 @@ for cand in python3.13 python3.12 python3.11 python3 python; do
     PY="$cand"; break
   fi
 done
-[ -n "$PY" ] || die "Python 3.11+ is required but was not found on PATH."
+[ -n "$PY" ] || die "Python 3.11 or newer is required but was not found on PATH (tested: 3.11 to 3.14)."
+# Newer than the tested range is allowed, not refused: it usually works, but
+# a dependency without wheels for it yet is the usual way it does not.
+if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info < (3, 15) else 1)' 2>/dev/null; then
+  warn "$("$PY" --version 2>&1) is newer than the tested range (3.11 to 3.14): carrying on, but it is untested."
+fi
 command -v node >/dev/null 2>&1 || die "Node.js 20.19+ or 22.12+ (with npm) is required but was not found on PATH."
 command -v npm >/dev/null 2>&1 || die "npm is required but was not found on PATH."
 # Mirrors frontend/package.json engines, "^20.19.0 || >=22.12.0" (Vite 8):
@@ -334,12 +381,25 @@ if [ "$MODE" != "test" ] && [ "$DEV_PORT" != "5173" ]; then
 fi
 
 # --- Python virtualenv + backend deps --------------------------------------
-if [ ! -x .venv/bin/python ]; then
+# An existing .venv is reused only when its pip runs. Without Debian's venv
+# package, `python3 -m venv` stops at ensurepip and leaves a .venv/bin/python
+# with no pip behind, and every later run would die at the pip step.
+VPY=".venv/bin/python"
+PY_VER=$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+if [ -x "$VPY" ] && ! "$VPY" -m pip --version >/dev/null 2>&1; then
+  warn "the existing .venv has no working pip (an earlier creation probably stopped part way): recreating it"
+  rm -rf .venv
+fi
+if [ ! -x "$VPY" ]; then
+  "$PY" -c 'import ensurepip, venv' >/dev/null 2>&1 \
+    || die "Python ${PY_VER} has no ensurepip, so it cannot give a new .venv its pip. On Debian or Ubuntu run: sudo apt install python${PY_VER}-venv   and then run this again."
   say "Creating Python virtual environment (.venv)…"
   rm -rf .venv
-  "$PY" -m venv .venv
+  if ! "$PY" -m venv .venv || ! "$VPY" -m pip --version >/dev/null 2>&1; then
+    rm -rf .venv
+    die "creating .venv with ${PY} failed (see above). On Debian or Ubuntu, sudo apt install python${PY_VER}-venv is the usual fix; then run this again."
+  fi
 fi
-VPY=".venv/bin/python"
 say "Installing backend dependencies…"
 "$VPY" -m pip install --quiet --upgrade pip
 "$VPY" -m pip install --quiet -r backend/requirements.txt
@@ -455,7 +515,23 @@ fi
 
 say "Starting servers: API on :${DEV_API_PORT} (CONFORMITI_DEV_API_PORT), web app on :${DEV_PORT} (CONFORMITI_DEV_PORT)."
 say "Open ${BOLD}http://localhost:${DEV_PORT}${RESET} in your browser. Press Ctrl-C to stop."
-trap 'echo; say "Shutting down…"; kill 0 2>/dev/null || true' EXIT INT TERM
+# `kill 0` signals this script's whole process group, the script included, so
+# the handler disarms itself first. Otherwise the TERM it sends would run it
+# again, and again, until bash crashed. Ctrl-C and TERM are how a user stops
+# the servers, so they end the script with 0; a plain exit keeps its status.
+stop_servers() {  # $1 = INT, TERM or EXIT
+  local rc=$?
+  trap - EXIT
+  trap '' INT TERM
+  echo; say "Shutting down…"
+  kill 0 2>/dev/null || true
+  wait 2>/dev/null || true
+  [ "$1" = "EXIT" ] || rc=0
+  exit "$rc"
+}
+trap 'stop_servers EXIT' EXIT
+trap 'stop_servers INT' INT
+trap 'stop_servers TERM' TERM
 ( cd backend && exec ../.venv/bin/python manage.py runserver "127.0.0.1:${DEV_API_PORT}" ) &
 ( cd frontend && exec npm run dev ) &
 ( sleep 6 && open_url "http://localhost:${DEV_PORT}" ) &

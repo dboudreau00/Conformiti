@@ -7,10 +7,12 @@ exercise the seed commands call them explicitly.
 """
 import shutil
 import tempfile
+import warnings
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.base import ContentFile
+from django.core.paginator import UnorderedObjectListWarning
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -79,6 +81,13 @@ class APITestBase(TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # A paged list with no ORDER BY is LIMIT/OFFSET over rows in whatever
+        # order the database hands back, so a register read page by page can
+        # repeat one row and skip another. Django only issues a warning, which
+        # scrolls past in the test output; here it fails the test instead. Set
+        # per class because unittest resets the warning filters as the run
+        # starts, and from the first class on it holds for the rest of the run.
+        warnings.filterwarnings("error", category=UnorderedObjectListWarning)
         cls._media = tempfile.mkdtemp(prefix="conformiti-test-media-")
         # Header transport for the suite: most tests read the tokens out of
         # the login response. Cookie mode (the shipped default since 0.6.1)

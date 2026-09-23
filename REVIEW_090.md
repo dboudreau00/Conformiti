@@ -1,9 +1,9 @@
-# Conformiti 0.9.0 — adversarial review
+# Conformiti 0.9.0: adversarial review
 
 **Date:** 2026-09-07 · **Scope:** the whole repository at v0.9.0 (`0ded621`).
 
 **Method.** Sixteen independent reviewers attacked the product across separate
-dimensions — cross-workspace reads and writes, the tenancy mechanism itself,
+dimensions: cross-workspace reads and writes, the tenancy mechanism itself,
 authentication, single sign-on, authorisation, the unauthenticated surface,
 file ingest and file serving, cryptography, injection and SSRF, the browser,
 concurrency, background jobs and migrations, denial of service, and
@@ -42,26 +42,26 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 | 1 | PATCH /api/package-evidence/{id}/ re-points `document` with no `assert_pinnable`, turning a draft package into a read … | `backend/attestations/views.py:618-623` | fixed 0.9.1 |
 | 2 | PATCH /api/package-samples/{id}/ with only `package_control` runs no authorization check at all, letting an issued aud… | `backend/attestations/views.py:557-580` | fixed 0.9.1 |
 | 3 | Audit rows are stamped from `user.workspace_id`, so a superuser working under X-Workspace files another tenant's docum… | `backend/audit/models.py:8-16` | fixed 0.9.2 |
-| 4 | A superuser's writes inside a switched workspace are audited into their own workspace, so the tenant's audit trail — a… | `backend/audit/models.py:12` | fixed 0.9.2 |
+| 4 | A superuser's writes inside a switched workspace are audited into their own workspace, so the tenant's audit trail, a… | `backend/audit/models.py:12` | fixed 0.9.2 |
 | 5 | One installation-wide Ed25519 signing key plus a manifest with no tenant identity: any workspace can seal a bundle tha… | `backend/attestations/models.py:383` | fixed 0.9.3 |
 | 6 | Every per-IP throttle (login, MFA, refresh, questionnaire, anon) is keyed on an attacker-controlled X-Forwarded-For he… | `backend/config/settings.py:369-400` | fixed 0.9.1 |
-| 7 | The Django admin login bypasses MFA, the login throttle and the 0.9.0 archived-workspace refusal — and the resulting s… | `backend/config/urls.py:85` | fixed 0.9.3 |
+| 7 | The Django admin login bypasses MFA, the login throttle and the 0.9.0 archived-workspace refusal, and the resulting s… | `backend/config/urls.py:85` | fixed 0.9.3 |
 | 8 | SSO account resolution runs with no active workspace: SSO_WORKSPACE gates only provisioning, so one IdP signs people i… | `backend/accounts/oidc.py:433` | fixed 0.9.2 |
 | 9 | A revoked, expired or withdrawn package grant does not stop the external auditor reading evidence bytes: the PBC assig… | `backend/attestations/access.py:118-121` | fixed 0.9.2 |
 | 10 | The issued auditor can write the organisation-only `management_response` and silently mutate sealed sampling metadata,… | `backend/attestations/views.py:409-441` | fixed 0.9.1 |
-| 11 | `Folder.owner` is writable by anyone with EDIT, and owner means MANAGE — a self-service edit→manage escalation that un… | `backend/documents/views.py:60-80` | fixed 0.9.1 |
+| 11 | `Folder.owner` is writable by anyone with EDIT, and owner means MANAGE: a self-service edit→manage escalation that un… | `backend/documents/views.py:60-80` | fixed 0.9.1 |
 | 12 | `PATCH /api/documents/{id}/` replaces the stored evidence bytes with no folder-edit check, no AV scan, no archived ver… | `backend/documents/views.py:199-208` | fixed 0.9.1 |
-| 13 | The shipped "Auditor" role — described as "sees only granted folders" — is a full-program reader of the whole workspac… | `backend/accounts/permissions.py:9-14` | fixed 0.9.4 |
+| 13 | The shipped "Auditor" role (described as "sees only granted folders") is a full-program reader of the whole workspac… | `backend/accounts/permissions.py:9-14` | fixed 0.9.4 |
 | 14 | Every rate limit in the product is keyed on an attacker-supplied X-Forwarded-For header, and there is no account locko… | `backend/config/urls.py:29 and :62` | fixed 0.9.1 |
 | 15 | PATCH /api/documents/{id}/ swaps the stored evidence file with no malware scan, no version snapshot, and leaves the st… | `backend/documents/views.py:199-208` | fixed 0.9.1 |
 | 16 | Uploading a new version silently releases a quarantined document, and the quarantined bytes stay downloadable through … | `backend/documents/views.py:248-262 and 290-299` | fixed 0.9.1 |
-| 17 | The audit-package ZIP export streams quarantined documents' bytes to the external auditor — the one byte route with no… | `backend/attestations/bundle.py:432-448` | fixed 0.9.1 |
+| 17 | The audit-package ZIP export streams quarantined documents' bytes to the external auditor, the one byte route with no… | `backend/attestations/bundle.py:432-448` | fixed 0.9.1 |
 | 18 | PATCH /api/package-evidence/{id}/ re-points a pinned row at any document in the workspace, bypassing folder permission… | `backend/attestations/views.py:618-623` | fixed 0.9.1 |
 | 19 | A sealed, signed package can gain evidence rows after sealing, and /verify/ still reports ok:true | `backend/attestations/views.py:618-623` | fixed 0.9.2 |
 | 20 | An external auditor keeps reading PBC attachment bytes forever after the grant is revoked or expires, by self-assignin… | `backend/attestations/access.py:112-121` | fixed 0.9.2 |
 | 21 | Meeting-minute files and form templates are downloadable by every authenticated account, including an external auditor… | `backend/governance/views.py:196-201` | fixed 0.9.2 |
-| 22 | The Ed25519 signature covers only manifest.json — the auditor's conclusions in controls.csv/samples.csv are unsigned, … | `backend/attestations/bundle.py:490-505` | fixed 0.9.3 |
-| 23 | One installation-wide signing key signs every workspace's packages, and the signed manifest names no organisation — on… | `backend/attestations/signing.py:88-116` | fixed 0.9.3 |
+| 22 | The Ed25519 signature covers only manifest.json: the auditor's conclusions in controls.csv/samples.csv are unsigned, … | `backend/attestations/bundle.py:490-505` | fixed 0.9.3 |
+| 23 | One installation-wide signing key signs every workspace's packages, and the signed manifest names no organisation: on… | `backend/attestations/signing.py:88-116` | fixed 0.9.3 |
 | 24 | The sidebar's workspace label shows the superuser's home workspace, not the workspace they are actually reading and wr… | `backend/accounts/serializers.py:48-50` | fixed 0.9.2 |
 | 25 | A write refused with 403 has already been committed: the issued auditor can forge the organisation's management respon… | `backend/attestations/views.py:418-436` | fixed 0.9.1 |
 
@@ -72,9 +72,9 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 | 1 | Cross-workspace username oracle: DRF's uniqueness check on User.username is workspace-pinned but the DB constraint is … | `backend/accounts/models.py:111` | fixed 0.9.2 |
 | 2 | Any tenant administrator reads every other organisation's webhook delivery log via GET /api/notifications/channels/ | `backend/notifications/views.py:28-32` | fixed 0.9.2 |
 | 3 | Changing a password (or resetting a user's MFA) revokes nothing: a stolen refresh token keeps working and renews itsel… | `backend/accounts/serializers.py:128-132` | fixed 0.9.2 |
-| 4 | A TOTP code is accepted repeatedly for up to 90 seconds — no used-code or counter store, so an intercepted code is rep… | `backend/accounts/models.py:303-315` | fixed 0.9.4 |
+| 4 | A TOTP code is accepted repeatedly for up to 90 seconds: no used-code or counter store, so an intercepted code is rep… | `backend/accounts/models.py:303-315` | fixed 0.9.4 |
 | 5 | SSO auto-provisioning probes username uniqueness workspace-scoped against a globally-unique column, so provisioning di… | `backend/accounts/oidc.py:463` | fixed 0.9.2 |
-| 6 | XLSX importer's zip-bomb guard trusts the archive's declared sizes, then decompresses unbounded — 300 KB of upload all… | `backend/governance/risk_import.py:142-168` | fixed 0.9.2 |
+| 6 | XLSX importer's zip-bomb guard trusts the archive's declared sizes, then decompresses unbounded: 300 KB of upload all… | `backend/governance/risk_import.py:142-168` | fixed 0.9.2 |
 | 7 | In-app signature verification trusts the public key stored in the same database row, so a database-write attacker can … | `backend/attestations/signing.py:201-207` | fixed 0.9.4 |
 | 8 | Unbounded XLSX column index in the stdlib importer turns a ~300-byte upload into a multi-gigabyte allocation (worker O… | `backend/governance/risk_import.py:115-121` | fixed 0.9.2 |
 | 9 | Vendor-supplied column headings are written into the responsibility-matrix CSV export without csv_safe, reopening form… | `backend/vendors/views.py:239` | fixed 0.9.2 |
@@ -88,7 +88,7 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 |---|---|---|---|
 | 1 | Every workspace's document, vendor and auditor-request detail is emailed to one installation-wide COMPLIANCE_TEAM_EMAI… | `backend/notifications/tasks.py:25, :100, :140` | fixed 0.9.4 |
 | 2 | TenantQuerySet._pin() permanently skips the workspace filter on any queryset that was sliced while no workspace was ac… | `backend/accounts/tenancy.py:263-270` | fixed 0.9.4 |
-| 3 | Enrolling a passkey needs no password re-authentication, while removing one does — a hijacked session can plant an att… | `backend/accounts/webauthn_views.py:39-61 and :86-97` | fixed 0.9.4 |
+| 3 | Enrolling a passkey needs no password re-authentication, while removing one does: a hijacked session can plant an att… | `backend/accounts/webauthn_views.py:39-61 and :86-97` | fixed 0.9.4 |
 | 4 | Default SSO_MFA_ASSERTIONS accepts amr values that are not second factors, letting a single-factor IdP login satisfy S… | `backend/config/settings.py:649` | fixed 0.9.4 |
 | 5 | `GET /api/folders/{id}/permissions/` discloses a folder's full access map to anyone with VIEW, contradicting the manag… | `backend/documents/views.py:120-124` | fixed 0.9.2 |
 | 6 | The unauthenticated health endpoint discloses the filesystem path of the Ed25519 package-signing private key when it i… | `backend/config/health.py:54-59 and :81` | fixed 0.9.2 |
@@ -103,7 +103,7 @@ fix does is in [CHANGELOG.md](CHANGELOG.md).
 One verifier of three disagreed. Worth a second look rather than a fix on this evidence.
 
 - **[low]** SAML Destination/Recipient are validated against an ACS URL derived from the request's Host header, not from configura…
-- **[medium]** verify.py silently downgrades a stripped signature to a passing "unsigned" verdict — removing manifest.sig and signing…
+- **[medium]** verify.py silently downgrades a stripped signature to a passing "unsigned" verdict: removing manifest.sig and signing…
 - **[high]** 0.9.0 scoped every query per workspace but not a single notification recipient: all workspaces' reminders, alerts and …
 - **[medium]** Editing a document's review clock through PATCH never clears `reminders_sent`, so a document that has gone overdue onc…
 - **[medium]** Upgrading re-seeds the shipped control library into the `default` workspace only; every other tenant is silently froze…
@@ -123,7 +123,7 @@ a presence test as a second factor, and no page fetches anything from a third
 party.
 
 Two things an external auditor may still read are deliberate, not oversights:
-the **audit log** and **access reviews**. Both are audit artefacts — produced
+the **audit log** and **access reviews**. Both are audit artefacts: produced
 to be inspected, and the reason the role exists. They are workspace-wide
 rather than package-scoped, which is worth knowing when granting the role; a
 client who wants an auditor confined to one engagement's trail should issue

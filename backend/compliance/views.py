@@ -22,6 +22,10 @@ from .serializers import (
 )
 
 
+# Control.Meta.ordering plus the id, so every page of the register is stable.
+CONTROL_ORDER = ("category", "control_id", "id")
+
+
 def _controls_with_evidence_counts(user, qs=None):
     """Annotate controls with an evidence count restricted to the folders this
     user may see, so the mapping never leaks documents past folder RBAC."""
@@ -38,7 +42,12 @@ def _controls_with_evidence_counts(user, qs=None):
     )
     # Readiness needs four more signals; adding them here keeps the whole
     # register to one query instead of three per row.
-    return scoring.annotate(annotated, user)
+    #
+    # The counts make this a GROUP BY query, and Django drops Meta.ordering
+    # from those, so the order is spelled out: Meta.ordering, then the id as a
+    # unique tie-break. Without it the paged list has no ORDER BY and
+    # PostgreSQL may repeat or skip a control between pages.
+    return scoring.annotate(annotated, user).order_by(*CONTROL_ORDER)
 
 
 class FrameworkViewSet(viewsets.ModelViewSet):
@@ -65,7 +74,7 @@ class ControlViewSet(viewsets.ModelViewSet):
     Controls are seeded reference data: they're read and PATCHed (status/owner),
     never created or deleted through the API. Exposing create/PUT/DELETE would
     either 500 (control_id/title/category are read-only, so a create has no
-    category) or let a manager destroy seeded catalog rows — so restrict the
+    category) or let a manager destroy seeded catalog rows, so restrict the
     verbs to list/retrieve + PATCH."""
     queryset = Control.objects.select_related("category", "category__framework", "owner").all()
     serializer_class = ControlSerializer
@@ -131,7 +140,7 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
     The control <-> evidence mapping. Links are immutable audit artifacts:
     they are created and deleted, never edited (so no PUT/PATCH).
 
-    Visibility mirrors folder RBAC — you only see links whose document lives in
+    Visibility mirrors folder RBAC: you only see links whose document lives in
     a folder you can view. Creating or removing a link requires edit access to
     that document's folder, or the manage-frameworks capability.
     """
@@ -177,7 +186,7 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
     # -- actions --------------------------------------------------------------
     @action(detail=False, methods=["post"])
     def bulk(self, request):
-        """Attach several documents to one control in a single call — the
+        """Attach several documents to one control in a single call: the
         audit-prep flow ('these five docs are the evidence for CC6.1')."""
         try:
             control = Control.objects.get(pk=request.data.get("control"))

@@ -711,6 +711,22 @@ class FolderOrderTests(APITestBase):
                          ["A.5.2 - Roles", "A.5.10 - Acceptable use", "A.5.1 - Policies"])
 
 
+class UnorderedPageGuardTests(APITestBase):
+    """APITestBase turns Django's UnorderedObjectListWarning into an error, so
+    a paginated list with no stable order fails its test instead of printing
+    a warning. FolderPermission has no Meta.ordering, so its bare queryset is
+    the unordered case."""
+
+    def test_paging_an_unordered_queryset_fails(self):
+        from django.core.paginator import Paginator, UnorderedObjectListWarning
+
+        with self.assertRaises(UnorderedObjectListWarning):
+            Paginator(FolderPermission.objects.all(), 2)
+        # Ordered, as the viewsets now order it, it pages as before.
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        self.assertEqual(Paginator(FolderPermission.objects.order_by("pk"), 2).count, 1)
+
+
 # --------------------------------------------------------------------------- #
 # Malware scanning
 # --------------------------------------------------------------------------- #
@@ -862,18 +878,29 @@ class VirusScanTests(APITestBase):
         self.assertEqual(self.clamd.received, b"", "the scanner must not have been called")
 
     # ------------------------------------------------------------- fail closed
+    def refused_upload(self):
+        """Upload while the scanner cannot answer. The scan failure and the
+        503 it becomes are both logged as ERRORs on purpose; captured here and
+        checked, so the test output does not read as a crash."""
+        with self.assertLogs("documents.scanning", level="ERROR") as scan_log, \
+                self.assertLogs("django.request", level="ERROR") as request_log:
+            r = self.upload(b"harmless")
+        self.assertIn("Evidence scan failed", scan_log.output[0])
+        self.assertIn("Service Unavailable: /api/documents/", request_log.output[0])
+        return r
+
     def test_an_unreachable_scanner_fails_closed(self):
         before = Document.objects.count()
         with override_settings(CLAMAV_ENABLED=True, CLAMAV_HOST="127.0.0.1",
                                CLAMAV_PORT=1, CLAMAV_CONNECT_TIMEOUT=1):
-            r = self.upload(b"harmless")
+            r = self.refused_upload()
         self.assertEqual(r.status_code, 503)
         self.assertEqual(Document.objects.count(), before)
 
     def test_a_hanging_scanner_fails_closed(self):
         self.clamd.hang = True
         with self.scanning(CLAMAV_TIMEOUT=1):
-            r = self.upload(b"harmless")
+            r = self.refused_upload()
         self.assertEqual(r.status_code, 503)
 
     # --------------------------------------------------------- limits exceeded

@@ -874,6 +874,20 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
     const rows = Object.entries(edits).map(([control, e]) => ({ control: Number(control), ...e }));
     if (await put(rows, "manual", `${rows.length} control(s) saved.`)) setEdits({});
   };
+  // `theirLayout` is the vendor's own column layout, remembered from their
+  // last import. A refused or failed export says so in the page notice, as
+  // the other exports do, rather than the button doing nothing.
+  async function exportMatrix(theirLayout = false) {
+    setMsg(null);
+    try {
+      await downloadFile(
+        `/vendors/${vendor.id}/matrix/export/${theirLayout ? "?layout=vendor" : ""}`,
+        `responsibility-matrix-${slug(vendor.name)}${theirLayout ? "-their-layout" : ""}.csv`,
+      );
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't export the responsibility matrix.") });
+    }
+  }
 
   if (loadErr) return <Panel><LoadError what="The responsibility matrix" onRetry={load} /></Panel>;
   if (!data) return <Panel><Loading /></Panel>;
@@ -912,13 +926,13 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
                 </Button>
               </>
             ) : null}
-            <Button size="sm" variant="ghost" onClick={() => downloadFile(`/vendors/${vendor.id}/matrix/export/`, `responsibility-matrix-${slug(vendor.name)}.csv`)}
+            <Button size="sm" variant="ghost" onClick={() => exportMatrix()}
                     icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
               Export
             </Button>
             {vendor.matrix_layout ? (
               <Button size="sm" variant="ghost" title={`Columns from ${vendor.matrix_layout.file || "their last file"}`}
-                      onClick={() => downloadFile(`/vendors/${vendor.id}/matrix/export/?layout=vendor`, `responsibility-matrix-${slug(vendor.name)}-their-layout.csv`)}
+                      onClick={() => exportMatrix(true)}
                       icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
                 Export in their layout
               </Button>

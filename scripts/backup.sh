@@ -10,18 +10,38 @@
 # key) and tree.tgz (the compliance folder tree on disk). The `static`
 # volume is rebuilt at boot and is not taken. scripts/restore.sh takes the
 # directory back, on this machine or another one.
+#
+# It is for the Docker stack only. An installation run without Docker (the
+# bare-metal recipe in INSTALL.md) has no db container and no volumes to take:
+# see "Backups on bare metal" in INSTALL.md for what to copy there.
 set -eu
 export MSYS_NO_PATHCONV=1   # Git Bash on Windows: leave /src and /out alone
+
+not_docker() {
+  echo "backup: this script backs up the Docker Compose stack. Run it from the checkout" >&2
+  echo "backup: that ran docker compose up, with the stack up (docker compose up -d db)." >&2
+  echo "backup: For an installation run without Docker, see \"Backups on bare metal\" in INSTALL.md." >&2
+  exit 1
+}
+
+# Checked before anything is written, so a run that cannot back anything up
+# leaves no empty backup directory behind.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "backup: docker is not installed on this machine." >&2
+  not_docker
+fi
+# docker's own error (no compose file here, daemon not running) stays on
+# screen above the advice; `|| db=""` only stops `set -e` from ending the
+# script before the advice is printed.
+db="$(docker compose ps -q db)" || db=""
+if [ -z "$db" ]; then
+  echo "backup: no db container is running for the compose project in this directory." >&2
+  not_docker
+fi
 
 out="${1:-backups/$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
-
-db="$(docker compose ps -q db)"
-if [ -z "$db" ]; then
-  echo "backup: the db service is not running (docker compose up -d db)" >&2
-  exit 1
-fi
 # The volumes are named after the compose project. Ask the running container
 # for it rather than guessing from the directory name, which compose
 # normalises in ways that are easy to get wrong.

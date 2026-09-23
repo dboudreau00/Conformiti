@@ -39,8 +39,11 @@ class ClaimBeforeSendTests(APITestBase):
         sent.assert_not_called()
 
     def test_a_failed_send_hands_the_claim_back(self):
-        with mock.patch("notifications.tasks._notify", side_effect=RuntimeError("smtp down")):
+        # Logged with its traceback on purpose; captured so it is not printed.
+        with mock.patch("notifications.tasks._notify", side_effect=RuntimeError("smtp down")), \
+                self.assertLogs("notifications.tasks", level="ERROR") as logs:
             self.assertEqual(run_review_scan(), 0)
+        self.assertIn(f"Review reminder failed for document {self.doc.pk}", logs.output[0])
         self.doc.refresh_from_db()
         self.assertEqual(self.doc.reminders_sent, [], "the next run must retry it")
         self.assertNotEqual(self.doc.status, Document.Status.EXPIRED)
@@ -59,7 +62,7 @@ class ClaimBeforeSendTests(APITestBase):
 class WorkspaceChannelTests(APITestBase):
     """One installation-wide webhook used to receive every organisation's
     sealed packages and auditor requests, each prefixed with the
-    organisation's name — a disclosure to every other organisation reading
+    organisation's name: a disclosure to every other organisation reading
     the channel."""
 
     def test_a_single_workspace_installation_uses_the_installation_channel(self):

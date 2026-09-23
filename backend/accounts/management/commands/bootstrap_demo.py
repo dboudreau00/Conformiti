@@ -88,6 +88,35 @@ def retired():
     return accounts.exists() and not accounts.filter(is_active=True).exists()
 
 
+def own_administrator_present(workspace):
+    """True when ``workspace`` has an administrator that is not a demo account.
+
+    remove_demo_data refuses to retire the demo until one exists, and this is
+    the test it applies. The advice this command prints, and the container's
+    boot banner, read the same answer, so they name createsuperuser first
+    exactly when remove_demo_data would refuse.
+
+    An administrator is an active superuser, or an active account whose role
+    manages users (an auditor role manages nobody, whatever it stores, as
+    User._cap has it), in this workspace. A superuser with no workspace at
+    all counts too: one detached by hand is still the administrator an
+    operator may have made. Read unscoped for that last case.
+    """
+    from django.db.models import Q
+
+    with tenancy.scoped(workspace):
+        demo = list(User.objects.filter(username__in=[u[0] for u in DEMO_USERS],
+                                        email__endswith="@example.com")
+                    .values_list("pk", flat=True))
+    with tenancy.unscoped():
+        return (User.objects.filter(is_active=True)
+                .filter(Q(is_superuser=True)
+                        | Q(role__can_manage_users=True, role__is_auditor=False))
+                .filter(Q(workspace=workspace) | Q(workspace__isnull=True, is_superuser=True))
+                .exclude(pk__in=demo)
+                .exists())
+
+
 # (control_id, doc name, cadence, review offset in days from today)
 SAMPLE_DOCS = [
     ("CC6.1", "Access Control Policy", "annual", 45),
@@ -173,6 +202,11 @@ class Command(BaseCommand):
             "--force", action="store_true",
             help="Seed even though remove_demo_data retired the demo from this workspace, "
                  "and make the demo accounts usable again.")
+        parser.add_argument(
+            "--superuser-follows", action="store_true",
+            help="An administrator is created right after this command (the container "
+                 "entrypoint passes this when DJANGO_SUPERUSER_* is set), so leave the "
+                 "before-real-use advice to its boot banner instead of naming createsuperuser.")
 
     def handle(self, *args, **opts):
         workspace = tenancy.from_option(opts)
@@ -202,12 +236,28 @@ class Command(BaseCommand):
             if self._revive:
                 self._record_revival()
         if self._password_shown:
+            # remove_demo_data refuses while the demo accounts are the only
+            # administrators, so until one of the operator's own exists the
+            # advice starts with making it.
+            if own_administrator_present(workspace):
+                retire = "Retire these accounts before real use: manage.py remove_demo_data"
+            elif opts.get("superuser_follows"):
+                # The entrypoint seeds before it creates the DJANGO_SUPERUSER_*
+                # account, so "create one" here would be contradicted a few
+                # lines further down the same log. Its banner asks again once
+                # that step has run, and names createsuperuser only if there is
+                # still no administrator of the operator's own.
+                retire = ("The boot banner below, printed after the DJANGO_SUPERUSER_* "
+                          "step, says what to run before real use.")
+            else:
+                retire = ("Before real use, create an administrator of your own "
+                          "(manage.py createsuperuser), then retire these accounts: "
+                          "manage.py remove_demo_data")
             self.stdout.write(self.style.SUCCESS(
                 f"Demo data ready in workspace {workspace.slug!r}.\n"
                 f"  Sign in as  admin  /  {self.demo_password()}\n"
                 f"  The other demo accounts (mia, owen, aria, val) share it.\n"
-                f"  This password is shown once. Retire these accounts before real "
-                f"use: manage.py remove_demo_data"
+                f"  This password is shown once. {retire}"
             ))
         else:
             self.stdout.write(self.style.SUCCESS(
@@ -351,7 +401,7 @@ class Command(BaseCommand):
 
     def _risks(self):
         """A small, realistic risk register: one overdue, one mitigating with a
-        Jira key, one vendor risk, one closed — so every state demos."""
+        Jira key, one vendor risk, one closed, so every state demos."""
         from governance.models import Risk, RiskNote
 
         mia = User.objects.filter(username="mia").first()
@@ -856,8 +906,8 @@ class Command(BaseCommand):
         self.stdout.write("  PBC request list: 3 line(s) on the demo package")
 
     def _control_program(self):
-        """Give the control libraries a plausible programme state — a spread of
-        statuses and owners — so readiness, coverage and the sidebar badges
+        """Give the control libraries a plausible programme state (a spread of
+        statuses and owners), so readiness, coverage and the sidebar badges
         have something to show. Applied only while every control is still
         untouched, so it never overwrites an operator's real statuses."""
         if Control.objects.exclude(status=Control.Status.NOT_STARTED).exists() \

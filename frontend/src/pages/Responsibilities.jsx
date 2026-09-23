@@ -131,6 +131,16 @@ export default function Responsibilities({ me }) {
     }, okText);
     if (failed) throw new Error(errorText(failed));
   }
+  // A refused or failed export says so in the notice, as the other exports
+  // do, rather than the button doing nothing.
+  async function exportCsv() {
+    setMsg(null);
+    try {
+      await downloadFile(`/responsibilities/export/${fw ? `?framework=${encodeURIComponent(fw)}` : ""}`, "responsibility-matrix.csv");
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't export the responsibility matrix.") });
+    }
+  }
 
   return (
     <PanelTransition>
@@ -153,7 +163,7 @@ export default function Responsibilities({ me }) {
         <Panel className="overflow-hidden">
           <PanelHeader title="Responsibility matrix" meta={data ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}` : "-"}>
             <Button size="sm" variant="ghost" icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
-                    onClick={() => downloadFile(`/responsibilities/export/${fw ? `?framework=${encodeURIComponent(fw)}` : ""}`, "responsibility-matrix.csv")}>
+                    onClick={exportCsv}>
               Export
             </Button>
           </PanelHeader>

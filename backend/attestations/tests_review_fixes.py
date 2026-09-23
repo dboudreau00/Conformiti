@@ -187,7 +187,7 @@ class BundleSignatureCoverageTests(PackageTestBase):
             self.assertIn("over SHA256SUMS", ok.stdout)
 
             # Rewrite the auditor's workpaper and regenerate the file list to
-            # match — the whole point of signing SHA256SUMS is that this fails.
+            # match: the whole point of signing SHA256SUMS is that this fails.
             import hashlib
 
             controls = root / "controls.csv"

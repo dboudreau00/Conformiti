@@ -14,15 +14,18 @@ Legend: **⌨ terminal** · **🖱 browser** · **✓ what you should see**
 
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
-./install.sh --docker --demo   # Windows: .\install.ps1 -Docker -Demo
+./install.sh --docker --demo
+# Windows: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker -Demo
 ```
 
 ✓ The script builds the images, waits for `/api/health/` to say `ok`, and
 prints `App http://localhost:8080` and the demo password. The password is
 generated on first boot and logged once by the backend, where the script
 reads it: `docker compose logs backend | grep "Sign in as"` (PowerShell:
-`docker compose logs backend | Select-String "Sign in as"`). If that log no
-longer has it, the banner says so and gives
+`docker compose logs backend | Select-String "Sign in as"`). Note it then:
+recreating the backend container, which `docker compose up` does after any
+change to `.env`, starts a log without it. When the log no longer has it,
+the banner says so and gives
 `docker compose exec backend python manage.py changepassword admin`.
 
 `--demo` (`-Demo`) asks for the sample organisation this tour walks through.
@@ -40,18 +43,21 @@ characters (12 by default), not a common password, not all digits, and not
 too close to the username or email. One that fails creates no account:
 `createsuperuser` says why, and so does the backend log for the `.env` route.
 
-**Windows:** if PowerShell refuses with *running scripts is disabled on this
-system*, run `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker -Demo`
-instead ([INSTALL.md](INSTALL.md), the scripted variant, explains why).
+**Windows:** the `powershell -ExecutionPolicy Bypass -File` form runs the
+script where the default policy would refuse it (*running scripts is
+disabled on this system*), and changes no setting
+([INSTALL.md](INSTALL.md), the scripted variant, explains why).
 Windows is supported for development and evaluation; run production on a
 Linux host.
 
-**Local dev (no Docker):** `./install.sh --demo` (or `.\install.ps1 -Demo`),
+**Local dev (no Docker):** `./install.sh --demo` (Windows:
+`powershell -ExecutionPolicy Bypass -File .\install.ps1 -Demo`),
 then open **http://localhost:5173**. The demo password is in the installer's
 closing *Setup complete* banner (and on the seeding step's line starting
 `Sign in as`).
 
-**Verify the build is wired:** `./install.sh --test` (or `.\install.ps1 -Test`)
+**Verify the build is wired:** `./install.sh --test` (Windows:
+`powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test`)
 ✓ the validator ends with `PASS` and `0 error(s)`, the backend suite prints
 `Ran N tests` and `OK`, and the frontend build prints `✓ built`. Allow about
 fifteen minutes; the backend suite is most of it.
@@ -163,8 +169,10 @@ account's sign-in first).
 
 ## Part E: Before real users ⌨
 
-1. `.env`: `DJANGO_ALLOWED_HOSTS`, the two origin variables, `BEHIND_TLS=true`
-   behind TLS, a real `EMAIL_PROVIDER`, a strong `POSTGRES_PASSWORD`. The
+1. `.env`: `DJANGO_ALLOWED_HOSTS` (your public host name(s); the Docker
+   stack adds its own internal names itself), the two origin variables,
+   `PUBLIC_URL`, `BEHIND_TLS=true` and `NUM_PROXIES=2` behind a TLS
+   terminator, a real `EMAIL_PROVIDER`, a strong `POSTGRES_PASSWORD`. The
    database was created on first boot with the default password
    (`compliance`), and `POSTGRES_PASSWORD` only applies to a new database
    volume, so change it in the database first, then in `.env`, then recreate:
@@ -175,11 +183,12 @@ account's sign-in first).
    *Without a build*).
 2. `docker compose exec backend python manage.py createsuperuser`, with a
    password that passes the policy from Part A.
-3. `docker compose exec backend python manage.py remove_demo_data`. The
-   retirement holds across restarts even while `.env` still says
+3. `docker compose exec backend python manage.py remove_demo_data`. It
+   refuses until the administrator from step 2 exists. The retirement holds
+   across restarts even while `.env` still says
    `SEED_DEMO_DATA=true` (the backend logs `Demo data not seeded` instead);
    set it to `false` anyway, so `.env` says what the installation does.
-4. `curl -s http://localhost:8080/api/health/` → `"demo_accounts": false`.
+4. `curl -s http://localhost:8080/api/health/` → `"demo_accounts":false`.
 5. Put `scripts/backup.sh` on cron and copy its output off the machine.
    `scripts/restore.sh <directory>` brings an installation back, here or
    elsewhere; CI runs both on every push. On the published images, set

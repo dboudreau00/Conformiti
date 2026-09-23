@@ -1,5 +1,7 @@
 """Deployment-level behaviour: secret-key handling, demo-data retirement,
 the full seed + demo bootstrap, and integration hardening."""
+import json
+import logging
 import os
 import subprocess
 import sys
@@ -28,14 +30,29 @@ def _raw_secret(user):
 BACKEND = Path(__file__).resolve().parent.parent
 
 
-def _run_check(env_overrides):
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("DJANGO_", "POSTGRES_", "CACHE_URL"))}
+def _run_check(env_overrides, drop=()):
+    """`manage.py check` in a fresh process, so settings.py runs again under
+    `env_overrides`. `drop` names further variables (prefixes) to take out
+    of this process's environment first."""
+    strip = ("DJANGO_", "POSTGRES_", "CACHE_URL", *drop)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(strip)}
     env.update(env_overrides)
     env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "manage.py", "check"], cwd=BACKEND, env=env,
         capture_output=True, text=True, timeout=120,
     )
+
+
+def _dotenv_sets(key):
+    """Whether the checkout's .env sets ``key``. settings.py loads that file in
+    every subprocess below without overriding the environment, so a case that
+    needs the key unset cannot be run on a machine whose .env sets it."""
+    try:
+        text = (BACKEND.parent / ".env").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return any(line.strip().startswith(f"{key}=") for line in text.splitlines())
 
 
 class SecretKeyBootTests(SimpleTestCase):
@@ -89,7 +106,7 @@ class DemoDataTests(TestCase):
                 # health reports the demo accounts
                 from config.health import demo_accounts_present
                 self.assertTrue(demo_accounts_present())
-                # idempotent — and it never clobbers a status an operator changed
+                # idempotent, and it never clobbers a status an operator changed
                 _Control.objects.filter(status="implemented").update(status="not_started")
                 call_command("bootstrap_demo", verbosity=0)
                 self.assertEqual(Document.objects.count(), 9)
@@ -513,3 +530,129 @@ class FirstAdministratorHealthTests(TestCase):
         auditor = make_user("auditor", role=role)
         self.assertFalse(auditor.can_manage_users)
         self.assertFalse(administrator_present())
+
+
+# Production-shaped: DEBUG off with a strong key, so settings.py reaches the
+# checks it only makes when DEBUG is off.
+_PRODUCTION = {"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY": "k" * 60, "EMAIL_PROVIDER": "console"}
+_BOOT_VARS = ("BEHIND_TLS", "NUM_PROXIES", "LOG_LEVEL")
+
+
+class BootWarningTests(SimpleTestCase):
+    """The RuntimeWarnings settings.py prints at every start with DEBUG off.
+    Each names a setting that is missing and falls silent once it is set, so
+    a correct configuration starts quietly."""
+
+    def test_num_proxies_is_asked_for_only_while_it_is_unset(self):
+        """It used to fire on any value below 2 and advise 2, so a deliberate
+        NUM_PROXIES=1 (right when the host's own nginx terminates TLS) warned
+        on every command with advice that would have keyed the throttles on
+        an address the client writes."""
+        env = {**_PRODUCTION, "BEHIND_TLS": "true", "CACHE_URL": "redis://localhost:6379/2"}
+        if not _dotenv_sets("NUM_PROXIES"):
+            r = _run_check(env, drop=_BOOT_VARS)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("NUM_PROXIES is not set", r.stderr)
+            self.assertIn("1 when this host's own nginx terminates TLS", r.stderr)
+            self.assertIn("2 when a separate TLS terminator", r.stderr)
+        for value in ("1", "2"):
+            r = _run_check({**env, "NUM_PROXIES": value}, drop=_BOOT_VARS)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("NUM_PROXIES", r.stderr, f"NUM_PROXIES={value} was set on purpose")
+
+    def test_num_proxies_is_not_asked_for_without_a_terminator(self):
+        r = _run_check({**_PRODUCTION, "BEHIND_TLS": "false", "CACHE_URL": "redis://localhost:6379/2"},
+                       drop=_BOOT_VARS)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("NUM_PROXIES", r.stderr)
+
+    def test_cache_url_is_asked_for_with_debug_off_until_it_is_set(self):
+        """Without it every gunicorn worker counts the login throttle on its
+        own, so three workers allow three times the configured rate."""
+        quiet = {**_PRODUCTION, "BEHIND_TLS": "false"}
+        if not _dotenv_sets("CACHE_URL"):
+            r = _run_check(quiet, drop=_BOOT_VARS)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("CACHE_URL is not set", r.stderr)
+            self.assertIn("redis://localhost:6379/2", r.stderr)
+            # The dev server and the test suite run with DEBUG on: not a word.
+            r = _run_check({"DJANGO_DEBUG": "true", "EMAIL_PROVIDER": "console"}, drop=_BOOT_VARS)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("CACHE_URL", r.stderr)
+        r = _run_check({**quiet, "CACHE_URL": "redis://localhost:6379/2"}, drop=_BOOT_VARS)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("CACHE_URL", r.stderr)
+
+
+class LoggingNoiseTests(SimpleTestCase):
+    """What DJANGO_DEBUG=true, the local .env's setting, prints. django.template
+    logged a chained traceback at DEBUG for every variable a template could not
+    resolve: 46 lines per 404 in the dev server's terminal, and dozens of
+    tracebacks in the documented test gate."""
+
+    # `python -c PROBE test` leaves sys.argv[1] == "test", as `manage.py test` does.
+    PROBE = (
+        "import json, logging\n"
+        "import django\n"
+        "django.setup()\n"
+        "from django.template import engines\n"
+        "engines['django'].from_string('{{ a.b }}').render({'a': {}})\n"
+        "print(json.dumps({n: logging.getLogger(n).getEffectiveLevel() for n in\n"
+        "    ('django', 'django.template', 'django.request', 'django.utils.autoreload')}))\n"
+    )
+
+    def probe(self, argv=(), **env):
+        """Load settings in a fresh process with ``env`` (and ``argv`` as the
+        command line), render a template with a missing variable, and return
+        the effective levels and whatever was logged."""
+        full = {k: v for k, v in os.environ.items()
+                if not k.startswith(("DJANGO_", "POSTGRES_", "CACHE_URL", *_BOOT_VARS))}
+        full.update({"DJANGO_SETTINGS_MODULE": "config.settings", "EMAIL_PROVIDER": "console",
+                     "PYTHONIOENCODING": "utf-8", **env})
+        r = subprocess.run([sys.executable, "-c", self.PROBE, *argv], cwd=BACKEND, env=full,
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout.strip().splitlines()[-1]), r.stderr
+
+    def setUp(self):
+        if _dotenv_sets("LOG_LEVEL"):
+            self.skipTest("this checkout's .env sets LOG_LEVEL")
+
+    def test_the_debug_default_keeps_template_lookups_out_of_the_log(self):
+        levels, logged = self.probe(DJANGO_DEBUG="true")
+        self.assertEqual(levels["django"], logging.DEBUG, "DEBUG still reaches the rest of Django")
+        self.assertEqual(levels["django.template"], logging.INFO)
+        self.assertEqual(levels["django.utils.autoreload"], logging.INFO)
+        self.assertNotIn("Exception while resolving variable", logged)
+
+    def test_a_log_level_set_on_purpose_applies_as_written(self):
+        levels, logged = self.probe(DJANGO_DEBUG="true", LOG_LEVEL="DEBUG")
+        self.assertEqual(levels["django.template"], logging.DEBUG)
+        self.assertIn("Exception while resolving variable", logged)
+        levels, _ = self.probe(DJANGO_DEBUG="true", LOG_LEVEL="warning")
+        self.assertEqual(levels["django.template"], logging.WARNING)
+
+    def test_an_empty_log_level_counts_as_unset(self):
+        """`LOG_LEVEL=` in a .env used to be an unknown level at startup."""
+        levels, _ = self.probe(LOG_LEVEL="", **_PRODUCTION)
+        self.assertEqual(levels["django"], logging.INFO)
+
+    def test_the_test_runner_prints_only_real_request_errors(self):
+        """Hundreds of 4xx answers in the suite are deliberate; each was a
+        WARNING line in the test gate. A 5xx still logs at ERROR."""
+        levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true")
+        self.assertEqual(levels["django.request"], logging.ERROR)
+        levels, _ = self.probe(argv=("runserver",), DJANGO_DEBUG="true")
+        self.assertEqual(levels["django.request"], logging.DEBUG, "only the test command")
+        levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true", LOG_LEVEL="WARNING")
+        self.assertEqual(levels["django.request"], logging.WARNING, "a LOG_LEVEL set on purpose wins")
+
+
+class ShippedTextTests(SimpleTestCase):
+    """verify.py goes to auditors inside every sealed bundle, so it is copy."""
+
+    def test_the_shipped_verifier_has_no_em_or_en_dash(self):
+        text = (BACKEND / "attestations" / "verifier.py").read_text(encoding="utf-8")
+        # Escapes, so no dash sweep of this file can rewrite what it looks for.
+        for dash in ("—", "–"):
+            self.assertNotIn(dash, text)

@@ -92,8 +92,13 @@ class ReviewScanTests(APITestBase):
                 raise RuntimeError("smtp down")
             return True
 
-        with mock.patch("notifications.tasks.send_templated_email", side_effect=flaky):
+        # The failure is logged with its traceback on purpose; captured here so
+        # the test output does not read as a crash.
+        with mock.patch("notifications.tasks.send_templated_email", side_effect=flaky), \
+                self.assertLogs("notifications.tasks", level="ERROR") as logs:
             self.assertEqual(run_review_scan(), 1)
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("Review reminder failed", logs.output[0])
         # the failed document was left untouched so it retries next time
         self.assertEqual(Document.objects.filter(reminders_sent=[]).count(), 1)
 

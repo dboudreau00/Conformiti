@@ -5,8 +5,14 @@ Three ways to run Conformiti, from "just show me" to production.
 | Path | Best for | Needs | Command |
 |---|---|---|---|
 | **Docker** | evaluating, LAN pilots, production | Docker Engine 24+ / Docker Desktop with Compose 2.24 or newer | `docker compose up -d --build` |
-| **Local dev** | hacking on the code | Python 3.11+, Node 20.19+ or 22.12+ | `./install.sh` / `.\install.ps1` |
+| **Local dev** | hacking on the code | Python 3.11 to 3.14 with `venv` and `pip`, Node 20.19+ or 22.12+ | `./install.sh` / `.\install.ps1` |
 | **Manual** | custom hosting, bare metal (Linux) | as above + PostgreSQL, Redis, nginx | see §3 |
+
+Every path starts with `git clone`, so you need git as well, and
+`./install.sh --docker` needs curl to wait for the stack. On Debian and Ubuntu
+Python's `venv` module is a separate package:
+`sudo apt install python3-venv python3-pip`. The full list is in
+[PREREQUISITES.md](PREREQUISITES.md).
 
 **On Windows**, run the local development path (§2), or the Docker stack
 under Docker Desktop or WSL 2, for development and evaluation. Run production
@@ -36,7 +42,9 @@ To look around a worked example instead, put `SEED_DEMO_DATA=true` in `.env`
 `--demo` with the scripted variant below. That seeds five accounts sharing one
 password, generated on first boot and printed once
 (`docker compose logs backend | grep "Sign in as"`, or set `DEMO_PASSWORD` in
-`.env` beforehand). It is off by default: an installation carrying those
+`.env` beforehand). Note it when you see it: the log keeps it only until the
+backend container is recreated, which `docker compose up` does after any
+change to `.env`. It is off by default: an installation carrying those
 accounts says so on its own sign-in page, which is not a thing a real
 deployment should publish.
 
@@ -69,12 +77,14 @@ debugging (`CONFORMITI_API_PORT` to move it); the LAN only sees nginx on port
 ### The scripted variant
 
 ```bash
-./install.sh --docker            # macOS / Linux / WSL
-.\install.ps1 -Docker            # Windows PowerShell
+./install.sh --docker                                            # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker   # Windows
 ```
 
 The script checks Docker is running, writes a production-style `.env` if you
-don't have one (DEBUG off, a unique key, your hostname in `ALLOWED_HOSTS`),
+don't have one (DEBUG off, your hostname in `DJANGO_ALLOWED_HOSTS`, the
+origin lists for its port, and no secret key: the container generates its
+own and keeps it in the `secrets` volume, as on the plain path above),
 builds and starts the stack, **waits until `/api/health/` reports `ok`**, and
 prints the URLs. Flags: `--demo` / `-Demo` (load the sample organisation),
 `--open` / `-Open`, `--port N` / `-Port N`.
@@ -88,22 +98,23 @@ one. Each change is printed. `--no-demo` stops the seeding; accounts already
 created stay until `remove_demo_data`.
 
 When the running stack reports demo accounts, the closing banner shows their
-password, which it reads from `docker compose logs backend`. The password is
-logged once, by the container that created the accounts; once that log is
-gone, the banner says so and gives the command that sets a new one:
+password, which it reads from `docker compose logs backend`, marked
+*note it now*: the password is logged once, by the container that created
+the accounts, and recreating that container starts a log without it. An update recreates it, and so does any change to `.env`, the
+ones `--port`, `--demo` and `--no-demo` write included. From then on the
+banner says so and gives the command that sets a new one:
 `docker compose exec backend python manage.py changepassword admin`.
+Without demo accounts, the banner reads the same health report: while the
+installation has no active account it gives the `createsuperuser` command for
+your first one, and once one exists it says to sign in with it.
 
 **Windows PowerShell and the execution policy.** On a default Windows 10 or 11
 client, Windows PowerShell 5.1 refuses every script with *running scripts is
-disabled on this system*. Run the installer with a bypass that lasts only for
-that one process and changes no setting:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker
-```
-
-or run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` once in
-the window, then `.\install.ps1` as usual. PowerShell 7 (`pwsh`) runs local
+disabled on this system*. That is why the Windows line above starts the
+installer with a bypass: it lasts only for that one process and changes no
+setting. Alternatively, run
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` once in the
+window, then `.\install.ps1 -Docker` as usual. PowerShell 7 (`pwsh`) runs local
 scripts by default but not downloaded ones: if you took the ZIP rather than
 cloning, run `Unblock-File .\install.ps1` first, or use the same bypass.
 
@@ -149,7 +160,27 @@ CONFORMITI_VERSION=0.9.5k
 ```
 
 Separate the two files with `;` instead of `:` when you run Docker Desktop's
-Windows `docker.exe` rather than Docker inside WSL 2.
+Windows `docker.exe` rather than Docker inside WSL 2. Keep one `COMPOSE_FILE`
+line in `.env`: when there are two, Compose uses the last one and ignores the
+other, so extend the existing line rather than adding a new one.
+
+nginx's configuration is the one part of this path that does not come from
+the checkout. It is built into the frontend image, so editing
+`frontend/nginx.conf` changes nothing here. To run an edited copy (a larger
+`client_max_body_size`, say), mount it from a third compose file of your own,
+for example `docker-compose.nginx.yml`:
+
+```yaml
+services:
+  frontend:
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+```
+
+Name it after the other two, on every command or once in `.env`
+(`COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml:docker-compose.nginx.yml`),
+and run `up -d`. After a later edit, `docker compose restart frontend` makes
+nginx read the file again.
 
 A container will tell you what it is: `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
@@ -164,7 +195,7 @@ pulls what it pushed and boots it before the run is allowed to pass.
 
 1. Set the real hostname in `.env`:
    ```ini
-   DJANGO_ALLOWED_HOSTS=grc.example.com
+   DJANGO_ALLOWED_HOSTS=grc.example.com      # your public host name(s)
    CSRF_TRUSTED_ORIGINS=https://grc.example.com
    CORS_ALLOWED_ORIGINS=https://grc.example.com
    BEHIND_TLS=true            # once TLS is terminated in front of nginx
@@ -174,15 +205,22 @@ pulls what it pushed and boots it before the run is allowed to pass.
    POSTGRES_PASSWORD=<something long>
    REDIS_PASSWORD=<letters and digits>
    ```
+   `DJANGO_ALLOWED_HOSTS` is your public host name(s), comma-separated; the
+   Docker stack adds its own internal names (`localhost`, `127.0.0.1` and
+   `backend`) itself, so you need not list those, and its healthcheck keeps
+   working whatever you write here.
+
    `NUM_PROXIES` is how many hops back along `X-Forwarded-For` the client's
    address is. The default of 1 is the shipped nginx on its own. Put a TLS
    terminator in front of it, which is the next step, and there are two:
    leaving it at 1 makes the terminator's address every visitor's address, so
    they share one rate-limit bucket and a single unauthenticated caller can
-   spend the installation's login budget for everybody. The stack warns at
-   boot if `BEHIND_TLS` is on and this is still 1. Set it to 1 if your
-   terminator replaces the header rather than appending to it, and 0 if the
-   API is exposed with nothing in front at all.
+   spend the installation's login budget for everybody. Two is right whether
+   your terminator appends to `X-Forwarded-For` or replaces it: the shipped
+   nginx appends the address it received the request from, the terminator's,
+   so the client's is two entries from the end either way. The stack warns at
+   boot if `BEHIND_TLS` is on and `NUM_PROXIES` is not set. (On bare metal,
+   where the host's own nginx terminates TLS, there is one hop: see §3.)
 
    `POSTGRES_PASSWORD` takes effect only when the database volume is first
    created. If the stack has already booted, the database keeps the password
@@ -398,10 +436,11 @@ docker compose exec backend python manage.py scan_evidence --all        # everyt
 A file that now matches is quarantined: kept on disk, refused on every
 route, badged in the document list, and in the audit trail. Exit code 1 on
 an infection or an unreachable scanner, so cron can alert on it. A monthly
-cron line is enough:
+line in the host's crontab is enough (use your checkout's path; `-T`
+because cron gives the command no terminal):
 
 ```
-15 3 1 * *  cd /app && python manage.py scan_evidence --stale 30
+15 3 1 * *  cd /path/to/Conformiti && docker compose exec -T backend python manage.py scan_evidence --stale 30
 ```
 
 ### Package signing
@@ -537,8 +576,13 @@ On Windows, if PowerShell refuses the script (*running scripts is disabled on
 this system*), use `powershell -ExecutionPolicy Bypass -File .\install.ps1`;
 §1's scripted variant explains the execution policy.
 
-The installer verifies Python 3.11+ and Node 20.19+ or 22.12+, creates `.env`
-with a generated secret key, builds `.venv`, installs backend and frontend
+The installer checks for Python 3.11 or newer (3.11 to 3.14 are the tested
+versions; it warns above them) and Node 20.19+ or 22.12+. On Debian and
+Ubuntu, install Python's `venv` module first
+(`sudo apt install python3-venv python3-pip`): without it `.venv` cannot be
+created. Other requirements are in [PREREQUISITES.md](PREREQUISITES.md). The
+installer then creates `.env` with a generated secret key, builds `.venv`,
+installs backend and frontend
 dependencies, applies migrations, seeds the control libraries, and starts the
 API on **:8000** and the Vite dev server on **:5173** (`CONFORMITI_DEV_API_PORT`
 and `CONFORMITI_DEV_PORT` move them: see *Moving the ports*). Every step is
@@ -581,8 +625,9 @@ Useful flags:
 | `--no-demo` / `-NoDemo` | the default (no demo data); kept because older notes use it |
 | `--open` / `-Open` | open the browser when ready |
 
-Re-running the installer is safe: it reuses `.venv`, leaves `.env` alone, and
-every seeder is idempotent.
+Re-running the installer is safe: it reuses `.venv` (a `.venv` without a
+working pip, which a creation that stopped part way leaves behind, is deleted
+and built again), leaves `.env` alone, and every seeder is idempotent.
 
 Review reminders on this path run on demand:
 
@@ -596,7 +641,34 @@ cd backend
 ## 3. Manual / bare metal (Linux)
 
 The examples assume the checkout is at `/srv/conformiti`, owned by a
-`conformiti` system user; adjust both to taste.
+`conformiti` system user; adjust both to taste. The host needs PostgreSQL 16,
+Redis 7, nginx, git, Python 3.11 to 3.14 with `venv` and `pip`, and Node
+20.19+ or 22.12+ to build the interface.
+
+Create the user with a home directory, and the checkout as that user:
+
+```bash
+sudo useradd --system --user-group --create-home --shell /usr/sbin/nologin conformiti
+sudo install -d -o conformiti -g conformiti /srv/conformiti
+sudo -u conformiti -H git -C /srv/conformiti clone https://github.com/dboudreau00/Conformiti.git .
+```
+
+The home directory is for npm, which keeps its cache there: `npm ci` stops
+with a permission error under a system user made without one
+(`useradd --system` alone creates none, and `adduser --system` on Debian 12
+or Ubuntu 24.04 points it at `/nonexistent`). A `conformiti` user that
+already exists gets one with
+`sudo install -d -o conformiti -g "$(id -gn conformiti)" /home/conformiti` and
+`sudo usermod -d /home/conformiti conformiti` (`id -gn` names the group the
+user really has: `adduser --system` puts it in `nogroup`, not a `conformiti`
+group).
+
+Run every command below that works in the checkout as that user
+(`sudo -u conformiti -H bash`, then `cd /srv/conformiti`), so the files they
+create belong to the account the services run as. Some of those files are
+keys the application writes at mode 0600, and a copy owned by root is one the
+services cannot read. Only the `sudo` lines (the user above, the database,
+systemd) and the nginx configuration need root.
 
 Create the database role and the database; `createuser -P` asks for the
 password that goes into `POSTGRES_PASSWORD` below:
@@ -610,8 +682,15 @@ Copy the configuration with `cp .env.example .env` and set, in `.env`:
 
 - `DJANGO_DEBUG=false` and a real `DJANGO_SECRET_KEY`
   (`python3 -c "import secrets; print(secrets.token_urlsafe(50))"`);
-- `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS`
-  for your hostname, as in §1's *Going to production*;
+- `DJANGO_FIELD_ENCRYPTION_KEY_FILE=/srv/conformiti/backend/.field-encryption-key`,
+  before the first `manage.py` command. The file is generated there at mode
+  0600 and holds the key that encrypts enrolled authenticators at rest.
+  Without it that key is derived from `DJANGO_SECRET_KEY`, which ties the two
+  together (see *Backups on bare metal* below);
+- `DJANGO_ALLOWED_HOSTS` (your public host name(s)), `CSRF_TRUSTED_ORIGINS`,
+  `CORS_ALLOWED_ORIGINS` and `PUBLIC_URL` for your hostname, as in §1's
+  *Going to production*. Nothing adds `localhost` here the way the Docker
+  stack does, so list it too if you query the API on this machine;
 - `POSTGRES_DB=compliance`, `POSTGRES_USER=compliance`,
   `POSTGRES_PASSWORD` and `POSTGRES_HOST=localhost`. A non-empty
   `POSTGRES_DB` is what selects PostgreSQL; without it the app uses SQLite;
@@ -621,11 +700,33 @@ Copy the configuration with `cp .env.example .env` and set, in `.env`:
   if your Redis is elsewhere. A `redis://redis:…` URL, which older copies of
   `.env.example` carried, names the Docker service and does not resolve here.
   With no Redis at all, run no Celery process and use the cron lines further
-  down instead.
+  down instead;
+- `CACHE_URL=redis://localhost:6379/2` (`redis://:<password>@localhost:6379/2`
+  if your Redis asks for one). The rate limits, the login throttle among
+  them, count in this cache. Left unset, each gunicorn worker keeps its own
+  count in memory, so with the three workers below an attacker gets three
+  times `THROTTLE_LOGIN` before anything is refused, and the API warns about
+  it at every start;
+- `BEHIND_TLS=false` while the site is served over plain http (a trial on
+  `http://localhost`). With `DJANGO_DEBUG=false` it defaults to on, which
+  means secure cookies and every http request redirected to https. Remove
+  the line, or set `true`, once TLS is in front;
+- `NUM_PROXIES`, the number of proxies in front of gunicorn, which is what
+  the rate limits use to find the client's address: `1` when this host's
+  nginx faces the clients and terminates TLS itself, `2` when a separate TLS
+  terminator or load balancer sits in front of that nginx. Unset means 1,
+  and with `BEHIND_TLS` on the API warns at boot until you set it;
+- nothing for `MEDIA_INTERNAL` behind nginx. With `DJANGO_DEBUG=false` it is
+  on: the API checks access, writes the audit row and hands the download to
+  nginx with an `X-Accel-Redirect`. Behind any other web server (Caddy,
+  Apache, IIS) set `MEDIA_INTERNAL=false`, so Django sends the file itself;
+  that header is nginx's, and elsewhere every download and preview arrives
+  empty.
 
 Then install, seed and start the API:
 
 ```bash
+cd /srv/conformiti
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
 cd backend
@@ -696,7 +797,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now conformiti-web conformiti-worker conformiti-beat
 ```
 
-Or, with no broker, schedule the jobs with cron:
+Or, with no broker, schedule the jobs in the `conformiti` user's crontab
+(`sudo crontab -u conformiti -e`):
 
 ```
 0 6 * * *  cd /srv/conformiti/backend && ../.venv/bin/python manage.py send_review_reminders
@@ -705,10 +807,116 @@ Or, with no broker, schedule the jobs with cron:
 30 3 * * 0 cd /srv/conformiti/backend && ../.venv/bin/python manage.py flushexpiredtokens
 ```
 
-Build the SPA once (`cd frontend && npm ci && npm run build`) and serve
-`frontend/dist` with the shipped `frontend/nginx.conf` as a template (it
-proxies `/api/` and `/admin/` to gunicorn and serves `/media/` and `/static/`
-from disk).
+Build the SPA once (`cd /srv/conformiti/frontend && npm ci && npm run build`)
+and serve it with nginx, taking the shipped `frontend/nginx.conf` as the
+template. It proxies `/api/` and `/admin/`, serves `/static/`, and sends
+evidence only from an `internal` location the API redirects into. It is
+written for the Docker stack, so change these for this host:
+
+- `server_name _;` to your host name (`server_name grc.example.com;`). On
+  Debian and Ubuntu the distribution's own site,
+  `/etc/nginx/sites-enabled/default`, is the `default_server` on port 80: it
+  answers every request whose `Host` names no other server, and `_` names
+  none, so the browser gets *Welcome to nginx!* instead of Conformiti. Remove
+  that link (`sudo rm /etc/nginx/sites-enabled/default`) unless it serves
+  something else;
+- `root` to `/srv/conformiti/frontend/dist`;
+- both `proxy_pass http://backend:8000;` lines to `proxy_pass http://127.0.0.1:8000;`;
+- the `/static/` alias to `/srv/conformiti/backend/staticfiles/`, where
+  `collectstatic` put the admin's files;
+- the `/protected-media/` and `/media/` aliases to your `MEDIA_ROOT`, trailing
+  slash included: `/srv/conformiti/backend/media/` unless you set
+  `MEDIA_ROOT`. Keep both locations `internal`. A wrong alias turns every
+  download and preview into a 404;
+- if this nginx terminates TLS itself (the case `NUM_PROXIES=1` above
+  describes): the template's `listen 80;` gives way to a 443 listener with
+  your certificate, plus a second `server` block on port 80 that only
+  redirects to https (both shown below), and in the `/api/` and `/admin/`
+  locations `proxy_set_header X-Forwarded-Proto $scheme;` replaces the
+  `$forwarded_proto` line. The template passes on the header it received,
+  which is right only behind a terminator that sets it, and with
+  `BEHIND_TLS` on the API believes that header. With a separate terminator
+  in front of this nginx instead, keep `listen 80;` and the header as they
+  are.
+
+```nginx
+server {
+    listen 80;
+    server_name grc.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name grc.example.com;
+    ssl_certificate     /etc/letsencrypt/live/grc.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/grc.example.com/privkey.pem;
+    # ...then the template's server block from `root` down, edited as above
+}
+```
+
+Use your own certificate's paths (those are certbot's), and add a
+`listen [::]:80;` and `listen [::]:443 ssl;` line if clients reach the host
+over IPv6.
+
+Install the edited copy as a whole file in `/etc/nginx/conf.d/`, with a name
+ending in `.conf` (`conformiti.conf`, say): its `map` block sits outside the
+`server` block, where only a file nginx reads at the `http` level may put it.
+Check it and load it with `sudo nginx -t && sudo systemctl reload nginx`.
+nginx's own user must be able to read `frontend/dist`,
+`backend/staticfiles` and `backend/media` (and pass through the directories
+above them); it never needs the key files.
+
+### Backups on bare metal
+
+`scripts/backup.sh` and `scripts/restore.sh` drive the Docker stack's
+containers and volumes, so they do not apply here. Back up these together,
+and copy them off the machine:
+
+| What | Where, in this recipe | Why |
+|---|---|---|
+| The database | `pg_dump` of `compliance` | everything but the files |
+| The evidence files | `MEDIA_ROOT`: `/srv/conformiti/backend/media/` | a database without them is a list of files you no longer have |
+| The folder tree on disk | `COMPLIANCE_TREE_ROOT`: `/srv/conformiti/compliance-data/` | the evidence tree generated from the control libraries |
+| The package-signing key | `/srv/conformiti/backend/.package-signing-key`, and each `.package-signing-key.retired-*` beside it (`SIGNING_KEY_FILE` moves them) | signatures already issued stay valid without it, but you cannot sign as the same identity again |
+| The field-encryption key | the file `DJANGO_FIELD_ENCRYPTION_KEY_FILE` names: `/srv/conformiti/backend/.field-encryption-key` | without it enrolled authenticators cannot be read (backup codes still work) and a stored Jira token must be entered again |
+| `.env` | `/srv/conformiti/.env` | `DJANGO_SECRET_KEY` and the passwords |
+
+For example, as root from cron (`tar` names any file that does not exist,
+such as the field-encryption key file when you left the setting unset, and
+archives the rest):
+
+```bash
+mkdir -p /var/backups/conformiti
+sudo -u postgres pg_dump -Fc compliance > /var/backups/conformiti/db-$(date +%F).dump
+cd /srv/conformiti && tar -czf /var/backups/conformiti/files-$(date +%F).tgz \
+    .env backend/media compliance-data backend/.field-encryption-key backend/.package-signing-key*
+```
+
+In a crontab line itself, write each `%` as `\%`: cron reads a bare one as
+the end of the command.
+
+To restore, stop the three services, reload the database with
+`sudo -u postgres pg_restore --clean --if-exists -d compliance <dump>`, unpack
+the files into `/srv/conformiti` (as the `conformiti` user, or `chown` them
+back to it), and start the services again.
+
+**The field-encryption key and `DJANGO_SECRET_KEY`.** With
+`DJANGO_FIELD_ENCRYPTION_KEY_FILE` unset and a real `DJANGO_SECRET_KEY`, the
+key ring is derived from `DJANGO_SECRET_KEY`. Changing that key then makes
+every enrolled authenticator unreadable. Move the ring to a file before you
+ever rotate it:
+
+1. Write a file owned by `conformiti` at mode 0600 whose first line is a new
+   key (`python3 -c "import secrets; print(secrets.token_urlsafe(32))"`) and
+   whose second line is `derived:` followed by your current
+   `DJANGO_SECRET_KEY`. Point `DJANGO_FIELD_ENCRYPTION_KEY_FILE` at it and
+   restart the three services: both keys decrypt, the first one encrypts.
+2. Run `manage.py rotate_field_keys` to rewrite every encrypted value under the
+   new key, and `manage.py rotate_field_keys --status` to see that no row is
+   left on the old one.
+3. Delete the second line, restart, and only then change
+   `DJANGO_SECRET_KEY` (which also signs everyone out).
 
 ---
 
@@ -719,11 +927,13 @@ from disk).
 | The backend log says `DJANGO_SECRET_KEY must be set…` | Docker: the stack reads `CONFORMITI_SECRET_KEY`, never `DJANGO_SECRET_KEY` or `DJANGO_DEBUG`, and this means `CONFORMITI_SECRET_KEY` is set to something shorter than 32 characters. Delete the line (the container generates and keeps its own key) or set a longer one. Bare metal: `DJANGO_DEBUG=false` with the placeholder key from `.env.example` and no `DJANGO_SECRET_KEY_FILE`; set a real key. |
 | The app loads but every request is `400 Bad Request` | The hostname you browse with isn't in `DJANGO_ALLOWED_HOSTS`. |
 | Admin login form reloads silently over plain HTTP | `BEHIND_TLS=true` (secure cookies) on an HTTP deployment. Set it to `false` until TLS is in front. |
+| Every `/api/` request answers `301` to `https://` (bare metal, plain http) | With `DJANGO_DEBUG=false`, `BEHIND_TLS` is on unless `.env` says otherwise. Set `BEHIND_TLS=false` until TLS is in front (§3). |
+| Downloads and previews arrive empty (bare metal) | `MEDIA_INTERNAL` is on and the web server in front is not nginx, so nothing acts on the API's `X-Accel-Redirect`. Set `MEDIA_INTERNAL=false` (§3). Behind nginx, a download that is a 404 means the `/protected-media/` alias does not point at `MEDIA_ROOT`. |
 | `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up, or the credentials differ between the `db` and `backend` services. The usual cause is `POSTGRES_PASSWORD` changed in `.env` after the first boot: the database volume keeps the password it was created with. Put the old value back, or change it in the database as §1 *Going to production* step 1 shows, then `docker compose up -d` (with the same `-f` files you started with). |
 | Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser` (the password must pass the policy in §1), or seed the sample data with `manage.py bootstrap_demo`. Or the web app runs on a port or host name missing from `CSRF_TRUSTED_ORIGINS` in `.env` (see *Moving the ports*). |
 | `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
-| Uploads rejected as too large | Raise `MAX_UPLOAD_MB` **and** `client_max_body_size` in `frontend/nginx.conf`. |
-| Port in use | Docker needs host ports 8080 (`CONFORMITI_PORT`) and `127.0.0.1:8000` (`CONFORMITI_API_PORT`); the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move, but a moved web port also needs its origin in `.env`: see *Moving the ports* below. |
+| Uploads rejected as too large | Raise `MAX_UPLOAD_MB` in `.env` **and** `client_max_body_size` in `frontend/nginx.conf`. nginx's configuration is built into the frontend image: after the edit, a source build needs `docker compose up -d --build`, and the published images need the edited file mounted (*Without a build*, above). Bare metal: edit your own copy and reload nginx. |
+| Port in use | Docker needs host ports 8080 (`CONFORMITI_PORT`) and `127.0.0.1:8000` (`CONFORMITI_API_PORT`); the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move: see *Moving the ports* below. |
 
 <details>
 <summary><strong>Moving the ports</strong></summary>
@@ -731,19 +941,30 @@ from disk).
 **Docker.** nginx publishes host port 8080 (`CONFORMITI_PORT`), and the API
 publishes `127.0.0.1:8000` for debugging (`CONFORMITI_API_PORT`). Both must be
 free, and `CONFORMITI_PORT` does not move the API. Set whichever clashes in
-`.env`, and make the origin lists follow the nginx port, or sign-in is
-refused (with no lists in `.env`, the stack trusts `:8080` only):
+`.env`:
 
 ```ini
 CONFORMITI_PORT=8081
 CONFORMITI_API_PORT=8001
+```
+
+That is enough to sign in at `http://localhost:8081`. nginx hands the API the
+`Host` header the browser sent, port included, and a sign-in from the same
+scheme, host and port the request arrived at passes the origin check without
+being listed. The origin lists matter when something in front of nginx
+changes what the API sees (a reverse proxy that rewrites `Host`, or TLS
+terminated in front without `BEHIND_TLS=true`), and a new host name also
+needs `DJANGO_ALLOWED_HOSTS`. Listing the moved origin does no harm either,
+and it is what the scripted variant's `--port N` / `-Port N` does: it writes
+the nginx port and these two lists into a new `.env`, or moves them in an
+existing one:
+
+```ini
 CSRF_TRUSTED_ORIGINS=http://localhost:8081,http://127.0.0.1:8081
 CORS_ALLOWED_ORIGINS=http://localhost:8081
 ```
 
-The scripted variant's `--port N` / `-Port N` writes the nginx port and both
-lists into a new `.env`, or moves them in an existing one. If
-`docker compose up` stopped on a bind error, free the port and run
+If `docker compose up` stopped on a bind error, free the port and run
 `docker compose up -d --force-recreate backend`, with the same `-f` files you
 started with: a backend container that failed to publish its port can be left
 without a network.
@@ -778,8 +999,10 @@ Vite listens on `localhost`, and `.env` trusts only that name.
 
 Almost always `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` or
 `CORS_ALLOWED_ORIGINS` not listing the hostname you are actually using,
-including scheme and port. The backend log names the header it rejected. Behind
-a proxy, confirm it forwards `Host` and `X-Forwarded-Proto`.
+including scheme and port. `DJANGO_ALLOWED_HOSTS` takes host names only; the
+two origin lists take `scheme://host:port` and matter mostly behind a proxy
+(*Moving the ports* explains when). The backend log names the header it
+rejected. Behind a proxy, confirm it forwards `Host` and `X-Forwarded-Proto`.
 </details>
 
 <details>

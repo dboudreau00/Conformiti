@@ -148,6 +148,21 @@ jobs:
             Write-Output "the setup banner does not repeat the demo password"
             exit 1
           }
+      # A creation that stopped part way leaves a .venv with a python.exe and
+      # no pip. The installer has to rebuild that, not die at its pip step on
+      # every later run.
+      - name: A half-created .venv is rebuilt, not reused
+        run: |
+          if (Test-Path .venv) { Remove-Item -Recurse -Force .venv }
+          python -m venv --without-pip .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ${{ matrix.installer }} -SetupOnly | Tee-Object -Variable out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($out -match 'the existing \.venv has no working pip')) {
+            Write-Output "install.ps1 did not say it rebuilt the half-created .venv"
+            exit 1
+          }
+          .venv\Scripts\python.exe -m pip --version
 
   installer-linux:
     name: Installer on Linux
@@ -179,6 +194,99 @@ jobs:
           # A here-string, not a pipe, for the reason the docker job gives.
           grep -Eq '^ *Password:? +CiDemoPassword2026( |$)' <<< "$(sed 's/\x1b\[[0-9;]*m//g' /tmp/demo.log)" \
             || { echo "the setup banner does not repeat the demo password"; exit 1; }
+      # Run mode, stopped the way a user stops it. The old trap signalled its
+      # own process group from inside the handler, ran again on every TERM it
+      # sent, and ended in a segmentation fault after thousands of lines. A
+      # terminal of its own, because Ctrl-C is the terminal's doing: the 0x03
+      # written to it becomes a SIGINT for the installer's process group.
+      - name: Ctrl-C in run mode stops both servers, once, and exits 0
+        env:
+          CONFORMITI_DEV_API_PORT: "18000"
+          CONFORMITI_DEV_PORT: "18001"
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pty, re, select, signal, subprocess, sys, time
+
+          api = os.environ["CONFORMITI_DEV_API_PORT"]
+          web = os.environ["CONFORMITI_DEV_PORT"]
+          leftover = [f"runserver 127.0.0.1:{api}", "vite"]
+          pid, fd = pty.fork()
+          if pid == 0:
+              os.execv("./install.sh", ["./install.sh"])
+          transcript = bytearray()
+
+          def pump(seconds):
+              """Copy what the installer wrote into the log; False at end of file."""
+              if not select.select([fd], [], [], seconds)[0]:
+                  return True
+              try:
+                  data = os.read(fd, 65536)
+              except OSError:  # EIO: nothing holds the terminal open any more
+                  return False
+              transcript.extend(data)
+              sys.stdout.buffer.write(data)
+              sys.stdout.flush()
+              return bool(data)
+
+          def answers(url):
+              return subprocess.run(["curl", "-s", "-o", "/dev/null", "--max-time", "2", url]).returncode == 0
+
+          def fail(why):
+              print(f"\n{why}", flush=True)
+              for pattern in leftover:
+                  subprocess.run(["pgrep", "-af", pattern])
+              try:
+                  os.killpg(pid, signal.SIGKILL)
+              except ProcessLookupError:
+                  pass
+              sys.exit(1)
+
+          deadline = time.monotonic() + 600
+          while not (answers(f"http://127.0.0.1:{api}/api/health/") and answers(f"http://localhost:{web}/")):
+              if not pump(2):
+                  fail("install.sh ended before both servers answered")
+              if time.monotonic() > deadline:
+                  fail("the two servers did not both answer within ten minutes")
+          print("\n[ci] both servers answer; sending Ctrl-C", flush=True)
+          os.write(fd, b"\x03")
+          deadline = time.monotonic() + 60
+          while pump(1):
+              if time.monotonic() > deadline:
+                  fail("the terminal was still held open a minute after Ctrl-C")
+          _, status = os.waitpid(pid, 0)
+          if not (os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0):
+              how = (f"exit status {os.WEXITSTATUS(status)}" if os.WIFEXITED(status)
+                     else f"signal {signal.Signals(os.WTERMSIG(status)).name}")
+              fail(f"install.sh ended with {how} after Ctrl-C, expected exit status 0")
+          text = re.sub(r"\x1b\[[0-9;]*m", "", transcript.decode("utf-8", "replace"))
+          said = sum("Shutting down" in line for line in text.splitlines())
+          if said != 1:
+              fail(f"'Shutting down' was printed {said} times, expected once")
+          # A process that is still exiting is given a few seconds; one that
+          # is still there after them was left running.
+          for _ in range(10):
+              alive = [p for p in leftover
+                       if subprocess.run(["pgrep", "-f", p], capture_output=True).returncode == 0]
+              if not alive:
+                  break
+              time.sleep(1)
+          else:
+              fail(f"still running after Ctrl-C: {', '.join(alive)}")
+          print("[ci] Ctrl-C: exit status 0, one 'Shutting down', no runserver or vite left", flush=True)
+          PY
+      # Without Debian's venv package, `python3 -m venv` stops at ensurepip
+      # and leaves a .venv with a python and no pip. The installer has to
+      # rebuild that, not die at its pip step on every later run.
+      - name: A half-created .venv is rebuilt, not reused
+        run: |
+          set -euo pipefail
+          rm -rf .venv
+          python3 -m venv --without-pip .venv
+          ./install.sh --setup-only | tee /tmp/venv.log
+          grep -q 'the existing \.venv has no working pip' /tmp/venv.log \
+            || { echo "install.sh did not say it rebuilt the half-created .venv"; exit 1; }
+          .venv/bin/python -m pip --version
 
   docker:
     name: Docker images build
@@ -316,14 +424,20 @@ jobs:
     env:
       DEMO_PASSWORD: CiDemoPassword2026
       REDIS_PASSWORD: ciRedisSecret42
+      PUBLIC_HOST: grc.example.test
     steps:
       - uses: actions/checkout@v7
-      - name: Start the stack (Redis password on, demo data seeded)
+      - name: Start the stack (Redis password on, demo data seeded, a public host name)
         run: |
           # SEED_DEMO_DATA is off in the shipped compose file since 0.9.5b, so
           # this job asks for it: the steps below sign in as a demo account.
-          printf 'DEMO_PASSWORD=%s\nREDIS_PASSWORD=%s\nSEED_DEMO_DATA=true\n' \
-            "$DEMO_PASSWORD" "$REDIS_PASSWORD" > .env
+          # DJANGO_ALLOWED_HOSTS is what a production .env sets, and it names
+          # neither localhost nor 127.0.0.1. Until the compose file added its
+          # own names to the operator's, that left the backend's healthcheck
+          # (127.0.0.1:8000) failing, so nothing behind it ever started, and
+          # every step below signs in through localhost.
+          printf 'DEMO_PASSWORD=%s\nREDIS_PASSWORD=%s\nSEED_DEMO_DATA=true\nDJANGO_ALLOWED_HOSTS=%s\n' \
+            "$DEMO_PASSWORD" "$REDIS_PASSWORD" "$PUBLIC_HOST" > .env
           docker compose up -d --build
       - name: nginx answers /api/health/
         run: |
@@ -334,6 +448,16 @@ jobs:
           cat /tmp/health.json; echo
           jq -e '.status == "ok" and .database == "ok"' /tmp/health.json > /dev/null
           docker compose ps
+      - name: The public host name is served, and a name nobody listed is refused
+        run: |
+          set -euo pipefail
+          # The stack turning healthy proves compose kept its own names next
+          # to the one in .env. These prove the operator's name was kept as
+          # well, and that the result is still a list rather than a wildcard.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $PUBLIC_HOST" http://localhost:8080/api/health/)
+          test "$code" = 200 || { echo "Host $PUBLIC_HOST answered $code, expected 200"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-listed.example.test' http://localhost:8080/api/health/)
+          test "$code" = 400 || { echo "an unlisted Host answered $code, expected 400"; exit 1; }
       - name: Sign in through nginx, upload a document, download it through X-Accel
         run: |
           set -euo pipefail

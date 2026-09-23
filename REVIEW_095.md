@@ -1,4 +1,4 @@
-# Conformiti 0.9.5 — third-party review, closed in 0.9.5b
+# Conformiti 0.9.5: third-party review, closed in 0.9.5b
 
 **Date:** 2026-09-12, fixed 2026-09-15 · **Reviewed tree:** v0.9.5 (local
 `a96ff49`, publish `85e5f00`) · **Method:** an independent source review was
@@ -40,14 +40,14 @@ these land as **0.9.5b**.
 | S-3 | Medium | Webhook URLs are stored in plaintext while comparable secrets are encrypted; the admin skips the serializer | `accounts/models.py:30`, `accounts/admin.py:77` |
 | S-4 | Medium | Macro-enabled Office documents are accepted as evidence | `documents/uploads.py:16` |
 | S-5 | Medium | Mailed questionnaire links fall back to the request `Origin` | `vendors/questionnaire.py:64` |
-| S-6 | Low–Med | SAML `Destination` and `Recipient` are accepted when absent | `accounts/saml.py:306`, `:336` |
+| S-6 | Low to Med | SAML `Destination` and `Recipient` are accepted when absent | `accounts/saml.py:306`, `:336` |
 | S-7 | Low | Sign-out cannot see the refresh cookie, so the 7-day token survives | `accounts/session_views.py:68`, `accounts/cookie_auth.py:94` |
 | S-8 | Low | The signing-key directory distinguishes a real workspace slug from a wrong one | `attestations/views.py:417` |
 | S-9 | Info | The demo dataset is still seeded by default and advertised on the health endpoint | `docker-compose.yml:68`, `config/health.py:82` |
 
 ---
 
-## S-1 — webhook URLs readable by every role
+## S-1: webhook URLs readable by every role
 
 **Confirmed, and the reviewer's read of the permission is exactly right.**
 `WorkspaceViewSet` sets `permission_classes = [IsSuperuserOrReadOwn]`, which
@@ -86,13 +86,13 @@ auditor-surface suite asserts the same for the route it deliberately allows,
 which is where this should have been caught in 0.9.5; and an end-to-end test
 saves a webhook, saves the mailbox again, and proves the channel survived.
 
-## S-2 — substring allow-list, and an SSRF that follows redirects
+## S-2: substring allow-list, and an SSRF that follows redirects
 
 **Confirmed.** `_https_or_blank` does `expected_host not in value.lower()`, so
 `https://hooks.slack.com.attacker.tld/x` and `https://attacker.tld/?hooks.slack.com`
 both pass. Teams gets no host check at all. At send time `webhooks._post` only
 re-checks the `https://` prefix and hands the URL to `urllib.request.urlopen`,
-which follows redirects and resolves whatever it is given — so a 302 to
+which follows redirects and resolves whatever it is given, so a 302 to
 `http://169.254.169.254/` or `http://redis:6379/` is reached from inside the
 container network. Writes are superuser-only through the API, but
 `WorkspaceAdmin` (`accounts/admin.py:77`) has no `clean()`, and the model has
@@ -116,9 +116,9 @@ The product already contains the correct pattern, in `integrations/jira.py`:
 3. Host lists, settings-driven so an operator on a different tenant host is not
    stuck: `WEBHOOK_ALLOWED_HOSTS_SLACK` defaults to `hooks.slack.com`;
    `WEBHOOK_ALLOWED_HOSTS_TEAMS` defaults to `webhook.office.com`,
-   `outlook.office.com`, `outlook.office365.com`, `logic.azure.com` — the legacy
+   `outlook.office.com`, `outlook.office365.com`, `logic.azure.com` (the legacy
    Office 365 connector hosts plus Power Automate Workflows, which is where
-   Microsoft has moved Teams incoming webhooks.
+   Microsoft has moved Teams incoming webhooks).
 4. Enforced at **both** ends. `accounts.models.validate_webhook_url` replaces
    `_https_or_blank` as the typing-time check, so the operator gets a 400;
    `webhooks._post` runs the full check before every POST and records
@@ -140,7 +140,7 @@ longer goes through it. They replace `webhooks._open`, a named seam, and stub
 DNS to one public address, so the suite reaches the network no more than it
 did before while every other check runs for real.
 
-## S-3 — webhook URLs not encrypted at rest
+## S-3: webhook URLs not encrypted at rest
 
 **Confirmed.** `config/fieldcrypto.EncryptedCharField` exists for precisely this
 case, secrets the server must read back, and is used for the TOTP secret
@@ -158,10 +158,10 @@ field so stored plaintext becomes ciphertext, following
 half-migrated or key-less database degrades to read-only rather than losing data.
 
 Add `Workspace.clean()` calling the same validator, which closes the admin
-bypass — Django's ModelForm runs `full_clean`, so no admin change is needed
+bypass: Django's ModelForm runs `full_clean`, so no admin change is needed
 beyond the model.
 
-## S-4 — macro-enabled Office accepted
+## S-4: macro-enabled Office accepted
 
 **Confirmed.** `.html`, `.htm`, `.svg` and `.js` are blocked; `.docm`, `.dotm`,
 `.xlsm`, `.xltm`, `.xlam`, `.xlsb`, `.pptm`, `.potm`, `.ppsm` and `.sldm` are
@@ -170,7 +170,7 @@ not. Scanning is off by default (`CLAMAV_ENABLED: ${CONFORMITI_SCANNING:-false}`
 **Fixed.** Added the macro-enabled set plus `.mht`, `.mhtml` and `.xhtml` to
 `BLOCKED_EXTENSIONS`, and sniff the container rather than trusting the name: an
 uploaded OOXML file is a zip, so open it and refuse it if it holds
-`vbaProject.bin` or any `.bin` macro part — that catches a `.docm` renamed to
+`vbaProject.bin` or any `.bin` macro part. That catches a `.docm` renamed to
 `.docx`, which is the actual evasion. Error text stays in the existing voice:
 export to PDF and upload that.
 
@@ -183,7 +183,7 @@ mitigate a class of file we are now refusing outright. The compose file states
 that trade-off plainly instead, and says to turn scanning on for any
 installation holding evidence you did not create.
 
-## S-5 — mailed link base trusts `Origin`
+## S-5: mailed link base trusts `Origin`
 
 **Confirmed.** `PUBLIC_URL` defaults to empty (`config/settings.py:718`) and is
 commented out in `.env.example`, so the shipped default takes the `Origin`
@@ -205,7 +205,7 @@ was added: an installation upgrading from 0.9.5 has no `PUBLIC_URL` by
 definition, and refusing to start would turn a questionnaire problem into an
 outage.
 
-## S-6 — SAML `Destination` and `Recipient` optional
+## S-6: SAML `Destination` and `Recipient` optional
 
 **Confirmed, both of them.** `if destination and destination != flow["acs"]`
 accepts a response with no `Destination`; the `SubjectConfirmationData` loop
@@ -225,14 +225,14 @@ the case where that backstop is genuinely absent: single sign-on enabled, off
 DEBUG, with `DJANGO_ALLOWED_HOSTS=*`, now refuses to start unless both URLs
 are pinned.
 
-## S-7 — sign-out cannot see the refresh cookie
+## S-7: sign-out cannot see the refresh cookie
 
 **Confirmed, and re-scored down slightly.** The refresh cookie's path is
 `/api/auth/token/` (`cookie_auth.py:94`), so `POST /api/auth/session/clear/`
 does not receive it. `SessionClearView` also accepts `refresh` in the body, but
 the cookie is `HttpOnly`, so the SPA cannot supply it. With a *live* access
 cookie `_blacklist_all` revokes everything, which is the common path; only the
-expired-access-cookie case — the case the endpoint was written for — leaves the
+expired-access-cookie case (the case the endpoint was written for) leaves the
 outstanding refresh token valid until it expires naturally.
 
 **Fixed.** The same view is mounted a second time at `POST /api/auth/token/clear/`,
@@ -246,7 +246,7 @@ refresh cookie alone reaches the token-path endpoint and its `OutstandingToken`
 comes back blacklisted. The 0.9.5 suite proved only that the cookies were
 cleared, which was never the part in doubt.
 
-## S-8 — signing-key directory is a slug oracle
+## S-8: signing-key directory is a slug oracle
 
 **Confirmed.** An unknown slug 404s while a real one returns 200, unauthenticated.
 
@@ -255,7 +255,7 @@ request that names no organisation on a multi-workspace installation, so
 presence is indistinguishable. The test that asserted the 404 asserts the
 pair are identical instead.
 
-## S-9 — demo dataset on by default
+## S-9: demo dataset on by default
 
 **Confirmed.** `SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}` in compose, and
 `/api/health/` reports `demo_accounts` to anyone.
@@ -324,7 +324,7 @@ these fixes touch, so no patch conflict. Two things do need checking after the
 core lands:
 
 1. Re-run the overlay's `core` gate, which runs the public suite under Pro
-   settings — the S-1 serializer change and the new `accounts` migration are what
+   settings: the S-1 serializer change and the new `accounts` migration are what
    it would catch.
 2. Audit the Pro surfaces for the same two patterns: any serializer echoing a
    stored credential (API key management, connectors, white-label), and any

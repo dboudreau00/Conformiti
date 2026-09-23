@@ -11,7 +11,8 @@
 #      superuser from DJANGO_SUPERUSER_* (no-op if it exists; a refusal is
 #      logged with its reason and the boot carries on)
 #   5. collect static files for nginx, print the boot banner (which says when
-#      no administrator exists), then exec the CMD (gunicorn)
+#      no administrator exists and, while demo accounts are active, what to
+#      run before real use), then exec the CMD (gunicorn)
 #
 # The Celery worker and beat use their own entrypoints (see
 # docker-compose.yml) and depend on this container being healthy, so
@@ -53,7 +54,13 @@ case "${SEED_DEMO_DATA:-false}" in
     # Set DEMO_PASSWORD to choose it, or SEED_DEMO_DATA=false to skip. After
     # remove_demo_data it seeds nothing: the container keeps this variable
     # for life, and restart: unless-stopped reruns this on every reboot.
-    python manage.py bootstrap_demo
+    # With both DJANGO_SUPERUSER_* values set, the step below creates that
+    # account after this one, so --superuser-follows has the seed leave its
+    # before-real-use advice to the banner at the end instead of telling the
+    # operator to run createsuperuser first. The flag is added only when both
+    # are non-empty, the test that step applies.
+    python manage.py bootstrap_demo \
+      ${DJANGO_SUPERUSER_USERNAME:+${DJANGO_SUPERUSER_PASSWORD:+--superuser-follows}}
     ;;
   *)
     # Defaulted for the same reason as CLAMAV_ENABLED below: `set -u` makes a
@@ -151,6 +158,16 @@ try:
     admin = administrator_present()
 except Exception:
     admin = None
+# Whether remove_demo_data would run: it refuses while the demo accounts are
+# the only administrators of the workspace it cleans (Default, as the line
+# below runs it), and asks this same question. None when the lookup fails,
+# which gets the advice that is right either way.
+try:
+    from accounts import tenancy
+    from accounts.management.commands.bootstrap_demo import own_administrator_present
+    own_admin = own_administrator_present(tenancy.from_option({}))
+except Exception:
+    own_admin = None
 # Read from the environment, not from django.conf, so the line stays right
 # when the settings could not be loaded above.
 key_src = ("from the environment" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY")
@@ -169,7 +186,13 @@ if admin is False:
     print("!! account was made.")
 if demo:
     print("!! Demo accounts are active. They share the password printed once when they")
-    print("!! were created (or the DEMO_PASSWORD you chose). Before real use run:")
+    print("!! were created (or the DEMO_PASSWORD you chose).")
+    if own_admin:
+        print("!! Before real use run:")
+    else:
+        print("!! Before real use, create an administrator of your own (remove_demo_data")
+        print("!! refuses until one exists), then retire the demo accounts:")
+        print("!!   docker compose exec backend python manage.py createsuperuser")
     print("!!   docker compose exec backend python manage.py remove_demo_data")
 PY
 

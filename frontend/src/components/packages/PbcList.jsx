@@ -148,6 +148,15 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     }, "Document attached.");
   };
   const detach = (r, item) => act(`detach-${item.id}`, () => api.delete(`/pbc-items/${item.id}/`));
+  // A refused or failed export says so in the page notice, as the other
+  // exports do, rather than the button doing nothing.
+  const exportCsv = async () => {
+    try {
+      await downloadFile(`/pbc-requests/export/?package=${pkg.id}`, "pbc-requests.csv");
+    } catch (e) {
+      onMessage?.({ ok: false, text: errorText(e, "Couldn't export the request list.") });
+    }
+  };
   const saveEdit = (e, r) => {
     e.preventDefault();
     return act(`edit-${r.id}`, async () => {
@@ -187,7 +196,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
       <PanelHeader title={title} meta={failed ? "- lines" : rows ? `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}` : ""}>
         <span className="flex items-center gap-2">
           {!mine && rows && rows.length ? (
-            <Button size="sm" variant="ghost" onClick={() => downloadFile(`/pbc-requests/export/?package=${pkg.id}`, "pbc-requests.csv")}
+            <Button size="sm" variant="ghost" onClick={exportCsv}
                     icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
               CSV
             </Button>

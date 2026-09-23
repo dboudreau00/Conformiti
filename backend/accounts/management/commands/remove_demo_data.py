@@ -8,9 +8,9 @@ Retire the demo dataset before going live.
 The seeded accounts share one password generated at seed time, so they must
 never survive into a real deployment. This command:
 
-  * deactivates (or, with --delete, removes) the five demo users — but never
-    the account you are running as the only superuser: it refuses to leave the
-    installation without an active superuser or administrator;
+  * deactivates (or, with --delete, removes) the five demo users. It refuses
+    to run until an administrator of your own exists (manage.py
+    createsuperuser), so the installation is never left without one;
   * deletes the sample documents, risks, meeting series, champion group,
     calendar events, the seeded access review and the nine seeded audit-log
     rows, matching them by the exact names bootstrap_demo created;
@@ -31,7 +31,7 @@ from django.db.models import Q
 from accounts import tenancy
 from accounts.management.commands.bootstrap_demo import (
     ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, DEMO_VENDOR_NAMES, RETIRED_ACTION,
-    RETIRED_OBJECT_TYPE, SAMPLE_DOCS, retirement_recorded,
+    RETIRED_OBJECT_TYPE, SAMPLE_DOCS, own_administrator_present, retirement_recorded,
 )
 
 DEMO_USERNAMES = [u[0] for u in DEMO_USERS]
@@ -81,24 +81,18 @@ class Command(BaseCommand):
             User.objects.filter(username__in=DEMO_USERNAMES, email__endswith="@example.com")
         )
         # Guard: the org must keep at least one active superuser/administrator
-        # that is NOT one of the demo accounts. Looked up unscoped on purpose:
+        # that is NOT one of the demo accounts. The test lives beside the
+        # seeder (own_administrator_present), because the seeder's advice and
+        # the container's boot banner ask it too: they tell an operator to
+        # run createsuperuser first exactly when this would refuse.
         # `createsuperuser` now files its account in the first workspace that
         # is not archived (and accounts migration 0013 moved the ones older
         # releases left with none), but a superuser with no workspace at all
-        # still counts here: one detached by hand is still the administrator
-        # an operator may have made before retiring the demo users. A role
-        # counts the way User._cap reads it: an auditor role holds no
-        # capability, whatever it stores.
-        with tenancy.unscoped():
-            survivors = (
-                User.objects.filter(is_active=True)
-                .filter(Q(is_superuser=True)
-                        | Q(role__can_manage_users=True, role__is_auditor=False))
-                .filter(Q(workspace=workspace) | Q(workspace__isnull=True, is_superuser=True))
-                .exclude(pk__in=[u.pk for u in demo_users])
-            )
-            has_survivor = survivors.exists()
-        if demo_users and not has_survivor:
+        # still counts: one detached by hand is still the administrator an
+        # operator may have made before retiring the demo users. A role counts
+        # the way User._cap reads it: an auditor role holds no capability,
+        # whatever it stores.
+        if demo_users and not own_administrator_present(workspace):
             raise CommandError(
                 "Refusing: no administrator other than the demo accounts exists. "
                 "Create your own first (python manage.py createsuperuser), then re-run."
@@ -116,7 +110,7 @@ class Command(BaseCommand):
         groups = ChampionGroup.objects.filter(name__in=DEMO_GROUPS)
         events = CalendarEvent.objects.filter(title__in=DEMO_EVENTS)
         audit_rows = AuditLog.objects.filter(ip_address__in=DEMO_AUDIT_IPS, detail__regex=r"^[a-z]")
-        # Only the seeded review, and only while a demo account owns it — a real
+        # Only the seeded review, and only while a demo account owns it: a real
         # review an operator started in the same quarter must survive.
         reviews = AccessReview.objects.filter(
             name__regex=ACCESS_REVIEW_PATTERN, created_by__username__in=DEMO_USERNAMES

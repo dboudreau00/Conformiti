@@ -9,6 +9,11 @@
 # from their archives, and the stack is started again. A fresh machine works
 # too: compose creates the network, the volumes and the containers first, so
 # nothing is left behind as a foreign volume a later `up` would refuse.
+#
+# .env is not in the backup: it is your own configuration. On a fresh machine
+# write it back before running this (see the note printed below when it is
+# missing). This script is for the Docker stack only; for an installation run
+# without Docker, see "Backups on bare metal" in INSTALL.md.
 set -eu
 export MSYS_NO_PATHCONV=1   # Git Bash on Windows: leave /dst and /in alone
 
@@ -20,6 +25,30 @@ for f in db.sql.gz media.tgz secrets.tgz tree.tgz; do
     exit 1
   fi
 done
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "restore: docker is not installed on this machine. This script restores the Docker" >&2
+  echo "restore: Compose stack; for an installation run without Docker, see \"Backups on bare" >&2
+  echo "restore: metal\" in INSTALL.md." >&2
+  exit 1
+fi
+
+# The database volume created below keeps the POSTGRES_PASSWORD it is created
+# with, and the volumes are named after COMPOSE_PROJECT_NAME. A .env written
+# after the restore therefore no longer matches what was restored, so say so
+# while there is still time to stop. A terminal gets a pause to stop in; a run
+# with no terminal (a script, CI) carries on after the note.
+if [ ! -f .env ]; then
+  echo "restore: there is no .env in this directory, so the stack comes up on the defaults in" >&2
+  echo "restore: docker-compose.yml. .env is not part of a backup: if the installation you backed" >&2
+  echo "restore: up had one, stop here, write it back from your own records (POSTGRES_PASSWORD," >&2
+  echo "restore: REDIS_PASSWORD, PUBLIC_URL, DJANGO_ALLOWED_HOSTS and the origin lists, mail, and" >&2
+  echo "restore: COMPOSE_PROJECT_NAME or ports if you set them) and run this again." >&2
+  if [ -t 0 ]; then
+    printf 'restore: press Enter to restore on the defaults, or Ctrl-C to stop. ' >&2
+    read -r _answer
+  fi
+fi
 
 docker compose up -d --no-recreate db
 docker compose up --no-start
@@ -40,8 +69,11 @@ until docker compose exec -T db sh -c 'pg_isready -q -U "$POSTGRES_USER" -d "$PO
 done
 
 echo "restore: database"
+# -q quiets psql, not the server: without the SET, the CASCADE drop prints a
+# NOTICE and a DETAIL line for every table it takes with it. The load below
+# needs nothing extra, because pg_dump's output sets the same level itself.
 docker compose exec -T db sh -c \
-  'exec psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+  'exec psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SET client_min_messages = warning; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
 gunzip -c "$src/db.sql.gz" | docker compose exec -T db sh -c \
   'exec psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 

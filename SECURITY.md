@@ -22,7 +22,7 @@ and what was deliberately left alone.
 |---|---|---|---|---|
 | 0.1.0, first pass | internal | 9 | below | 0.1.1 |
 | 0.2.0, line by line | internal | 19 | [REVIEW.md](REVIEW.md) | 0.2.0 |
-| 0.9.0, adversarial | **independent** | 50 confirmed of 69 candidates | [REVIEW_090.md](REVIEW_090.md) | 0.9.1 – 0.9.4 |
+| 0.9.0, adversarial | **independent** | 50 confirmed of 69 candidates | [REVIEW_090.md](REVIEW_090.md) | 0.9.1 to 0.9.4 |
 | 0.9.4, source review | **independent** | all confirmed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5 |
 | 0.9.5, source review | **independent** | 9 of 9 verified | [REVIEW_095.md](REVIEW_095.md) | 0.9.5b |
 
@@ -67,7 +67,7 @@ point of view.
   challenges are 32 random bytes kept in a database row that answers once
   and expires in five minutes; origin, relying-party id, ceremony type and
   user presence are all checked, user verification when configured.
-  Attestation is requested as `none` and never verified — a second factor
+  Attestation is requested as `none` and never verified: a second factor
   needs the same key to sign next time, not the authenticator's make. **The
   signature counter is enforced and fails closed:** a counter that does not
   advance marks the key as possibly cloned and refuses the sign-in, while
@@ -76,22 +76,22 @@ point of view.
   account password. Every enrolment, refusal and removal is in the audit trail.
 - **Single sign-on (optional, OpenID Connect):** authorization code + PKCE;
   `state` and `nonce` held server-side in the session; ID tokens verified
-  against the provider's JWKS for signature (asymmetric algorithms only — an
+  against the provider's JWKS for signature (asymmetric algorithms only: an
   `HS256` token signed with the client secret is refused), issuer, audience,
   expiry and nonce; provider endpoints reached over https only, without
   following redirects, with a bounded body. The provider is configured **from
-  the environment only** — there is deliberately no screen or API for it,
+  the environment only**: there is deliberately no screen or API for it,
   because a provider an administrator could register is a provider they could
   point at themselves. A verified email links exactly one existing account and
   **never a superuser or staff account**; those are linked only by an operator
   running `manage.py link_oidc_identity --allow-privileged`. Auto-provisioning
   is off by default and refuses a default role that can manage users. The
   SPA receives its tokens through a one-time ticket bound to the browser
-  session that ran the flow. Every outcome — linked, provisioned, refused and
-  why — is in the audit trail.
+  session that ran the flow. Every outcome (linked, provisioned, refused and
+  why) is in the audit trail.
 - **Single sign-on over SAML 2.0 (optional):** SP-initiated, signed
   HTTP-POST responses only. The provider's signing certificate from the
-  environment is the sole trust anchor — no metadata fetch, no certificate
+  environment is the sole trust anchor: no metadata fetch, no certificate
   taken from the message. Signatures are verified with asymmetric algorithms
   only, and **only the element the signature covers is read**, so a Response
   carrying an extra unsigned assertion yields nothing from it. Issuer,
@@ -108,12 +108,12 @@ point of view.
 - **Evidence preview never renders a file as HTML.** Images stream inline
   only when their first bytes say so and are shown from a `blob:` URL in an
   `<img>`. **PDFs are drawn by pdf.js onto canvases** in a worker shipped
-  with the bundle, scripting off — no frame, no plugin, no PDF JavaScript.
+  with the bundle, scripting off: no frame, no plugin, no PDF JavaScript.
   Word and Excel are parsed on the server with the standard library
   (zip bomb and size limits, no external entities) into a small structured
   vocabulary the SPA renders itself. No third-party viewer is involved.
-- **Secrets at rest:** the two columns that must be readable by the server —
-  the TOTP shared secret and the Jira API token — are encrypted with
+- **Secrets at rest:** the two columns that must be readable by the server
+  (the TOTP shared secret and the Jira API token) are encrypted with
   AES-256-GCM under a rotatable key ring (`manage.py rotate_field_keys`). The
   associated data binds each ciphertext to its own row and column, so a value
   lifted from a database dump and written into another row is inert. Everything
@@ -135,18 +135,19 @@ point of view.
   a Permissions-Policy are always on; the shipped nginx sends a
   Content-Security-Policy (`script-src 'self'`); uploads are served as
   attachments inside a sandboxing CSP. Nothing is loaded from a third party at
-  page load — no font, script or stylesheet from a CDN — so the login screen
+  page load (no font, script or stylesheet from a CDN), so the login screen
   and the public vendor questionnaire tell nobody the address of your
   installation. With `DJANGO_DEBUG=false` and `BEHIND_TLS=true` (the default
   off DEBUG), HTTPS redirect, secure cookies and optional HSTS engage.
 - **Abuse resistance:** per-client login (8/min) and MFA (10/min) throttles and
   a global anonymous throttle, with counters in Redis in the compose stack so
-  the limit is shared across workers.
+  the limit is shared across workers. Without Docker, `CACHE_URL` must point
+  at Redis for the same effect; unset, each gunicorn worker counts on its own.
 - **Uploads:** size ceiling (`MAX_UPLOAD_MB`, default 32) enforced at nginx and
   in the application; empty files and active-content extensions refused.
 - **Optional malware scanning.** `docker compose --profile scanning up -d` plus
   `CONFORMITI_SCANNING=true` sends every uploaded file to a ClamAV daemon before
-  it is stored — documents, new versions, meeting minutes and form templates.
+  it is stored: documents, new versions, meeting minutes and form templates.
   Scanning happens *after* the folder permission check, so an unauthorised
   caller can neither use it as a signature-set oracle nor tie the scanner up.
   When it is enabled it fails **closed**: if the scanner cannot be reached the
@@ -166,13 +167,13 @@ The full method and evidence are in [REVIEW.md](REVIEW.md).
 
 | # | Severity | Issue | Fix |
 |---|----------|-------|-----|
-| 1 | High | A folder could be moved under one of its own descendants, creating a parent cycle; `Folder.ancestors()` then looped forever inside every access check — one PATCH from any user with edit on a folder hung the API. | Cycle rejected at validation; ancestor walk bounded; corrupted chains raise instead of spinning. |
-| 2 | High | Re-parenting a folder required only *edit* on the folder itself, so a user could move a subtree under a folder they could not see — exposing it to everyone granted on the destination's ancestors. | Moving requires *manage* on the folder and *edit* on the destination; top-level moves require the folders capability; generated framework folders cannot be moved, renamed or deleted. |
+| 1 | High | A folder could be moved under one of its own descendants, creating a parent cycle; `Folder.ancestors()` then looped forever inside every access check: one PATCH from any user with edit on a folder hung the API. | Cycle rejected at validation; ancestor walk bounded; corrupted chains raise instead of spinning. |
+| 2 | High | Re-parenting a folder required only *edit* on the folder itself, so a user could move a subtree under a folder they could not see, exposing it to everyone granted on the destination's ancestors. | Moving requires *manage* on the folder and *edit* on the destination; top-level moves require the folders capability; generated framework folders cannot be moved, renamed or deleted. |
 | 3 | High | Refresh tokens were neither rotated nor revocable: a stolen refresh token minted access tokens for its full 7-day life, and sign-out was client-side only. | Rotation + blacklist on every refresh; server-side logout endpoint; weekly blacklist pruning. |
 | 4 | Medium | Throttle counters lived in a per-process local-memory cache, so with 3 gunicorn workers the login limit was effectively 24/min per worker set, and nothing was shared between containers. | Redis-backed cache when `CACHE_URL` is set (compose sets it). |
 | 5 | Medium | A document's owner could delete it with only *view* on the folder ("owners may always edit their own"), letting a control owner remove their own evidence trail. | Delete requires *manage* on the folder; ownership still grants edit. |
 | 6 | Medium | No application-level upload limit or type check: the dev server, admin and any direct-to-gunicorn deployment accepted unbounded uploads and stored `.html`/`.svg`/`.exe` as evidence. | Size ceiling and blocked-extension list enforced in serializers for every upload path; `/media/` sandboxed by CSP. |
-| 7 | Medium | Authentication events were not in the audit trail, and mutation entries recorded only the path — an auditor could not tell that a failed brute-force ran or which fields of a user were changed. | Login/failed-login/logout events with reason and IP; mutation entries carry changed field names (never values) and created ids. |
+| 7 | Medium | Authentication events were not in the audit trail, and mutation entries recorded only the path: an auditor could not tell that a failed brute-force ran or which fields of a user were changed. | Login/failed-login/logout events with reason and IP; mutation entries carry changed field names (never values) and created ids. |
 | 8 | Medium | The Docker quickstart and both installers' Docker path ran the stack in DEBUG with the published placeholder key (and 0.1.1's guard only fires with DEBUG off). | Compose defaults to DEBUG off with an auto-generated persisted key; installers write a production-style `.env`; the container refuses placeholder keys off DEBUG. |
 | 9 | Medium | The API and admin were published on `0.0.0.0:8000` alongside nginx, exposing the browsable API and admin login directly on the LAN. | Port bound to `127.0.0.1`; admin proxied through nginx; browsable API disabled in production. |
 | 10 | Low | Built-in role capability flags could be rewritten through `PATCH /roles/{id}/` (e.g. giving *Viewer* `can_manage_users`). | Flags on `is_system` roles are locked; custom roles remain fully editable. |
@@ -182,7 +183,7 @@ The full method and evidence are in [REVIEW.md](REVIEW.md).
 | 14 | Low | The inline theme bootstrap in `index.html` prevented a `script-src 'self'` CSP, so the shipped nginx config left CSP commented out. | Bootstrap moved to `/theme-init.js`; CSP enabled by default. |
 | 15 | Low | Password minimum of 8 characters is below PCI DSS v4.0.1 §8.3.6 (12). | Default 12 (`PASSWORD_MIN_LENGTH`). |
 | 16 | Low | The container ran as root. | Unprivileged `app` user; writable paths owned by it. |
-| 17 | High | **A development `.env` put the Docker stack into DEBUG.** Compose reads `./.env` for `${...}` substitution *and* into the containers, and that file is written by the *local* installer with `DJANGO_DEBUG=true` and a development signing key — so `./install.sh` followed by `docker compose up` produced a DEBUG container issuing tokens signed with the dev key, despite the compose default being `false`. Found by booting the stack and asserting `settings.DEBUG` inside it, not by reading the file. | Fixed: the stack reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a development `.env` never contains; validator check 16 fails the build if the old interpolation returns. |
+| 17 | High | **A development `.env` put the Docker stack into DEBUG.** Compose reads `./.env` for `${...}` substitution *and* into the containers, and that file is written by the *local* installer with `DJANGO_DEBUG=true` and a development signing key, so `./install.sh` followed by `docker compose up` produced a DEBUG container issuing tokens signed with the dev key, despite the compose default being `false`. Found by booting the stack and asserting `settings.DEBUG` inside it, not by reading the file. | Fixed: the stack reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a development `.env` never contains; validator check 16 fails the build if the old interpolation returns. |
 
 ### Findings fixed in the 0.1.0 review (still in force)
 
@@ -235,7 +236,7 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   the user while the page is open, because the browser attaches the cookie for
   it. What it can no longer do is *exfiltrate* a credential that keeps working
   after the tab closes. Same-origin deployments only, which is what the
-  shipped nginx serves. `AUTH_TRANSPORT=header` restores the 0.2.x–0.6.0
+  shipped nginx serves. `AUTH_TRANSPORT=header` restores the 0.2.x to 0.6.0
   behaviour (tokens in `localStorage`); switching signs everyone out once, and
   both modes accept a Bearer header, so API clients are unaffected. The
   end-to-end suite runs against both transports in CI.
@@ -248,9 +249,12 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
 - **The field-encryption key is only as protected as where you put it.**
   Encryption at rest defends against a stolen dump or backup, not against an
   attacker who already has the application's key. If the key ring is derived
-  from `DJANGO_SECRET_KEY`, one secret protects both; keep them separate for a
-  stronger separation, and use a secrets manager if your threat model needs it.
-  It also does not stop an attacker who can *write* to the database — the read
+  from `DJANGO_SECRET_KEY`, one secret protects both, and changing that key
+  without moving the ring first makes enrolled authenticators unreadable
+  ([INSTALL.md](INSTALL.md#backups-on-bare-metal) shows the move). Keep them
+  separate for a stronger separation, and use a secrets manager if your
+  threat model needs it.
+  It also does not stop an attacker who can *write* to the database: the read
   path deliberately accepts legacy plaintext so an upgrade cannot lock you out.
 - **Back up the encryption key with the database.** Without it, enrolled
   authenticators cannot be read. That degrades safely rather than dangerously:
@@ -258,7 +262,7 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   in with their (deliberately unencrypted) single-use backup codes, and an
   administrator can reset a user's enrollment. Restoring the key restores the
   secrets. A saved Jira token would have to be re-entered.
-- **An evidence package is a deliberate, narrow disclosure — and the only
+- **An evidence package is a deliberate, narrow disclosure, and the only
   place folder permissions are bypassed.** An auditor holding a live grant on a
   sealed package can read exactly the artefacts pinned into it, and nothing
   else. That bypass lives in one module (`attestations/access.py`) so it can be
@@ -270,13 +274,13 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
 - **A sealed package is signed, and the signature is only as good as the
   key.** Since 0.7.0 every manifest is signed (Ed25519, detached) with a key
   that lives in a file (`SIGNING_KEY_FILE`, 0600, in the `secrets` volume)
-  or the environment — never in the database, so a dump, a backup or a SQL
+  or the environment, never in the database, so a dump, a backup or a SQL
   injection yields the evidence and every digest but not the key. The
   public key is published (`/api/signing-keys/`, Settings › About), the
   bundle carries it, and the shipped `verify.py` checks the signature with
   the standard library alone. What the signature proves: the manifest was
   signed by whoever held the key at sealing. What it cannot prove: that the
-  key was never copied — protect the secrets volume as you would the Django
+  key was never copied. Protect the secrets volume as you would the Django
   secret key, rotate with `manage.py rotate_signing_key` if in doubt (old
   packages keep verifying under the key they carry), and keep publishing
   the digest out of band; the `seal` entry in the audit trail is the other
@@ -286,7 +290,7 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   local authenticator only when one is enrolled (or, with
   `SSO_STEP_UP=required`, refuses otherwise); a person with no local
   authenticator is as strong as the provider's assertion. A compromised IdP
-  tenant administrator can sign in as any linked non-privileged user — which
+  tenant administrator can sign in as any linked non-privileged user, which
   is why administrator accounts are never linked by email and why the
   provider cannot be changed from inside the app. SAML requests are not
   signed (responses are).
@@ -296,7 +300,7 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   settings screen says so before they rely on one key.
 - **The questionnaire link is a bearer credential.** Whoever holds it can
   read the twelve questions, the vendor's own draft and the vendor's name,
-  and submit once — nothing else. It is 32 random bytes, stored only as a
+  and submit once, and nothing else. It is 32 random bytes, stored only as a
   hash, expires (14 days by default, 90 at most), is superseded by the next
   send, and can be withdrawn; the public endpoints have their own rate
   limit. It goes out by email, so it is as private as the vendor's mailbox.
@@ -335,15 +339,20 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
 
 1. `DJANGO_DEBUG=false` and a strong unique `DJANGO_SECRET_KEY` (or
    `DJANGO_SECRET_KEY_FILE` on a persistent volume, as compose does).
-2. Set `DJANGO_ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` to
-   your real origins.
-3. Terminate TLS in front of nginx and set `BEHIND_TLS=true`; set
-   `SECURE_HSTS_SECONDS` once HTTPS is stable.
-4. Use PostgreSQL and Redis (compose provides both) and a real
-   `EMAIL_PROVIDER` so review reminders reach owners.
+2. Set `DJANGO_ALLOWED_HOSTS` (your public host name(s); the Docker stack
+   adds its own internal names itself), `CORS_ALLOWED_ORIGINS` and
+   `CSRF_TRUSTED_ORIGINS` to your real origins.
+3. Terminate TLS in front of nginx and set `BEHIND_TLS=true` and
+   `NUM_PROXIES` to match; set `SECURE_HSTS_SECONDS` once HTTPS is stable.
+4. Use PostgreSQL and Redis (compose provides both; without Docker, point
+   `CACHE_URL` at Redis too) and a real `EMAIL_PROVIDER` so review reminders
+   reach owners.
 5. Create your own administrator (`createsuperuser` or `DJANGO_SUPERUSER_*`),
    then run `manage.py remove_demo_data`. Confirm `/api/health/` reports
-   `"demo_accounts": false`.
-6. Back up the database and the media volume nightly; test a restore once.
+   `"demo_accounts":false`.
+6. Back up nightly and test a restore once: on Docker `scripts/backup.sh`
+   (the database and the media, secrets and tree volumes); without Docker,
+   the list in [INSTALL.md](INSTALL.md#backups-on-bare-metal), whose key
+   files matter as much as the database.
 7. Restrict who can reach `/admin/` (it is proxied through nginx; put it behind
    your reverse proxy's allow-list or VPN).

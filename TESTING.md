@@ -141,6 +141,8 @@ prints the emails (console provider); second run → 0.
 ### 16 · Docker path
 `./install.sh --docker --demo` → healthy in < 4 minutes on a laptop;
 `http://localhost:8080/api/health/` → `status ok`, `demo_accounts true`;
+`docker compose exec backend python manage.py createsuperuser` (your own
+administrator: `remove_demo_data` refuses until one exists), then
 `docker compose exec backend python manage.py remove_demo_data` → the login
 page stops showing the demo hint and `demo_accounts` is `false`. Without
 `--demo` the dataset is never created and `demo_accounts` is `false` from the

@@ -1,4 +1,4 @@
-"""Access reviews, risk register, meetings — permissions and export safety."""
+"""Access reviews, risk register, meetings: permissions and export safety."""
 import csv
 import io
 

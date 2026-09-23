@@ -20,8 +20,8 @@ npm test
 That is the whole setup. Playwright starts everything it needs:
 
 1. deletes `e2e/.e2e-db.sqlite3` and `e2e/.e2e-media`, then migrates, seeds the
-   three control libraries and loads the demo dataset into them — your own
-   development database and uploads are never touched;
+   three control libraries and loads the demo dataset into them (your own
+   development database and uploads are never touched);
 2. starts Django on `127.0.0.1:8001`;
 3. runs `npm run build` in `frontend/` and serves the result with
    `vite preview` on `127.0.0.1:4173`, proxying `/api` and `/media` to Django.
@@ -44,9 +44,9 @@ and `frontend/node_modules`.
 ## What makes a test fail
 
 Beyond its own assertions, **any console error, uncaught exception or failed
-request fails the test**. That is not decoration: two real 0.2.0 defects — the
+request fails the test**. That is not decoration: two real 0.2.0 defects (the
 audit-log filter listing every action once per row, and four screens silently
-reading only the first page of a paginated endpoint — first showed up as
+reading only the first page of a paginated endpoint) first showed up as
 console noise during a screenshot run.
 
 A test that deliberately provokes an error response says so by pattern:
@@ -60,14 +60,14 @@ There is no switch that turns the check off.
 ## Writing a test
 
 - Import `test` and `expect` from `../fixtures.js`, never from
-  `@playwright/test` — that is where the console-error fixture lives.
+  `@playwright/test`: that is where the console-error fixture lives.
 - Use `open(page, "/risks", "Risk register")` to navigate: it waits for the
   top-bar `<h1>`. Several screens repeat their title as a panel `<h2>`, so an
   unscoped `getByRole("heading")` is ambiguous.
 - Prefer roles and accessible names over CSS. Where a name is missing, that is
   usually worth fixing in the application instead.
 - Watch for text that Tailwind uppercases: the DOM says `login` while the
-  screen says `LOGIN`. Match case-insensitively, and scope to the table — the
+  screen says `LOGIN`. Match case-insensitively, and scope to the table: the
   same strings sit in hidden `<option>` elements of the filter dropdowns.
 
 ## In CI
@@ -93,6 +93,7 @@ e2e/
     workspace.spec.js   dashboard, calendar, review queue, documents, risks
     controls.spec.js    the 217-control register: tabs, filters, search, export
     governance.spec.js  audit trail, access reviews, users, meetings, groups
+    downloads.spec.js   a download or export that fails says why on screen
     settings.spec.js    profile, theme packs, accent packs, MFA enrolment
     screenshots.spec.js opt-in: regenerates the README screenshots
 ```

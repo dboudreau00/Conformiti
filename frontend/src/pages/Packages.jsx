@@ -50,7 +50,7 @@ const ASSURANCE = [
 function Notice({ msg }) {
   if (!msg) return null;
   return (
-    <p className={cn("notice", msg.ok ? "notice-ok" : "notice-err")} role="status">
+    <p className={cn("notice", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
       {msg.text}
     </p>
   );

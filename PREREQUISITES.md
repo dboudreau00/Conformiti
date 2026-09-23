@@ -14,6 +14,9 @@
   before starting the other, or move one of them (the local API moves with
   `CONFORMITI_DEV_API_PORT`, which is separate from `CONFORMITI_API_PORT`).
 - Outbound internet once, to pull base images and build.
+- **git**, to clone the repository, and **curl** if you use
+  `./install.sh --docker` (it waits for the stack with it; `install.ps1`
+  needs nothing extra).
 - Nothing else. No `.env` is required.
 
 For production add: a DNS name, a TLS-terminating proxy in front of port 8080
@@ -26,8 +29,11 @@ package signing key, and a restore without it loses all three.
 ## Local development path
 
 - **Python 3.11 to 3.14** with `venv` and `pip`
-  (Ubuntu: `sudo apt install python3-venv python3-pip`).
+  (Debian or Ubuntu: `sudo apt install python3-venv python3-pip`). The
+  installer refuses anything older than 3.11 and warns about anything newer
+  than 3.14, which is untested.
 - **Node.js 20.19+ or 22.12+** with npm 10+ (Vite 8 requires it).
+- **git**, to clone the repository.
 - Free local ports **8000** (Django) and **5173** (Vite), or others named in
   `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT`.
 - macOS 13+, any recent Linux, or Windows 10/11 (PowerShell 5.1 or 7).
@@ -38,6 +44,15 @@ Docker path). Windows PowerShell refuses to run any script by default, and a
 script extracted from a downloaded ZIP is refused under `RemoteSigned` too.
 `-ExecutionPolicy Bypass` lifts that for the one run and changes nothing on
 the machine.
+
+## Bare metal (Linux, without Docker)
+
+Everything the local development path needs, plus PostgreSQL 16, Redis 7 and
+nginx on the host, a DNS name and a TLS certificate for production, and a
+backup of the database, the evidence files and the key files.
+[INSTALL.md](INSTALL.md) §3 walks through it, backups included.
+
+## Accounts and integrations
 
 No external accounts are required: SQLite, console email and local file
 storage are the defaults. Optional, to exercise integrations: SMTP/SES

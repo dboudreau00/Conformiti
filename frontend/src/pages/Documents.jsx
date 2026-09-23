@@ -617,6 +617,17 @@ export default function Documents({ me }) {
   }
 
   // --- document actions ---------------------------------------------------------
+  // A download that fails says why in the notice at the top of the page
+  // instead of doing nothing. That includes a file the server handed to an nginx that is
+  // not there: the error then names MEDIA_INTERNAL=false.
+  async function downloadDoc(d) {
+    setMsg(null);
+    try {
+      await downloadFile(`/documents/${d.id}/download/`, d.download_name || d.name);
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "Couldn't download this file.") });
+    }
+  }
   function toggleMap(d) {
     if (editor?.id === d.id && editor.mode === "map") { setEditor(null); return; }
     setEditor({ id: d.id, mode: "map" });
@@ -938,7 +949,7 @@ export default function Documents({ me }) {
                                 >
                                   {d.name}
                                 </button>
-                                <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.download_name || d.name)}>
+                                <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadDoc(d)}>
                                   <DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                                 </IconButton>
                               </span>
@@ -1144,7 +1155,7 @@ export default function Documents({ me }) {
                                       >
                                         {d.name}
                                       </button>
-                                      <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.download_name || d.name)}>
+                                      <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadDoc(d)}>
                                         <DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                                       </IconButton>
                                     </span>

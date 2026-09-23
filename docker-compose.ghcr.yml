@@ -9,6 +9,18 @@
 # installation started this way is the same installation, assembled from
 # artefacts rather than from a build.
 #
+# nginx's configuration is the exception: it is baked into the frontend image,
+# so editing frontend/nginx.conf (to raise client_max_body_size, say) changes
+# nothing on this path. To run an edited copy, mount it from a third file of
+# your own and name that file after these two on every command:
+#
+#   services:
+#     frontend:
+#       volumes:
+#         - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+#
+# After a later edit, restart the frontend service so nginx reads it again.
+#
 # `latest` follows the newest release; pin a version for production:
 #
 #   CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d

@@ -6,6 +6,7 @@ unless-stopped reruns it on every host reboot). Once remove_demo_data has
 retired the demo, those later boots must leave the workspace alone: no
 sample records back among the real ones, and no demo accounts recreated.
 """
+import contextlib
 import os
 import re
 import tempfile
@@ -38,7 +39,7 @@ class DemoRetirementTests(TestCase):
         self.addCleanup(media_root.disable)
 
         call_command("seed_frameworks", "--with-folders", verbosity=0)
-        self.boot()
+        self.first_boot = self.boot()
         # remove_demo_data refuses to leave the workspace without an
         # administrator of its own.
         make_user("realadmin", superuser=True)
@@ -182,6 +183,20 @@ class DemoRetirementTests(TestCase):
         self.assertTrue(retired())
 
     # -- the wording ------------------------------------------------------------
+    def test_the_seed_names_createsuperuser_first_until_an_own_administrator_exists(self):
+        """remove_demo_data refuses while the demo accounts are the only
+        administrators, so advice naming it alone failed exactly as printed."""
+        out = self.first_boot  # before setUp made realadmin
+        self.assertIn("manage.py createsuperuser", out)
+        self.assertLess(out.index("manage.py createsuperuser"), out.index("manage.py remove_demo_data"))
+
+        # With an administrator of the operator's own, it is the one command.
+        self.remove()
+        out = self.boot("--force")
+        self.assertIn("Sign in as  admin", out)
+        self.assertIn("manage.py remove_demo_data", out)
+        self.assertNotIn("createsuperuser", out)
+
     def test_no_output_calls_the_demo_password_published(self):
         """The password is generated per installation and printed once; a
         'published' password reads as a well-known credential."""
@@ -207,3 +222,105 @@ class EntrypointDemoBannerTests(SimpleTestCase):
     def test_the_header_states_the_default_the_code_uses(self):
         default = re.search(r'case "\$\{SEED_DEMO_DATA:-(\w+)\}"', self.source).group(1)
         self.assertIn(f"SEED_DEMO_DATA, default {default}", self.source)
+
+
+def _demo_admin():
+    """The seeded administrator as /api/health/ and remove_demo_data know it:
+    named admin, with an @example.com address."""
+    return make_user("admin", superuser=True, email="admin@example.com")
+
+
+class OwnAdministratorTests(TestCase):
+    """own_administrator_present: remove_demo_data's guard, and the question
+    the seeder's advice and the boot banner ask before naming createsuperuser."""
+
+    def setUp(self):
+        from accounts.management.commands.bootstrap_demo import own_administrator_present
+
+        self.present = lambda: own_administrator_present(tenancy.default_workspace())
+        _demo_admin()
+
+    def test_the_demo_administrator_is_nobody_s_own(self):
+        self.assertFalse(self.present())
+
+    def test_a_superuser_of_the_workspace_or_of_none_counts(self):
+        User = get_user_model()
+        root = make_user("root", superuser=True)
+        self.assertTrue(self.present())
+        with tenancy.unscoped():
+            User.objects.filter(pk=root.pk).update(workspace=None)
+        self.assertTrue(self.present(), "a superuser detached by hand still counts")
+        with tenancy.unscoped():
+            User.objects.filter(pk=root.pk).update(is_active=False)
+        self.assertFalse(self.present(), "an inactive one administers nothing")
+
+    def test_a_user_managing_role_counts_and_an_auditor_role_does_not(self):
+        from accounts.models import Role
+
+        auditing = Role.objects.create(name="Auditing admin", can_manage_users=True, is_auditor=True)
+        make_user("outside-auditor", role=auditing)
+        self.assertFalse(self.present())
+        people = Role.objects.create(name="People admin", can_manage_users=True)
+        make_user("people", role=people)
+        self.assertTrue(self.present())
+
+    def test_an_administrator_of_another_workspace_is_not_this_one_s(self):
+        """remove_demo_data cleans one workspace and asks about that one."""
+        from accounts.models import Role
+
+        other = Workspace.objects.create(name="Beta Ltd", slug="beta-own-admin")
+        with tenancy.scoped(other):
+            role = Role.objects.create(name="People admin", can_manage_users=True)
+            make_user("beta-manager", role=role)
+        self.assertFalse(self.present())
+
+
+class EntrypointDemoAdviceTests(TestCase):
+    """The boot banner's demo lines, run as the entrypoint runs them (the
+    Python between `python - <<'PY'` and `PY` at the end of entrypoint.sh),
+    against this test's database. It told an operator to run remove_demo_data,
+    which then refused because no administrator of their own existed yet."""
+
+    source = (Path(__file__).resolve().parent.parent / "entrypoint.sh").read_text(encoding="utf-8")
+
+    def banner(self):
+        start = self.source.index("python - <<'PY'\nimport os\nfrom config.version")
+        body = self.source[start:].split("\n", 1)[1]
+        code = body[:body.index("\nPY\n")]
+        out = StringIO()
+        # django.setup() has already run in this process; the banner's call
+        # would only configure logging again.
+        with mock.patch("django.setup"), mock.patch.dict(os.environ, {"DJANGO_DEBUG": "false"}), \
+                contextlib.redirect_stdout(out):
+            exec(compile(code, "entrypoint.sh banner", "exec"), {"__name__": "__main__"})
+        return out.getvalue()
+
+    def test_createsuperuser_comes_first_while_the_demo_holds_the_only_administrator(self):
+        _demo_admin()
+        out = self.banner()
+        self.assertIn("demo accounts=ON", out)
+        self.assertNotIn("No administrator exists yet", out, "the demo admin is an administrator")
+        first = out.index("manage.py createsuperuser")
+        self.assertLess(first, out.index("manage.py remove_demo_data"))
+        self.assertIn("refuses until one exists", out)
+
+    def test_with_an_administrator_of_ones_own_it_is_the_one_command(self):
+        _demo_admin()
+        make_user("root", superuser=True)
+        out = self.banner()
+        self.assertIn("docker compose exec backend python manage.py remove_demo_data", out)
+        self.assertNotIn("createsuperuser", out)
+
+    def test_a_failed_lookup_gives_the_advice_that_is_right_either_way(self):
+        _demo_admin()
+        make_user("root", superuser=True)
+        with mock.patch("accounts.management.commands.bootstrap_demo.own_administrator_present",
+                        side_effect=RuntimeError("database gone")):
+            out = self.banner()
+        self.assertLess(out.index("manage.py createsuperuser"), out.index("manage.py remove_demo_data"))
+
+    def test_no_demo_no_demo_advice(self):
+        make_user("root", superuser=True)
+        out = self.banner()
+        self.assertIn("demo accounts=off", out)
+        self.assertNotIn("remove_demo_data", out)

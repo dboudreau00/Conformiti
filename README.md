@@ -73,8 +73,8 @@
 
 <a id="sixty-second-install"></a>
 
-You need Docker Engine 24 or newer with Docker Compose 2.24.0 or newer, and
-free host ports 8080 and 8000, or others named in `CONFORMITI_PORT` and
+You need git, Docker Engine 24 or newer with Docker Compose 2.24.0 or newer,
+and free host ports 8080 and 8000, or others named in `CONFORMITI_PORT` and
 `CONFORMITI_API_PORT` ([Requirements](#requirements)).
 
 ```bash
@@ -114,6 +114,9 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 Prefer a script that waits for the stack to report healthy and prints the URLs?
+(`install.sh` needs curl for the wait.) Where there is no `.env` it writes a
+production-style one, with no secret key in it: the container generates its
+own and keeps it in the `secrets` volume, as on the plain path above.
 
 ```bash
 ./install.sh --docker                                            # macOS / Linux / WSL
@@ -136,11 +139,13 @@ refused under `RemoteSigned` as well.
 > `SEED_DEMO_DATA=true` in a `.env` file beside `docker-compose.yml` before
 > `docker compose up` for a seeded organisation and five personas sharing one
 > generated password, printed once in the backend log
-> (`docker compose logs backend`). It is off by default because those accounts
-> have no second factor, and an installation carrying them says so on its own
-> sign-in page. Retire them before any real data goes in. `remove_demo_data`
-> refuses to run until an administrator of your own exists, so create one
-> first:
+> (`docker compose logs backend`) until that container is recreated (as
+> `docker compose up` does after any change to `.env`), so note it. It is
+> off by default because
+> those accounts have no second factor, and an installation carrying them
+> says so on its own sign-in page. Retire them before any real data goes
+> in. `remove_demo_data` refuses to run until an administrator of your own
+> exists, so create one first:
 >
 > ```bash
 > docker compose exec backend python manage.py createsuperuser
@@ -540,11 +545,11 @@ access still sees and answers the lines assigned to them.**
 | 1 | `docker compose up -d --build` | The stack comes up with production-safe defaults |
 | 2 | `manage.py createsuperuser` | Your first real administrator, with a password that passes the policy (`PASSWORD_MIN_LENGTH`, 12 by default). No demo dataset is seeded unless you asked for one |
 | 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | Only if you did ask: those accounts share one password and have no second factor. It refuses to run until the administrator from step 2 exists, and the retirement holds across restarts even with `SEED_DEMO_DATA=true` still set |
-| 4 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. Sending a vendor questionnaire is refused until `PUBLIC_URL` is set, because the link carries a bearer token |
+| 4 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. `DJANGO_ALLOWED_HOSTS` is your public host name(s); the Docker stack adds its own internal names itself. Sending a vendor questionnaire is refused until `PUBLIC_URL` is set, because the link carries a bearer token |
 | 5 | Put TLS in front and set `BEHIND_TLS=true` | Secure cookies, HTTPS redirect, `__Host-` prefixes. The prefix only works over https |
 | 6 | Configure `EMAIL_PROVIDER`, then send yourself a test: `manage.py test_mailbox --to you@example.com` | Reminders are half the product. It sends a sample review reminder through whichever provider is configured, with the template and transport real reminders use, and with `mailbox` checks the account's sign-in first |
 | 7 | Enrol a second factor on every account with a management capability | TOTP or passkeys; backup codes belong to the account |
-| 8 | Back up the **secrets** volume | It holds `DJANGO_SECRET_KEY_FILE`, the field-encryption ring *and* the package signing key |
+| 8 | Back up the **secrets** volume | It holds the secret key (the file `DJANGO_SECRET_KEY_FILE` names), the field-encryption ring *and* the package signing key, whether you started with plain `docker compose` or the install script: neither writes a key into `.env` |
 | 9 | Restore from a backup once, into a scratch environment | An untested backup is a finding in most frameworks and a disaster in all of them. On the same host, restore into a second checkout whose `.env` sets its own `COMPOSE_PROJECT_NAME`, `CONFORMITI_PORT` and `CONFORMITI_API_PORT`: two checkouts in folders of the same name are one Compose project and share its volumes |
 
 ---
@@ -555,8 +560,8 @@ access still sees and answers the lines assigned to them.**
 
 | Path | Needs |
 |---|---|
-| **Docker** (recommended) | Docker Engine 24+ with Docker Compose 2.24.0 or newer (older Compose rejects the compose file's optional `.env` entry). 2 vCPU / 4 GB RAM / 20 GB disk is comfortable. Host port 8080 free, and 8000 on 127.0.0.1 |
-| **Local** (trial, development) | Python 3.11 to 3.14, Node 20.19+ or 22.12+. SQLite, console email, nothing to run. Local ports 8000 and 5173 free, or others named in `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT` |
+| **Docker** (recommended) | git, and Docker Engine 24+ with Docker Compose 2.24.0 or newer (older Compose rejects the compose file's optional `.env` entry); curl too for `install.sh --docker`. 2 vCPU / 4 GB RAM / 20 GB disk is comfortable. Host port 8080 free, and 8000 on 127.0.0.1 |
+| **Local** (trial, development) | git, Python 3.11 to 3.14 with `venv` and `pip` (Debian/Ubuntu: `sudo apt install python3-venv python3-pip`), Node 20.19+ or 22.12+. SQLite, console email, nothing to run. Local ports 8000 and 5173 free, or others named in `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT` |
 | **Production** | PostgreSQL 16, Redis 7, a TLS-terminating proxy, an SMTP/SES sender, a backup target |
 | **Optional** | Amazon S3, ClamAV, an OIDC or SAML IdP, a Slack/Teams webhook, Jira Cloud |
 
@@ -630,7 +635,10 @@ volumes: pgdata · media · static · secrets · tree  (clamdb with the scanning
 > the upstream header through, so adding one produces *two*, and browsers
 > refuse the response. The API owns that header. This is called out because it
 > was a real bug between 0.3.0 and 0.5.0; if you customise `nginx.conf`, do not
-> reintroduce it.
+> reintroduce it. The file is built into the frontend image: a source build
+> picks up an edit with `docker compose up -d --build`, and the published
+> images need the edited file mounted
+> ([INSTALL.md](INSTALL.md#without-a-build-the-published-images)).
 
 ---
 
@@ -646,8 +654,10 @@ defaults; `.env` overrides them. Every key is documented in
 |---|---|
 | `DJANGO_DEBUG` | `false` in Docker by default; `true` only on the local dev path |
 | `DJANGO_SECRET_KEY` / `DJANGO_SECRET_KEY_FILE` | A strong key, or a path where one is generated and persisted (compose uses the file form on the `secrets` volume) |
-| `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS` | Your real hostname(s) once you leave localhost. Getting these wrong is the most common cause of an install that runs but refuses logins |
-| `BEHIND_TLS` | `true` once a TLS-terminating proxy sits in front of nginx |
+| `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS` | Your real hostname(s) once you leave localhost. `DJANGO_ALLOWED_HOSTS` is your public host name(s): the Docker stack adds its own internal names (`localhost`, `127.0.0.1`, `backend`) itself. Getting these wrong is the most common cause of an install that runs but refuses logins |
+| `BEHIND_TLS` | `true` once a TLS-terminating proxy sits in front of nginx. Off by default on Docker; elsewhere it is on whenever `DJANGO_DEBUG` is off, so a bare-metal trial over plain http sets it `false` |
+| `NUM_PROXIES` | How many proxies stand in front of the API, which is how the rate limits find the client's address: 1 (default) for the shipped nginx alone, 2 with a TLS terminator in front of it |
+| `CACHE_URL` | Where the rate-limit counters live. Compose points it at its own Redis; on bare metal set `redis://localhost:6379/2`, or each gunicorn worker counts separately |
 | `PUBLIC_URL` | The address links mailed outside the organisation point at. **Required off DEBUG:** a questionnaire link carries a bearer token, so rather than guess the host from the request, sending is refused until this is set |
 | `ORGANISATION_NAME` | Your name in outbound email and on the page a vendor sees |
 | `SEED_DEMO_DATA` | `true` to boot with the demo dataset. Off by default: an installation carrying it says so on its own sign-in page |
@@ -662,7 +672,8 @@ defaults; `.env` overrides them. Every key is documented in
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | PostgreSQL whenever `POSTGRES_DB` is set. Compose sets all five (name, user and password default to `compliance`; the database image applies the password only when it first creates the `pgdata` volume). With `POSTGRES_DB` unset, SQLite at `SQLITE_PATH`, or `backend/db.sqlite3` |
 | `EMAIL_PROVIDER` | `console` · `smtp` · `mailbox` (IMAP/POP3 + SMTP, with a copy filed in Sent) · `ses` |
 | `REVIEW_SCAN_HOUR`, `REVIEW_ALERT_LEAD_DAYS` | When the daily scan runs; how far ahead it warns (30, 14, 7, 1 by default) |
-| `S3_*` | Optional Amazon S3 for evidence instead of the local filesystem |
+| `USE_S3`, `AWS_STORAGE_BUCKET_NAME`, `AWS_REGION` | Optional Amazon S3 for evidence instead of the local filesystem (`MEDIA_ROOT`, `backend/media` by default) |
+| `MEDIA_INTERNAL` | On whenever `DEBUG` is off: the API checks access and hands each download to nginx with `X-Accel-Redirect`. Set `false` behind any other web server, which would send the file empty |
 | `MAX_UPLOAD_MB`, `PASSWORD_MIN_LENGTH`, `THROTTLE_LOGIN` | Upload cap (32 MB default), password policy, per-client login throttle |
 
 ### Identity
@@ -771,9 +782,11 @@ scripts/backup.sh                 # → backups/<UTC timestamp>/
 scripts/backup.sh /mnt/nightly    # or a directory of your choosing
 ```
 
-One script, run from the checkout while the stack is up. It writes the
-database dump (`db.sql.gz`), the evidence files (`media.tgz`: a database
-without these is a manifest of things you no longer have), the secrets volume
+One script, run from the checkout while the Docker stack is up. (It drives
+the compose containers, so on bare metal it does not apply: see
+[INSTALL.md, Backups on bare metal](INSTALL.md#backups-on-bare-metal).) It
+writes the database dump (`db.sql.gz`), the evidence files (`media.tgz`: a
+database without these is a manifest of things you no longer have), the secrets volume
 (`secrets.tgz`: the Django secret key, the field-encryption ring that
 protects enrolled authenticators, and the package signing key) and the folder
 tree on disk (`tree.tgz`). It asks the running containers for the database
@@ -793,10 +806,13 @@ still work.
 scripts/restore.sh backups/<UTC timestamp>
 ```
 
-On the same machine or a fresh one (clone the same release first). The
-application containers are stopped, the database is emptied and reloaded,
-the three volumes are replaced from the archives and the stack is started
-again. Check `docker compose ps` and `/api/health/` afterwards; the signing
+On the same machine or a fresh one (clone the same release first). `.env` is
+not in the backup, so on a fresh machine write it back from your own records
+before the restore: the database and Redis passwords, the host names and
+origin lists, `PUBLIC_URL`, the mail settings, and `COMPOSE_PROJECT_NAME` or
+the ports if you set them. The application containers are stopped, the
+database is emptied and reloaded, the three volumes are replaced from the
+archives and the stack is started again. Check `docker compose ps` and `/api/health/` afterwards; the signing
 key reported there should be the one you had.
 
 On the published images, the restore stays on them only with `COMPOSE_FILE`
@@ -835,7 +851,10 @@ checkout that changes its files has to come off before `git checkout` and go
 back on afterwards, following its own upgrade notes.
 
 Running the published images instead? The checkout still matters, because the
-compose file, the nginx configuration and the backup scripts come from it:
+compose file and the backup scripts come from it. nginx's configuration does
+not: it ships inside the frontend image, unless you mount your own
+([INSTALL.md](INSTALL.md#without-a-build-the-published-images)). The
+upgrade:
 
 ```bash
 scripts/backup.sh

@@ -102,7 +102,7 @@ analytics figure.
 ```
 Document.last_reviewed + cadence ─▶ next_review_date
         │
-   daily scan at REVIEW_SCAN_HOUR (Celery beat) — or cron: send_review_reminders
+   daily scan at REVIEW_SCAN_HOUR (Celery beat), or cron: send_review_reminders
         │
    for each lead in REVIEW_ALERT_LEAD_DAYS (30,14,7,1) not yet sent:
         └▶ email_service.send_templated_email()

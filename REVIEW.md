@@ -1,4 +1,4 @@
-# Conformiti 0.2.0 — full review and release-readiness report
+# Conformiti 0.2.0: full review and release-readiness report
 
 **Date:** 2026-09-03 · **Scope:** the complete repository at v0.1.1 (backend,
 frontend, installers, containers, documentation) · **Method:** line-by-line
@@ -34,7 +34,7 @@ or defence in depth. Status is as of this release.
 | ID | Sev | Finding | Status |
 |---|---|---|---|
 | S-01 | High | **Folder parent cycle → infinite loop in every access check.** `PATCH /folders/{id}/ {parent}` accepted any folder, including a descendant; `Folder.ancestors()` had no guard, so `effective_access()`, `path` and the tree endpoint spun forever. Any user with *edit* on one folder could hang the API. | Fixed: serializer rejects self/descendant parents; `ancestors()` bounded and raises on corruption. Tests `FolderIntegrityTests`. |
-| S-02 | High | **Subtree exposure by re-parenting.** Moving a folder required only *edit* on the folder; the destination was unchecked, so a subtree could be planted under a folder the mover couldn't see — every principal granted on the destination's ancestors then inherited it. | Fixed: manage on folder + edit on destination; top-level moves need the folders capability; seeded folders immovable. Tested. |
+| S-02 | High | **Subtree exposure by re-parenting.** Moving a folder required only *edit* on the folder; the destination was unchecked, so a subtree could be planted under a folder the mover couldn't see. Every principal granted on the destination's ancestors then inherited it. | Fixed: manage on folder + edit on destination; top-level moves need the folders capability; seeded folders immovable. Tested. |
 | S-03 | High | **Refresh tokens non-rotating, non-revocable.** Documented in 0.1.x as a residual risk; a stolen refresh token was valid for 7 days and "sign out" only cleared `localStorage`. | Fixed: rotation + blacklist, `POST /auth/logout/`, weekly pruning task, client stores rotated tokens. Tests `TokenLifecycleTests`. |
 | S-04 | Med | **Per-process throttle counters.** `LocMemCache` default → each gunicorn worker counted separately; no sharing across containers. | Fixed: `CACHE_URL` → Redis; compose sets it. Throttle behaviour tested (default rate). |
 | S-05 | Med | **Owner could delete own evidence with view-only folder access.** | Fixed: delete requires manage. Tested. |
@@ -57,11 +57,11 @@ or defence in depth. Status is as of this release.
 | ID | Sev | Finding | Status |
 |---|---|---|---|
 | C-01 | High | **Installers and the container ran `makemigrations` at install time**, generating schema on the target machine that was never reviewed; the shipped migration set was in fact complete, so the step was pure risk. | Fixed: removed everywhere; CI runs `makemigrations --check`; validator forbids it in install paths. |
-| C-02 | Med | **`install.ps1` ignored native exit codes and never checked versions** — a failed `pip install` still printed "Setup complete". | Fixed: every native command exit-code checked; Python 3.11+/Node 20.19+ verified; same in `install.sh`. |
-| C-03 | Med | **Celery beat "24 h after start" schedule** — a worker restart shifted or skipped the daily scan; the worker also started before the API had migrated. | Fixed: crontab at `REVIEW_SCAN_HOUR`; worker depends on backend *healthy*. |
+| C-02 | Med | **`install.ps1` ignored native exit codes and never checked versions**: a failed `pip install` still printed "Setup complete". | Fixed: every native command exit-code checked; Python 3.11+/Node 20.19+ verified; same in `install.sh`. |
+| C-03 | Med | **Celery beat "24 h after start" schedule**: a worker restart shifted or skipped the daily scan; the worker also started before the API had migrated. | Fixed: crontab at `REVIEW_SCAN_HOUR`; worker depends on backend *healthy*. |
 | C-04 | Med | Django 5.0/5.1 (end of life), React Router 6.30 with two open advisories, psycopg2. | Fixed: Django 5.2 LTS, RR 7, psycopg 3, Vite 7; `npm audit` 0. |
 | C-05 | Low | `date.today()` in analytics/reminders/cadence ignored `TIME_ZONE`. | Fixed: `timezone.localdate()`. |
-| C-06 | Low | Duplicate evidence link / group membership → 500. | Fixed (serializer uniqueness) — tested. |
+| C-06 | Low | Duplicate evidence link / group membership → 500. | Fixed (serializer uniqueness). Tested. |
 | C-07 | Low | `LICENSE` missing from the tree although README/badges claim MIT. | Fixed: MIT text restored from the published repository. |
 | C-08 | Low | No health endpoint for orchestration; installers could not wait for readiness. | Fixed: `/api/health/`; compose healthchecks; installers poll it. |
 | C-09 | Low | No automated tests, no CI. | Fixed: 80 tests + CI matrix (see §4). |
@@ -122,7 +122,7 @@ the code review above was complete. Both are fixed in the tagged release.
 
 | ID | Sev | Finding | How it was found |
 |---|---|---|---|
-| S-19 | **High** | **`DEBUG=true` leaked into the Docker stack.** Compose reads `./.env` both for `${...}` substitution *and* into the containers, and `./.env` is what the **local** installer writes — with `DJANGO_DEBUG=true` and a development signing key. So a developer who ran `./install.sh` and then `docker compose up` got a DEBUG container issuing tokens signed with their dev key, even though the compose default was `false`. Fixed: the stack reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a development `.env` never contains; validator check 16 fails the build if the interpolation ever returns. | Booting the stack with a developer `.env` present and asserting `settings.DEBUG` inside the container. |
+| S-19 | **High** | **`DEBUG=true` leaked into the Docker stack.** Compose reads `./.env` both for `${...}` substitution *and* into the containers, and `./.env` is what the **local** installer writes, with `DJANGO_DEBUG=true` and a development signing key. So a developer who ran `./install.sh` and then `docker compose up` got a DEBUG container issuing tokens signed with their dev key, even though the compose default was `false`. Fixed: the stack reads `CONFORMITI_DEBUG` / `CONFORMITI_SECRET_KEY`, which a development `.env` never contains; validator check 16 fails the build if the interpolation ever returns. | Booting the stack with a developer `.env` present and asserting `settings.DEBUG` inside the container. |
 | C-10 | Med | **Audit-log filter dropdowns listed every action once per entry.** `facets` called `.distinct()` on a queryset carrying the model's `Meta.ordering`, so `-timestamp` joined the SELECT behind DISTINCT and defeated it. Fixed with `.order_by()` plus a regression test. | A React duplicate-key warning during the screenshot run. |
 
 Verification record for the tagged commit:

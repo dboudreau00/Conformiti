@@ -104,8 +104,11 @@ class MonitorTests(ClamdMixin, APITestBase):
 
     def test_an_unreachable_scanner_is_recorded_as_error_not_clean(self):
         doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Unscannable", content=b"x")
-        with self.scanning(CLAMAV_PORT=1):
+        # The failure is logged as an ERROR on purpose; captured so it is not printed.
+        with self.scanning(CLAMAV_PORT=1), \
+                self.assertLogs("documents.monitor", level="ERROR") as logs:
             self.assertEqual(monitor.scan_document(doc), "error")
+        self.assertIn(f"Re-scan of document {doc.pk} failed", logs.output[0])
         doc.refresh_from_db()
         self.assertFalse(doc.is_quarantined)
         # Refused or timed out, depending on the platform; recorded either way.

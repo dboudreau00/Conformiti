@@ -377,8 +377,10 @@ export default function Login({ onDone }) {
                 This installation still has its seeded demo accounts.
                 <span className="block text-2xs text-faint">
                   Their shared password was printed once when the demo data was seeded (in the
-                  backend log with Docker), on the line that starts <span className="font-mono">Sign in as</span>. Retire them with
-                  <span className="font-mono"> manage.py remove_demo_data</span> before real use.
+                  backend log with Docker), on the line that starts <span className="font-mono">Sign in as</span>. Before real use,
+                  create an administrator of your own with <span className="font-mono">manage.py createsuperuser</span>, then
+                  retire them with <span className="font-mono">manage.py remove_demo_data</span>, which refuses until that
+                  account exists.
                 </span>
               </p>
             ) : health?.first_admin_needed === true ? (

@@ -106,6 +106,33 @@ const api = axios.create({ baseURL: "/api", withCredentials: true });
 
 const UNSAFE = ["post", "put", "patch", "delete"];
 
+/** The words shown when a stored file comes back as nginx's job.
+ *  With MEDIA_INTERNAL on (the default whenever DJANGO_DEBUG is false) the API
+ *  answers a download or a preview with an empty body and an X-Accel-Redirect
+ *  header, and nginx replaces it with the file, removing the header. So a
+ *  response that still carries the header reached the browser with no nginx
+ *  in front: the body is empty, and saving it would give the user a 0-byte
+ *  file under the right name with no error anywhere. */
+const UNSERVED_FILE_MESSAGE =
+  "The server handed this file to a proxy that is not there (an nginx " +
+  "X-Accel-Redirect reached the browser), so it arrived empty and was not " +
+  "saved. An administrator can fix this by setting MEDIA_INTERNAL=false in " +
+  "the server's .env and restarting the backend.";
+
+/** The error to raise for such a response, or null when it is a real one.
+ *  It carries the message as response.data.detail as well, the place every
+ *  screen's errorText() reads a server refusal from, so each caller that
+ *  already reports a failed download shows this sentence instead of its
+ *  generic fallback. */
+function unservedFileError(response) {
+  if (!response?.headers?.["x-accel-redirect"]) return null;
+  const error = new Error(UNSERVED_FILE_MESSAGE);
+  error.name = "UnservedFileError";
+  error.response = { ...response, data: { detail: UNSERVED_FILE_MESSAGE } };
+  error.config = response.config;
+  return error;
+}
+
 // A superuser may work in another organisation's workspace; the choice is
 // remembered here and sent on every request. Ignored for everyone else.
 export function chosenWorkspace() {
@@ -131,12 +158,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// A stored file nginx was meant to send (see unservedFileError) fails here,
+// for every caller at once: downloadFile, the viewer's preview and its
+// SHA-256, which would otherwise hash the empty body and show that.
+//
 // On a 401, try one silent refresh, then fall back to the login screen.
 // Refresh tokens rotate on every use (the server blacklists the old one), so
 // the new refresh token from the response must replace the stored one.
 let refreshing = null;
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    const unserved = unservedFileError(r);
+    if (unserved) throw unserved;
+    return r;
+  },
   async (error) => {
     const { response, config } = error;
     if (response?.status === 401 && config && !config._retry && !config.url?.includes("/auth/")) {
@@ -268,9 +303,30 @@ function dispositionFilename(header) {
 /** Trigger a browser download of a blob response (CSV exports, documents).
  *  The name is the one the server sent in Content-Disposition, so a document
  *  saves as "Access Control Policy.pdf" exactly as a direct download would;
- *  `filename` is used only when the response names nothing. */
+ *  `filename` is used only when the response names nothing.
+ *
+ *  Rejects, saving nothing, when the server handed the file to an nginx that
+ *  is not there: the api instance turns an X-Accel-Redirect that reached the
+ *  browser into an error naming MEDIA_INTERNAL=false (unservedFileError), so
+ *  the empty body never becomes a 0-byte file. Callers report the rejection
+ *  the way they report any failed download.
+ *
+ *  A refusal's JSON body arrives as a Blob under responseType "blob", where
+ *  errorText cannot read its detail (a quarantined document would read as a
+ *  bare "no permission"), so it is parsed back into an object first. */
 export async function downloadFile(url, filename) {
-  const r = await api.get(url, { responseType: "blob" });
+  let r;
+  try {
+    r = await api.get(url, { responseType: "blob" });
+  } catch (e) {
+    const data = e?.response?.data;
+    if (typeof Blob !== "undefined" && data instanceof Blob) {
+      try {
+        e.response.data = JSON.parse(await data.text());
+      } catch { /* not JSON: leave the body as it came */ }
+    }
+    throw e;
+  }
   const href = URL.createObjectURL(r.data);
   const a = document.createElement("a");
   a.href = href;

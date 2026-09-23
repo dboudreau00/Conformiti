@@ -4,7 +4,7 @@ Evidence packages: the disclosure boundary, the seal, and the bundle.
 The tests that matter most are the RBAC ones. This app contains the only place
 in Conformiti where folder permissions are bypassed, so both directions have to
 be pinned: an auditor CAN read exactly what was packaged for them, and CANNOT
-read anything else — including the same document through any other route.
+read anything else, including the same document through any other route.
 """
 import io
 import json

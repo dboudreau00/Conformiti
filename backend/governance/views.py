@@ -171,8 +171,8 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
             )
         # A decision that nobody carried out is not evidence of a control; it
         # is evidence that the control was not operating. Completing the
-        # review now applies every "revoke" row — the account is deactivated
-        # and its sessions are revoked — and says which rows it could not
+        # review now applies every "revoke" row (the account is deactivated
+        # and its sessions are revoked) and says which rows it could not
         # apply and why, so the reviewer finishes the job by hand rather than
         # believing it was done.
         applied = _apply_revocations(request, review)
@@ -185,7 +185,7 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def export(self, request, pk=None):
-        """Download the review grid as CSV — the audit evidence artifact."""
+        """Download the review grid as CSV: the audit evidence artifact."""
         review = self.get_object()
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = (
@@ -333,12 +333,17 @@ class RiskViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "description", "jira_key"]
 
     def get_queryset(self):
+        # The note count makes this a GROUP BY query, which Django runs
+        # without Meta.ordering, so the order is explicit: Meta.ordering, then
+        # the id as a unique tie-break, or pages may repeat or skip a risk.
+        # A valid ?ordering= still replaces it.
         return (
             Risk.objects.select_related(
                 "owner", "created_by",
                 "control", "control__category", "control__category__framework",
             )
             .annotate(note_count=Count("notes", distinct=True))
+            .order_by("-created_at", "-id")
         )
 
     def perform_create(self, serializer):
@@ -392,7 +397,7 @@ class RiskViewSet(viewsets.ModelViewSet):
     def import_file(self, request):
         """Ingest a register from .csv or .xlsx. Creates new risks, skips rows
         whose title already exists, and reports per-row warnings. Parsing is
-        dependency-free — see governance/risk_import.py."""
+        dependency-free (see governance/risk_import.py)."""
         upload = request.FILES.get("file")
         if upload is None:
             raise ValidationError({"file": "Attach a .csv or .xlsx file."})

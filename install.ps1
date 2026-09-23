@@ -3,28 +3,28 @@
   Conformiti installer (Windows PowerShell 5.1 or PowerShell 7+).
 
 .DESCRIPTION
-    .\install.ps1               Local dev: venv + npm + migrate + seed, then start
-                                the API on :8000 and the web app on :5173
-                                ($env:CONFORMITI_DEV_API_PORT and
-                                $env:CONFORMITI_DEV_PORT move them).
-    .\install.ps1 -SetupOnly    Install and seed, but don't start the servers.
-    .\install.ps1 -Docker       Build and start the full Docker stack on
-                                http://localhost:8080 and wait until healthy.
-    .\install.ps1 -Test         Run the backend tests, the validator and a
-                                production frontend build.
-    .\install.ps1 -Reset        Local only: wipe db.sqlite3 + uploads, reseed.
+  Run it through a policy override that lasts for this one run and changes no
+  setting. The default Restricted policy refuses every script ("running
+  scripts is disabled on this system"), and RemoteSigned refuses a copy that
+  came from a zip download:
+    powershell -ExecutionPolicy Bypass -File .\install.ps1 [switches]
 
-  Combine with -Demo (load the sample organisation; off by default), -Open (launch the browser when
-  ready) and -Port N (Docker host port). With -Docker and an existing .env,
-  -Demo / -NoDemo and -Port update SEED_DEMO_DATA and CONFORMITI_PORT in it,
-  and the script says so. Every native command is exit-code checked: a failed
-  step stops the installer instead of reporting success.
+    (no switch)   Local dev: venv + npm + migrate + seed, then start the API
+                  on :8000 and the web app on :5173 ($env:CONFORMITI_DEV_API_PORT
+                  and $env:CONFORMITI_DEV_PORT move them).
+    -SetupOnly    Install and seed, but don't start the servers.
+    -Docker       Build and start the full Docker stack on
+                  http://localhost:8080 and wait until healthy.
+    -Test         Run the backend tests, the validator and a production
+                  frontend build.
+    -Reset        Local only: wipe db.sqlite3 + uploads, reseed.
 
-  If Windows says "running scripts is disabled on this system" (the default
-  Restricted policy), or this copy came from a zip download, run it through a
-  policy override that lasts for this one run and changes no setting:
-    powershell -ExecutionPolicy Bypass -File .\install.ps1
-  and put any of the switches above after it.
+  Combine with -Demo (load the sample organisation; off by default), -Open
+  (launch the browser when ready) and -Port N (Docker host port). With -Docker
+  and an existing .env, -Demo / -NoDemo and -Port update SEED_DEMO_DATA and
+  CONFORMITI_PORT in it, and the script says so. Every native command is
+  exit-code checked: a failed step stops the installer instead of reporting
+  success.
 #>
 [CmdletBinding()]
 param(
@@ -69,11 +69,6 @@ function Wait-Healthy([string]$Url, [int]$Seconds = 240) {
     if ($elapsed % 20 -eq 0) { Write-Host "  ... still starting ($elapsed s)" -ForegroundColor DarkGray }
   }
   return $null
-}
-function New-Secret {
-  $bytes = New-Object byte[] 48
-  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-  return ([Convert]::ToBase64String($bytes) -replace '[+/=]', '')
 }
 function Probe {
   # The exit code of a native command run only for its answer, output dropped.
@@ -162,6 +157,35 @@ function Get-DemoPassword {
   if ($hit) { return $hit.Matches[0].Groups[1].Value }
   return $null
 }
+function Get-OwnAdminState {
+  # "yes" when the running stack's Default workspace has an administrator that
+  # is not a demo account, "no" when it has none, $null when the stack cannot
+  # say (it is not up, or its image is older than the test). It is the
+  # question remove_demo_data asks before it will run. No double quotes in the
+  # code: Windows PowerShell 5.1 passes them to a native command unescaped.
+  $code = "from accounts import tenancy; from accounts.management.commands.bootstrap_demo import own_administrator_present as f; print('own_admin=' + ('yes' if f(tenancy.from_option({})) else 'no'))"
+  $out = Get-NativeText docker compose exec -T backend python manage.py shell -v 0 -c $code
+  $hit = [regex]::Matches($out, '(?m)^own_admin=(yes|no)\r?$')
+  if ($hit.Count -gt 0) { return $hit[$hit.Count - 1].Groups[1].Value }
+  return $null
+}
+function Get-RetireDemoAdvice {
+  # What to run before real use, one line per element. remove_demo_data
+  # refuses until an administrator of the operator's own exists, so
+  # createsuperuser comes first unless the stack says there already is one;
+  # when it cannot say, the advice covers both cases.
+  $state = Get-OwnAdminState
+  if ($state -eq "yes") { return @("Before real use: docker compose exec backend python manage.py remove_demo_data") }
+  if ($state -eq "no") {
+    $lines = @("Before real use, create an administrator of your own (remove_demo_data refuses",
+               "until one exists), then retire the demo accounts:")
+  } else {
+    $lines = @("Before real use, create an administrator of your own if you have none yet",
+               "(remove_demo_data refuses until one exists), then retire the demo accounts:")
+  }
+  return $lines + @("  docker compose exec backend python manage.py createsuperuser",
+                    "  docker compose exec backend python manage.py remove_demo_data")
+}
 function Get-DevPort([string]$Name, [int]$Default) {
   # A local-path port from the environment, where Vite reads it too.
   $v = [Environment]::GetEnvironmentVariable($Name)
@@ -201,9 +225,10 @@ if ($Docker) {
       "#",
       "# The Docker stack reads CONFORMITI_DEBUG / CONFORMITI_SECRET_KEY, not",
       "# DJANGO_DEBUG / DJANGO_SECRET_KEY: those two belong to the local dev path",
-      "# and must never leak into a container.",
+      "# and must never leak into a container. CONFORMITI_SECRET_KEY is left unset",
+      "# on purpose: the container generates its own key and keeps it in the",
+      "# 'secrets' volume, which scripts/backup.sh saves with the database.",
       "CONFORMITI_DEBUG=false",
-      "CONFORMITI_SECRET_KEY=$(New-Secret)",
       "DJANGO_ALLOWED_HOSTS=$hosts",
       "CSRF_TRUSTED_ORIGINS=http://localhost:$Port,http://127.0.0.1:$Port",
       "CORS_ALLOWED_ORIGINS=http://localhost:$Port",
@@ -213,11 +238,13 @@ if ($Docker) {
       "SEED_DEMO_DATA=$seedDemo",
       "CONFORMITI_PORT=$Port"
     ) | Set-Content -Path ".env" -Encoding ascii
-    Ok ".env written (DEBUG off, unique secret key, demo data $seedDemo)"
+    Ok ".env written (DEBUG off, demo data $seedDemo)"
+    Ok "no secret key in .env: the container generates one and keeps it in the 'secrets' volume"
     # No chmod here on purpose: NTFS inherits its ACL from the directory, and
     # pretending otherwise would be a promise this script cannot keep. The
-    # file holds a signing key and two service passwords.
-    Warn ".env holds a signing key and service passwords. Keep the folder out of a shared location."
+    # file holds no secret as written; mail and database passwords usually
+    # end up in it later.
+    Warn ".env holds no secret yet, but mail or database passwords you add to it will. Keep the folder out of a shared location."
   } else {
     Ok ".env already present: using it"
     if (Select-String -Path ".env" -Pattern '^CONFORMITI_DEBUG=(1|true|yes|on)' -Quiet) {
@@ -239,8 +266,8 @@ if ($Docker) {
           Ok "-Demo: set SEED_DEMO_DATA=true in .env (it was $was)"
         } else {
           Ok "-NoDemo: set SEED_DEMO_DATA=false in .env (it was $was)"
-          Warn "demo accounts that already exist stay until you run:"
-          Warn "  docker compose exec backend python manage.py remove_demo_data"
+          Warn "demo accounts that already exist stay until remove_demo_data retires them."
+          Get-RetireDemoAdvice | ForEach-Object { Warn $_ }
         }
       }
     }
@@ -301,18 +328,30 @@ if ($Docker) {
     # accounts; a container that found them already there never prints it.
     $demoPw = Get-DemoPassword
     if ($demoPw) {
-      Write-Host "  Password $demoPw   (also in: docker compose logs backend | Select-String 'Sign in as')"
+      Write-Host "  Password $demoPw   (note it now)"
+      Write-Host "  The backend log keeps it only until that container is recreated, which -Port," -ForegroundColor DarkGray
+      Write-Host "  an update or any .env change does." -ForegroundColor DarkGray
     } else {
       Write-Host "  Password: not in the current backend log. It is printed once, by the container that" -ForegroundColor DarkGray
       Write-Host "  created the demo accounts. Set a new one for admin with:" -ForegroundColor DarkGray
       Write-Host "    docker compose exec backend python manage.py changepassword admin" -ForegroundColor DarkGray
     }
-    Write-Host "  Before real use: docker compose exec backend python manage.py remove_demo_data" -ForegroundColor Yellow
+    Get-RetireDemoAdvice | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
   } else {
     if ($seedDemo -eq "true") { Warn "-Demo was given but the stack reports no demo accounts. Check: docker compose logs backend" }
-    Write-Host "  Create your first account: docker compose exec backend python manage.py createsuperuser"
+    # first_admin_needed is true only while no active account exists, so a
+    # re-run or an update on a used installation is not told to make one.
+    # An image older than the field says neither, hence the third wording.
+    if ($health.first_admin_needed -eq $true) {
+      Write-Host "  Create your first account: docker compose exec backend python manage.py createsuperuser"
+    } elseif ($health.first_admin_needed -eq $false) {
+      Write-Host "  Sign in  with an existing account (this installation already has one)"
+    } else {
+      Write-Host "  No account yet? docker compose exec backend python manage.py createsuperuser"
+    }
   }
   Write-Host "  Logs: docker compose logs -f    Stop: docker compose down" -ForegroundColor DarkGray
+  Write-Host "  Update: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker" -ForegroundColor DarkGray
   if ($Open) { Start-Process "http://localhost:$Port" }
   exit 0
 }
@@ -324,7 +363,12 @@ foreach ($c in @("python", "python3", "py")) {
   if (-not $cmd) { continue }
   if ((Probe $c -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)") -eq 0) { $py = $c; break }
 }
-if (-not $py) { Fail "Python 3.11+ is required but was not found on PATH (https://www.python.org/downloads/)." }
+if (-not $py) { Fail "Python 3.11 or newer is required but was not found on PATH (tested: 3.11 to 3.14; https://www.python.org/downloads/)." }
+# Newer than the tested range is allowed, not refused: it usually works, but
+# a dependency without wheels for it yet is the usual way it does not.
+if ((Probe $py -c "import sys; sys.exit(0 if sys.version_info < (3, 15) else 1)") -ne 0) {
+  Warn "$(& $py --version) is newer than the tested range (3.11 to 3.14): carrying on, but it is untested."
+}
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js 20.19+ or 22.12+ (with npm) is required but was not found on PATH." }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "npm is required but was not found on PATH." }
 # Same range as frontend/package.json "engines" (^20.19.0 || >=22.12.0): Vite
@@ -363,11 +407,22 @@ if (-not $Test -and $devPort -ne 5173) {
 }
 
 # --- Virtualenv + backend deps ------------------------------------------------
+# An existing .venv is reused only when its pip runs: a creation that stopped
+# part way leaves a python.exe with no pip, and every later run would die at
+# the pip step below.
 $pyexe = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+if ((Test-Path $pyexe) -and (Probe $pyexe -m pip --version) -ne 0) {
+  Warn "the existing .venv has no working pip (an earlier creation probably stopped part way): recreating it"
+  Remove-Item -Recurse -Force ".venv"
+}
 if (-not (Test-Path $pyexe)) {
   Say "Creating Python virtual environment (.venv)..."
   if (Test-Path ".venv") { Remove-Item -Recurse -Force ".venv" }
   Run $py -m venv .venv
+  if ((Probe $pyexe -m pip --version) -ne 0) {
+    Remove-Item -Recurse -Force ".venv" -ErrorAction SilentlyContinue
+    Fail "the new .venv has no working pip, so nothing can be installed into it. Install Python from https://www.python.org/downloads/ (keep its pip option ticked), then run this again."
+  }
 }
 Say "Installing backend dependencies..."
 Run $pyexe -m pip install --quiet --upgrade pip
@@ -474,7 +529,7 @@ if ($seedDemo -eq "true" -and $demoState -ne "retired") {
     Write-Host "            cd backend; ..\.venv\Scripts\python.exe manage.py changepassword admin" -ForegroundColor DarkGray
   }
 }
-Write-Host "  Tests:    .\install.ps1 -Test"
+Write-Host "  Tests:    powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test"
 Write-Host "  Mailer:   cd backend; ..\.venv\Scripts\python.exe manage.py send_review_reminders --dry-run"
 Write-Host ""
 
