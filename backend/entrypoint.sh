@@ -6,12 +6,16 @@
 #   2. apply the shipped migrations (never makemigrations: the migration
 #      files are part of the release and are verified in CI)
 #   3. seed the control libraries + roles (idempotent)
-#   4. optionally seed the demo dataset (SEED_DEMO_DATA, default true) and/or
-#      create an initial superuser from DJANGO_SUPERUSER_* (no-op if it exists)
-#   5. collect static files for nginx, then exec the CMD (gunicorn)
+#   4. optionally seed the demo dataset (SEED_DEMO_DATA, default false; a
+#      no-op once remove_demo_data has retired it) and/or create an initial
+#      superuser from DJANGO_SUPERUSER_* (no-op if it exists; a refusal is
+#      logged with its reason and the boot carries on)
+#   5. collect static files for nginx, print the boot banner (which says when
+#      no administrator exists), then exec the CMD (gunicorn)
 #
-# The Celery worker uses its own entrypoint (see docker-compose.yml) and
-# depends on this container being healthy, so migrations run exactly once.
+# The Celery worker and beat use their own entrypoints (see
+# docker-compose.yml) and depend on this container being healthy, so
+# migrations run exactly once.
 # ===========================================================================
 set -euo pipefail
 
@@ -46,7 +50,9 @@ case "${SEED_DEMO_DATA:-false}" in
   1|true|TRUE|yes|on)
     log "Seeding demo dataset (SEED_DEMO_DATA=true)"
     # bootstrap_demo prints the generated sign-in password on first boot.
-    # Set DEMO_PASSWORD to choose it, or SEED_DEMO_DATA=false to skip.
+    # Set DEMO_PASSWORD to choose it, or SEED_DEMO_DATA=false to skip. After
+    # remove_demo_data it seeds nothing: the container keeps this variable
+    # for life, and restart: unless-stopped reruns this on every reboot.
     python manage.py bootstrap_demo
     ;;
   *)
@@ -59,10 +65,41 @@ esac
 
 if [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ] && [ -n "${DJANGO_SUPERUSER_PASSWORD:-}" ]; then
   log "Ensuring superuser '${DJANGO_SUPERUSER_USERNAME}' exists"
-  python manage.py createsuperuser --noinput \
-    --username "${DJANGO_SUPERUSER_USERNAME}" \
-    --email "${DJANGO_SUPERUSER_EMAIL:-admin@example.com}" 2>/dev/null \
-    || log "Superuser already exists — leaving it alone"
+  # createsuperuser fails both when the account is already there (every boot
+  # after the first) and when it refuses to make it, most often because
+  # DJANGO_SUPERUSER_PASSWORD fails the password policy. Its own message says
+  # which, so it is kept: discarding it behind "already exists" left an
+  # installation with no administrator and nothing in the log to say why.
+  # Either way the boot carries on, and the banner below says when no
+  # administrator exists at all. The email fallback is not an @example.com
+  # address: an account named admin with one is the demo administrator to
+  # /api/health/, the banner and remove_demo_data.
+  if su_err=$(python manage.py createsuperuser --noinput \
+      --username "${DJANGO_SUPERUSER_USERNAME}" \
+      --email "${DJANGO_SUPERUSER_EMAIL:-admin@localhost}" 2>&1 >/dev/null); then
+    log "Superuser '${DJANGO_SUPERUSER_USERNAME}' created"
+  elif [[ "$su_err" == *"is already taken"* ]]; then
+    # Django's own words for "an account with this username exists".
+    log "Superuser '${DJANGO_SUPERUSER_USERNAME}' already exists, leaving it alone"
+  else
+    log "!! Superuser '${DJANGO_SUPERUSER_USERNAME}' was NOT created. createsuperuser said:"
+    while IFS= read -r line; do
+      if [ -n "$line" ]; then log "!!   ${line}"; fi
+    done <<<"$su_err"
+    # The policy advice only when the policy refused it (accounts/tenancy.py
+    # words that refusal): a bad email or a database error is not the password.
+    if [[ "$su_err" == *"password policy"* ]]; then
+      log "!! DJANGO_SUPERUSER_PASSWORD must pass the password policy (at least"
+      log "!! PASSWORD_MIN_LENGTH characters, 12 by default, not a common password, not"
+      log "!! all digits, not close to the username or email)."
+    fi
+    log "!! Fix the cause above where you set DJANGO_SUPERUSER_* (.env or the shell)"
+    log "!! and run docker compose up -d again, or create one by hand:"
+    log "!!   docker compose exec backend python manage.py createsuperuser"
+  fi
+elif [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ] || [ -n "${DJANGO_SUPERUSER_PASSWORD:-}" ]; then
+  log "!! DJANGO_SUPERUSER_USERNAME and DJANGO_SUPERUSER_PASSWORD must both be set;"
+  log "!! with only one of them no superuser is created."
 fi
 
 python manage.py generate_folder_tree >/dev/null 2>&1 || log "generate_folder_tree skipped (tree root not writable)"
@@ -89,25 +126,50 @@ fi
 python - <<'PY'
 import os
 from config.version import __version__
-# These defaults match what the image and the seed branch above actually do,
-# not what the code does for a developer running it. Announcing demo accounts
-# and a published password that were never seeded is a false alarm; reading
-# DEBUG as on when the image pins it off is a false one the other way, which
-# is worse, because the line that matters is the one nobody believes.
+# DEBUG is read the way the image sets it, not the way the code defaults for
+# a developer running it. Reading DEBUG as on when the image pins it off is a
+# false alarm, and the line that matters is the one nobody believes.
 debug = os.getenv("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes", "on")
-demo = os.getenv("SEED_DEMO_DATA", "false").lower() in ("1", "true", "yes", "on")
-# Read from the environment, not from django.conf: this heredoc runs with no
-# DJANGO_SETTINGS_MODULE, and `set -euo pipefail` above would kill the
-# container on the ImproperlyConfigured that importing settings would raise.
+# The demo line reports the database, with the same test /api/health/ uses,
+# not SEED_DEMO_DATA: the variable stays set on a container after
+# remove_demo_data has retired the accounts, and accounts seeded on an earlier
+# boot outlive a restart without it. Guarded, because `set -euo pipefail`
+# above would kill the container over a banner; if the lookup fails,
+# SEED_DEMO_DATA is the best guess left.
+try:
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+    import django
+    django.setup()
+    from config.health import demo_accounts_present
+    demo = demo_accounts_present()
+except Exception:
+    demo = os.getenv("SEED_DEMO_DATA", "false").lower() in ("1", "true", "yes", "on")
+# Whether anyone can administer the installation. None when the lookup fails,
+# so the banner claims nothing either way on a guess.
+try:
+    from config.health import administrator_present
+    admin = administrator_present()
+except Exception:
+    admin = None
+# Read from the environment, not from django.conf, so the line stays right
+# when the settings could not be loaded above.
 key_src = ("from the environment" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY")
            else "from the key file" if os.getenv("DJANGO_FIELD_ENCRYPTION_KEY_FILE")
            else "derived from the signing key")
-print(f"Conformiti {__version__}: DEBUG={'ON' if debug else 'off'}, demo data={'ON' if demo else 'off'}")
+print(f"Conformiti {__version__}: DEBUG={'ON' if debug else 'off'}, demo accounts={'ON' if demo else 'off'}")
 print(f"   field encryption: key ring {key_src}")
 if debug:
     print("!! DJANGO_DEBUG is on. Never expose this container to a network you don't trust.")
+if admin is False:
+    print("!! No administrator exists yet: no active superuser, and no active account whose")
+    print("!! role manages users, so nobody can sign in to run this installation. Create one:")
+    print("!!   docker compose exec backend python manage.py createsuperuser")
+    print("!! or set DJANGO_SUPERUSER_USERNAME and DJANGO_SUPERUSER_PASSWORD in .env and run")
+    print("!! docker compose up -d again. When they are set, the log above says why no")
+    print("!! account was made.")
 if demo:
-    print("!! Demo accounts are seeded with the published password. Before real use run:")
+    print("!! Demo accounts are active. They share the password printed once when they")
+    print("!! were created (or the DEMO_PASSWORD you chose). Before real use run:")
     print("!!   docker compose exec backend python manage.py remove_demo_data")
 PY
 

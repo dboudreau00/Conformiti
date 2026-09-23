@@ -10,7 +10,31 @@ from .models import (
     FormTemplate,
     validate_folder_name,
 )
+from .downloads import download_filename
 from .uploads import validate_upload
+
+
+def person_name(user):
+    """Full name, or the username for an account that has none (every account
+    createsuperuser makes, whose documents otherwise showed no owner at all).
+    The same rule as User.__str__; "" for nobody."""
+    return (user.get_full_name() or user.get_username()) if user else ""
+
+
+class PersonNameField(serializers.ReadOnlyField):
+    """A related person's name by the ``person_name`` rule, "" for nobody:
+    ``owner_name = PersonNameField("owner")``.
+
+    It reads the whole row (source "*") and follows the relation itself.
+    With the relation as its source, DRF would answer null for an empty one
+    without asking the field, where these names have always been ""."""
+
+    def __init__(self, relation, **kwargs):
+        self.relation = relation
+        super().__init__(source="*", **kwargs)
+
+    def to_representation(self, obj):
+        return person_name(getattr(obj, self.relation, None))
 
 
 class FolderPermissionSerializer(serializers.ModelSerializer):
@@ -38,7 +62,7 @@ class FolderPermissionSerializer(serializers.ModelSerializer):
 
 class FolderSerializer(serializers.ModelSerializer):
     path = serializers.CharField(read_only=True)
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
+    owner_name = serializers.SerializerMethodField()
     control_id = serializers.CharField(source="control.control_id", read_only=True, default=None)
     child_count = serializers.IntegerField(source="children.count", read_only=True)
     document_count = serializers.IntegerField(source="documents.count", read_only=True)
@@ -53,6 +77,9 @@ class FolderSerializer(serializers.ModelSerializer):
             "my_access", "created_at", "updated_at",
         ]
         read_only_fields = ["is_framework_root", "control"]
+
+    def get_owner_name(self, obj):
+        return person_name(obj.owner)
 
     def get_my_access(self, obj):
         request = self.context.get("request")
@@ -77,7 +104,7 @@ class FolderSerializer(serializers.ModelSerializer):
 
 
 class DocumentVersionSerializer(serializers.ModelSerializer):
-    uploaded_by_name = serializers.CharField(source="uploaded_by.get_full_name", read_only=True, default="")
+    uploaded_by_name = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -85,12 +112,15 @@ class DocumentVersionSerializer(serializers.ModelSerializer):
         fields = ["id", "version", "note", "uploaded_by", "uploaded_by_name",
                   "created_at", "download_url"]
 
+    def get_uploaded_by_name(self, obj):
+        return person_name(obj.uploaded_by)
+
     def get_download_url(self, obj):
         return f"/documents/{obj.document_id}/versions/{obj.pk}/download/"
 
 
 class DocumentSerializer(serializers.ModelSerializer):
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
+    owner_name = serializers.SerializerMethodField()
     folder_path = serializers.CharField(source="folder.path", read_only=True)
     control_id = serializers.CharField(source="control.control_id", read_only=True, default=None)
     is_overdue = serializers.BooleanField(read_only=True)
@@ -103,12 +133,16 @@ class DocumentSerializer(serializers.ModelSerializer):
     # `download_url`, which the API authorises and records.
     file = serializers.FileField(write_only=True)
     download_url = serializers.SerializerMethodField()
+    # The name the download is saved under, as the server sends it (display
+    # name plus the stored file's extension). Carries no part of the path.
+    download_name = serializers.SerializerMethodField()
     quarantined = serializers.BooleanField(source="is_quarantined", read_only=True)
 
     class Meta:
         model = Document
         fields = [
-            "id", "name", "description", "file", "download_url", "folder", "folder_path",
+            "id", "name", "description", "file", "download_url", "download_name",
+            "folder", "folder_path",
             "control", "control_id", "owner", "owner_name", "status",
             "review_cadence", "last_reviewed", "next_review_date",
             "is_overdue", "days_until_review", "version",
@@ -120,6 +154,12 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     def get_download_url(self, obj):
         return f"/documents/{obj.pk}/download/" if obj.file else None
+
+    def get_download_name(self, obj):
+        return download_filename(obj.name, obj.file.name) if obj.file else None
+
+    def get_owner_name(self, obj):
+        return person_name(obj.owner)
 
     def validate_file(self, value):
         return validate_upload(value)

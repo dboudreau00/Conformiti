@@ -807,6 +807,11 @@ SIGNING_KEY_FILE = os.getenv("SIGNING_KEY_FILE", str(BASE_DIR / ".package-signin
 # --- Logging ------------------------------------------------------------------
 # Plain, single-line console logging that docker/systemd/journald can ingest.
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if not DEBUG else "DEBUG").upper()
+# runserver's autoreloader logs one DEBUG line per watched file, well over a
+# thousand at every start and reload, which buries the startup line, the
+# request log and any real error. It never goes below INFO, so DEBUG (the
+# default under DJANGO_DEBUG, or LOG_LEVEL=DEBUG) still reaches everything else.
+_AUTORELOAD_LEVEL = "INFO" if LOG_LEVEL in ("DEBUG", "NOTSET") else LOG_LEVEL
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -819,6 +824,8 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": LOG_LEVEL},
     "loggers": {
         "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        "django.utils.autoreload": {"handlers": ["console"], "level": _AUTORELOAD_LEVEL,
+                                    "propagate": False},
         # SQL echo is far too chatty even in DEBUG.
         "django.db.backends": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},

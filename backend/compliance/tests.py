@@ -5,7 +5,7 @@ from compliance.models import Control, ControlEvidence, Framework
 from documents.models import EDIT, VIEW, Folder
 from testutils import APITestBase, grant, make_doc
 from datetime import timedelta
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
 from compliance import scoring
 from compliance.models import Control, ControlEvidence, ControlMapping
@@ -372,3 +372,65 @@ class ReadinessScoringTests(APITestBase):
             r = c.get("/api/crosswalk/")
         control = r.data["results"][0]["controls"][0]
         self.assertNotIn("readiness_score", control)
+
+
+class NamelessAccountTests(APITestBase):
+    """createsuperuser asks for no first or last name. A control such an
+    account owned read as 'Unassigned', and the test it recorded and the
+    evidence it linked as recorded by nobody."""
+
+    def test_a_nameless_account_is_named_by_its_username(self):
+        import csv
+        import io
+
+        from testutils import make_user
+
+        root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
+                         first_name="", last_name="")
+        c = self.client_for(root)
+        r = c.patch(f"/api/controls/{self.tree.c1.pk}/",
+                    {"owner": root.pk, "last_tested_on": str(timezone.localdate())}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["owner_name"], "rootadmin")
+        self.assertEqual(r.data["last_tested_by_name"], "rootadmin")
+        doc = make_doc(self.tree.ctrl1, root, name="Root policy")
+        r = c.post("/api/control-evidence/", {"control": self.tree.c1.pk, "document": doc.pk}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["linked_by_name"], "rootadmin")
+
+        rows = list(csv.reader(io.StringIO(c.get("/api/controls/export/").content.decode("utf-8"))))
+        owner = rows[0].index("Owner")
+        by_id = {row[rows[0].index("Control ID")]: row[owner] for row in rows[1:]}
+        self.assertEqual(by_id, {"TC1.1": "rootadmin", "TC1.2": ""})
+        self.assertEqual(c.get(f"/api/controls/{self.tree.c2.pk}/").data["owner_name"], "")
+
+
+class FolderTreeFileTests(SimpleTestCase):
+    """The generated tree is tracked with eol=lf. Written with the platform's
+    newline, every Windows install left README.md and manifest.json showing
+    as modified."""
+
+    def test_every_generated_text_file_is_written_with_lf(self):
+        import json
+        import os
+        import tempfile
+
+        from compliance.folder_tree import build_tree
+
+        framework = {"key": "soc2", "name": "SOC 2", "version": "2017", "categories": [
+            {"key": "CC1", "name": "CC1 - Control Environment", "controls": [
+                {"control_id": "CC1.1", "title": "Integrity", "objective": "Show integrity."}]}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            data = os.path.join(tmp, "data")
+            os.makedirs(data)
+            with open(os.path.join(data, "soc2.json"), "w", encoding="utf-8") as f:
+                json.dump(framework, f)
+            root = os.path.join(tmp, "tree")
+            build_tree(root, data)
+            for rel in ("README.md", "manifest.json",
+                        "SOC2/CC1 - Control Environment/CC1.1 - Integrity/_control.md"):
+                with open(os.path.join(root, *rel.split("/")), "rb") as f:
+                    body = f.read()
+                with self.subTest(file=rel):
+                    self.assertIn(b"\n", body)
+                    self.assertNotIn(b"\r", body)

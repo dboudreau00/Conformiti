@@ -323,6 +323,7 @@ def submit(invite, answers, respondent_name, respondent_title="", request=None):
 
 
 def _notify_returned(invite, assessment, answered):
+    from documents.serializers import person_name
     from notifications.email_service import send_templated_email
     from notifications.tasks import compliance_inbox
 
@@ -336,7 +337,7 @@ def _notify_returned(invite, assessment, answered):
     context = {
         "vendor": vendor, "invite": invite, "assessment": assessment, "answered": answered,
         "total": len(DEFAULT_QUESTIONNAIRE),
-        "owner_name": vendor.owner.get_full_name() if vendor.owner else "team",
+        "owner_name": person_name(vendor.owner) or "team",
         "noes": sum(1 for a in assessment.answers.values() if a.get("answer") == "no"),
     }
     try:

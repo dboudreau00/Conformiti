@@ -1,12 +1,14 @@
 # Validation
 
-Three layers, all of them run in CI on every push and locally with one command:
+Three layers, all of them run in CI on every push. Locally, one command runs
+the validator, the backend suite and the frontend build:
 
 ```bash
-./install.sh --test        # or: .\install.ps1 -Test
+./install.sh --test                                              # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
-## 1. Static validator — `python tools/validate.py`
+## 1. Static validator: `python tools/validate.py`
 
 Dependency-free (standard library only), so it runs on a bare checkout before
 anything is installed. Exits non-zero on any error. Nineteen checks:
@@ -31,16 +33,16 @@ anything is installed. Exits non-zero on any error. Nineteen checks:
 | 16 | Compose isolation: the Docker stack cannot inherit `DJANGO_DEBUG` or a signing key from a local development `.env` |
 | 17 | Malware scanning: the clamd protocol cases, the EICAR fixture, and the upload limits agreed between clamd and nginx |
 | 18 | Offsite assets: no page loads anything from a third party |
-| 19 | Version lock: `version.py`, `package.json`, the README badge and the changelog heading all agree |
+| 19 | Version lock: the same version in six places, `version.py`, `package.json`, both version fields in `package-lock.json` (the top-level one and `packages[""]`), the README badge and the changelog heading |
 
 Check 15 counts the test functions in each app's `tests.py` only, so the
-number it prints is smaller than the suite below. Both are correct; they count
-different things.
+number it prints is smaller than the `Ran N tests` of the suite below. Both
+are correct; they count different things.
 
-## 2. Backend test suite — `python manage.py test`
+## 2. Backend test suite: `python manage.py test`
 
-**580 tests across 36 modules**, about 13 minutes on SQLite, also run against
-PostgreSQL 16 and Python 3.11 to 3.14 in CI. What it covers:
+Runs on SQLite by default; CI runs it on Python 3.11 to 3.14 and once more
+against PostgreSQL 16. What it covers:
 
 - **Tenancy.** ORM-level workspace scoping, the fail-loud unscoped read,
   `X-Workspace` ignored for everyone but a superuser, per-workspace seeding,
@@ -73,8 +75,8 @@ PostgreSQL 16 and Python 3.11 to 3.14 in CI. What it covers:
 - The compose job exercises the stack end to end: sign in through nginx,
   upload, download through X-Accel, back up, `down -v`, restore, and confirm
   the same bytes and the same signing key come back.
-- **93 Playwright tests** across 13 specs, run twice in CI, once per auth
-  transport. See [e2e/README.md](e2e/README.md).
+- The **Playwright suite**, run twice in CI, once per auth transport. See
+  [e2e/README.md](e2e/README.md).
 
 ## Still manual
 

@@ -16,7 +16,10 @@ never survive into a real deployment. This command:
     rows, matching them by the exact names bootstrap_demo created;
   * drops the back-filled readiness history (points dated before today);
   * leaves the framework/control libraries, folders, roles, and the control
-    statuses/owners intact (those are yours to reset from the Controls page).
+    statuses/owners intact (those are yours to reset from the Controls page);
+  * records the retirement in the audit log, which bootstrap_demo checks, so
+    a container still started with SEED_DEMO_DATA=true does not seed the demo
+    back into the workspace on its next boot.
 
 Idempotent: safe to run again.
 """
@@ -27,7 +30,8 @@ from django.db.models import Q
 
 from accounts import tenancy
 from accounts.management.commands.bootstrap_demo import (
-    ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, DEMO_VENDOR_NAMES, SAMPLE_DOCS,
+    ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, DEMO_VENDOR_NAMES, RETIRED_ACTION,
+    RETIRED_OBJECT_TYPE, SAMPLE_DOCS, retirement_recorded,
 )
 
 DEMO_USERNAMES = [u[0] for u in DEMO_USERS]
@@ -78,13 +82,18 @@ class Command(BaseCommand):
         )
         # Guard: the org must keep at least one active superuser/administrator
         # that is NOT one of the demo accounts. Looked up unscoped on purpose:
-        # `createsuperuser` runs with no workspace active and so leaves a
-        # platform account attached to none, and that account is exactly the
-        # one an operator creates before retiring the demo users.
+        # `createsuperuser` now files its account in the first workspace that
+        # is not archived (and accounts migration 0013 moved the ones older
+        # releases left with none), but a superuser with no workspace at all
+        # still counts here: one detached by hand is still the administrator
+        # an operator may have made before retiring the demo users. A role
+        # counts the way User._cap reads it: an auditor role holds no
+        # capability, whatever it stores.
         with tenancy.unscoped():
             survivors = (
                 User.objects.filter(is_active=True)
-                .filter(Q(is_superuser=True) | Q(role__can_manage_users=True))
+                .filter(Q(is_superuser=True)
+                        | Q(role__can_manage_users=True, role__is_auditor=False))
                 .filter(Q(workspace=workspace) | Q(workspace__isnull=True, is_superuser=True))
                 .exclude(pk__in=[u.pk for u in demo_users])
             )
@@ -174,6 +183,16 @@ class Command(BaseCommand):
                 user.is_active = False
                 user.set_unusable_password()
                 user.save(update_fields=["is_active", "password"])
+        # The record bootstrap_demo checks before seeding. Written once per
+        # retirement: again only after a `bootstrap_demo --force` has seeded
+        # the demo back since the last one. ip_address stays empty, so the
+        # seeded-row match above can never delete it on a later run.
+        if not retirement_recorded():
+            AuditLog.objects.create(
+                user=None, action=RETIRED_ACTION, object_type=RETIRED_OBJECT_TYPE,
+                detail="Demo dataset retired with remove_demo_data; it is not seeded here again.",
+            )
         self.stdout.write(self.style.SUCCESS(
-            "Demo data removed. The published demo password no longer works on this install."
+            "Demo data removed. The demo accounts can no longer sign in, and later boots "
+            "with SEED_DEMO_DATA=true leave this workspace alone."
         ))

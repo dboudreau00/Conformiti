@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from accounts.permissions import CanManageFrameworks
 from documents.access import accessible_folder_ids
 from documents.models import Document
+from documents.serializers import person_name
 from . import scoring
 from .models import Control, ControlEvidence, ControlMapping, Framework
 from .serializers import (
@@ -110,7 +111,7 @@ class ControlViewSet(viewsets.ModelViewSet):
             writer.writerow(csv_safe([
                 c.category.framework.name, c.category.framework.version, c.category.name,
                 c.control_id, c.title, c.get_status_display(),
-                c.owner.get_full_name() if c.owner else "", c.evidence_count,
+                person_name(c.owner), c.evidence_count,
                 "" if readiness["score"] is None else readiness["score"],
                 readiness["band_label"], c.last_tested_on or "", c.objective,
             ]))

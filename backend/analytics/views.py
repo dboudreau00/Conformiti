@@ -27,6 +27,7 @@ from compliance.models import Control, ControlEvidence, Framework
 from governance.models import Risk
 from documents.access import accessible_folder_ids
 from documents.models import Document
+from documents.serializers import person_name
 
 from .snapshots import record_today, trend
 
@@ -157,7 +158,7 @@ class AnalyticsSummaryView(APIView):
                 "id": d.id,
                 "name": d.name,
                 "folder_path": d.folder.path if d.folder_id else "",
-                "owner": d.owner.get_full_name() if d.owner else None,
+                "owner": person_name(d.owner) or None,
                 "days_overdue": (today - d.next_review_date).days,
             })
 

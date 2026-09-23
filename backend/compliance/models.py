@@ -34,6 +34,8 @@ class ControlCategory(TenantModel):
     class Meta:
         ordering = ["framework", "order", "key"]
         unique_together = ("framework", "key")
+        # Django's default plural is "control categorys".
+        verbose_name_plural = "control categories"
 
     def __str__(self):
         return self.name

@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.tenancy import CurrentWorkspaceDefault
+from documents.serializers import PersonNameField
 
 from .models import (
     AccessReview,
@@ -20,7 +21,7 @@ from .models import (
 # Access reviews
 # --------------------------------------------------------------------------- #
 class AccessReviewItemSerializer(serializers.ModelSerializer):
-    decided_by_name = serializers.CharField(source="decided_by.get_full_name", read_only=True, default="")
+    decided_by_name = PersonNameField("decided_by")
 
     class Meta:
         model = AccessReviewItem
@@ -54,7 +55,7 @@ class AccessReviewItemSerializer(serializers.ModelSerializer):
 
 
 class AccessReviewSerializer(serializers.ModelSerializer):
-    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+    created_by_name = PersonNameField("created_by")
     item_count = serializers.SerializerMethodField()
     decided_count = serializers.SerializerMethodField()
 
@@ -77,7 +78,7 @@ class AccessReviewSerializer(serializers.ModelSerializer):
 # Meeting cadence
 # --------------------------------------------------------------------------- #
 class MeetingMinuteSerializer(serializers.ModelSerializer):
-    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+    created_by_name = PersonNameField("created_by")
     # Write-only for the same reason as DocumentSerializer.file: a serialized
     # storage URL is an unauthenticated second route to the bytes.
     file = serializers.FileField(required=False, allow_null=True, write_only=True)
@@ -101,7 +102,7 @@ class MeetingMinuteSerializer(serializers.ModelSerializer):
 
 class MeetingSeriesSerializer(serializers.ModelSerializer):
     workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
+    owner_name = PersonNameField("owner")
     held_this_year = serializers.SerializerMethodField()
     expected_to_date = serializers.SerializerMethodField()
     cadence_status = serializers.SerializerMethodField()
@@ -150,7 +151,7 @@ class GroupMemberSerializer(serializers.ModelSerializer):
 
 class ChampionGroupSerializer(serializers.ModelSerializer):
     workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
+    owner_name = PersonNameField("owner")
     member_count = serializers.IntegerField(source="members.count", read_only=True)
 
     class Meta:
@@ -165,7 +166,7 @@ from .models import Risk, RiskNote  # noqa: E402  (appended feature block)
 
 
 class RiskNoteSerializer(serializers.ModelSerializer):
-    author_name = serializers.CharField(source="author.get_full_name", read_only=True, default="")
+    author_name = PersonNameField("author")
 
     class Meta:
         model = RiskNote
@@ -174,8 +175,8 @@ class RiskNoteSerializer(serializers.ModelSerializer):
 
 
 class RiskSerializer(serializers.ModelSerializer):
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
-    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True, default="")
+    owner_name = PersonNameField("owner")
+    created_by_name = PersonNameField("created_by")
     control_label = serializers.CharField(source="control.control_id", read_only=True, default=None)
     control_framework = serializers.CharField(
         source="control.category.framework.key", read_only=True, default=None

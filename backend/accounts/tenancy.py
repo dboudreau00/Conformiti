@@ -326,6 +326,41 @@ class TenantUserManager(UserManager.from_queryset(TenantQuerySet)):
     def get_queryset(self):
         return super().get_queryset()._pin()
 
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        """``createsuperuser`` (and ``--noinput`` with DJANGO_SUPERUSER_*)
+        ends here, normally with no workspace active.
+
+        The password is held to AUTH_PASSWORD_VALIDATORS. Stock Django skips
+        them for ``--noinput`` and offers to bypass them interactively, and
+        the first administrator of a security product is the last account
+        that should keep a password the product refuses everywhere else.
+
+        The account is attached to the workspace a superuser with none would
+        land in anyway: the first one not archived, else Default. Left with
+        none, it could sign in to /admin/ and was then treated as anonymous,
+        because the session's user lookup is pinned to the workspace the
+        request resolves to and a row with no workspace matches none. A
+        workspace given explicitly, or one active around the call, still wins.
+        """
+        if password is not None:
+            from django.contrib.auth.password_validation import validate_password
+            from django.core.exceptions import ValidationError
+
+            try:
+                validate_password(password, self.model(username=username, email=email or ""))
+            except ValidationError as err:
+                raise ValidationError(
+                    "Superuser not created. The password must pass this installation's "
+                    "password policy, with no bypass. " + " ".join(err.messages)
+                ) from err
+        if current_id() is None and "workspace" not in extra_fields and "workspace_id" not in extra_fields:
+            from .models import Workspace
+
+            first = (Workspace.objects.filter(is_active=True).order_by("pk")
+                     .values_list("pk", flat=True).first())
+            extra_fields["workspace_id"] = first or default_workspace().pk
+        return super().create_superuser(username, email, password, **extra_fields)
+
 
 class TenantModel(models.Model):
     """Inherit to make a model belong to a workspace. Set ``tenant_parent`` to

@@ -1,4 +1,4 @@
-# Conformiti — user guide
+# Conformiti user guide
 
 How the platform is organised and how to use each screen day to day.
 Installation lives in [INSTALL.md](INSTALL.md); a guided first hour in
@@ -15,8 +15,8 @@ count of linked evidence. Readiness is *implemented ÷ applicable*.
 
 **Folders and documents.** Evidence lives in a folder tree generated from the
 control libraries (framework → category → control) plus any subfolders you
-add. Access is granted per folder — by role or by user, at *view*, *edit* or
-*manage* — and inherited down the tree. Documents carry a review cadence and a
+add. Access is granted per folder (by role or by user, at *view*, *edit* or
+*manage*) and inherited down the tree. Documents carry a review cadence and a
 next review date, which drive reminders.
 
 **Evidence links.** A many-to-many mapping between controls and documents: one
@@ -28,7 +28,7 @@ moderate / high / critical), with status, treatment, owner, optional control
 and Jira key, due date and a note trail.
 
 **Access reviews.** Point-in-time snapshots of every account on which an
-administrator records keep / modify / revoke — the periodic user-access review
+administrator records keep / modify / revoke: the periodic user-access review
 SOC 2 and ISO expect. Export the grid as evidence.
 
 **Audit trail.** Every change made through the API, plus every sign-in, failed
@@ -46,7 +46,7 @@ come from those snapshots.
 | **Administrator** | everything, including users, roles, access reviews, integrations |
 | **Compliance Manager** | frameworks and control statuses, all folders and documents, risks, meetings, calendar; sees the whole tree |
 | **Control Owner** | edit documents in folders granted to them; update risks they own; add minutes |
-| **Auditor** | the outside party: packages issued to them, the folders granted with those packages, their own request list, access reviews and the audit log — and nothing else of the programme |
+| **Auditor** | the outside party: packages issued to them, the folders granted with those packages, their own request list, access reviews and the audit log, and nothing else of the programme |
 | **Viewer** | read-only in folders granted to them |
 
 Capabilities are enforced by the API; the interface only shows write controls
@@ -55,10 +55,10 @@ page by anyone with *manage* on that folder.
 
 ## 3. The shell
 
-- **Sidebar** — Workspace (Dashboard, Analytics, Controls, Documents) and
+- **Sidebar**: Workspace (Dashboard, Analytics, Controls, Documents) and
   Governance (Users, User audit, Audit log, Meetings, Groups, Risks, Jira);
   live badges show controls in progress, open risks and open access reviews.
-- **Top bar** — page title, the **theme pack** picker (Audit Ledger, Nimbus,
+- **Top bar**: page title, the **theme pack** picker (Audit Ledger, Nimbus,
   Ledger Dark, Obsidian), four **accent** dots, a version/demo label and the
   **notification bell**. Theme and accent are remembered per browser.
 - **Notifications** are computed for *you*: documents and risks you own that
@@ -91,7 +91,7 @@ reports anything it skipped and why.
 The folder tree on the left (keyboard: arrows to move and expand, Enter to
 select). Select a folder to see its documents: status, review due, owner,
 version and the controls each satisfies. With edit access: **Upload
-document** (name, cadence, owner, file — up to 32 MB, no active-content
+document** (name, cadence, owner and a file of up to 32 MB, no active-content
 types), **Rename**, **Reviewed** (resets the review clock), **Version**
 (archives the current file and bumps the version), **Map** (link/unlink
 controls), **New subfolder**. With manage access: **Manage access** (grant a
@@ -138,8 +138,8 @@ Champion groups with an accountable owner and members tagged by the
 department they represent. Administrators manage membership.
 
 ### Jira *(optional)*
-Administrators connect an Atlassian site (base URL, account email, API token —
-stored server-side, never sent to the browser) and track boards by id;
+Administrators connect an Atlassian site (base URL, account email, API token,
+stored server-side and never sent to the browser) and track boards by id;
 everyone can read the tracked boards' issues. Only `https://` public hosts are
 allowed.
 
@@ -164,8 +164,8 @@ also listed on this page even if you cannot see the package itself.
   it is where reminders go, and it is what single sign-on matches on, so
   changing it is an administrator's job rather than a preference. Ask one, at
   *Users*, and the change is recorded.
-- **Appearance** — theme packs, accent packs, a custom accent colour, live preview.
-- **Security** — change password; enable two-factor (setup key or `otpauth://`
+- **Appearance**: theme packs, accent packs, a custom accent colour, live preview.
+- **Security**: change password; enable two-factor (setup key or `otpauth://`
   URI for any authenticator app, one-time backup codes), regenerate codes or
   turn it off; enrol **passkeys or security keys**, which then satisfy the
   second step instead of a code. A key flagged as possibly cloned is disabled;
@@ -177,30 +177,31 @@ also listed on this page even if you cannot see the package itself.
   a session must not be able to make their authenticator the one you need. If
   you sign in through your organisation's identity provider and have no
   password here, a backup code answers instead.
-- **Notifications** — how reminders reach you.
-- **Role & access** — your capabilities.
-- **About** — version, frameworks loaded, whether demo data is present.
+- **Notifications**: how reminders reach you.
+- **Role & access**: your capabilities.
+- **About**: version, frameworks loaded, whether demo data is present.
 
 ## 5. Review reminders
 
 Owners (and the compliance team address) are emailed at 30, 14, 7 and 1 days
 before a document's review date and once when it goes overdue (which also
 marks the document *expired*). Each window is sent once; **Mark reviewed** or
-a new version resets the clock. In Docker the worker runs the scan daily at
-`REVIEW_SCAN_HOUR`; elsewhere run `manage.py send_review_reminders` from cron.
+a new version resets the clock. In Docker the `beat` service schedules the
+scan daily at `REVIEW_SCAN_HOUR` and the worker runs it; elsewhere run
+`manage.py send_review_reminders` from cron.
 Providers: console (default), SMTP, a standard IMAP/POP3 + SMTP mailbox
-account, Amazon SES — see `.env.example`.
+account, Amazon SES (see `.env.example`).
 
 ## 6. Administration cheat-sheet
 
 ```bash
-manage.py createsuperuser              # first real administrator
+manage.py createsuperuser              # first real administrator (the password policy applies)
 manage.py remove_demo_data [--delete]  # retire the demo accounts and sample data
 manage.py send_review_reminders [--dry-run]
 manage.py record_readiness             # today's readiness snapshot (cron)
 manage.py flushexpiredtokens           # prune the JWT blacklist (cron)
 manage.py seed_frameworks --with-folders   # re-sync libraries after an upgrade (idempotent)
-manage.py test_mailbox --to you@example.com
+manage.py test_mailbox --to you@example.com   # sample reminder through EMAIL_PROVIDER (mailbox: sign-in checked first)
 ```
 
 Prefix with `docker compose exec backend python` on the Docker path or

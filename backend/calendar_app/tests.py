@@ -59,3 +59,21 @@ class CalendarTests(APITestBase):
         self.assertEqual(v.get(f"/api/calendar/{ids['Shown audit']}/").data["document"], shown.pk)
         # The event itself still holds the link: only the reader's view changes.
         self.assertEqual(m.get(f"/api/calendar/{ids['Hidden audit']}/").data["document"], hidden.pk)
+
+    def test_a_nameless_assignee_is_named_by_username(self):
+        """createsuperuser asks for no first or last name; such an assignee
+        showed as nobody, on the event and in the merged feed."""
+        from testutils import make_user
+
+        root = make_user("rootadmin", self.roles["Administrator"], first_name="", last_name="")
+        m = self.client_for(self.manager)
+        r = m.post("/api/calendar/", {"title": "Fieldwork", "date": "2099-03-01", "assignee": root.pk},
+                   format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["assignee_name"], "rootadmin")
+        m.post("/api/calendar/", {"title": "Unassigned", "date": "2099-03-02"}, format="json")
+        make_doc(self.tree.ctrl1, root, name="Root policy", days=10)
+        feed = {i["title"]: i["assignee"] for i in m.get("/api/calendar/feed/").data}
+        self.assertEqual(feed["Fieldwork"], "rootadmin")
+        self.assertEqual(feed["Review due: Root policy"], "rootadmin")
+        self.assertIsNone(feed["Unassigned"])

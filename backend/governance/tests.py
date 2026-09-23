@@ -148,6 +148,44 @@ class RiskRegisterTests(APITestBase):
         self.assertIn("'=cmd|' /C calc'!A0", titles)
 
 
+class NamelessAccountExportTests(APITestBase):
+    """createsuperuser asks for no first or last name, and both CSV exports
+    left such a person's column blank. They carry the username now; a full
+    name still wins and nobody is still blank."""
+
+    def setUp(self):
+        super().setUp()
+        from testutils import make_user
+
+        self.root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
+                              first_name="", last_name="")
+
+    @staticmethod
+    def _rows(response, key):
+        return {row[key]: row for row in csv.DictReader(io.StringIO(response.content.decode()))}
+
+    def test_the_access_review_names_who_decided(self):
+        rid = self.client_for(self.admin).post("/api/access-reviews/", {"name": "Q3"}, format="json").data["id"]
+        for deciding, username in ((self.root, "owen"), (self.admin, "mia")):
+            item = AccessReviewItem.objects.get(review_id=rid, username=username)
+            r = self.client_for(deciding).patch(f"/api/access-review-items/{item.pk}/",
+                                                {"decision": "keep"}, format="json")
+            self.assertEqual(r.status_code, 200, r.data)
+        rows = self._rows(self.client_for(self.admin).get(f"/api/access-reviews/{rid}/export/"), "Username")
+        self.assertEqual(rows["owen"]["Decided by"], "rootadmin")
+        self.assertEqual(rows["mia"]["Decided by"], "Ada Tester")
+        self.assertEqual(rows["val"]["Decided by"], "")
+
+    def test_the_risk_register_names_the_owner(self):
+        Risk.objects.create(title="Root's risk", owner=self.root, created_by=self.root)
+        Risk.objects.create(title="Owen's risk", owner=self.owner, created_by=self.root)
+        Risk.objects.create(title="Nobody's risk", created_by=self.root)
+        rows = self._rows(self.client_for(self.viewer).get("/api/risks/export/"), "Title")
+        self.assertEqual(rows["Root's risk"]["Owner"], "rootadmin")
+        self.assertEqual(rows["Owen's risk"]["Owner"], "Owen Tester")
+        self.assertEqual(rows["Nobody's risk"]["Owner"], "")
+
+
 class MeetingAndGroupTests(APITestBase):
     def test_cadence_maths_and_write_gates(self):
         v = self.client_for(self.viewer)

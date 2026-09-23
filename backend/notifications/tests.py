@@ -1,10 +1,14 @@
-"""Per-user notification feed, the review-reminder scan and the email copy."""
+"""Per-user notification feed, the review-reminder scan, the email copy and
+the test_mailbox command."""
 import html
+import io
 import re
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from django.core import mail
+from django.core.management import CommandError, call_command
 from django.template.loader import render_to_string
 from django.test import SimpleTestCase, override_settings
 
@@ -94,6 +98,66 @@ class ReviewScanTests(APITestBase):
         self.assertEqual(Document.objects.filter(reminders_sent=[]).count(), 1)
 
 
+@override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local", REVIEW_ALERT_LEAD_DAYS=[30, 14, 7, 1])
+class GreetingNameTests(APITestBase):
+    """createsuperuser asks for no first or last name, and the reminders
+    greeted such an owner with "Hi ,". They use the username now, a full name
+    still wins, and nobody is still "team"."""
+
+    def setUp(self):
+        super().setUp()
+        from testutils import make_user
+
+        self.root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
+                              first_name="", last_name="")
+
+    def _people(self, greeting):
+        return ((self.root, f"{greeting} rootadmin,"), (self.owner, f"{greeting} Owen Tester,"),
+                (None, f"{greeting} team,"))
+
+    def _assert_greets(self, greeting):
+        """The one email sent opens with ``greeting``, in both parts."""
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox.pop()
+        self.assertTrue(msg.body.startswith(greeting), msg.body[:40])
+        self.assertIn(f">{greeting}</p>", msg.alternatives[0][0])
+
+    def test_the_review_reminder(self):
+        for i, (owner, greeting) in enumerate(self._people("Hi")):
+            with self.subTest(greeting=greeting):
+                make_doc(self.tree.ctrl1, owner, name=f"Late {i}", days=-1)
+                self.assertEqual(run_review_scan(), 1)
+                self._assert_greets(greeting)
+
+    def test_the_bridge_letter_reminder(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from notifications.tasks import _notify_bridge
+        from vendors.models import Vendor, VendorAssessment
+
+        for i, (owner, greeting) in enumerate(self._people("Hello")):
+            with self.subTest(greeting=greeting):
+                vendor = Vendor.objects.create(name=f"Vendor {i}", owner=owner)
+                report = VendorAssessment.objects.create(
+                    vendor=vendor, kind="soc2_type2", result="satisfactory",
+                    expires_at=timezone.localdate() - timedelta(days=3))
+                self.assertTrue(_notify_bridge(vendor, report))
+                self._assert_greets(greeting)
+
+    def test_the_auditor_request_reminder(self):
+        from notifications.tasks import _notify_pbc
+
+        package = SimpleNamespace(name="SOC 2 2026", audit_firm="")
+        for owner, greeting in self._people("Hello"):
+            with self.subTest(greeting=greeting):
+                req = SimpleNamespace(assignee=owner, package=package, reference="PBC-1",
+                                      title="Access review", due_date="30 Sep 2026")
+                self.assertTrue(_notify_pbc(req, 5, overdue=False, window=7))
+                self._assert_greets(greeting)
+
+
 def _email_context(on):
     """Every variable the emails read, each optional part present (on) or
     absent (off), so both sides of every {% if %} get rendered."""
@@ -152,3 +216,93 @@ class EmailCopyTests(SimpleTestCase):
                         self.assertNotRegex(line, "[\u2013\u2014]")
                         # "--" standing in for a dash, as the old plain-text sign-offs had it
                         self.assertNotRegex(line, r"(?:^|\s)--(?:\s|$)")
+
+
+class TestMailboxCommandTests(SimpleTestCase):
+    """test_mailbox sends a sample review reminder through the email service
+    for every provider, and signs in over IMAP/POP3 only for mailbox. It used
+    to refuse every provider but mailbox, so smtp, ses and console had no way
+    to send a test through the path reminders take."""
+
+    TO = "you@example.com"
+
+    def _run(self, **options):
+        out = io.StringIO()
+        call_command("test_mailbox", stdout=out, **options)
+        return out.getvalue()
+
+    @override_settings(EMAIL_PROVIDER="smtp", EMAIL_HOST="smtp.example.com", EMAIL_PORT=587)
+    def test_smtp_sends_the_sample_reminder_and_signs_in_to_nothing(self):
+        with mock.patch("notifications.mailbox.verify_mailbox") as verify:
+            out = self._run(to=self.TO)
+        verify.assert_not_called()
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, [self.TO])
+        self.assertTrue(msg.subject.startswith("[Test] "), msg.subject)
+        self.assertIn("Sample document", msg.body)
+        self.assertIn("due for review in 30 day(s)", msg.body)
+        self.assertIn("Sample document", msg.alternatives[0][0])
+        self.assertIn("over SMTP (smtp.example.com:587)", out)
+        self.assertIn(f"Test email sent to {self.TO}.", out)
+
+    @override_settings(EMAIL_PROVIDER="console")
+    def test_console_goes_through_the_backend_and_says_nothing_was_delivered(self):
+        out = self._run(to=self.TO)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("delivers nothing", out)
+        self.assertNotIn("Test email sent", out)
+
+    @override_settings(EMAIL_PROVIDER="ses", AWS_SES_REGION="eu-west-1")
+    def test_ses_sends_through_the_ses_client(self):
+        with mock.patch("notifications.ses.send_ses_email") as ses:
+            out = self._run(to=self.TO)
+        subject, html_body, text_body, recipients = ses.call_args.args
+        self.assertEqual(recipients, [self.TO])
+        self.assertIn("Sample document", text_body)
+        self.assertIn("Sample document", html_body)
+        self.assertIn("through Amazon SES (eu-west-1)", out)
+        self.assertEqual(mail.outbox, [])
+
+    @override_settings(EMAIL_PROVIDER="mailbox", MAILBOX_HOST="imap.example.com", MAILBOX_USERNAME="me")
+    def test_mailbox_signs_in_first_then_sends_over_its_smtp(self):
+        with mock.patch("notifications.mailbox.verify_mailbox", return_value="IMAP OK (test)") as verify, \
+                mock.patch("notifications.mailbox.send_mailbox_email") as send:
+            out = self._run(to=self.TO)
+        verify.assert_called_once_with()
+        self.assertEqual(send.call_args.args[3], [self.TO])
+        self.assertIn("Sample document", send.call_args.args[2])
+        self.assertLess(out.index("IMAP OK (test)"), out.index("Sending"))
+
+    @override_settings(EMAIL_PROVIDER="mailbox", MAILBOX_HOST="imap.example.com", MAILBOX_USERNAME="me")
+    def test_mailbox_without_to_only_signs_in(self):
+        with mock.patch("notifications.mailbox.verify_mailbox", return_value="IMAP OK (test)"), \
+                mock.patch("notifications.mailbox.send_mailbox_email") as send:
+            out = self._run()
+        send.assert_not_called()
+        self.assertIn("Verification passed", out)
+
+    @override_settings(EMAIL_PROVIDER="mailbox", MAILBOX_HOST="", MAILBOX_USERNAME="")
+    def test_mailbox_still_needs_its_account(self):
+        with self.assertRaisesMessage(CommandError, "MAILBOX_HOST and MAILBOX_USERNAME must be set."):
+            self._run(to=self.TO)
+        self.assertEqual(mail.outbox, [])
+
+    def test_the_other_providers_need_an_address(self):
+        for provider in ("smtp", "ses", "console"):
+            with self.subTest(provider=provider), override_settings(EMAIL_PROVIDER=provider):
+                with self.assertRaisesMessage(CommandError, "Pass --to you@example.com"):
+                    self._run()
+
+    @override_settings(EMAIL_PROVIDER="smtp")
+    def test_a_bad_address_is_refused_before_anything_is_sent(self):
+        with self.assertRaisesMessage(CommandError, "is not an email address"):
+            self._run(to="not-an-address")
+        self.assertEqual(mail.outbox, [])
+
+    @override_settings(EMAIL_PROVIDER="smtp")
+    def test_a_transport_failure_is_reported(self):
+        with mock.patch("django.core.mail.EmailMultiAlternatives.send",
+                        side_effect=OSError("Connection refused")):
+            with self.assertRaisesMessage(CommandError, "Test send failed: Connection refused"):
+                self._run(to=self.TO)

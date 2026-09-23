@@ -2,6 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.tenancy import CurrentWorkspaceDefault
+from documents.serializers import PersonNameField
 
 from .models import (
     DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, SharedResponsibility, Vendor, VendorAssessment,
@@ -31,7 +32,7 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     result_display = serializers.CharField(source="get_result_display", read_only=True)
     document_name = serializers.CharField(source="document.name", read_only=True, default=None)
-    reviewed_by_name = serializers.CharField(source="reviewed_by.get_full_name", read_only=True, default="")
+    reviewed_by_name = PersonNameField("reviewed_by")
     is_expired = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -93,7 +94,7 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
 
 class VendorSerializer(serializers.ModelSerializer):
     workspace = serializers.HiddenField(default=CurrentWorkspaceDefault())
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
+    owner_name = PersonNameField("owner")
     tier_display = serializers.CharField(source="get_tier_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     assurance = serializers.SerializerMethodField()
@@ -164,7 +165,7 @@ class SharedResponsibilitySerializer(serializers.ModelSerializer):
     control_label = serializers.CharField(source="control.control_id", read_only=True)
     control_title = serializers.CharField(source="control.title", read_only=True)
     responsibility_display = serializers.CharField(source="get_responsibility_display", read_only=True)
-    updated_by_name = serializers.CharField(source="updated_by.get_full_name", read_only=True, default="")
+    updated_by_name = PersonNameField("updated_by")
 
     class Meta:
         model = SharedResponsibility

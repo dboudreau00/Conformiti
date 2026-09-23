@@ -121,6 +121,49 @@ class VendorRegisterTests(APITestBase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("Northwind Cloud", r.content.decode("utf-8"))
 
+    def test_export_names_a_nameless_owner_by_username(self):
+        """createsuperuser asks for no first or last name, and such an owner
+        exported as a blank."""
+        import csv
+
+        from testutils import make_user
+
+        root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
+                         first_name="", last_name="")
+        _vendor(owner=root)
+        _vendor(name="Named Co", owner=self.owner)
+        _vendor(name="Unowned Co")
+        r = self.client_for(self.manager).get("/api/vendors/export/")
+        rows = {row["Vendor"]: row for row in csv.DictReader(io.StringIO(r.content.decode("utf-8")))}
+        self.assertEqual(rows["Northwind Cloud"]["Owner"], "rootadmin")
+        self.assertEqual(rows["Named Co"]["Owner"], "Owen Tester")
+        self.assertEqual(rows["Unowned Co"]["Owner"], "")
+
+    def test_the_returned_questionnaire_email_greets_a_nameless_owner_by_username(self):
+        """It opened with "Hello ," for such an owner."""
+        from types import SimpleNamespace
+
+        from django.core import mail
+        from django.test import override_settings
+
+        from testutils import make_user
+        from vendors.questionnaire import _notify_returned
+
+        root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
+                         first_name="", last_name="")
+        people = ((root, "Hello rootadmin,"), (self.owner, "Hello Owen Tester,"), (None, "Hello team,"))
+        with override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local"):
+            for i, (owner, greeting) in enumerate(people):
+                with self.subTest(greeting=greeting):
+                    invite = SimpleNamespace(vendor=_vendor(name=f"Vendor {i}", owner=owner), sent_by=None,
+                                             respondent_name="Rita", respondent_title="",
+                                             sent_to="rita@northwind.example")
+                    _notify_returned(invite, SimpleNamespace(answers={}), 0)
+                    self.assertEqual(len(mail.outbox), 1)
+                    msg = mail.outbox.pop()
+                    self.assertTrue(msg.body.startswith(greeting), msg.body[:40])
+                    self.assertIn(f">{greeting}</p>", msg.alternatives[0][0])
+
 
 class AssuranceTests(APITestBase):
     def _assess(self, vendor, **extra):

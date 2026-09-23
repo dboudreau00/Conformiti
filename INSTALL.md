@@ -4,9 +4,15 @@ Three ways to run Conformiti, from "just show me" to production.
 
 | Path | Best for | Needs | Command |
 |---|---|---|---|
-| **Docker** | evaluating, LAN pilots, production | Docker Engine 24+ / Docker Desktop with Compose v2 | `docker compose up -d --build` |
-| **Local dev** | hacking on the code | Python 3.11+, Node 20.19+ | `./install.sh` / `.\install.ps1` |
-| **Manual** | custom hosting, bare metal | as above + PostgreSQL, Redis, nginx | see §3 |
+| **Docker** | evaluating, LAN pilots, production | Docker Engine 24+ / Docker Desktop with Compose 2.24 or newer | `docker compose up -d --build` |
+| **Local dev** | hacking on the code | Python 3.11+, Node 20.19+ or 22.12+ | `./install.sh` / `.\install.ps1` |
+| **Manual** | custom hosting, bare metal (Linux) | as above + PostgreSQL, Redis, nginx | see §3 |
+
+**On Windows**, run the local development path (§2), or the Docker stack
+under Docker Desktop or WSL 2, for development and evaluation. Run production
+on a Linux host, with Docker (§1) or on bare metal (§3). The bare-metal recipe
+in §3 is Linux-only (gunicorn does not run on Windows), and this repository
+ships no Windows service setup.
 
 ---
 
@@ -19,14 +25,25 @@ docker compose up -d --build
 ```
 
 Then open **http://localhost:8080**. Create the first account with
-`docker compose exec backend python manage.py createsuperuser`.
+`docker compose exec backend python manage.py createsuperuser`. Its password
+must pass the same policy as every other account's: at least
+`PASSWORD_MIN_LENGTH` characters (12 by default), not a common password, not
+all digits, and not too close to the username or email. A password that fails
+is refused, with no bypass, and no account is created.
 
-To look around a worked example instead, start with `SEED_DEMO_DATA=true`.
-That seeds five accounts sharing one password, generated on first boot and
-printed once (`docker compose logs backend | grep "Sign in as"`, or set
-`DEMO_PASSWORD` beforehand). It is off by default: an installation carrying
-those accounts says so on its own sign-in page, which is not a thing a real
+To look around a worked example instead, put `SEED_DEMO_DATA=true` in `.env`
+(create the file if there is none) before you run `docker compose up`, or use
+`--demo` with the scripted variant below. That seeds five accounts sharing one
+password, generated on first boot and printed once
+(`docker compose logs backend | grep "Sign in as"`, or set `DEMO_PASSWORD` in
+`.env` beforehand). It is off by default: an installation carrying those
+accounts says so on its own sign-in page, which is not a thing a real
 deployment should publish.
+
+Keep settings like these in `.env`. Compose reads that file on every start
+and hands it to the application containers; a variable exported in your
+shell is seen only by commands run from that shell, and only for the keys
+`docker-compose.yml` passes through.
 
 What happens on first boot:
 
@@ -37,14 +54,17 @@ What happens on first boot:
    (`SEED_DEMO_DATA=true`), collects static files and starts gunicorn as an
    unprivileged user.
 3. A strong `DJANGO_SECRET_KEY` is generated and persisted in the `secrets`
-   volume — no placeholder ever signs a token.
-4. The Celery worker starts once the API is *healthy* and runs the daily
-   review scan (06:00 by default), the readiness snapshot and blacklist pruning.
+   volume, so no placeholder ever signs a token.
+4. The Celery `worker` and `beat` services start once the API is *healthy*.
+   `beat` schedules the daily review scan (06:00 by default), the readiness
+   snapshot, the digests, the hourly malware-scanner check and the weekly
+   blacklist pruning; the worker runs them.
 5. nginx serves the built SPA, proxies `/api/` and `/admin/`, and serves
    uploads and static files from shared volumes.
 
-The API is bound to `127.0.0.1:8000` on the host for debugging; the LAN only
-sees nginx on port 8080 (`CONFORMITI_PORT` to change it).
+The API is also published on the host's loopback, `127.0.0.1:8000`, for
+debugging (`CONFORMITI_API_PORT` to move it); the LAN only sees nginx on port
+8080 (`CONFORMITI_PORT` to change it). Both host ports must be free.
 
 ### The scripted variant
 
@@ -59,6 +79,34 @@ builds and starts the stack, **waits until `/api/health/` reports `ok`**, and
 prints the URLs. Flags: `--demo` / `-Demo` (load the sample organisation),
 `--open` / `-Open`, `--port N` / `-Port N`.
 
+With a `.env` already in place, the script leaves it alone unless a flag
+disagrees with it: `--demo` / `--no-demo` (`-Demo` / `-NoDemo`) rewrite
+`SEED_DEMO_DATA`, and `--port N` (`-Port N`) rewrites `CONFORMITI_PORT` and
+moves the `http://localhost` and `http://127.0.0.1` entries of
+`CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS` from the old port to the new
+one. Each change is printed. `--no-demo` stops the seeding; accounts already
+created stay until `remove_demo_data`.
+
+When the running stack reports demo accounts, the closing banner shows their
+password, which it reads from `docker compose logs backend`. The password is
+logged once, by the container that created the accounts; once that log is
+gone, the banner says so and gives the command that sets a new one:
+`docker compose exec backend python manage.py changepassword admin`.
+
+**Windows PowerShell and the execution policy.** On a default Windows 10 or 11
+client, Windows PowerShell 5.1 refuses every script with *running scripts is
+disabled on this system*. Run the installer with a bypass that lasts only for
+that one process and changes no setting:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker
+```
+
+or run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` once in
+the window, then `.\install.ps1` as usual. PowerShell 7 (`pwsh`) runs local
+scripts by default but not downloaded ones: if you took the ZIP rather than
+cloning, run `Unblock-File .\install.ps1` first, or use the same bypass.
+
 ### Without a build: the published images
 
 Every release is published as two images on this repository's registry, built
@@ -72,9 +120,9 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 `docker-compose.ghcr.yml` swaps the four services that would be built
 (`backend`, `worker`, `beat`, `frontend`) for `ghcr.io/dboudreau00/conformiti-backend`
 and `ghcr.io/dboudreau00/conformiti-frontend`, and changes nothing else: the
-environment, the volumes, the healthchecks and the single published port are
+environment, the volumes, the healthchecks and the published ports are
 still the ones in `docker-compose.yml`, and first boot runs exactly as above.
-It needs Compose v2.24 or newer.
+Like the base file, it needs Compose 2.24 or newer.
 
 `latest` follows the newest release. Pin the version in production, and pin it
 in both commands, because `pull` and `up` each read it:
@@ -84,6 +132,24 @@ export CONFORMITI_VERSION=0.9.5k
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
+
+Keep both files for as long as the installation runs from them. The commands
+in the rest of this document are written in the short form,
+`docker compose up -d`, which reads `docker-compose.yml` alone: on an
+installation started from the published images it builds the four services
+from whatever source is checked out and replaces the running release with
+that build. Either repeat `-f docker-compose.yml -f docker-compose.ghcr.yml`
+on every `up` and `pull`, or name both files once in `.env`, which Compose
+reads for every command run in this directory, so the short forms (and
+`scripts/restore.sh`, which uses them) stay on the images:
+
+```ini
+COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml
+CONFORMITI_VERSION=0.9.5k
+```
+
+Separate the two files with `;` instead of `:` when you run Docker Desktop's
+Windows `docker.exe` rather than Docker inside WSL 2.
 
 A container will tell you what it is: `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
@@ -117,25 +183,63 @@ pulls what it pushed and boots it before the run is allowed to pass.
    boot if `BEHIND_TLS` is on and this is still 1. Set it to 1 if your
    terminator replaces the header rather than appending to it, and 0 if the
    API is exposed with nothing in front at all.
+
+   `POSTGRES_PASSWORD` takes effect only when the database volume is first
+   created. If the stack has already booted, the database keeps the password
+   it was created with (the default is `compliance`), and changing `.env`
+   alone leaves the API unable to sign in to its own database. Change the
+   password inside the database first, then put the same value in `.env` and
+   recreate (use your `POSTGRES_USER` if you changed it):
+   ```bash
+   docker compose exec db psql -U compliance -c "ALTER USER compliance PASSWORD 'something-long'"
+   docker compose up -d
+   ```
+   Started from the published images? Give that `up` the same two `-f` files
+   (or set `COMPOSE_FILE`, as *Without a build* shows), or it rebuilds the
+   stack from source.
 2. Terminate TLS (Caddy, Traefik, a load balancer) in front of port 8080.
    Your terminator must **set** `X-Forwarded-Proto: https`, not forward
    whatever the client sent; all of them do by default. Conformiti only
    believes that header once `BEHIND_TLS=true` says a terminator exists, so
    one that forwards the client's value instead will redirect in a loop.
-3. Create your own administrator and retire the demo data:
+3. Create your own administrator, and retire the demo data if you loaded it:
    ```bash
    docker compose exec backend python manage.py createsuperuser
    docker compose exec backend python manage.py remove_demo_data
    ```
-   The dataset is off by default; set `DJANGO_SUPERUSER_USERNAME` /
-   `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_EMAIL` before the first
-   boot to get an account to sign in with.
-4. Confirm: `curl -s https://grc.example.com/api/health/` →
-   `{"status":"ok","version":"0.9.5b","database":"ok","demo_accounts":false,…}`.
+   The retirement is recorded, so it holds across restarts even while
+   `SEED_DEMO_DATA=true` stays in `.env`: each boot logs
+   `Demo data not seeded: ...` instead of seeding the demo back. Set the line
+   to `false` anyway, so `.env` says what the installation does, and run
+   `manage.py bootstrap_demo --force` if you ever want the demo back (it
+   reactivates the demo accounts, and from then on a boot with
+   `SEED_DEMO_DATA=true` refreshes the demo until `remove_demo_data`
+   retires it once more; the audit log keeps both the retirement and the
+   revival). The dataset is off by default.
+
+   To have an account to sign in with from the first boot instead, put
+   `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_PASSWORD` and
+   `DJANGO_SUPERUSER_EMAIL` in `.env`, or export them in the shell you start
+   the stack from, before the first boot. The password must pass the policy
+   in §1: if it does not, no account is created, the backend log says why,
+   and the stack boots without one. Give `DJANGO_SUPERUSER_EMAIL` a real
+   address: left unset it is `admin@localhost`. Earlier releases used
+   `admin@example.com`, the demo administrator's address, and an account
+   named `admin` with that address is counted as a demo account until its
+   email changes.
+4. Confirm: `curl -s https://grc.example.com/api/health/` returns
+   `{"status":"ok","version":"<your version>","database":"ok","demo_accounts":false,…}`.
 5. Put `scripts/backup.sh` on cron and copy its output off the machine. It
    takes the database dump and the evidence, secrets and tree volumes in one
    go; `scripts/restore.sh <directory>` brings an installation back, here or
-   on another machine. CI runs both on every push.
+   on another machine. CI runs both on every push. On the published images,
+   the restore stays on them only with `COMPOSE_FILE` and
+   `CONFORMITI_VERSION` (the backup's release) in `.env`, as *Without a
+   build* shows: the script takes no `-f` files, without `COMPOSE_FILE` it
+   builds the stack from source, and without `CONFORMITI_VERSION` it runs
+   `latest`, which migrates the restored database forward for good. `.env` is
+   not in the backup, so on a new machine write both into it before
+   restoring.
 
 ### Single sign-on (OpenID Connect)
 
@@ -156,8 +260,8 @@ Optional. Nothing changes until all three of the first keys are set.
    OIDC_ALLOWED_DOMAINS=example.com           # who may sign in through it
    ```
 3. On a person's first SSO sign-in, a verified email that matches exactly one
-   local account links it. Administrator accounts — superuser, staff, or any
-   role that can manage users — are never linked this way, and a linked user
+   local account links it. Administrator accounts (superuser, staff, or any
+   role that can manage users) are never linked this way, and a linked user
    who is later promoted loses SSO until an operator re-affirms it. Link
    them deliberately:
    ```bash
@@ -190,7 +294,7 @@ For providers that insist on SAML. Same rules as OIDC, same account linking.
    SAML_LABEL=Sign in with SAML
    ```
    Paste the certificate into `SAML_IDP_CERT` instead if you prefer; either
-   way it is the only thing the app trusts — responses signed by anything
+   way it is the only thing the app trusts: responses signed by anything
    else are refused. When the provider rotates its certificate, replace it
    here.
 3. Linking, provisioning and the domain allow-list follow the `OIDC_*`
@@ -247,16 +351,36 @@ backend's, so pin the relying party there too:
 
 ### The questionnaire sent to the vendor
 
-The link a vendor receives is built from `PUBLIC_URL`, or from the origin the
-sending browser was on when it is unset — right behind the shipped nginx.
-Set `ORGANISATION_NAME` so the email says who is asking:
+The link a vendor receives is built from `PUBLIC_URL`. With DEBUG off (the
+Docker default, and any production install) `PUBLIC_URL` is required: until
+it is set, sending is refused, because the link carries a bearer token and
+must not point wherever the request said. Only in DEBUG (the local
+development path) does an unset `PUBLIC_URL` fall back, to the sending
+browser's origin when that origin is listed in `CSRF_TRUSTED_ORIGINS` or
+`CORS_ALLOWED_ORIGINS`, and otherwise to the address the request arrived at. Set `PUBLIC_URL` in `.env`, with
+`ORGANISATION_NAME` so the email says who is asking:
 ```ini
 PUBLIC_URL=https://grc.example.com
 ORGANISATION_NAME=Acme Ltd
 ```
 Emails go out through whichever `EMAIL_PROVIDER` is configured; with
-`console` (the local default) the link is printed to the server log and shown
+`console` (the default) the link is printed to the server log and shown
 once on screen instead.
+
+### Optional: scan uploaded evidence for malware
+
+Put `CONFORMITI_SCANNING=true` in `.env` (it tells the API to use the
+scanner), then start the stack with the scanning profile:
+
+```bash
+docker compose --profile scanning up -d          # also starts a ClamAV daemon
+```
+
+Pass `--profile scanning` to later `up` commands too, or put
+`COMPOSE_PROFILES=scanning` in `.env`. The first start downloads the
+signature database, which takes a few minutes; the container reports whether
+the scanner answered. **Scanning fails closed**: while it is on and the daemon
+is unreachable, uploads are refused rather than stored unscanned.
 
 ### Watching the malware scanner
 
@@ -286,7 +410,7 @@ Every sealed package manifest is signed with an Ed25519 key kept in a file
 the compose stack generates on first use in the `secrets` volume
 (`/app/secrets/package_signing_key`, 0600). Nothing to configure; **back the
 volume up** with the database. The public key and its fingerprint are under
-*Settings › About* and at `GET /api/signing-keys/` — hand the fingerprint to
+*Settings › About* and at `GET /api/signing-keys/`. Hand the fingerprint to
 your auditors out of band so they can tell your key from a forger's. To use
 a key you manage elsewhere, set `SIGNING_KEY` (PEM, or a base64 32-byte
 seed). To rotate:
@@ -383,9 +507,21 @@ Everyday operations:
 
 ```bash
 docker compose logs -f backend worker      # logs
-docker compose pull && docker compose up -d --build   # update
+docker compose pull && docker compose up -d --build   # update, built from source
 docker compose exec backend python manage.py send_review_reminders --dry-run
 docker compose down                        # stop (volumes are kept)
+```
+
+Update after `scripts/backup.sh` and a checkout of the new release
+([README, Upgrading](README.md#upgrading)). An installation started from the
+published images must keep the override on both commands (or carry
+`COMPOSE_FILE` in `.env`, as *Without a build* shows): the plain update line
+above would quietly switch it to building from source. Set
+`CONFORMITI_VERSION` to the new release if you pin one:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 ---
@@ -397,14 +533,34 @@ docker compose down                        # stop (volumes are kept)
 .\install.ps1                # Windows PowerShell
 ```
 
-The installer verifies Python 3.11+ and Node 20.19+, creates `.env` with a
-generated secret key, builds `.venv`, installs backend and frontend
-dependencies, applies migrations, seeds the libraries and demo data, and starts
-the API on **:8000** and the Vite dev server on **:5173**. Every step is
+On Windows, if PowerShell refuses the script (*running scripts is disabled on
+this system*), use `powershell -ExecutionPolicy Bypass -File .\install.ps1`;
+§1's scripted variant explains the execution policy.
+
+The installer verifies Python 3.11+ and Node 20.19+ or 22.12+, creates `.env`
+with a generated secret key, builds `.venv`, installs backend and frontend
+dependencies, applies migrations, seeds the control libraries, and starts the
+API on **:8000** and the Vite dev server on **:5173** (`CONFORMITI_DEV_API_PORT`
+and `CONFORMITI_DEV_PORT` move them: see *Moving the ports*). Every step is
 exit-code checked; a failing step stops the installer.
 
-Open **http://localhost:5173**. Demo accounts (all sharing the password the
-seeding step printed):
+No account exists yet. Create your first one (in a second terminal while the
+servers run), then open **http://localhost:5173**. Its password must pass the
+policy described in §1 (12 characters or more by default):
+
+```bash
+cd backend && ../.venv/bin/python manage.py createsuperuser
+# Windows: cd backend; ..\.venv\Scripts\python.exe manage.py createsuperuser
+```
+
+To look around a worked example instead, run the installer with `--demo` /
+`-Demo`. It loads the sample organisation, and the run that creates the demo
+accounts prints their password in the seeding step's output (the line
+starting `Sign in as`) and again in the closing *Setup complete* banner. A
+re-run keeps the password, and the banner says it is unchanged. After
+`remove_demo_data`, `--demo` / `-Demo` seeds nothing: the installer says the
+demo was retired and prints the `manage.py bootstrap_demo --force` command
+that seeds it again. The demo accounts all share one password:
 
 | Username | Role |
 |---|---|
@@ -420,20 +576,9 @@ Useful flags:
 |---|---|
 | `--setup-only` / `-SetupOnly` | install and seed, don't start servers |
 | `--test` / `-Test` | run the validator, the backend test suite and a production frontend build |
-
-### Optional: scan uploaded evidence for malware
-
-```bash
-docker compose --profile scanning up -d          # starts a ClamAV daemon
-CONFORMITI_SCANNING=true docker compose up -d    # and tells the API to use it
-```
-
-The first start downloads the signature database, which takes a few minutes;
-the container reports whether the scanner answered. **Scanning fails closed** —
-while it is on and the daemon is unreachable, uploads are refused rather than
-stored unscanned.
-| `--reset` / `-Reset` | wipe `db.sqlite3` and uploads, reseed |
-| `--no-demo` / `-NoDemo` | seed libraries only (then `createsuperuser`) |
+| `--demo` / `-Demo` | also load the sample organisation and its five demo accounts |
+| `--reset` / `-Reset` | wipe `db.sqlite3` and uploads and reseed, without starting the servers |
+| `--no-demo` / `-NoDemo` | the default (no demo data); kept because older notes use it |
 | `--open` / `-Open` | open the browser when ready |
 
 Re-running the installer is safe: it reuses `.venv`, leaves `.env` alone, and
@@ -448,16 +593,45 @@ cd backend
 
 ---
 
-## 3. Manual / bare metal
+## 3. Manual / bare metal (Linux)
+
+The examples assume the checkout is at `/srv/conformiti`, owned by a
+`conformiti` system user; adjust both to taste.
+
+Create the database role and the database; `createuser -P` asks for the
+password that goes into `POSTGRES_PASSWORD` below:
+
+```bash
+sudo -u postgres createuser -P compliance
+sudo -u postgres createdb -O compliance compliance
+```
+
+Copy the configuration with `cp .env.example .env` and set, in `.env`:
+
+- `DJANGO_DEBUG=false` and a real `DJANGO_SECRET_KEY`
+  (`python3 -c "import secrets; print(secrets.token_urlsafe(50))"`);
+- `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS`
+  for your hostname, as in §1's *Going to production*;
+- `POSTGRES_DB=compliance`, `POSTGRES_USER=compliance`,
+  `POSTGRES_PASSWORD` and `POSTGRES_HOST=localhost`. A non-empty
+  `POSTGRES_DB` is what selects PostgreSQL; without it the app uses SQLite;
+- nothing for the Celery broker if Redis runs on this machine:
+  `.env.example` leaves `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND`
+  unset, and unset means `redis://localhost:6379/0` and `/1`. Set them only
+  if your Redis is elsewhere. A `redis://redis:…` URL, which older copies of
+  `.env.example` carried, names the Docker service and does not resolve here.
+  With no Redis at all, run no Celery process and use the cron lines further
+  down instead.
+
+Then install, seed and start the API:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
-cp .env.example .env            # set DJANGO_DEBUG=false, DJANGO_SECRET_KEY, POSTGRES_*, origins
 cd backend
 python manage.py migrate
 python manage.py seed_frameworks --with-folders
-python manage.py createsuperuser
+python manage.py createsuperuser         # the password must pass the policy in §1
 python manage.py collectstatic --noinput
 gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
 ```
@@ -465,11 +639,69 @@ gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
 Run `celery -A config worker -l info` and, once and only once,
 `celery -A config beat -l info` under a supervisor for the daily jobs (a
 single worker may carry the scheduler itself with `-B`, but never more than
-one), or schedule them with cron:
+one). With systemd, three units do it. The application reads
+`/srv/conformiti/.env` itself, so the units need no `EnvironmentFile`:
+
+```ini
+# /etc/systemd/system/conformiti-web.service
+[Unit]
+Description=Conformiti API (gunicorn)
+After=network.target
+
+[Service]
+User=conformiti
+WorkingDirectory=/srv/conformiti/backend
+ExecStart=/srv/conformiti/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini
+# /etc/systemd/system/conformiti-worker.service
+[Unit]
+Description=Conformiti Celery worker
+After=network.target
+
+[Service]
+User=conformiti
+WorkingDirectory=/srv/conformiti/backend
+ExecStart=/srv/conformiti/.venv/bin/celery -A config worker -l info
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini
+# /etc/systemd/system/conformiti-beat.service (the scheduler: one, ever)
+[Unit]
+Description=Conformiti Celery beat
+After=network.target
+
+[Service]
+User=conformiti
+WorkingDirectory=/srv/conformiti/backend
+StateDirectory=conformiti
+ExecStart=/srv/conformiti/.venv/bin/celery -A config beat -l info -s /var/lib/conformiti/celerybeat-schedule
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now conformiti-web conformiti-worker conformiti-beat
+```
+
+Or, with no broker, schedule the jobs with cron:
 
 ```
 0 6 * * *  cd /srv/conformiti/backend && ../.venv/bin/python manage.py send_review_reminders
 5 6 * * *  cd /srv/conformiti/backend && ../.venv/bin/python manage.py record_readiness
+20 6 * * * cd /srv/conformiti/backend && ../.venv/bin/python manage.py send_digests
 30 3 * * 0 cd /srv/conformiti/backend && ../.venv/bin/python manage.py flushexpiredtokens
 ```
 
@@ -484,20 +716,68 @@ from disk).
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `docker compose up` prints `DJANGO_SECRET_KEY must be set…` | You set `DJANGO_DEBUG=false` in `.env` with the placeholder key and no `DJANGO_SECRET_KEY_FILE`. Delete the placeholder line (compose generates a key) or set a real one. |
+| The backend log says `DJANGO_SECRET_KEY must be set…` | Docker: the stack reads `CONFORMITI_SECRET_KEY`, never `DJANGO_SECRET_KEY` or `DJANGO_DEBUG`, and this means `CONFORMITI_SECRET_KEY` is set to something shorter than 32 characters. Delete the line (the container generates and keeps its own key) or set a longer one. Bare metal: `DJANGO_DEBUG=false` with the placeholder key from `.env.example` and no `DJANGO_SECRET_KEY_FILE`; set a real key. |
 | The app loads but every request is `400 Bad Request` | The hostname you browse with isn't in `DJANGO_ALLOWED_HOSTS`. |
 | Admin login form reloads silently over plain HTTP | `BEHIND_TLS=true` (secure cookies) on an HTTP deployment. Set it to `false` until TLS is in front. |
-| `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up or credentials differ between the `db` and `backend` services. |
-| Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser`, or seed the sample data with `manage.py bootstrap_demo`. |
+| `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up, or the credentials differ between the `db` and `backend` services. The usual cause is `POSTGRES_PASSWORD` changed in `.env` after the first boot: the database volume keeps the password it was created with. Put the old value back, or change it in the database as §1 *Going to production* step 1 shows, then `docker compose up -d` (with the same `-f` files you started with). |
+| Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser` (the password must pass the policy in §1), or seed the sample data with `manage.py bootstrap_demo`. Or the web app runs on a port or host name missing from `CSRF_TRUSTED_ORIGINS` in `.env` (see *Moving the ports*). |
 | `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
 | Uploads rejected as too large | Raise `MAX_UPLOAD_MB` **and** `client_max_body_size` in `frontend/nginx.conf`. |
-| Port in use | `CONFORMITI_PORT=8081` (Docker) or `manage.py runserver 127.0.0.1:8001` + the proxy target in `frontend/vite.config.js`. |
+| Port in use | Docker needs host ports 8080 (`CONFORMITI_PORT`) and `127.0.0.1:8000` (`CONFORMITI_API_PORT`); the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move, but a moved web port also needs its origin in `.env`: see *Moving the ports* below. |
+
+<details>
+<summary><strong>Moving the ports</strong></summary>
+
+**Docker.** nginx publishes host port 8080 (`CONFORMITI_PORT`), and the API
+publishes `127.0.0.1:8000` for debugging (`CONFORMITI_API_PORT`). Both must be
+free, and `CONFORMITI_PORT` does not move the API. Set whichever clashes in
+`.env`, and make the origin lists follow the nginx port, or sign-in is
+refused (with no lists in `.env`, the stack trusts `:8080` only):
+
+```ini
+CONFORMITI_PORT=8081
+CONFORMITI_API_PORT=8001
+CSRF_TRUSTED_ORIGINS=http://localhost:8081,http://127.0.0.1:8081
+CORS_ALLOWED_ORIGINS=http://localhost:8081
+```
+
+The scripted variant's `--port N` / `-Port N` writes the nginx port and both
+lists into a new `.env`, or moves them in an existing one. If
+`docker compose up` stopped on a bind error, free the port and run
+`docker compose up -d --force-recreate backend`, with the same `-f` files you
+started with: a backend container that failed to publish its port can be left
+without a network.
+
+**Local development.** It has two variables of its own and never reads the
+Docker ones: `CONFORMITI_DEV_API_PORT` (default 8000) is where `runserver`
+listens and where the Vite dev server proxies `/api/` and `/media/`, and
+`CONFORMITI_DEV_PORT` (default 5173) is the dev server's own port. Both are
+read from the shell, not from `.env`. Set them before running the installer
+and it starts both servers on them, or start the servers by hand, giving
+`runserver` the same API port on its command line:
+
+```bash
+cd backend && ../.venv/bin/python manage.py runserver 127.0.0.1:8001                 # first terminal
+cd frontend && CONFORMITI_DEV_API_PORT=8001 CONFORMITI_DEV_PORT=5174 npm run dev     # second terminal
+```
+
+In PowerShell, set them first in the second window:
+`$env:CONFORMITI_DEV_API_PORT=8001; $env:CONFORMITI_DEV_PORT=5174; npm run dev`.
+(The end-to-end suite points the proxy at its own backend with
+`E2E_API_PORT`, which wins over `CONFORMITI_DEV_API_PORT`.)
+The dev server stops rather than moving when its port is taken. A web app on
+a new port or host name is a new origin: add it (`http://localhost:5174`
+here) to `CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS` in `.env` and
+restart `runserver`, or every sign-in is refused, and move a pinned
+`WEBAUTHN_ORIGINS` with it. Browse `http://localhost:…`, not `127.0.0.1`:
+Vite listens on `localhost`, and `.env` trusts only that name.
+</details>
 
 <details>
 <summary><strong>The site loads but I cannot sign in</strong></summary>
 
 Almost always `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` or
-`CORS_ALLOWED_ORIGINS` not listing the hostname you are actually using —
+`CORS_ALLOWED_ORIGINS` not listing the hostname you are actually using,
 including scheme and port. The backend log names the header it rejected. Behind
 a proxy, confirm it forwards `Host` and `X-Forwarded-Proto`.
 </details>
@@ -513,7 +793,7 @@ through; adding one produces two headers, and browsers refuse the response.
 <details>
 <summary><strong>Passkeys will not enrol or verify</strong></summary>
 
-`WEBAUTHN_RP_ID` must be a domain name — browsers refuse an IP address,
+`WEBAUTHN_RP_ID` must be a domain name: browsers refuse an IP address,
 including `127.0.0.1`. Use `localhost` for local work and set
 `WEBAUTHN_ORIGINS` to match exactly, port included. If a proxy rewrites `Host`,
 pin both values rather than letting them be derived.
@@ -523,10 +803,15 @@ pin both values rather than letting them be derived.
 <summary><strong>Reminder emails are not arriving</strong></summary>
 
 `manage.py send_review_reminders --dry-run` shows what the scan believes is
-due; `manage.py test_mailbox --to you@example.com` tests the transport
-separately. Each lead window is sent once and recorded on the document — a
-second run will not re-send yesterday's mail, which is correct and often
-mistaken for a failure.
+due. To test the transport separately,
+`manage.py test_mailbox --to you@example.com` sends a sample review reminder
+through whichever `EMAIL_PROVIDER` is configured, with the template and
+transport real reminders use (`console` prints it in the command's output
+and delivers nothing). With `mailbox` it first signs in to the account over
+IMAP or POP3 and stops there if that fails; without `--to`, that sign-in is
+all it does. Each lead window
+is sent once and recorded on the document, so a second run will not re-send
+yesterday's mail, which is correct and often mistaken for a failure.
 </details>
 
 <details>
@@ -551,7 +836,7 @@ release is an audit-log entry with your name on it.
 <details>
 <summary><strong>A PDF renders blank</strong></summary>
 
-Do not add a `sandbox` attribute to the PDF frame — Chromium disables plugins
+Do not add a `sandbox` attribute to the PDF frame: Chromium disables plugins
 and renders blank. PDFs are drawn by pdf.js onto canvases; the viewer must
 fetch through the API client and render from a blob, never point a frame at the
 media URL.

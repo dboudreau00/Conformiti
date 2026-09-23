@@ -4,8 +4,10 @@
 #   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
 # Everything else comes from docker-compose.yml: the environment, the volumes,
-# the healthchecks, the single published port. An installation started this way
-# is the same installation, assembled from artefacts rather than from a build.
+# the healthchecks and the published ports (nginx on CONFORMITI_PORT, default
+# 8080, and the API on 127.0.0.1 at CONFORMITI_API_PORT, default 8000). An
+# installation started this way is the same installation, assembled from
+# artefacts rather than from a build.
 #
 # `latest` follows the newest release; pin a version for production:
 #

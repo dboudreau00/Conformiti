@@ -113,6 +113,14 @@ services:
         required: false
     environment:
       <<: *backend-env
+      # The first administrator, created on boot when a username and a
+      # password are both set, and left alone once it exists. Listed here
+      # rather than only read from ./.env so they also work set in the shell,
+      # the way SEED_DEMO_DATA does. Only this service runs the entrypoint
+      # that uses them, so they are not added to the worker or beat.
+      DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
+      DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-}
     volumes:
       - media:/app/media
       - static:/app/staticfiles
@@ -124,9 +132,12 @@ services:
       redis:
         condition: service_healthy
     # Bound to the loopback interface: the API and admin are reachable from
-    # the host for debugging, but the LAN only sees nginx on :8080.
+    # the host for debugging, but the LAN only sees nginx on CONFORMITI_PORT.
+    # CONFORMITI_API_PORT moves the host side when something else already
+    # holds 8000 (a local `manage.py runserver`, another stack); the
+    # container side stays 8000.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${CONFORMITI_API_PORT:-8000}:8000"
 
   worker:
     build: ./backend

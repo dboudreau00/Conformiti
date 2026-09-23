@@ -6,12 +6,13 @@ how the project is built and what a change needs before it can merge.
 ## Set up
 
 ```bash
-./install.sh --setup-only        # macOS / Linux / WSL
-.\install.ps1 -SetupOnly         # Windows PowerShell
+./install.sh --setup-only                                              # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -SetupOnly      # Windows
 ```
 
-That creates `.venv`, installs backend and frontend dependencies, migrates and
-seeds a SQLite database with the demo data. Start the servers with
+That creates `.venv`, installs backend and frontend dependencies, migrates a
+SQLite database and seeds the control libraries; add `--demo` (`-Demo`) for
+the sample organisation and its five accounts. Start the servers with
 `./install.sh` (both) or by hand:
 
 ```bash
@@ -27,12 +28,12 @@ Run the same gates CI runs:
 ./install.sh --test
 ```
 
-which is shorthand for:
+which is shorthand for these, except `npm audit`, which only CI runs:
 
 ```bash
 python tools/validate.py                                   # static wiring/contract checks
 cd backend && python manage.py check && python manage.py makemigrations --check --dry-run
-cd backend && python manage.py test                        # 580 tests, ~13 min on SQLite
+cd backend && python manage.py test                        # the long one; ends with "Ran N tests" and OK
 cd frontend && npm run build && npm audit --audit-level=high
 ```
 
@@ -51,7 +52,7 @@ Rules of thumb:
 - **Accessibility is not optional:** interactive elements are buttons or carry
   role + keyboard handlers; inputs have labels.
 - **Control text is paraphrased.** Do not paste normative ISO/PCI text into the
-  seed data — it is copyrighted.
+  seed data: it is copyrighted.
 
 ## Project map
 
@@ -85,5 +86,9 @@ co-authored-by trailers.
 
 ## Releases
 
-Bump `backend/config/version.py` and `frontend/package.json`, add the
-CHANGELOG entry, tag `vX.Y.Z`, and publish a GitHub release. CI must be green.
+Bump `backend/config/version.py`, `frontend/package.json` and both version
+fields in `frontend/package-lock.json` (the top-level one and `packages[""]`,
+by hand or with `npm install --package-lock-only` in `frontend/`), update the
+README badge, add the CHANGELOG entry, tag `vX.Y.Z`, and publish a GitHub
+release. `tools/validate.py` refuses a build where these disagree. CI must be
+green.

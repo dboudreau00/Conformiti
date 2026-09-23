@@ -1,12 +1,13 @@
 from rest_framework import serializers
 
 from documents.access import accessible_folder_ids
+from documents.serializers import PersonNameField
 
 from .models import CalendarEvent
 
 
 class CalendarEventSerializer(serializers.ModelSerializer):
-    assignee_name = serializers.CharField(source="assignee.get_full_name", read_only=True, default="")
+    assignee_name = PersonNameField("assignee")
 
     class Meta:
         model = CalendarEvent

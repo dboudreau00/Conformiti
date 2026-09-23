@@ -93,7 +93,7 @@ def check_backend_wiring():
             err("wiring", f"{f} not found")
             continue
         if re.search(r"^[^#\n]*\bmakemigrations\b(?!\s+--check)", read(path), re.M):
-            err("wiring", f"{f} runs makemigrations at install time — migrations must ship with the release")
+            err("wiring", f"{f} runs makemigrations at install time: migrations must ship with the release")
     print(f"  2. app wiring: {len(LOCAL_APPS)} apps, {len(model_apps)} migration sets, install paths never makemigrations")
 
 
@@ -352,7 +352,7 @@ def check_css(files):
             hard.setdefault(os.path.relpath(f, ROOT), 0)
             hard[os.path.relpath(f, ROOT)] += 1
     for where, n in sorted(hard.items()):
-        warn("css", f"{where} hard-codes {n} hex colour(s) — use theme tokens")
+        warn("css", f"{where} hard-codes {n} hex colour(s); use theme tokens")
     print(f"  8. theme system: 4 theme packs + 4 accent packs defined, {len(hard)} file(s) with hard-coded colours (warnings)")
 
 
@@ -398,7 +398,7 @@ def check_requirements():
     for mod in sorted(seen):
         pip = PIP_NAME.get(mod)
         if pip is None:
-            warn("deps", f"unmapped third-party import '{mod}' — verify it's in requirements.txt")
+            warn("deps", f"unmapped third-party import '{mod}': verify it's in requirements.txt")
         elif pip.lower() not in req:
             err("deps", f"'{mod}' is imported but '{pip}' is not in requirements.txt")
     print(f"  9. dependencies: {len(seen)} third-party modules checked against requirements.txt")
@@ -611,7 +611,7 @@ def check_compose_debug_isolation():
     # this list is how the class of bug comes back.
     for leaky in ("${DJANGO_DEBUG", "${DJANGO_SECRET_KEY:", "${DJANGO_FIELD_ENCRYPTION_KEY:"):
         if leaky in dc:
-            err("compose", f"docker-compose.yml interpolates {leaky}...}} from .env — "
+            err("compose", f"docker-compose.yml interpolates {leaky}...}} from .env; "
                            "use the matching CONFORMITI_* variable instead")
     if "DJANGO_DEBUG: ${CONFORMITI_DEBUG:-false}" not in dc:
         err("compose", "docker-compose.yml must set DJANGO_DEBUG from ${CONFORMITI_DEBUG:-false}")
@@ -713,10 +713,12 @@ def check_tests_and_ci():
 # 19. One version, everywhere it is written down
 # ===========================================================================
 def check_version_lock():
-    """The version is written in four places by hand. They drifted: the
-    README badge said 0.9.3 for a whole release. A build whose badge, package
-    manifest, changelog heading and `config/version.py` disagree is refused,
-    so the badge can never lag the tag again.
+    """The version is written in several places by hand. They drifted: the
+    README badge said 0.9.3 for a whole release, and package-lock.json still
+    said 0.4.1 at 0.9.5k, so every `npm install` rewrote a tracked file and
+    left a fresh clone dirty. A build whose badge, package manifest, lockfile,
+    changelog heading and `config/version.py` disagree is refused, so none of
+    them can lag the tag again.
     """
     sources = {}
     version_py = read(os.path.join(BACKEND, "config", "version.py"))
@@ -725,6 +727,15 @@ def check_version_lock():
 
     package = json.load(open(os.path.join(ROOT, "frontend", "package.json"), encoding="utf-8"))
     sources["frontend/package.json"] = package.get("version")
+
+    # npm writes the version twice: at the top and on the root package entry.
+    # Bump both with package.json, by hand or with `npm install
+    # --package-lock-only` in frontend/.
+    lock_path = os.path.join(ROOT, "frontend", "package-lock.json")
+    lock = json.load(open(lock_path, encoding="utf-8")) if os.path.exists(lock_path) else {}
+    sources["frontend/package-lock.json"] = lock.get("version")
+    sources["frontend/package-lock.json packages[\"\"]"] = (
+        (lock.get("packages") or {}).get("", {}).get("version"))
 
     readme = read(os.path.join(ROOT, "README.md"))
     m = re.search(r"badge/release-v([0-9][^-\s]*)-", readme)
@@ -738,7 +749,7 @@ def check_version_lock():
     if None in distinct or len(distinct) != 1:
         for where, value in sources.items():
             err("version", f"{where}: {value or 'not found'}")
-        err("version", "the release version must be identical in all four places")
+        err("version", f"the release version must be identical in all {len(sources)} places")
     print(f" 19. version lock: {sources['backend/config/version.py']} in "
           f"{len(sources)} places, all agree")
 
@@ -770,7 +781,7 @@ def main():
         print(f"  WARN  {w}")
     for e in errors:
         print(f"  ERROR {e}")
-    print(f"\n{'FAIL' if errors else 'PASS'} — {len(errors)} error(s), {len(warnings)} warning(s)")
+    print(f"\n{'FAIL' if errors else 'PASS'}: {len(errors)} error(s), {len(warnings)} warning(s)")
     sys.exit(1 if errors else 0)
 
 

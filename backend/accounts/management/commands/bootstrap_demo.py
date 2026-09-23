@@ -11,6 +11,12 @@ Creates:
   * example folder permissions (RBAC demonstration)
   * sample documents with varied review dates (upcoming, due soon, overdue)
   * a couple of audit-milestone calendar events
+
+Seeds nothing in a workspace the demo was retired from with remove_demo_data,
+so a container that keeps SEED_DEMO_DATA=true cannot put the sample
+organisation back into real data on its next boot. `--force` seeds it anyway,
+makes the demo accounts usable again and records that after the retirement,
+so later boots refresh the demo until remove_demo_data retires it again.
 """
 from datetime import timedelta
 
@@ -44,6 +50,43 @@ DEMO_PACKAGE_NAME = "SOC 2 Type II fieldwork"
 
 # The seeded vendors, matched by name in both directions.
 DEMO_VENDOR_NAMES = ["Amazon Web Services", "Okta", "Stripe", "Brightline Security Ltd"]
+
+# remove_demo_data records the retirement as an audit-log entry of this type
+# in the workspace it cleaned. The entry outlives the demo accounts (a
+# --delete run removes them), so it is what tells a later bootstrap_demo, and
+# a container still booting with SEED_DEMO_DATA=true, to leave the workspace
+# alone. `bootstrap_demo --force` answers it with an entry of the same type
+# saying the demo was seeded again, rather than deleting it: the audit trail
+# is immutable, so the newest of these entries is the one that counts.
+RETIRED_OBJECT_TYPE = "demo-data"
+RETIRED_ACTION = "delete"
+REVIVED_ACTION = "create"
+
+
+def retirement_recorded():
+    """True when the newest demo-data entry in the active workspace's audit
+    log is a retirement, not a later --force that seeded the demo again."""
+    from audit.models import AuditLog
+
+    newest = (AuditLog.objects.filter(object_type=RETIRED_OBJECT_TYPE)
+              .order_by("-pk").values_list("action", flat=True).first())
+    return newest == RETIRED_ACTION
+
+
+def retired():
+    """True when the demo dataset was retired from the active workspace.
+
+    Either remove_demo_data recorded it (and no --force has seeded it again
+    since), or the demo accounts are still there and none of them is active:
+    a retirement by a release older than the record, or accounts an
+    administrator switched off by hand.
+    """
+    if retirement_recorded():
+        return True
+    accounts = User.objects.filter(username__in=[u[0] for u in DEMO_USERS],
+                                   email__endswith="@example.com")
+    return accounts.exists() and not accounts.filter(is_active=True).exists()
+
 
 # (control_id, doc name, cadence, review offset in days from today)
 SAMPLE_DOCS = [
@@ -126,10 +169,23 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         tenancy.workspace_option(parser)
+        parser.add_argument(
+            "--force", action="store_true",
+            help="Seed even though remove_demo_data retired the demo from this workspace, "
+                 "and make the demo accounts usable again.")
 
     def handle(self, *args, **opts):
         workspace = tenancy.from_option(opts)
         with tenancy.scoped(workspace):
+            if retired():
+                if not opts.get("force"):
+                    self.stdout.write(self.style.WARNING(
+                        f"Demo data not seeded: remove_demo_data retired it from workspace "
+                        f"{workspace.slug!r}, so the demo accounts and sample records stay "
+                        f"removed. To seed it again anyway: manage.py bootstrap_demo --force"
+                    ))
+                    return
+                self._revive = True
             self._users()
             self._permissions()
             self._control_program()
@@ -143,6 +199,8 @@ class Command(BaseCommand):
             self._evidence_package()
             self._audit()
             self._history()
+            if self._revive:
+                self._record_revival()
         if self._password_shown:
             self.stdout.write(self.style.SUCCESS(
                 f"Demo data ready in workspace {workspace.slug!r}.\n"
@@ -175,6 +233,10 @@ class Command(BaseCommand):
 
     _password = None
     _password_shown = False
+    # Set by --force on a retired workspace: remove_demo_data left the accounts
+    # switched off with no usable password, and seeding around them would
+    # bring back the sample records with nobody able to sign in to see them.
+    _revive = False
 
     def _users(self):
         for username, first, last, role_name, is_super in DEMO_USERS:
@@ -187,7 +249,10 @@ class Command(BaseCommand):
                     is_staff=is_super, is_superuser=is_super, job_title=role_name,
                 ),
             )
-            if created:
+            retired_account = (self._revive and user.email.endswith("@example.com")
+                               and not (user.is_active and user.has_usable_password()))
+            if created or retired_account:
+                user.is_active = True
                 user.set_password(self.demo_password())
                 user.save()
                 self._password_shown = True
@@ -850,9 +915,27 @@ class Command(BaseCommand):
             made += 1
         self.stdout.write(f"  Readiness history: {made} monthly points + today ({now.pct}%)")
 
+    def _record_revival(self):
+        """--force seeded a workspace remove_demo_data had retired. Say so in
+        the audit log, after the retirement, so later boots with
+        SEED_DEMO_DATA=true refresh the demo instead of reporting it removed
+        while its accounts are live. ip_address stays empty, so
+        remove_demo_data's seeded-row match never deletes this entry either."""
+        from audit.models import AuditLog
+
+        AuditLog.objects.create(
+            user=None, action=REVIVED_ACTION, object_type=RETIRED_OBJECT_TYPE,
+            detail="Demo dataset seeded again with bootstrap_demo --force; later boots refresh "
+                   "it until remove_demo_data retires it again.",
+        )
+
     def _audit(self):
         """A short, plausible audit history so the viewer isn't empty on first
-        visit. Real entries accrue automatically as people use the app."""
+        visit. Real entries accrue automatically as people use the app.
+
+        Only into an empty log: a workspace seeded again with --force already
+        holds real entries (its retirement among them), and invented history
+        never goes in among those."""
         from datetime import timedelta
 
         from django.utils import timezone

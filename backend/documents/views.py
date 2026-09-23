@@ -1,9 +1,12 @@
 """Document-management API: folders, permissions, documents, reviews, templates."""
+import re
+
 import django_filters as filters
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -20,7 +23,7 @@ from config.personfilters import person
 
 from .access import accessible_folder_ids
 from . import monitor
-from .downloads import serve_inline, serve_stored_file
+from .downloads import download_filename, serve_inline, serve_stored_file
 from . import preview as preview_lib
 from .scanning import scan_or_raise
 from .permissions import DocumentAccessPermission, FolderAccessPermission
@@ -30,8 +33,22 @@ from .serializers import (
     FolderPermissionSerializer,
     FolderSerializer,
     FormTemplateSerializer,
+    person_name,
 )
 from .uploads import validate_upload
+
+
+def _natural_key(name):
+    """Sort key that reads runs of digits as numbers, so framework folders
+    come in clause order: "A.5.2" before "A.5.10", "Req 2" before "Req 10".
+
+    re.split with a capturing group alternates text and digits, so every key
+    has text at even positions and numbers at odd ones and two keys never
+    compare a number with a string. The name itself breaks ties ("A.5.02"
+    and "A.5.2").
+    """
+    parts = re.split(r"(\d+)", name or "")
+    return [int(p) if i % 2 else p.casefold() for i, p in enumerate(parts)], name or ""
 
 
 def _visible_folders(user):
@@ -51,6 +68,20 @@ class FolderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         ids = accessible_folder_ids(self.request.user)
         return Folder.objects.filter(id__in=ids).select_related("owner", "control", "parent")
+
+    def list(self, request, *args, **kwargs):
+        """Folders in the tree's clause order ("A.5.2" before "A.5.10"),
+        grouped by parent with the top level first, unless the caller asks
+        for an ``ordering`` of its own. The database sorts names as text, so
+        the page is cut from a list sorted here."""
+        queryset = self.filter_queryset(self.get_queryset())
+        if OrderingFilter().get_ordering(request, queryset, self) is None:
+            queryset = sorted(queryset, key=lambda f: (
+                f.parent_id is not None, f.parent_id or 0, _natural_key(f.name)))
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
+        return Response(self.get_serializer(queryset, many=True).data)
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -124,10 +155,10 @@ class FolderViewSet(viewsets.ModelViewSet):
 
         def build(parent_id):
             nodes = []
-            for f in sorted(by_parent.get(parent_id, []), key=lambda x: x.name):
+            for f in sorted(by_parent.get(parent_id, []), key=lambda x: _natural_key(x.name)):
                 nodes.append({
                     "id": f.id, "name": f.name, "control": f.control_id,
-                    "owner": f.owner.get_full_name() if f.owner else None,
+                    "owner": person_name(f.owner) or None,
                     "my_access": access.get(f.id),
                     "is_seeded": f.is_seeded,
                     "document_count": counts.get(f.id, 0),
@@ -367,7 +398,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except DocumentVersion.DoesNotExist:
             raise ValidationError({"version": "Not found."})
         record_evidence_read(request, doc, version=version.version)
-        return serve_stored_file(version.file, f"{doc.name} (v{version.version})")
+        # "Policy (v2).pdf": the tag goes before the archived file's own
+        # extension, which need not be the current file's.
+        return serve_stored_file(
+            version.file, download_filename(doc.name, version.file.name, f" (v{version.version})"))
 
     @action(detail=True, methods=["get"])
     def versions(self, request, pk=None):

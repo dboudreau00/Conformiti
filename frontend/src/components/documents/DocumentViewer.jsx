@@ -50,7 +50,9 @@ export function documentViewerProps(doc) {
     subtitle: [doc.folder_path, doc.control_id].filter(Boolean).join(" · "),
     previewUrl: `/documents/${doc.id}/preview/`,
     downloadUrl: doc.download_url || `/documents/${doc.id}/download/`,
-    filename: doc.name,
+    // The server's own name for the download (display name plus the stored
+    // file's extension); downloadFile prefers the response's header anyway.
+    filename: doc.download_name || doc.name,
     badge: status,
     facts: [
       { label: "Version", value: `v${doc.version ?? 1}` },

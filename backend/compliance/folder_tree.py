@@ -127,7 +127,7 @@ def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
                     # discard their edits.
                     readme_path = os.path.join(ctrl_dir, "_control.md")
                     if not os.path.exists(readme_path):
-                        with open(readme_path, "w", encoding="utf-8") as f:
+                        with open(readme_path, "w", encoding="utf-8", newline="\n") as f:
                             f.write(_control_readme(fw, category, control))
 
                 manifest.append({
@@ -140,9 +140,12 @@ def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
                     "path": os.path.relpath(ctrl_dir, root).replace(os.sep, "/"),
                 })
 
-    # top-level index + machine-readable manifest
+    # top-level index + machine-readable manifest. LF on every OS: the
+    # generated files are tracked, .gitattributes pins *.md and *.json to
+    # eol=lf, and a CRLF rewrite on Windows showed both as modified after
+    # every install that runs generate_folder_tree.
     if write_readmes:
-        with open(os.path.join(root, "README.md"), "w", encoding="utf-8") as f:
+        with open(os.path.join(root, "README.md"), "w", encoding="utf-8", newline="\n") as f:
             f.write(
                 "# Compliance evidence library\n\n"
                 "Folder tree segregated by framework, category and control.\n\n"
@@ -155,7 +158,7 @@ def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
                 + "\nEach control folder contains `policies/`, `procedures/`, "
                   "`evidence/` and `forms/` plus a `_control.md` metadata file.\n"
             )
-    with open(os.path.join(root, "manifest.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(root, "manifest.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump({"counts": counts, "controls": manifest}, f, indent=2)
 
     return counts

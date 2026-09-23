@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from . import scoring
 from accounts.tenancy import CurrentWorkspaceDefault
+from documents.serializers import PersonNameField
 
 from .models import Control, ControlCategory, ControlEvidence, ControlMapping, Framework
 
@@ -12,13 +13,12 @@ class ControlSerializer(serializers.ModelSerializer):
     framework = serializers.CharField(source="category.framework.name", read_only=True)
     framework_key = serializers.CharField(source="category.framework.key", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
+    owner_name = PersonNameField("owner")
     evidence_count = serializers.SerializerMethodField()
     readiness_score = serializers.SerializerMethodField()
     readiness_band = serializers.SerializerMethodField()
     readiness_band_label = serializers.SerializerMethodField()
-    last_tested_by_name = serializers.CharField(
-        source="last_tested_by.get_full_name", read_only=True, default="")
+    last_tested_by_name = PersonNameField("last_tested_by")
 
     class Meta:
         model = Control
@@ -135,7 +135,7 @@ class ControlEvidenceSerializer(serializers.ModelSerializer):
     control_title = serializers.CharField(source="control.title", read_only=True)
     framework_key = serializers.CharField(source="control.category.framework.key", read_only=True)
     framework_name = serializers.CharField(source="control.category.framework.name", read_only=True)
-    linked_by_name = serializers.CharField(source="linked_by.get_full_name", read_only=True, default="")
+    linked_by_name = PersonNameField("linked_by")
     # Whether the *requesting* user may remove this link — the UI uses it to
     # show the Unlink control only where the API would accept the call.
     can_unlink = serializers.SerializerMethodField()

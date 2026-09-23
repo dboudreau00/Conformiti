@@ -249,17 +249,38 @@ export async function fetchAll(url, maxPages = 50) {
   return all;
 }
 
-/** Trigger a browser download of a blob response (CSV exports). */
+/** The file name a Content-Disposition header carries, or "" if none.
+ *  filename* (RFC 5987: the exact UTF-8 name, non-ASCII included) wins over
+ *  the plain filename=, which is only the server's ASCII fallback. */
+function dispositionFilename(header) {
+  const value = String(header || "");
+  const star = /filename\*\s*=\s*([\w-]*)'[^']*'([^;]+)/i.exec(value);
+  if (star && /^utf-8$/i.test(star[1])) {
+    try {
+      const name = decodeURIComponent(star[2].trim());
+      if (name) return name;
+    } catch { /* a malformed escape: use filename= below */ }
+  }
+  const plain = /(?:^|;)\s*filename\s*=\s*(?:"([^"]*)"|([^;]*))/i.exec(value);
+  return plain ? (plain[1] ?? plain[2] ?? "").trim() : "";
+}
+
+/** Trigger a browser download of a blob response (CSV exports, documents).
+ *  The name is the one the server sent in Content-Disposition, so a document
+ *  saves as "Access Control Policy.pdf" exactly as a direct download would;
+ *  `filename` is used only when the response names nothing. */
 export async function downloadFile(url, filename) {
   const r = await api.get(url, { responseType: "blob" });
   const href = URL.createObjectURL(r.data);
   const a = document.createElement("a");
   a.href = href;
-  a.download = filename;
+  a.download = dispositionFilename(r.headers?.["content-disposition"]) || filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(href);
+  // Revoking in the same tick can cancel the download before the browser
+  // has read the blob (Firefox does), so give it a moment.
+  setTimeout(() => URL.revokeObjectURL(href), 1500);
 }
 
 export default api;

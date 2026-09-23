@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from accounts.permissions import is_external_auditor
 from documents.access import accessible_folder_ids
 from documents.models import Document
+from documents.serializers import person_name
 from .models import CalendarEvent
 from .serializers import CalendarEventSerializer
 
@@ -64,7 +65,7 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
                 "end_date": e.end_date.isoformat() if e.end_date else None,
                 "completed": e.completed,
                 "document": doc.id if doc is not None and doc.folder_id in visible else None,
-                "assignee": e.assignee.get_full_name() if e.assignee else None,
+                "assignee": person_name(e.assignee) or None,
             })
 
         # virtual review-due events from visible documents
@@ -78,7 +79,7 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
                 "title": f"Review due: {d.name}", "type": "review_due",
                 "date": d.next_review_date.isoformat(), "end_date": None,
                 "completed": False, "document": d.id,
-                "assignee": d.owner.get_full_name() if d.owner else None,
+                "assignee": person_name(d.owner) or None,
                 "overdue": d.is_overdue,
             })
 

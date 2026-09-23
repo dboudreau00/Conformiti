@@ -6,12 +6,13 @@ walkthrough with exact expected values from the seeded demo data.
 ## Automated
 
 ```bash
-./install.sh --test            # Windows: .\install.ps1 -Test
+./install.sh --test                                              # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
 Runs, in order: `tools/validate.py` (19 static checks), `manage.py check`,
-`makemigrations --check`, the backend suite (**580 tests**, ~13 min on SQLite),
-and a production frontend build. CI runs the same plus the PostgreSQL job,
+`makemigrations --check`, the backend suite (by far the longest step on
+SQLite), and a production frontend build. CI runs the same plus the PostgreSQL job,
 `npm audit`, the Docker boot check, the compose backup-and-restore rehearsal
 and the Playwright suite. Details: [VALIDATION.md](VALIDATION.md).
 
@@ -62,7 +63,7 @@ coming up" lists the seven documents most urgent first with **Mark reviewed**.
 ### 3 · Analytics
 **Expect:** three framework bars; donut centres **217** and **7**; review load
 for six months (current month ≥ 3); ownership *Documents with an owner 7/7*;
-most-overdue list shows *Incident Response Plan — 3d — Owen Owner*.
+most-overdue list shows *3d*, *Incident Response Plan*, *Owen Owner*.
 
 ### 4 · Close the overdue review
 Dashboard → **Mark reviewed** on *Incident Response Plan*. **Expect:** it leaves
@@ -156,3 +157,6 @@ panels appear without animation.
 ./install.sh --reset               # local path
 docker compose down -v && docker compose up -d --build   # Docker (destroys data)
 ```
+
+On the published images, give `up` the same `-f` files you started with, or it
+builds from source ([INSTALL.md](INSTALL.md), *Without a build*).

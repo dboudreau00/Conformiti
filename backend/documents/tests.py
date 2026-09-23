@@ -1,5 +1,6 @@
 """Folder RBAC, tree integrity, document lifecycle and upload validation."""
 from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
@@ -464,6 +465,250 @@ class EvidenceDownloadTests(APITestBase):
             self.client_for(self.viewer).get(
                 f"/api/documents/{self.doc.pk}/versions/{version_id}/download/").status_code,
             404)
+
+
+class DownloadNameTests(APITestBase):
+    """A download is named after the document and keeps the stored file's
+    extension and type. Before, 'Access Control Policy' uploaded from
+    policy.pdf downloaded as 'Access Control Policy', with no extension and
+    as application/octet-stream, so no OS would open it by double-click."""
+
+    def setUp(self):
+        super().setUp()
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+
+    def _doc(self, name, stored, content=b"%PDF-1.4\n%%EOF\n"):
+        doc = Document(folder=self.tree.ctrl1, name=name, owner=self.owner, created_by=self.owner,
+                       status=Document.Status.APPROVED, control=self.tree.c1)
+        doc.file.save(stored, ContentFile(content), save=False)
+        doc.save()
+        return doc
+
+    def _get(self, doc, suffix="download/"):
+        r = self.client_for(self.viewer).get(f"/api/documents/{doc.pk}/{suffix}")
+        self.assertEqual(r.status_code, 200)
+        return r
+
+    def test_a_display_name_without_an_extension_gets_the_stored_one(self):
+        r = self._get(self._doc("Access Control Policy", "policy.pdf"))
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertEqual(
+            r["Content-Disposition"],
+            "attachment; filename=\"Access Control Policy.pdf\"; "
+            "filename*=UTF-8''Access%20Control%20Policy.pdf")
+
+    @override_settings(MEDIA_INTERNAL=True, MEDIA_ACCEL_PREFIX="/protected-media/")
+    def test_behind_an_accelerator_the_name_and_type_are_the_same(self):
+        r = self._get(self._doc("Access Control Policy", "policy.pdf"))
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertIn('filename="Access Control Policy.pdf"', r["Content-Disposition"])
+
+    def test_a_name_that_already_ends_in_the_extension_is_not_given_a_second(self):
+        r = self._get(self._doc("board-minutes.PDF", "minutes.pdf"))
+        self.assertIn('filename="board-minutes.pdf"', r["Content-Disposition"])
+        # A dot inside the name is not an extension.
+        r = self._get(self._doc("Policy v1.2", "policy.pdf"))
+        self.assertIn('filename="Policy v1.2.pdf"', r["Content-Disposition"])
+
+    def test_the_type_comes_from_the_stored_file_and_is_octet_stream_only_when_unknown(self):
+        # Types every platform's mimetypes agrees on: the Windows registry
+        # can remap .csv, .js and the Office formats.
+        r = self._get(self._doc("Network diagram", "diagram.png", b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(r["Content-Type"], "image/png")
+        r = self._get(self._doc("Notes", "NOTES", b"no extension at all"))
+        self.assertEqual(r["Content-Type"], "application/octet-stream")
+        self.assertIn('filename="Notes"', r["Content-Disposition"])
+
+    def test_a_non_ascii_name_travels_whole_in_filename_star(self):
+        r = self._get(self._doc("Politique de sécurité", "politique.pdf"))
+        self.assertEqual(
+            r["Content-Disposition"],
+            "attachment; filename=\"Politique de securite.pdf\"; "
+            "filename*=UTF-8''Politique%20de%20s%C3%A9curit%C3%A9.pdf")
+        r = self._get(self._doc("セキュリティ方針", "policy.pdf"))
+        self.assertIn('filename="download.pdf"', r["Content-Disposition"])
+        self.assertIn("filename*=UTF-8''%E3%82%BB", r["Content-Disposition"])
+        # "/" is not an RFC 5987 attr-char, so it is escaped too.
+        r = self._get(self._doc("Q3/Q4 review", "review.pdf"))
+        self.assertIn("filename*=UTF-8''Q3%2FQ4%20review.pdf", r["Content-Disposition"])
+
+    def test_an_archived_version_is_tagged_before_its_own_extension(self):
+        doc = self._doc("Network diagram", "diagram.png", b"\x89PNG\r\n\x1a\n")
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        r = self.client_for(self.owner).post(
+            f"/api/documents/{doc.pk}/new_version/",
+            {"file": SimpleUploadedFile("diagram-v2.pdf", b"%PDF-1.4\n%%EOF\n")})
+        self.assertEqual(r.status_code, 200, r.data)
+        version = doc.versions.get()
+        r = self._get(doc, f"versions/{version.pk}/download/")
+        self.assertIn('filename="Network diagram (v1).png"', r["Content-Disposition"])
+        self.assertEqual(r["Content-Type"], "image/png")
+        # The current file is the PDF, and says so.
+        r = self._get(doc)
+        self.assertIn('filename="Network diagram.pdf"', r["Content-Disposition"])
+        self.assertEqual(r["Content-Type"], "application/pdf")
+
+    def test_the_api_tells_the_spa_the_same_name(self):
+        doc = self._doc("Access Control Policy", "policy.pdf")
+        data = self.client_for(self.viewer).get(f"/api/documents/{doc.pk}/").data
+        self.assertEqual(data["download_name"], "Access Control Policy.pdf")
+        self.assertIn(f'filename="{data["download_name"]}"', self._get(doc)["Content-Disposition"])
+
+    def test_download_filename(self):
+        from documents.downloads import download_filename
+
+        self.assertEqual(download_filename("Policy", "documents/x/policy_Ab12.pdf"), "Policy.pdf")
+        self.assertEqual(download_filename("Policy.pdf", "documents/x/policy.pdf"), "Policy.pdf")
+        self.assertEqual(download_filename("Policy.pdf", "a/p.pdf", " (v2)"), "Policy (v2).pdf")
+        self.assertEqual(download_filename("Policy", "a/p.pdf", " (v2)"), "Policy (v2).pdf")
+        self.assertEqual(download_filename(None, "documents/x/upload-src.pdf"), "upload-src.pdf")
+        self.assertEqual(download_filename("", ""), "download")
+        self.assertEqual(download_filename("Policy.docx", "a/p.pdf"), "Policy.docx.pdf",
+                         "the bytes are a PDF whatever the title says")
+
+    def test_a_compressed_tarball_keeps_both_suffixes(self):
+        """'Backup logs' from logs.tar.gz downloaded as 'Backup logs.gz',
+        which decompresses to an extensionless tar."""
+        from documents.downloads import download_filename
+
+        r = self._get(self._doc("Backup logs", "logs.tar.gz", b"\x1f\x8b\x08\x00"))
+        self.assertEqual(r["Content-Type"], "application/gzip")
+        self.assertIn('filename="Backup logs.tar.gz"', r["Content-Disposition"])
+        r = self._get(self._doc("セキュリティ", "logs.tar.xz", b"\xfd7zXZ\x00"))
+        self.assertIn('filename="download.tar.xz"', r["Content-Disposition"])
+
+        self.assertEqual(download_filename("Backup logs", "a/logs.tar.gz"), "Backup logs.tar.gz")
+        # Django keeps every suffix when it renames a clashing upload.
+        self.assertEqual(download_filename("Backup logs", "a/logs_Ab12cde.tar.bz2", " (v2)"),
+                         "Backup logs (v2).tar.bz2")
+        self.assertEqual(download_filename("Backup.TAR.XZ", "a/b.tar.xz"), "Backup.tar.xz")
+        self.assertEqual(download_filename("Backup.tar", "a/b.tar.gz"), "Backup.tar.gz")
+        self.assertEqual(download_filename(None, "a/logs.tar.gz"), "logs.tar.gz")
+        # A name that already ends in the compression suffix gets one suffix,
+        # not "Report.gz.tar.gz".
+        self.assertEqual(download_filename("Report.gz", "a/x.tar.gz"), "Report.tar.gz")
+        self.assertEqual(download_filename("Report.BZ2", "a/x.tar.bz2", " (v2)"), "Report (v2).tar.bz2")
+        self.assertEqual(download_filename("Report.xz", "a/x.tar.xz"), "Report.tar.xz")
+        self.assertEqual(download_filename("Report.gz", "a/x.gz"), "Report.gz")
+        # Only a tar is read as one: a lone .gz, and a .tar, keep one suffix.
+        self.assertEqual(download_filename("Notes", "a/notes.v2.gz"), "Notes.gz")
+        self.assertEqual(download_filename("Archive", "a/data.tar"), "Archive.tar")
+
+
+class OwnerNameTests(APITestBase):
+    """createsuperuser asks for no first or last name, so the first
+    administrator's documents showed no owner at all while the upload form
+    offered '<username> (me)'."""
+
+    def test_an_account_with_no_name_is_shown_by_its_username(self):
+        from testutils import make_user
+
+        root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
+                         first_name="", last_name="")
+        doc = make_doc(self.tree.ctrl1, owner=root, name="Unnamed owner's policy")
+        self.tree.ctrl1.owner = root
+        self.tree.ctrl1.save()
+        c = self.client_for(root)
+        self.assertEqual(c.get(f"/api/documents/{doc.pk}/").data["owner_name"], "rootadmin")
+        self.assertEqual(c.get(f"/api/folders/{self.tree.ctrl1.pk}/").data["owner_name"], "rootadmin")
+        cat = next(n for n in c.get("/api/folders/tree/").data[0]["children"])
+        ctrl1 = next(n for n in cat["children"] if n["id"] == self.tree.ctrl1.pk)
+        self.assertEqual(ctrl1["owner"], "rootadmin")
+
+    def test_a_full_name_still_wins_and_no_owner_is_still_empty(self):
+        doc = make_doc(self.tree.ctrl1, owner=self.owner)
+        c = self.client_for(self.admin)
+        self.assertEqual(c.get(f"/api/documents/{doc.pk}/").data["owner_name"], "Owen Tester")
+        doc.owner = None
+        doc.save()
+        self.assertEqual(c.get(f"/api/documents/{doc.pk}/").data["owner_name"], "")
+
+    def test_the_other_pages_name_a_nameless_account_the_same_way(self):
+        """Controls, risks and vendors showed such an owner as 'Unassigned',
+        and the dashboard's overdue list as nobody."""
+        from governance.models import Risk
+        from testutils import make_user
+        from vendors.models import Vendor
+
+        root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
+                         first_name="", last_name="")
+        make_doc(self.tree.ctrl1, owner=root, name="Late policy", days=-3)
+        risk = Risk.objects.create(title="Unowned laptop", owner=root, created_by=root)
+        vendor = Vendor.objects.create(name="Northwind", owner=root)
+        c = self.client_for(root)
+        self.assertEqual(c.get(f"/api/risks/{risk.pk}/").data["owner_name"], "rootadmin")
+        self.assertEqual(c.get(f"/api/risks/{risk.pk}/").data["created_by_name"], "rootadmin")
+        self.assertEqual(c.get(f"/api/vendors/{vendor.pk}/").data["owner_name"], "rootadmin")
+        sample = c.get("/api/analytics/summary/").data["overdue_sample"]
+        self.assertEqual([row["owner"] for row in sample if row["name"] == "Late policy"], ["rootadmin"])
+
+    def test_every_person_name_field_follows_the_rule(self):
+        from types import SimpleNamespace
+
+        from calendar_app.serializers import CalendarEventSerializer
+        from compliance.serializers import ControlEvidenceSerializer, ControlSerializer
+        from governance import serializers as gov
+        from testutils import make_user
+        from vendors import serializers as ven
+
+        root = make_user("rootadmin", self.roles["Administrator"], first_name="", last_name="")
+        fields = [
+            (ControlSerializer, "owner_name", "owner"),
+            (ControlSerializer, "last_tested_by_name", "last_tested_by"),
+            (ControlEvidenceSerializer, "linked_by_name", "linked_by"),
+            (CalendarEventSerializer, "assignee_name", "assignee"),
+            (gov.AccessReviewItemSerializer, "decided_by_name", "decided_by"),
+            (gov.AccessReviewSerializer, "created_by_name", "created_by"),
+            (gov.MeetingMinuteSerializer, "created_by_name", "created_by"),
+            (gov.MeetingSeriesSerializer, "owner_name", "owner"),
+            (gov.ChampionGroupSerializer, "owner_name", "owner"),
+            (gov.RiskNoteSerializer, "author_name", "author"),
+            (gov.RiskSerializer, "owner_name", "owner"),
+            (gov.RiskSerializer, "created_by_name", "created_by"),
+            (ven.VendorAssessmentSerializer, "reviewed_by_name", "reviewed_by"),
+            (ven.VendorSerializer, "owner_name", "owner"),
+            (ven.SharedResponsibilitySerializer, "updated_by_name", "updated_by"),
+        ]
+        for cls, name, relation in fields:
+            with self.subTest(serializer=cls.__name__, field=name):
+                field = cls._declared_fields[name]
+                self.assertEqual(field.to_representation(SimpleNamespace(**{relation: root})), "rootadmin")
+                self.assertEqual(field.to_representation(SimpleNamespace(**{relation: self.owner})),
+                                 "Owen Tester")
+                self.assertEqual(field.to_representation(SimpleNamespace(**{relation: None})), "")
+
+
+class FolderOrderTests(APITestBase):
+    """Framework folders come in clause order: A.5.2 before A.5.10."""
+
+    def test_the_tree_sorts_numbers_as_numbers(self):
+        for name in ["A.5.10 - Acceptable use", "A.5.2 - Roles", "A.5.1 - Policies",
+                     "Req 10 - Log", "Req 2 - Config", "req 3 - lower case", "Req 1 - Network"]:
+            Folder.objects.create(name=name, parent=self.tree.ctrl2)
+        tree = self.client_for(self.admin).get("/api/folders/tree/").data
+        cat = tree[0]["children"][0]
+        ctrl2 = next(n for n in cat["children"] if n["id"] == self.tree.ctrl2.pk)
+        self.assertEqual([n["name"] for n in ctrl2["children"]], [
+            "A.5.1 - Policies", "A.5.2 - Roles", "A.5.10 - Acceptable use",
+            "Req 1 - Network", "Req 2 - Config", "req 3 - lower case", "Req 10 - Log",
+        ])
+
+    def test_the_folder_list_sorts_them_the_same_way(self):
+        for name in ["A.5.10 - Acceptable use", "A.5.2 - Roles", "A.5.1 - Policies"]:
+            Folder.objects.create(name=name, parent=self.tree.ctrl2)
+        c = self.client_for(self.admin)
+        rows = c.get(f"/api/folders/?parent={self.tree.ctrl2.pk}").data["results"]
+        self.assertEqual([f["name"] for f in rows],
+                         ["A.5.1 - Policies", "A.5.2 - Roles", "A.5.10 - Acceptable use"])
+        # Unfiltered: the top level first, then each parent's children.
+        rows = c.get("/api/folders/").data["results"]
+        self.assertIsNone(rows[0]["parent"])
+        mine = [f["name"] for f in rows if f["parent"] == self.tree.ctrl2.pk]
+        self.assertEqual(mine, ["A.5.1 - Policies", "A.5.2 - Roles", "A.5.10 - Acceptable use"])
+        # A caller's own ordering still wins.
+        rows = c.get(f"/api/folders/?parent={self.tree.ctrl2.pk}&ordering=-name").data["results"]
+        self.assertEqual([f["name"] for f in rows],
+                         ["A.5.2 - Roles", "A.5.10 - Acceptable use", "A.5.1 - Policies"])
 
 
 # --------------------------------------------------------------------------- #

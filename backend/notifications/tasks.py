@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from accounts import tenancy
 from documents.models import Document
+from documents.serializers import person_name
 from .email_service import send_templated_email
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def _notify(document, days, overdue, window=None):
         "days": days,
         "overdue": overdue,
         "window": window,
-        "owner_name": document.owner.get_full_name() if document.owner else "team",
+        "owner_name": person_name(document.owner) or "team",
         "folder_path": document.folder.path if document.folder_id else "",
     }
     return send_templated_email(subject, "review_reminder", context, recipients)
@@ -129,7 +130,7 @@ def _notify_bridge(vendor, report):
     subject = f"[Action] Bridge letter needed from {vendor.name}"
     context = {
         "vendor": vendor, "report": report,
-        "owner_name": vendor.owner.get_full_name() if vendor.owner else "team",
+        "owner_name": person_name(vendor.owner) or "team",
         "lapsed_on": report.expires_at,
         "days": (timezone.localdate() - report.expires_at).days,
     }
@@ -172,7 +173,7 @@ def _notify_pbc(req, days, overdue, window=None):
         subject = f"[Reminder] Auditor request {req.reference} due in {days} day(s): {req.title}"
     context = {
         "request": req, "package": req.package, "days": days, "overdue": overdue, "window": window,
-        "assignee_name": req.assignee.get_full_name() if req.assignee else "team",
+        "assignee_name": person_name(req.assignee) or "team",
     }
     return send_templated_email(subject, "pbc_reminder", context, recipients)
 

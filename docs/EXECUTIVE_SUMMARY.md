@@ -1,4 +1,4 @@
-# Conformiti — executive summary
+# Conformiti executive summary
 
 **A self-hosted system of record for a compliance programme.** Controls,
 evidence, vendors, risk and access reviews in one place, ending in a sealed
@@ -75,12 +75,13 @@ carry; releases after it are revision letters on it (0.9.5b, then c, d) and
 are maintenance only: security fixes, dependency updates, and compatibility
 with new Python, Django and PostgreSQL versions.
 
-It has been through five security reviews, three of them independent,
-including a sixteen-lens adversarial review of the multi-tenancy work. Every
-finding is closed and each is recorded in the repository with its method and
-evidence. The suite is 580 backend tests, 93 end-to-end browser tests run
-against both authentication transports, and 19 static checks that run on a
-bare interpreter, all on every push across Python 3.11 to 3.14 and PostgreSQL.
+It has been through repeated security reviews, most of them independent,
+including a sixteen-lens adversarial review of the multi-tenancy work. Each is
+recorded in the repository with its method and evidence, and every finding is
+fixed or written down as deliberately left alone. Every push runs the backend
+test suite across Python 3.11 to 3.14 and PostgreSQL, an end-to-end browser
+suite against both authentication transports, and a static validator that
+needs nothing but a bare interpreter.
 
 ## What it deliberately does not do
 

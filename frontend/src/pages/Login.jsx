@@ -28,6 +28,66 @@ const SSO_ERRORS = {
 
 const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0, backup_codes: false };
 
+// Why a sign-in request failed, when the answer was not about the credentials
+// at all; null when it was (a JSON 400, or a 401) or is the throttle (429),
+// so the caller's own wording applies. A CSRF or origin refusal is the
+// server's configuration and an error page or silence is the server itself:
+// telling someone with the right password that it is wrong sends them after
+// the wrong problem.
+function serverRefusal(ex) {
+  const res = ex?.response;
+  if (!res) {
+    return ex?.isAxiosError
+      ? "The server could not be reached. Check your connection and try again in a moment."
+      : "Sign-in could not be completed in this browser. Reload the page and try again.";
+  }
+  const { status, data } = res;
+  const detail = typeof data?.detail === "string" ? data.detail : "";
+  if (status >= 500) {
+    // 502 to 504 is a proxy (nginx, or the Vite dev server) with no backend
+    // answering behind it; a 500 is the backend failing.
+    return `The server could not complete the sign-in (HTTP ${status}). Try again in a moment. `
+      + "If it keeps happening, tell your administrator"
+      + (status >= 502 && status <= 504 ? ": the backend may be down." : ".");
+  }
+  if (status === 403) {
+    // Django's CSRF check. "Origin checking failed - X does not match any
+    // trusted origins", or the Referer form of the same sentence (an https
+    // request that carried no Origin): this address is not among
+    // CSRF_TRUSTED_ORIGINS, which is the fix.
+    if (/origin checking failed|does not match any trusted origins/i.test(detail)) {
+      return `This server does not trust the address you opened it from (${window.location.origin}), `
+        + "so it refused the sign-in. An administrator decides which addresses it accepts: "
+        + "its allowed origins, set in CSRF_TRUSTED_ORIGINS.";
+    }
+    // The other Referer reasons ("no Referer", "Referer is malformed", "is
+    // insecure while host is secure") are the browser's doing, over https
+    // with no Origin header: a privacy setting or extension withheld the
+    // referrer. The allowed origins would not change the answer.
+    if (/referer checking failed/i.test(detail)) {
+      return `The server refused the sign-in (${detail.replace(/\.$/, "")}). `
+        + "Your browser did not send a usable referrer with it, which the server requires over https. "
+        + "A privacy setting or extension that strips referrers usually does this: allow them for this site "
+        + "and try again.";
+    }
+    // The rest of the CSRF check (no cookie or token to echo: cookies
+    // blocked, or secure cookies over plain http), or a proxy's own refusal.
+    return `The server refused the sign-in (${detail.replace(/\.$/, "") || "HTTP 403"}). `
+      + "Reload the page and try again. If it keeps happening, tell your administrator"
+      + (/csrf/i.test(detail) ? ": the server's security settings may not match this address." : ".");
+  }
+  if (status === 400 && (data === null || typeof data !== "object")) {
+    // Not DRF's JSON: Django's own "Bad Request (400)" page, which is what a
+    // host name missing from DJANGO_ALLOWED_HOSTS gets on every request.
+    return "The server refused the request before checking your password (HTTP 400). "
+      + "The address you opened it from is probably not one of its allowed host names "
+      + "(DJANGO_ALLOWED_HOSTS), which an administrator sets.";
+  }
+  // No status at all is the refusal finish() builds for a wrong step-up code.
+  if (!status || status === 400 || status === 401 || status === 429) return null;
+  return `Sign-in failed (HTTP ${status}). Try again in a moment. If it keeps happening, tell your administrator.`;
+}
+
 export default function Login({ onDone }) {
   const nav = useNavigate();
   const [health, setHealth] = useState(null);
@@ -50,7 +110,8 @@ export default function Login({ onDone }) {
   const samlSso = samlConfig();
   const canPasskey = passkeysSupported();
 
-  // The demo hint is only shown while the seeded demo accounts still exist.
+  // The demo hint is only shown while the seeded demo accounts still exist,
+  // and the first-administrator hint only while no account exists at all.
   useEffect(() => {
     axios.get("/api/health/").then((r) => setHealth(r.data)).catch(() => setHealth(null));
   }, []);
@@ -177,10 +238,13 @@ export default function Login({ onDone }) {
       nav("/");
     } catch (ex) {
       const data = ex?.response?.data;
+      const refused = serverRefusal(ex);
       if (data?.mfa_required) {
         challenge(data);
       } else if (ex?.response?.status === 429) {
         setErr("Too many attempts. Wait a minute and try again.");
+      } else if (refused) {
+        setErr(refused);
       } else if (ssoTicket && data?.code && data.code !== "mfa_invalid") {
         // The ticket is gone (expired, or too many tries): back to the start.
         resetToStart(SSO_ERRORS[data.code] || data.detail || SSO_ERRORS.state);
@@ -188,6 +252,9 @@ export default function Login({ onDone }) {
         setErr(data?.detail && !/invalid authentication code/i.test(String(data.detail))
           ? String(data.detail)
           : "That authentication code isn't valid. Try again, or use a backup code.");
+      } else if (ex?.response?.status === 401 && /workspace is archived/i.test(String(data?.detail || ""))) {
+        // The password was right; the organisation it belongs to is closed.
+        setErr(String(data.detail));
       } else {
         setErr("Incorrect username or password.");
       }
@@ -309,12 +376,25 @@ export default function Login({ onDone }) {
               <p className="mt-4 text-center text-xs text-muted">
                 This installation still has its seeded demo accounts.
                 <span className="block text-2xs text-faint">
-                  The password is in the installation notes. Retire them with
+                  Their shared password was printed once when the demo data was seeded (in the
+                  backend log with Docker), on the line that starts <span className="font-mono">Sign in as</span>. Retire them with
                   <span className="font-mono"> manage.py remove_demo_data</span> before real use.
                 </span>
               </p>
+            ) : health?.first_admin_needed === true ? (
+              // Only while no active account exists at all, so a deployment
+              // anyone signs in to never shows it.
+              <p className="mt-4 text-center text-xs text-muted">
+                This installation has no accounts yet.
+                <span className="block text-2xs text-faint">
+                  Create the first administrator on the server with
+                  <span className="font-mono"> manage.py createsuperuser</span> (with Docker:
+                  <span className="font-mono"> docker compose exec backend python manage.py createsuperuser</span>),
+                  then sign in here.
+                </span>
+              </p>
             ) : null}
-            {!mfaStep ? (
+            {!mfaStep && health?.first_admin_needed !== true ? (
               <p className="mt-4 text-center text-xs text-muted">Forgotten your password? An administrator can set a new one for you from the Users page.</p>
             ) : null}
           </form>

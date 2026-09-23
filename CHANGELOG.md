@@ -11,6 +11,98 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+A clean-install test of 0.9.5k: the core installed from nothing the ways the
+README offers (Docker built from source, the published images, both install
+scripts on Linux and on Windows), each step taken as a stranger would take it
+from the documents alone. Every defect reported was checked by a second reader
+and fixed, and each fix was read again by someone other than its author.
+
+**On upgrade.** Two migrations: `accounts` 0013 repairs administrators that
+`createsuperuser` left without a workspace, and `compliance` 0007 changes only
+a label. Docker Compose 2.24.0 or newer is now required by the installers,
+which the compose file already needed for its optional `.env`. A superuser's
+password must pass the password policy, with no bypass, and a refused
+`DJANGO_SUPERUSER_PASSWORD` now says so in the backend log. `GET /api/folders/`
+lists folders in clause order unless `?ordering=` is given. `test_mailbox`
+sends through any `EMAIL_PROVIDER` and needs `--to` for all but `mailbox`.
+The local development ports have their own variables, `CONFORMITI_DEV_PORT`
+and `CONFORMITI_DEV_API_PORT`, so a Docker port setting no longer moves them.
+
+### Fixed
+
+- **`install.ps1` stopped on every run** since 0.9.5b: PowerShell names are
+  case-insensitive, so a local `$demo` was the `-Demo` switch and assigning a
+  string to it threw. Its helper for native commands also passed no arguments
+  to npm when npm resolved to `npm.ps1`, which it does on a standard Node for
+  Windows install. CI now runs the script on Windows PowerShell 5.1 and
+  PowerShell 7, and `install.sh` on Linux.
+- **An administrator made with `createsuperuser` could not use the Django
+  admin.** The account had no workspace, so sign-in was accepted and `/admin/`
+  sent it straight back. `createsuperuser` now files the account in the first
+  active workspace, and migration 0013 moves the ones older releases made.
+- **A refused `DJANGO_SUPERUSER_*` account was logged as "already exists"**,
+  so an operator whose password failed the policy had no administrator and no
+  reason. The entrypoint logs Django's reason, says when only one of the pair
+  is set, and the boot banner says when no administrator exists yet. Its
+  fallback address for that account is `admin@localhost`, not the demo
+  administrator's; an `admin` an earlier release made with the old fallback
+  counts as a demo account until its address is changed.
+- **The sign-in page answered every refusal with "Incorrect username or
+  password"**, including an address missing from `CSRF_TRUSTED_ORIGINS`. It
+  names the real cause now, and on an installation with no accounts it says
+  how to create the first administrator. `/api/health/` reports
+  `first_admin_needed`.
+- **The installers ignored `--demo`, `--no-demo` and `--port` on a second
+  run**, because an existing `.env` won. They now rewrite the setting, move the
+  local origins to the new port, and print each change. The Docker banner said
+  the demo password "was printed above" when it was only in the container
+  log; it reads the log and prints it. `install.sh --demo` on a retired demo
+  said "unchanged" and now says the demo is retired. Both scripts read `.env`
+  the way Compose does (quotes, comments, the last line wins), check Node
+  against the frontend's own engines field (20.19+ or 22.12+), use `npm ci`
+  when a lockfile exists, and refuse Compose older than 2.24.0 before they
+  start. Windows PowerShell 5.1 no longer turns a native command's warning
+  into an error.
+- **Downloads carried the document's name with no extension**, so a PDF named
+  "Access policy" saved as a file nothing would open. The download adds the
+  stored file's extension (a `.tar.gz` stays whole), its content type, and a
+  UTF-8 filename for names outside ASCII.
+- **People with no first or last name showed as nobody.** That is every
+  account `createsuperuser` makes. Controls, evidence links, risks, meetings,
+  access reviews, vendors, the calendar, the dashboard, the controls CSV and
+  the notification emails ("Hi ,") now fall back to the username.
+- **Folders sorted A.5.10 before A.5.2.** The tree and the folder list use
+  clause order.
+- `bootstrap_demo --force` on a retired workspace left later
+  `SEED_DEMO_DATA=true` boots doing nothing; the revival is recorded, so they
+  refresh the demo again. `remove_demo_data` records each retirement in the
+  audit log.
+- `generate_folder_tree` wrote Windows line endings on Windows, so a fresh
+  install there showed `compliance-data` as modified. The Django admin said
+  "Control categorys". The development server's file watcher logged every
+  file it polled when `LOG_LEVEL=DEBUG`.
+- `frontend/package-lock.json` carried an old version number; the validator
+  now checks it with the others.
+
+### Changed
+
+- **Docker publishes the API on `127.0.0.1:${CONFORMITI_API_PORT:-8000}`**, so
+  a machine already using 8000 can move it. The default is unchanged.
+  `DJANGO_SUPERUSER_USERNAME`, `_PASSWORD` and `_EMAIL` reach the backend from
+  `.env`. `.env.example` leaves the Celery broker unset, which on Docker means
+  the stack's own Redis and on bare metal a local one.
+- The install documents were walked end to end and corrected where they
+  disagreed with the product: the README's "Sixty-second install" is "Quick
+  install" (the old link still lands); the Windows execution policy is
+  explained where `install.ps1` first appears; the database settings are the
+  `POSTGRES_*` variables the core reads, not `DATABASE_URL`; bare metal gains
+  the PostgreSQL and broker steps it was missing; a published-images install
+  is told how to keep using the images on every later command; production on
+  Windows is stated as unsupported (Windows is for development and
+  evaluation); test counts that went stale each release are gone.
+
 ## [0.9.5k], 2026-09-22
 
 A code review of 0.9.5j and 0.9.5ja: twenty-six reviewers, each finding put to

@@ -16,6 +16,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
 from compliance.models import Control
+from documents.serializers import person_name
 
 from . import matrix as matrix_lib
 from . import questionnaire as questionnaire_lib
@@ -319,7 +320,7 @@ class VendorViewSet(viewsets.ModelViewSet):
             a = v.assurance()
             writer.writerow(csv_safe([
                 v.name, v.category, v.get_tier_display(), v.get_status_display(), v.data_handled,
-                v.owner.get_full_name() if v.owner else "", a["posture"], a["current"], a["expired"],
+                person_name(v.owner), a["posture"], a["current"], a["expired"],
                 v.risk_rating(), v.next_review_date or "",
                 v.shared_responsibilities.values("control_id").distinct().count(),
                 v.risks.filter(status__in=("open", "mitigating")).count(),

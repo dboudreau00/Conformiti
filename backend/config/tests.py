@@ -123,9 +123,11 @@ class DemoDataTests(TestCase):
 
     def test_a_superuser_with_no_workspace_counts_as_the_surviving_administrator(self):
         """The sequence the README documents: `createsuperuser`, then
-        `remove_demo_data`. `createsuperuser` runs with no workspace active, so
-        the account it makes belongs to none — and the guard, which runs inside
-        one workspace, must still see it or the documented path dead-ends."""
+        `remove_demo_data`, with the superuser belonging to no workspace at
+        all. `createsuperuser` now files its account in a workspace, but an
+        account detached by hand still has none, and so did every one an older
+        release made. The guard, which runs inside one workspace, must still
+        see it or the documented path dead-ends."""
         from accounts import tenancy
 
         call_command("seed_frameworks", "--with-folders", verbosity=0)
@@ -134,13 +136,31 @@ class DemoDataTests(TestCase):
                 call_command("bootstrap_demo", verbosity=0)
                 User = get_user_model()
                 platform = make_user("realadmin", superuser=True)
-                # What createsuperuser leaves behind: no workspace at all.
+                # Detached by hand, as an older release's createsuperuser left
+                # it: no workspace at all.
                 User.objects.filter(pk=platform.pk).update(workspace=None)
                 with tenancy.unscoped():
                     self.assertIsNone(User.objects.get(pk=platform.pk).workspace_id)
 
                 call_command("remove_demo_data", verbosity=0)  # must not raise
                 self.assertFalse(User.objects.get(username="admin").is_active)
+
+    def test_an_auditor_role_that_stores_manage_users_is_no_surviving_administrator(self):
+        """The guard reads a role the way User._cap does: an auditor role holds
+        no capability, so its holder cannot be the administrator left behind."""
+        from accounts.models import Role
+
+        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        with tempfile.TemporaryDirectory() as media:
+            with override_settings(MEDIA_ROOT=media):
+                call_command("bootstrap_demo", verbosity=0)
+                role = Role.objects.create(name="Auditing admin", can_manage_users=True,
+                                           is_auditor=True)
+                auditor = make_user("outside-auditor", role=role)
+                self.assertFalse(auditor.can_manage_users)
+                with self.assertRaisesMessage(CommandError, "no administrator other than"):
+                    call_command("remove_demo_data", verbosity=0)
+                self.assertTrue(get_user_model().objects.get(username="admin").is_active)
 
     def test_remove_still_finds_the_data_when_the_demo_accounts_are_already_gone(self):
         """An operator who deleted the demo users by hand first must not be
@@ -421,3 +441,75 @@ class ReadinessConfigTests(SimpleTestCase):
 
     def test_the_default_bands_boot(self):
         self.assertEqual(_run_check({"EMAIL_PROVIDER": "console"}).returncode, 0)
+
+
+class FirstAdministratorHealthTests(TestCase):
+    """`first_admin_needed` on /api/health/: what the sign-in page reads to
+    explain how the first administrator is made, and the administrator check
+    the container's boot banner prints from."""
+
+    def flag(self):
+        from rest_framework.test import APIClient
+
+        r = APIClient().get("/api/health/")
+        self.assertEqual(r.status_code, 200, r.data)
+        return r.data["first_admin_needed"]
+
+    def test_true_until_an_active_account_exists_and_again_once_none_is(self):
+        from accounts import tenancy
+
+        User = get_user_model()
+        with tenancy.unscoped():
+            self.assertFalse(User.objects.exists())
+        self.assertIs(self.flag(), True)
+
+        person = make_user("first")
+        self.assertIs(self.flag(), False)
+
+        User.objects.filter(pk=person.pk).update(is_active=False)
+        self.assertIs(self.flag(), True, "every account deactivated: nobody can sign in")
+
+    def test_an_account_in_any_workspace_counts(self):
+        """The flag is about the installation, not the workspace the caller
+        or the request happens to have active."""
+        from accounts import tenancy
+        from accounts.models import Workspace
+        from config.health import first_admin_needed
+
+        other = Workspace.objects.create(name="Beta Ltd", slug="beta-health")
+        with tenancy.scoped(other):
+            make_user("beta-admin", superuser=True)
+        self.assertIs(self.flag(), False)
+        self.assertFalse(first_admin_needed())  # the Default workspace is active here
+
+    def test_the_banner_check_wants_an_administrator_not_just_an_account(self):
+        from accounts import tenancy
+        from accounts.models import Role, Workspace
+        from config.health import administrator_present
+
+        self.assertFalse(administrator_present())
+        make_user("viewer")
+        self.assertFalse(administrator_present(), "an ordinary account administers nothing")
+
+        other = Workspace.objects.create(name="Beta Ltd", slug="beta-banner")
+        with tenancy.scoped(other):
+            role = Role.objects.create(name="People admin", can_manage_users=True)
+            manager = make_user("manager", role=role)
+        self.assertTrue(administrator_present(), "a user-managing role in any workspace counts")
+
+        User = get_user_model()
+        with tenancy.unscoped():
+            User.objects.filter(pk=manager.pk).update(is_active=False)
+        self.assertFalse(administrator_present())
+        make_user("root", superuser=True)
+        self.assertTrue(administrator_present())
+
+    def test_an_auditor_role_that_stores_manage_users_is_no_administrator(self):
+        """The banner agrees with User._cap: an auditor holds no capability."""
+        from accounts.models import Role
+        from config.health import administrator_present
+
+        role = Role.objects.create(name="Auditing admin", can_manage_users=True, is_auditor=True)
+        auditor = make_user("auditor", role=role)
+        self.assertFalse(auditor.can_manage_users)
+        self.assertFalse(administrator_present())

@@ -938,7 +938,7 @@ export default function Documents({ me }) {
                                 >
                                   {d.name}
                                 </button>
-                                <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.name)}>
+                                <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.download_name || d.name)}>
                                   <DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                                 </IconButton>
                               </span>
@@ -1144,7 +1144,7 @@ export default function Documents({ me }) {
                                       >
                                         {d.name}
                                       </button>
-                                      <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.name)}>
+                                      <IconButton label={`Download ${d.name}`} className="shrink-0" onClick={() => downloadFile(`/documents/${d.id}/download/`, d.download_name || d.name)}>
                                         <DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                                       </IconButton>
                                     </span>

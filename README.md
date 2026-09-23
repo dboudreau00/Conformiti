@@ -2,19 +2,19 @@
 
 <img src="assets/brand/logo.svg" alt="Conformiti" width="360">
 
-**Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 — controls, evidence, vendors, risk and access reviews in one audit-ready system, ending in a sealed package your assessor can verify without you.**
+**Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1: controls, evidence, vendors, risk and access reviews in one audit-ready system, ending in a sealed package your assessor can verify without you.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/release-v0.9.5k-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.14-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11%20to%203.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-one%20command-2496ED?logo=docker&logoColor=white)
 
-[Install](#sixty-second-install) · [What it does](#what-you-get) · [Audit packages](#handing-evidence-to-an-auditor) · [Architecture](#architecture) · [Configuration](#configuration) · [Operations](#operations-runbook) · [conformiti.app](https://conformiti.app)
+[Install](#quick-install) · [What it does](#what-you-get) · [Audit packages](#handing-evidence-to-an-auditor) · [Architecture](#architecture) · [Configuration](#configuration) · [Operations](#operations-runbook) · [conformiti.app](https://conformiti.app)
 
-<img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard — readiness, evidence coverage, risk posture, compliance calendar" width="900">
+<img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard: readiness, evidence coverage, risk posture, compliance calendar" width="900">
 
 </div>
 
@@ -26,7 +26,7 @@
 <tr><td valign="top">
 
 **Start here**
-- [Sixty-second install](#sixty-second-install)
+- [Quick install](#quick-install)
 - [Why this exists](#why-this-exists)
 - [What you get](#what-you-get)
 - [Day one, in order](#day-one-in-order)
@@ -69,57 +69,86 @@
 
 ---
 
-## Sixty-second install
+## Quick install
+
+<a id="sixty-second-install"></a>
+
+You need Docker Engine 24 or newer with Docker Compose 2.24.0 or newer, and
+free host ports 8080 and 8000, or others named in `CONFORMITI_PORT` and
+`CONFORMITI_API_PORT` ([Requirements](#requirements)).
 
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
 docker compose up -d --build
 ```
 
-Open **http://localhost:8080** and create the first account:
+The first build downloads the Python and Node dependencies and takes several
+minutes. `up -d` then waits for the API to report healthy before it starts
+nginx, so a pause at that point is normal. The prebuilt images below skip the
+build.
+
+Open **http://localhost:8080** and create the first account. Its password
+must pass the password policy: at least `PASSWORD_MIN_LENGTH` characters (12
+by default), not a common password, not all digits, and not too close to the
+username or email.
 
 ```bash
 docker compose exec backend python manage.py createsuperuser
 ```
 
-That is the whole install: PostgreSQL, Redis, the API, the reminder worker and
-nginx come up with production-safe defaults — `DEBUG` off, a unique secret key
-generated and persisted on first boot, rate limits in Redis shared across
-workers, and the API published only on the host's loopback so the network
-sees nothing but nginx. **No `.env` is required.**
+That is the whole install. PostgreSQL, Redis, the API, the reminder worker, its
+scheduler and nginx come up with production-safe defaults: `DEBUG` off, a
+unique secret key generated and persisted on first boot, rate limits in Redis
+shared across workers, and the API published only on the host's loopback so
+the network sees nothing but nginx. **No `.env` is required.**
 
 Nothing to build? The same two images are published for `linux/amd64` and
 `linux/arm64` at
 [ghcr.io/dboudreau00](https://github.com/dboudreau00?tab=packages&repo_name=Conformiti),
-and a second compose file runs them:
+and a second compose file runs them. Pull first: `up` on its own reuses any
+`latest` an earlier pull left on the machine, which may be an older release.
 
 ```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 Prefer a script that waits for the stack to report healthy and prints the URLs?
 
 ```bash
-./install.sh --docker          # macOS / Linux / WSL
-.\install.ps1 -Docker          # Windows PowerShell
+./install.sh --docker                                            # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker   # Windows
 ```
 
-Local development without Docker — SQLite, console email, nothing left running:
+Local development without Docker (SQLite, console email, nothing left running):
 
 ```bash
-./install.sh                   # or: .\install.ps1
+./install.sh                                                     # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1           # Windows
 ```
 
-> **Want the worked example instead of an empty installation?** Start with
-> `SEED_DEMO_DATA=true` for a seeded organisation and five personas sharing
-> one generated password, printed once in the backend log. It is off by
-> default because those accounts have no second factor, and an installation
-> carrying them says so on its own sign-in page. Retire them before any real
-> data goes in:
+On Windows, `-ExecutionPolicy Bypass` applies to that one run and changes
+nothing on the machine. Without it, Windows PowerShell's default policy
+refuses to run any script, and a script extracted from a downloaded ZIP is
+refused under `RemoteSigned` as well.
+
+> **Want the worked example instead of an empty installation?** Put
+> `SEED_DEMO_DATA=true` in a `.env` file beside `docker-compose.yml` before
+> `docker compose up` for a seeded organisation and five personas sharing one
+> generated password, printed once in the backend log
+> (`docker compose logs backend`). It is off by default because those accounts
+> have no second factor, and an installation carrying them says so on its own
+> sign-in page. Retire them before any real data goes in. `remove_demo_data`
+> refuses to run until an administrator of your own exists, so create one
+> first:
 >
 > ```bash
+> docker compose exec backend python manage.py createsuperuser
 > docker compose exec backend python manage.py remove_demo_data
 > ```
+>
+> The retirement is recorded and holds across restarts, even while `.env`
+> still says `SEED_DEMO_DATA=true`.
 >
 > Full sequence: [Day one, in order](#day-one-in-order).
 
@@ -201,8 +230,8 @@ it.
 
 ### Frameworks and controls
 
-- **Three complete control libraries** — SOC 2 (61), ISO/IEC 27001:2022 (93),
-  PCI DSS v4.0.1 (63) — **217 controls**, with a cross-framework crosswalk,
+- **Three complete control libraries**: SOC 2 (61), ISO/IEC 27001:2022 (93)
+  and PCI DSS v4.0.1 (63), **217 controls** in all, with a cross-framework crosswalk,
   per-control status and owner, and a CSV export of the register.
 - **Evidence ↔ control mapping in both directions.** One Access Control Policy
   can satisfy `CC6.1`, `A.5.15` and `7.1` at once; one control can cite many
@@ -214,7 +243,7 @@ it.
   audit package.
 - **Readiness that is measured.** Daily snapshots feed the dashboard trend and
   the month-over-month delta. Marking a control *not applicable* removes it
-  from the denominator — and the justification is timestamped in the audit
+  from the denominator, and the justification is timestamped in the audit
   trail, which is exactly what an assessor asks for.
 
 ### Documents and evidence
@@ -225,15 +254,15 @@ it.
 - **Per-folder grants** by role *or* by user at `view` / `edit` / `manage`,
   **inherited down the tree**. Effective access is resolved server-side; the
   interface only offers a write control where the API would accept the write.
-- **Document lifecycle** — versions (the old file is archived, not
+- **Document lifecycle**: versions (the old file is archived, not
   overwritten), rename, move, mark-reviewed; review cadences from monthly to
   biennial.
 - **Review reminders** emailed to owners and the compliance address at
   configurable lead times, and once when overdue (which also marks the document
   *expired*). Each window is recorded on the document, so a restart does not
   re-send yesterday's mail.
-- **Malware scanning** of uploads when ClamAV is configured — new documents
-  and new versions, form templates, meeting minutes — with a health probe, an
+- **Malware scanning** of uploads when ClamAV is configured (new documents
+  and new versions, form templates, meeting minutes), with a health probe, an
   outage alert, and an hourly re-scan sweep that quarantines a stored file the
   new definitions match.
 
@@ -246,19 +275,19 @@ place, and it is deliberately conservative:
 | Type | How it is rendered |
 |---|---|
 | PDF | Drawn by **pdf.js** onto canvases. No plugin frame, no scripting from the file |
-| Images | Streamed inline **only after a magic-byte check on the actual bytes** — never on the extension |
+| Images | Streamed inline **only after a magic-byte check on the actual bytes**, never on the extension |
 | Word, Excel | Parsed on the server into structured JSON and rendered as *structure*. The file's own markup never reaches the page |
 | Anything else | Offered as a download rather than guessed at |
 
 The wrapper shows the version, the controls the document satisfies, and a
-**SHA-256 computed in your browser** with WebCrypto — the same digest a sealed
+**SHA-256 computed in your browser** with WebCrypto: the same digest a sealed
 audit package records, so a reviewer can compare by eye.
 
 ### Third parties and shared responsibility
 
 - **Vendor register** with tier, data handled, owner and a review clock;
-  **assurance on file** — SOC 2 reports, ISO certificates, PCI AOCs, pen tests,
-  DPAs, a copy of their own responsibility matrix — with expiry tracking.
+  **assurance on file** (SOC 2 reports, ISO certificates, PCI AOCs, pen tests,
+  DPAs, a copy of their own responsibility matrix) with expiry tracking.
   Posture and risk rating are **computed** from what is on file and how close
   it is to lapsing, not typed into a dropdown in 2024 and forgotten.
 - **The questionnaire, sent to the vendor.** One click emails their contact a
@@ -266,7 +295,7 @@ audit package records, so a reviewer can compare by eye.
   vendor, revocable). They answer in a browser with **no account**; the token is
   stored hashed; the submission returns as a pending assessment marked
   *Returned by …* for you to accept, note exceptions against, or reject.
-- **Shared responsibility matrix per vendor** — provider / customer / shared
+- **Shared responsibility matrix per vendor**: provider / customer / shared
   with a statement each side, over every control in scope. Type it, be walked
   through the unstated controls, or **import the vendor's own CSV/XLSX**: the
   importer scores headers to find the right columns, promotes a mark column by
@@ -274,20 +303,20 @@ audit package records, so a reviewer can compare by eye.
   column, requires the framework to be *stated* rather than inferred, and
   **reports prose it does not recognise instead of guessing**. Nothing is
   written until you confirm what it read.
-- **Export in their layout** — the stated matrix goes back to the vendor under
+- **Export in their layout**: the stated matrix goes back to the vendor under
   the column headers of the file they sent you.
 - **RACI matrix** per control for people *and* vendors, with the control owner
   as implied Accountable and a vendor's matrix as implied Responsible. Exactly
   one Accountable is enforced at the API, and the controls with none are
-  counted and shown — that count is the point.
+  counted and shown. That count is the point.
 - **Onboarding prompts** in the notification tray when a vendor has no matrix,
-  a report is about to lapse, or a review falls due — plus a **bridge-letter
+  a report is about to lapse, or a review falls due, plus a **bridge-letter
   reminder**, in the tray and by email, when a SOC report has lapsed with
   nothing newer on file.
 
 ### Governance
 
-- **Risk register** — likelihood × impact on the 5×5 grid auditors expect,
+- **Risk register**: likelihood × impact on the 5×5 grid auditors expect,
   with treatment, owner, due date, optional linked control and Jira key, and a
   note trail anyone with access can add to. CSV/XLSX import that recognises
   the column names and word scales people actually use (Title/Risk,
@@ -302,15 +331,15 @@ audit package records, so a reviewer can compare by eye.
   listed for you instead. A completed review is read-only evidence from that
   moment.
 - **Meeting cadences** with required-per-year tracking, where the status badge
-  compares minutes recorded against what the calendar demands *so far* — a
+  compares minutes recorded against what the calendar demands *so far*, so a
   series is not marked behind in January for a meeting due in November.
 - **Champion groups** with an accountable owner and members tagged by
   department.
-- **Jira** (optional) — an administrator connects an Atlassian site (base URL,
+- **Jira** (optional): an administrator connects an Atlassian site (base URL,
   account email, API token, stored server-side and never sent to the browser)
   and tracks boards by id; everyone can then read those boards without a Jira
   seat. `https://` public hosts only, redirects refused, SSRF-hardened.
-- **Immutable audit trail** — every change made through the API, plus
+- **Immutable audit trail**: every change made through the API, plus
   sign-in, failed sign-in (with the reason) and sign-out, with actor, record,
   the field *names* submitted and the IP. Values are never recorded, and password/token/code keys are dropped
   before the entry is written. There is no endpoint that edits or deletes one.
@@ -326,12 +355,12 @@ audit package records, so a reviewer can compare by eye.
   derived from the deployment, plus **rotating, revocable refresh tokens** and
   per-client login throttles shared across workers through Redis.
 - **Single sign-on over OpenID Connect or SAML 2.0** (Okta, Entra ID, Google
-  Workspace, Keycloak…), **configured from the environment only** — there is no
+  Workspace, Keycloak…), **configured from the environment only**, so there is no
   form an attacker can reach. Verified-email linking never attaches to an
   administrator, staff or user-managing account; auto-provisioning refuses
   user-managing roles; a domain allow-list applies; the issuer is compared with
   trailing slashes stripped; JWKS verification is asymmetric only.
-- **Step-up MFA on SSO logins** — `off`, `if_enrolled` or `required` — for when
+- **Step-up MFA on SSO logins** (`off`, `if_enrolled` or `required`) for when
   the provider asserted no second factor.
 - **Five built-in roles** plus custom roles, folder-level grants, and an API
   that enforces every rule the UI shows.
@@ -342,14 +371,14 @@ audit package records, so a reviewer can compare by eye.
 ### Workspaces
 
 One installation can serve several organisations. Everything an organisation
-owns belongs to its **workspace**, and the scoping is applied **at the ORM** —
+owns belongs to its **workspace**, and the scoping is applied **at the ORM**:
 a queryset carries its workspace filter every time it is chained, so a view
 that forgets to scope still cannot leak. A person from one organisation cannot
 list, fetch or even reference another's rows.
 
 - A superuser creates workspaces under *Settings › Role & access*, switches
   between them (`X-Workspace: <slug>`; the SPA remembers the choice) and
-  **archives** one — which refuses its people at sign-in, rejects the tokens
+  **archives** one, which refuses its people at sign-in, rejects the tokens
   they already held for as long as it stays archived, and drops it from every
   scheduled job. Nothing is deleted.
 - Scheduled work runs **once per workspace**: review, vendor and
@@ -378,9 +407,9 @@ list, fetch or even reference another's rows.
   quarantined; and a **daily summary** of what is outstanding. Slack receives
   Block Kit, Teams an Adaptive Card, and every delivery is logged. A webhook
   URL is a credential, so it is stored encrypted, never returned by the API,
-  and may only address a host those services actually issue webhooks on —
-  checked, resolved and pinned before every post, with redirects refused.
-- **Digest email** — each person can have their own tray sent daily or weekly.
+  and may only address a host those services actually issue webhooks on.
+  It is checked, resolved and pinned before every post, with redirects refused.
+- **Digest email**: each person can have their own tray sent daily or weekly.
 
 ### Interface and identity
 
@@ -421,8 +450,8 @@ replace that ritual.**
 evidence for each one, states each control's population (size, source,
 sampling method) and may list the items, then writes the management assertion.
 
-**2 · Seal.** Sealing snapshots every row — control reference and text, status,
-owner, document name, version, size and SHA-256 — into a **canonical manifest**
+**2 · Seal.** Sealing snapshots every row (control reference and text, status,
+owner, document name, version, size and SHA-256) into a **canonical manifest**
 with its own digest, and signs that manifest with a detached **Ed25519**
 signature from a key held in a file *outside the database*
 (`SIGNING_KEY_FILE`). The package freezes: the assessed organisation can no
@@ -431,7 +460,7 @@ trail, and the key fingerprint is published under *Settings › About* and at
 `/api/signing-keys/`.
 
 **3 · Issue.** The package is issued to named auditors, each for a fixed period.
-They sign in and see **that package and nothing else** — the only bypass of the
+They sign in and see **that package and nothing else**: the only bypass of the
 folder-permission model in the product, and a deliberate, audited one. They
 record a **design** and an **operating** conclusion per control, which nobody
 at the assessed organisation can edit, and you answer beside them with a
@@ -446,7 +475,7 @@ conformiti-package-fy26-soc2/
 ├── manifest.sig         detached Ed25519 signature
 ├── signing-key.pub      the public key, to compare against the published fingerprint
 ├── SHA256SUMS           every file, hashed
-├── verify.py            standard library only — no pip install, no network
+├── verify.py            standard library only: no pip install, no network
 ├── controls.csv         scope, status, owner, both conclusions
 ├── evidence.csv         name, version, size, digest
 ├── samples.csv          population, selections, per-item verdicts
@@ -485,8 +514,8 @@ end to end.
 
 The other half of the workflow: what the auditor has asked for. The auditor
 raises lines from inside the package (or you transcribe the list they emailed);
-each one is assigned, dated and chased — in the tray, by email, and in Slack or
-Teams — and answered by attaching documents and marking it *provided*. The
+each one is assigned, dated and chased (in the tray, by email, and in Slack or
+Teams) and answered by attaching documents and marking it *provided*. The
 auditor accepts it or returns it with a note. **A control owner with no package
 access still sees and answers the lines assigned to them.**
 
@@ -495,8 +524,8 @@ access still sees and answers the lines assigned to them.**
 > A signature proves that the holder of a key signed a manifest. It cannot
 > prove the key was never stolen, and it cannot prove *when* it was signed.
 >
-> The seal entry in the audit trail, and a digest you publish out of band — an
-> email to the assessor, a ticket, a signed message — are the other half of
+> The seal entry in the audit trail, and a digest you publish out of band (an
+> email to the assessor, a ticket, a signed message), are the other half of
 > that binding. Keep the signing key off the database host, back it up
 > separately, and publish the fingerprint where your auditor can compare it.
 
@@ -509,14 +538,14 @@ access still sees and answers the lines assigned to them.**
 | # | Do this | Why |
 |---|---|---|
 | 1 | `docker compose up -d --build` | The stack comes up with production-safe defaults |
-| 2 | `manage.py createsuperuser` | Your first real administrator. No demo dataset is seeded unless you asked for one |
-| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | Only if you did ask: those accounts share one password and have no second factor |
+| 2 | `manage.py createsuperuser` | Your first real administrator, with a password that passes the policy (`PASSWORD_MIN_LENGTH`, 12 by default). No demo dataset is seeded unless you asked for one |
+| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | Only if you did ask: those accounts share one password and have no second factor. It refuses to run until the administrator from step 2 exists, and the retirement holds across restarts even with `SEED_DEMO_DATA=true` still set |
 | 4 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. Sending a vendor questionnaire is refused until `PUBLIC_URL` is set, because the link carries a bearer token |
-| 5 | Put TLS in front and set `BEHIND_TLS=true` | Secure cookies, HTTPS redirect, `__Host-` prefixes — the prefix only works over https |
-| 6 | Configure `EMAIL_PROVIDER`, then `manage.py test_mailbox --to you@example.com` | Reminders are half the product |
+| 5 | Put TLS in front and set `BEHIND_TLS=true` | Secure cookies, HTTPS redirect, `__Host-` prefixes. The prefix only works over https |
+| 6 | Configure `EMAIL_PROVIDER`, then send yourself a test: `manage.py test_mailbox --to you@example.com` | Reminders are half the product. It sends a sample review reminder through whichever provider is configured, with the template and transport real reminders use, and with `mailbox` checks the account's sign-in first |
 | 7 | Enrol a second factor on every account with a management capability | TOTP or passkeys; backup codes belong to the account |
-| 8 | Back up the **secrets** volume | It holds `DJANGO_SECRET_KEY_FILE` *and* the package signing key |
-| 9 | Restore from a backup once, into a scratch environment | An untested backup is a finding in most frameworks and a disaster in all of them |
+| 8 | Back up the **secrets** volume | It holds `DJANGO_SECRET_KEY_FILE`, the field-encryption ring *and* the package signing key |
+| 9 | Restore from a backup once, into a scratch environment | An untested backup is a finding in most frameworks and a disaster in all of them. On the same host, restore into a second checkout whose `.env` sets its own `COMPOSE_PROJECT_NAME`, `CONFORMITI_PORT` and `CONFORMITI_API_PORT`: two checkouts in folders of the same name are one Compose project and share its volumes |
 
 ---
 
@@ -526,8 +555,8 @@ access still sees and answers the lines assigned to them.**
 
 | Path | Needs |
 |---|---|
-| **Docker** (recommended) | Docker Engine 24+ with the Compose plugin. 2 vCPU / 4 GB RAM / 20 GB disk is comfortable |
-| **Local** (trial, development) | Python 3.11–3.14, Node 20.19+ or 22.12+. SQLite, console email, nothing to run |
+| **Docker** (recommended) | Docker Engine 24+ with Docker Compose 2.24.0 or newer (older Compose rejects the compose file's optional `.env` entry). 2 vCPU / 4 GB RAM / 20 GB disk is comfortable. Host port 8080 free, and 8000 on 127.0.0.1 |
+| **Local** (trial, development) | Python 3.11 to 3.14, Node 20.19+ or 22.12+. SQLite, console email, nothing to run. Local ports 8000 and 5173 free, or others named in `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT` |
 | **Production** | PostgreSQL 16, Redis 7, a TLS-terminating proxy, an SMTP/SES sender, a backup target |
 | **Optional** | Amazon S3, ClamAV, an OIDC or SAML IdP, a Slack/Teams webhook, Jira Cloud |
 
@@ -551,14 +580,18 @@ its code is not.
 
 ```bash
 docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5k
-docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 `docker-compose.ghcr.yml` only swaps the four built services for the published
-images. The environment, the volumes, the healthchecks and the single published
-port are the ones in `docker-compose.yml`, so an installation assembled this way
+images. The environment, the volumes, the healthchecks and the published ports
+are the ones in `docker-compose.yml`, so an installation assembled this way
 is the same installation. Pin `CONFORMITI_VERSION` in production: `latest` moves.
+Keep both files on every later `up` and `pull`, or name them once in `.env`
+with `COMPOSE_FILE` ([INSTALL.md](INSTALL.md#without-a-build-the-published-images)):
+a plain `docker compose up -d` reads `docker-compose.yml` alone and builds the
+stack from source.
 
 Building from source stays the default path, and the images are built from the
 same Dockerfiles by
@@ -567,21 +600,34 @@ pulls what it pushed and boots it before the run is allowed to pass.
 
 ### What comes up
 
-Five containers, five volumes, **one published port**. The API listens on
-loopback inside its own container and is unreachable except through nginx,
-which also carries the CSP, the security headers and the 32 MB body cap.
+Six containers (`db`, `redis`, `backend`, `worker`, `beat` and `frontend`) and
+five volumes. ClamAV joins them, with a `clamdb` volume of its own, only when
+the `scanning` profile is started. Two host ports are published:
+
+| Host port | Bound to | What answers | Move it with |
+|---|---|---|---|
+| 8080 | every interface | nginx: the interface, and the API behind it | `CONFORMITI_PORT` |
+| 8000 | 127.0.0.1 only | gunicorn directly, for debugging from the host | `CONFORMITI_API_PORT` |
+
+nginx is the only way in from the network, and it carries the CSP, the
+security headers and the 32 MB body cap. Inside its container gunicorn listens
+on 0.0.0.0:8000 so that nginx can reach it over the compose network; the host
+publish of that port is loopback only, and a request sent to it skips nginx's
+headers and body cap, so keep it for debugging.
 
 ```
-browser ─▶ nginx (frontend, :8080) ─┬─▶ gunicorn (backend, 127.0.0.1:8000) ─▶ PostgreSQL
-                                    │        ▲  healthcheck /api/health/    └─▶ Redis (cache + broker)
+browser ─▶ nginx (frontend, :8080) ─┬─▶ gunicorn (backend, :8000) ─┬─▶ PostgreSQL
+                                    │        ▲                     └─▶ Redis (cache + broker)
+                                    │        healthcheck /api/health/, and the host's
+                                    │        127.0.0.1:8000 for debugging (skips nginx)
                                     ├─ /static, /media from shared volumes
                                     └─ CSP, security headers, 32 MB body cap
-celery worker + beat ──────────────────────────────────────────────▶ Redis / PostgreSQL / email
-volumes: pgdata · media · static · secrets · tree
+celery beat (the schedule) ─▶ Redis ─▶ celery worker ─▶ PostgreSQL / email
+volumes: pgdata · media · static · secrets · tree  (clamdb with the scanning profile)
 ```
 
 > **Never add `Content-Disposition` in an `X-Accel` location.** nginx passes
-> the upstream header through, so adding one produces *two* — and browsers
+> the upstream header through, so adding one produces *two*, and browsers
 > refuse the response. The API owns that header. This is called out because it
 > was a real bug between 0.3.0 and 0.5.0; if you customise `nginx.conf`, do not
 > reintroduce it.
@@ -605,13 +651,15 @@ defaults; `.env` overrides them. Every key is documented in
 | `PUBLIC_URL` | The address links mailed outside the organisation point at. **Required off DEBUG:** a questionnaire link carries a bearer token, so rather than guess the host from the request, sending is refused until this is set |
 | `ORGANISATION_NAME` | Your name in outbound email and on the page a vendor sees |
 | `SEED_DEMO_DATA` | `true` to boot with the demo dataset. Off by default: an installation carrying it says so on its own sign-in page |
-| `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` | Create your first account on first boot |
+| `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` / `_EMAIL` | Create your first account on first boot. The password must pass the password policy, or no account is created and the backend log says why. Give it a real email address |
+| `CONFORMITI_PORT`, `CONFORMITI_API_PORT` | Compose only: the host ports for nginx (default 8080, every interface) and for the API (default 8000, 127.0.0.1 only) |
+| `CONFORMITI_DEV_PORT`, `CONFORMITI_DEV_API_PORT` | Local development only, read from the shell: the Vite dev server's port (default 5173), and the port `runserver` listens on and Vite proxies the API to (default 8000) |
 
 ### Data, storage and mail
 
 | Setting | Purpose |
 |---|---|
-| `DATABASE_URL` | PostgreSQL in Docker and production; SQLite locally |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | PostgreSQL whenever `POSTGRES_DB` is set. Compose sets all five (name, user and password default to `compliance`; the database image applies the password only when it first creates the `pgdata` volume). With `POSTGRES_DB` unset, SQLite at `SQLITE_PATH`, or `backend/db.sqlite3` |
 | `EMAIL_PROVIDER` | `console` · `smtp` · `mailbox` (IMAP/POP3 + SMTP, with a copy filed in Sent) · `ses` |
 | `REVIEW_SCAN_HOUR`, `REVIEW_ALERT_LEAD_DAYS` | When the daily scan runs; how far ahead it warns (30, 14, 7, 1 by default) |
 | `S3_*` | Optional Amazon S3 for evidence instead of the local filesystem |
@@ -623,9 +671,9 @@ defaults; `.env` overrides them. Every key is documented in
 |---|---|
 | `OIDC_*` | Issuer, client id/secret, scopes, domain allow-list, auto-provisioning. PKCE; asymmetric JWKS verification only |
 | `SAML_*` | IdP metadata, entity id, ACS URL, signing certificate. Assertions are replay-checked; HMAC signature methods are refused |
-| `SSO_STEP_UP` | `off` · `if_enrolled` · `required` — whether an SSO sign-in must also present a local second factor |
+| `SSO_STEP_UP` | `off` · `if_enrolled` · `required`: whether an SSO sign-in must also present a local second factor |
 | `SSO_WORKSPACE` | Which workspace an auto-provisioned SSO account joins (default `default`) |
-| `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGINS`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_USER_VERIFICATION` | **`RP_ID` must be a domain** — browsers refuse an IP address, including `127.0.0.1`. Pin both when a proxy rewrites `Host` |
+| `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGINS`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_USER_VERIFICATION` | **`RP_ID` must be a domain**: browsers refuse an IP address, including `127.0.0.1`. Pin both when a proxy rewrites `Host` |
 
 ### Assurance and alerting
 
@@ -642,11 +690,11 @@ defaults; `.env` overrides them. Every key is documented in
 
 | Role | Manage users | Manage frameworks | Manage documents | Manage folders | View all | Auditor |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Administrator | ✓ | ✓ | ✓ | ✓ | ✓ | – |
-| Compliance Manager | – | ✓ | ✓ | ✓ | ✓ | – |
-| Control Owner | – | – | ✓ (granted folders) | – | – | – |
-| Auditor | – | – | – | – | ✓ (granted folders, read-only) | ✓ |
-| Viewer | – | – | – | – | – | – |
+| Administrator | ✓ | ✓ | ✓ | ✓ | ✓ | - |
+| Compliance Manager | - | ✓ | ✓ | ✓ | ✓ | - |
+| Control Owner | - | - | ✓ (granted folders) | - | - | - |
+| Auditor | - | - | - | - | ✓ (granted folders, read-only) | ✓ |
+| Viewer | - | - | - | - | - | - |
 
 Custom roles are defined from the same capability flags.
 
@@ -654,13 +702,13 @@ Custom roles are defined from the same capability flags.
 someone outside the organisation, so reads are refused by default rather than
 granted by default: an auditor reaches the packages issued to them, the
 workpaper rows and evidence in those packages, their own request list, the
-folders granted with the package, the access reviews and the audit log — and
+folders granted with the package, the access reviews and the audit log, and
 nothing else. The risk register, the vendor file, the control library, the
 responsibility matrix, the meeting minutes, the calendar, the user directory
 and the analytics summary all answer `403`. Someone inside the company who
 needs a read-only view of the programme wants the **Viewer** role instead.
 
-**Effective folder access** — `Folder.effective_access(user)` returns the
+**Effective folder access.** `Folder.effective_access(user)` returns the
 highest of:
 
 1. `manage` if superuser or `role.can_manage_folders`
@@ -679,8 +727,8 @@ through the API.
 handful of queries and scopes every list, tree, feed, evidence count and
 analytics figure.
 
-Demo accounts (retire them): `admin`, `mia`, `owen`, `aria`, `val` — all
-the password printed when the demo data was seeded.
+Demo accounts (retire them): `admin`, `mia`, `owen`, `aria`, `val`, all
+sharing the password printed when the demo data was seeded.
 
 ---
 
@@ -689,7 +737,7 @@ the password printed when the demo data was seeded.
 Prefix each command with `docker compose exec backend python` on the Docker
 path, or `../.venv/bin/python` from `backend/` locally.
 
-### Scheduled — once per workspace
+### Scheduled, once per workspace
 
 In Docker, Celery beat runs all of this. Without Docker, put them on cron.
 
@@ -701,7 +749,7 @@ manage.py send_digests                        # per-person daily/weekly digest
 manage.py flushexpiredtokens                  # prune the JWT blacklist
 ```
 
-`--dry-run` prints what the scan *would* send without sending it — worth
+`--dry-run` prints what the scan *would* send without sending it, and is worth
 running once after any mail configuration change.
 
 ### Administration
@@ -713,10 +761,10 @@ manage.py seed_frameworks --roles-only
 manage.py remove_demo_data [--delete] [--workspace <slug>]
 manage.py rotate_signing_key                      # new Ed25519 key; old public key stays published
 manage.py link_oidc_identity
-manage.py test_mailbox --to you@example.com
+manage.py test_mailbox --to you@example.com       # sample reminder through EMAIL_PROVIDER (mailbox: sign-in checked first)
 ```
 
-### Backup — four things, all of them
+### Backup: four things, all of them
 
 ```bash
 scripts/backup.sh                 # → backups/<UTC timestamp>/
@@ -724,17 +772,17 @@ scripts/backup.sh /mnt/nightly    # or a directory of your choosing
 ```
 
 One script, run from the checkout while the stack is up. It writes the
-database dump (`db.sql.gz`), the evidence files (`media.tgz` — a database
+database dump (`db.sql.gz`), the evidence files (`media.tgz`: a database
 without these is a manifest of things you no longer have), the secrets volume
-(`secrets.tgz` — the Django secret key, the field-encryption ring that
+(`secrets.tgz`: the Django secret key, the field-encryption ring that
 protects enrolled authenticators, and the package signing key) and the folder
 tree on disk (`tree.tgz`). It asks the running containers for the database
 credentials and the volume names, so it needs no configuration. Put it on
 cron and copy the directory somewhere else; CI runs it, destroys the
 installation and restores from it on every push.
 
-Losing the signing key does **not** invalidate signatures already issued — the
-public key travels in every bundle — but you will not be able to sign with the
+Losing the signing key does **not** invalidate signatures already issued (the
+public key travels in every bundle), but you will not be able to sign with the
 same identity again, and roll-forward chains will change key. Losing the
 field-encryption ring makes enrolled authenticators unreadable; backup codes
 still work.
@@ -750,6 +798,16 @@ application containers are stopped, the database is emptied and reloaded,
 the three volumes are replaced from the archives and the stack is started
 again. Check `docker compose ps` and `/api/health/` afterwards; the signing
 key reported there should be the one you had.
+
+On the published images, the restore stays on them only with `COMPOSE_FILE`
+and `CONFORMITI_VERSION` in `.env`
+([INSTALL.md](INSTALL.md#without-a-build-the-published-images)), the version
+being the release the backup came from. The script takes no `-f` files, and
+without `COMPOSE_FILE` its `docker compose` commands read
+`docker-compose.yml` alone and build the stack from the checked-out source.
+Without `CONFORMITI_VERSION` the images are `latest`, and the restored
+database is migrated to that release with no way back. `.env` is not in the
+backup, so on a fresh machine write both into it before restoring.
 
 ### Health
 
@@ -769,6 +827,12 @@ scripts/backup.sh                 # first, always
 git fetch --tags && git checkout v0.9.5k
 docker compose pull && docker compose up -d --build
 ```
+
+Checking out the tag leaves the working copy on a detached HEAD at that
+release, which is intended: each upgrade names the release it moves to, where
+`git pull` would follow the branch past it. Anything installed on top of the
+checkout that changes its files has to come off before `git checkout` and go
+back on afterwards, following its own upgrade notes.
 
 Running the published images instead? The checkout still matters, because the
 compose file, the nginx configuration and the backup scripts come from it:
@@ -792,7 +856,7 @@ address, and the demo dataset is no longer seeded, so a rebuilt installation
 comes up empty unless you set `SEED_DEMO_DATA=true`.
 
 **0.9.5** adds two small columns (a score on each readiness snapshot, and the
-per-workspace webhook addresses) and a `beat` service to the compose file —
+per-workspace webhook addresses) and a `beat` service to the compose file:
 the worker no longer runs the scheduler itself, so `docker compose up -d`
 after the checkout is what starts it. **0.9.0** is ten migrations, one per
 app: each adds the workspace column, moves every row into the *Default*
@@ -805,8 +869,8 @@ PostgreSQL. Budget a few seconds per hundred thousand rows.
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Python 3.11–3.14 · Django 5.2 LTS · Django REST Framework · SimpleJWT |
-| **Async** | Celery 5 + Redis — daily reminder scan, vendor and PBC scans, readiness snapshot and chat summary (each once per workspace), digest emails, hourly scanner watch, weekly token pruning |
+| **Backend** | Python 3.11 to 3.14 · Django 5.2 LTS · Django REST Framework · SimpleJWT |
+| **Async** | Celery 5 + Redis: daily reminder scan, vendor and PBC scans, readiness snapshot and chat summary (each once per workspace), digest emails, hourly scanner watch, weekly token pruning |
 | **Frontend** | React 19 · React Router 7 · Vite 8 · Tailwind CSS · framer-motion · lucide · pdfjs-dist |
 | **Database** | SQLite (local) · PostgreSQL 16 (Docker / production) |
 | **Storage** | Local filesystem · Amazon S3 optional |
@@ -845,7 +909,7 @@ Deeper notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `audit` | `AuditLog`, the request middleware, explicit auth events, a read-only viewer API |
 | `analytics` | The dashboard summary endpoint, `ReadinessSnapshot` history and trend |
 | `calendar_app` | `CalendarEvent` plus the merged review / audit / task feed |
-| `integrations` | The Jira Cloud client — https-only, public-IP pinned, no redirects |
+| `integrations` | The Jira Cloud client: https-only, public-IP pinned, no redirects |
 | `config` | Settings, URLs, the health endpoint, the version, the CSV sanitiser |
 
 ### Data model, in essence
@@ -867,7 +931,7 @@ CalendarEvent → optional Document / Control / assignee
 
 Vendor 1─* VendorAssessment
    ├─ 1─* SharedResponsibility    (the provider/customer/shared matrix)
-   ├─ 1─* Responsibility          (RACI rows — note: a different relation)
+   ├─ 1─* Responsibility          (RACI rows, a different relation)
    └─ 1─* QuestionnaireInvite     (token hash only)
 
 EvidencePackage 1─* PackageControl 1─┬─* PackageEvidence
@@ -894,7 +958,7 @@ querysets carry `WHERE workspace_id = <active>` whenever a workspace is active.
 The active workspace is a context variable.
 
 - `WorkspaceMiddleware` installs a per-request resolver that reads the workspace
-  off the authenticated person the *first time a tenant query runs* — DRF
+  off the authenticated person the *first time a tenant query runs*. DRF
   authenticates inside the view, after middleware, so it has to be lazy. A
   superuser may name another workspace in `X-Workspace`. The variable is
   restored when the request ends.
@@ -906,7 +970,7 @@ The active workspace is a context variable.
 - The filter is re-applied whenever a queryset is chained, so a queryset built
   at import time (`queryset = Model.objects.all()` on a viewset) is scoped the
   moment DRF calls `.all()`. **Pinning never widens.**
-- No active workspace means no filter — right for migrations,
+- No active workspace means no filter, which is right for migrations,
   `createsuperuser`, and jobs that walk every workspace. An API request with
   nowhere to go is refused with 403. `tenancy.unscoped()` is the explicit
   escape hatch.
@@ -928,7 +992,7 @@ The active workspace is a context variable.
 ```
 Document.last_reviewed + cadence ─▶ next_review_date
         │
-   daily scan at REVIEW_SCAN_HOUR (Celery beat) — or cron: send_review_reminders
+   daily scan at REVIEW_SCAN_HOUR (Celery beat), or cron: send_review_reminders
         │
    for each lead in REVIEW_ALERT_LEAD_DAYS (30,14,7,1) not yet sent:
         └▶ email_service.send_templated_email()
@@ -944,8 +1008,8 @@ Document.last_reviewed + cadence ─▶ next_review_date
 ### Audit trail
 
 `audit.middleware.AuditLogMiddleware` reads the top-level field *names* of a
-JSON/form body **before** the view runs — values are never recorded, and
-password, token and code keys are dropped — then, after a successful mutating
+JSON/form body **before** the view runs (values are never recorded, and
+password, token and code keys are dropped), then, after a successful mutating
 response, writes `{user, action, object_type, object_id, "METHOD /path
 fields=a,b", ip}`. `/api/auth/*`, `/api/notifications/*` and `/api/health/` are
 excluded; auth events are written explicitly by `audit.events`.
@@ -967,7 +1031,7 @@ sign-out.
 ## The API
 
 Django REST Framework, with the SPA as its first consumer. Anything the
-interface can do, a script can do — under the same permission checks, and
+interface can do, a script can do, under the same permission checks, and
 writing the same audit-trail entries.
 
 | Endpoint | Purpose |
@@ -978,7 +1042,7 @@ writing the same audit-trail entries.
 | `/api/risks/` · `/api/risk-notes/` | The register, the note trail, the CSV/XLSX importer |
 | `/api/access-reviews/` | Snapshot creation, per-row decisions, CSV export, completion |
 | `/api/vendors/` | Register and assessments; `/{id}/matrix/` GET, PUT (bulk, validated before write), `matrix/parse`, `matrix/export` |
-| `/api/questionnaire/<token>/` | Public, token-scoped, separately throttled — what a vendor answers with no account |
+| `/api/questionnaire/<token>/` | Public, token-scoped, separately throttled: what a vendor answers with no account |
 | `/api/packages/` · `/api/package-samples/` | Assembly, sealing, issuing, withdrawal, manifest, bundle, per-sample verdicts |
 | `/api/pbc-requests/` · `/api/pbc-items/` | The auditor's request list: provide, accept, return, withdraw, export |
 | `/api/signing-keys/` | Published Ed25519 public keys and fingerprints |
@@ -997,20 +1061,21 @@ Everything in the badge row runs on every push. You can run the whole thing
 locally:
 
 ```bash
-./install.sh --test        # or: .\install.ps1 -Test
+./install.sh --test                                              # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
 | Gate | What it proves |
 |---|---|
-| `tools/validate.py` — **19 static checks** | App and route wiring, the API contract between the SPA and the backend, that every model change has a shipped migration, theme packs, tests and CI present. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
-| `manage.py test` — **580 tests across 36 modules** | Workspace isolation, auth, MFA, token rotation, the auditor's reachable surface enumerated by walking the routers, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder claims, outbound request checks, field encryption and key rotation, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against RFC 8032 vectors |
+| `tools/validate.py`: **19 static checks** | App and route wiring, the API contract between the SPA and the backend, that every model change has a shipped migration, theme packs, tests and CI present. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
+| `manage.py test` | Workspace isolation, auth, MFA, token rotation, the auditor's reachable surface enumerated by walking the routers, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder claims, outbound request checks, field encryption and key rotation, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against RFC 8032 vectors |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 / 3.14 on SQLite, plus PostgreSQL 16 |
 | Frontend | A production build that must succeed, plus `npm audit --audit-level=high` |
 | Docker | Both images build; the API image boots and answers `/api/health/`. The compose job also signs in through nginx, uploads, downloads through X-Accel, backs up, destroys the stack and restores it |
-| [End-to-end](e2e/README.md) — **93 tests in 13 files** | Playwright drives the **built** SPA in a real browser through every screen, against *both* auth transports — and fails on any console error |
+| [End-to-end](e2e/README.md) | Playwright drives the **built** SPA in a real browser through every screen, against *both* auth transports, and fails on any console error |
 
-The three independent reviews this product has been through — findings,
-severities, fixes and what was deliberately left alone — are in
+The independent reviews this product has been through (findings, severities,
+fixes and what was deliberately left alone) are in
 [REVIEW.md](REVIEW.md), [REVIEW_090.md](REVIEW_090.md),
 [REVIEW_095.md](REVIEW_095.md), [REVIEW_095F.md](REVIEW_095F.md),
 [REVIEW_095H.md](REVIEW_095H.md) and [REVIEW_095I.md](REVIEW_095I.md).
@@ -1039,14 +1104,14 @@ conformiti/
 │                       · testutils.py · Dockerfile · entrypoint.sh
 ├── frontend/           React SPA (src/pages, src/components, src/styles)
 │                       · brand.js · Dockerfile · nginx.conf
-├── e2e/                Playwright suite — 13 spec files, both auth transports
+├── e2e/                Playwright suite, both auth transports
 ├── compliance-data/    the generated evidence folder tree (segregated by control)
 ├── docs/               ARCHITECTURE.md · EXECUTIVE_SUMMARY.md · sample-risk-import.csv
-│                       · sample-risk-import.csv
 ├── assets/             brand/ (logo, mark, colourways) · screenshots/
 ├── tools/validate.py   the dependency-free static validator
 ├── .github/workflows   ci.yml · packages.yml (the images on ghcr.io)
-├── docker-compose.yml  db · redis · backend · worker · frontend
+├── docker-compose.yml  db · redis · backend · worker · beat · frontend
+│                       (+ clamav under the scanning profile)
 ├── docker-compose.ghcr.yml  the same stack, from the published images
 └── install.sh / install.ps1
 ```
@@ -1075,7 +1140,7 @@ audit-trail extract, and a standard-library `verify.py` the auditor runs on
 their own machine. That is a stronger chain of custody than a shared folder.
 
 Tell your assessor early that you will hand them a bundle rather than drive
-access — most welcome it, and the ones who do not can still read the CSVs.
+access. Most welcome it, and the ones who do not can still read the CSVs.
 </details>
 
 <details>
@@ -1090,7 +1155,7 @@ then have to defend in a walkthrough as your own.
 <summary><strong>How small a team is this useful for?</strong></summary>
 
 The smallest useful deployment is one person preparing for a first SOC 2 Type
-I — the folder tree and reminder engine pay for themselves immediately. It
+I: the folder tree and reminder engine pay for themselves immediately. It
 scales up through a compliance function with control owners spread across
 engineering, HR and finance, and up again through workspaces to an MSP or a
 group holding several regulated entities on one installation.
@@ -1100,8 +1165,8 @@ group holding several regulated entities on one installation.
 <summary><strong>Which frameworks ship, and what about the others?</strong></summary>
 
 SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1 ship in this repository, free,
-with a crosswalk between them. Additional framework libraries — NIST CSF 2.0,
-HIPAA, CIS Controls v8 and others — are not part of this edition; they are
+with a crosswalk between them. Additional framework libraries (NIST CSF 2.0,
+HIPAA, CIS Controls v8 and others) are not part of this edition; they are
 offered as seed packs through
 [conformiti.app](https://conformiti.app/consulting.html#seed-packs), and a
 custom control set can be modelled the same way. The seeding command and the
@@ -1113,14 +1178,14 @@ control model here load any pack built to the same shape.
 
 It was never anywhere else: a PostgreSQL database and a directory of files,
 both yours. Nothing in this repository calls home, and every export in the
-product — controls CSV, risk CSV, access-review CSV, the audit package bundle —
+product (controls CSV, risk CSV, access-review CSV, the audit package bundle)
 is a plain file format.
 </details>
 
 <details>
 <summary><strong>Is there commercial support?</strong></summary>
 
-Yes — support subscriptions, a managed cloud, and consulting are offered at
+Yes. Support subscriptions, a managed cloud, and consulting are offered at
 [conformiti.app](https://conformiti.app). None of it changes this repository:
 the platform here is the platform there.
 </details>
@@ -1133,7 +1198,9 @@ the platform here is the platform there.
 open-source edition.** What the repository set out to be, a self-hosted
 programme of record for SOC 2, ISO 27001 and PCI DSS with sealed and signed
 audit packages, vendor risk, workspaces and the operations to run it, is here,
-and every finding of three independent reviews is closed.
+and every finding of the independent reviews listed under
+[Quality gates](#quality-gates) is fixed or written down as deliberately left
+alone.
 
 Releases after it are revision letters on that number: 0.9.5b, then c, d and
 so on. Each is maintenance, meaning security fixes, dependency updates and
@@ -1152,11 +1219,11 @@ for what is offered around it.
 See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
 
 - Run the gates before opening a pull request: `./install.sh --test`.
-- New models need a shipped migration — `tools/validate.py` will fail the build
+- New models need a shipped migration: `tools/validate.py` will fail the build
   otherwise, and it runs on a bare interpreter so it cannot be skipped.
 - Validator checks must be **standard library only**; the CI `validate` job
   installs nothing.
-- Security issues go to the private advisory route, not a public issue — see
+- Security issues go to the private advisory route, not a public issue. See
   [SECURITY.md](SECURITY.md).
 
 ---
@@ -1169,7 +1236,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
 > functional identifiers. The `objective` fields shipped in the seed packs are
 > brief **original paraphrases**, not the normative text of SOC 2, ISO/IEC
 > 27001 or PCI DSS. Only paste official control text into the app if your
-> organisation holds a licence for the source documents — the field exists so
+> organisation holds a licence for the source documents. The field exists so
 > that you can, and the responsibility is yours.
 
 > **Not affiliated** with the AICPA, ISO, the IEC or the PCI Security Standards

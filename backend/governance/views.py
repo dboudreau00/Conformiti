@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from accounts.permissions import is_external_auditor
 from documents.models import FolderPermission
+from documents.serializers import person_name
 
 from .models import (
     AccessReview,
@@ -203,7 +204,7 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
                 it.last_login.isoformat() if it.last_login else "",
                 it.folder_grants, it.capabilities,
                 it.get_decision_display(), it.decision_notes,
-                it.decided_by.get_full_name() if it.decided_by else "",
+                person_name(it.decided_by),
                 it.decided_at.isoformat() if it.decided_at else "",
             ]))
         return response
@@ -376,7 +377,7 @@ class RiskViewSet(viewsets.ModelViewSet):
                 r.title, r.get_risk_type_display(), r.get_status_display(),
                 r.get_treatment_display(), r.likelihood, r.impact,
                 r.score, r.rating,
-                r.owner.get_full_name() if r.owner else "",
+                person_name(r.owner),
                 r.due_date.isoformat() if r.due_date else "",
                 r.identified_on.isoformat() if r.identified_on else "",
                 r.control.control_id if r.control else "",

@@ -58,7 +58,9 @@ class RoleViewSet(viewsets.ModelViewSet):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.select_related("role").all()
+    # Ordered, because the list is paginated: without it the paginator warns
+    # and a page boundary can repeat or skip a person.
+    queryset = User.objects.select_related("role").order_by("username", "pk")
     permission_classes = [CanManageUsers]
     search_fields = ["username", "email", "first_name", "last_name"]
     filterset_fields = ["role", "is_active"]

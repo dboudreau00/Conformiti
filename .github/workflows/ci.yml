@@ -100,6 +100,86 @@ jobs:
       - run: npm audit --audit-level=high
         working-directory: frontend
 
+  # Nothing ran the installers here, which is how two defects that stopped
+  # every run of install.ps1 shipped from 0.9.5b to 0.9.5k: a variable that
+  # PowerShell's case-insensitive names made into the -Demo switch, and npm's
+  # npm.ps1 shim, which received none of its arguments. Both Windows shells,
+  # because they are where the two differ. The second run is a returning
+  # user's with the demo on, and its banner has to repeat the password
+  # bootstrap_demo printed.
+  installer-windows:
+    name: Installer on Windows (${{ matrix.shell }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shell: Windows PowerShell 5.1
+            installer: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+          - shell: PowerShell 7
+            installer: pwsh -NoProfile -File .\install.ps1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      # "22" resolves to the newest 22.x, which is past the 22.12 Vite 8 needs.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: install.ps1 -SetupOnly on a fresh checkout
+        run: ${{ matrix.installer }} -SetupOnly
+      - name: Django system check on what it installed
+        run: ..\.venv\Scripts\python.exe manage.py check
+        working-directory: backend
+      - name: Again with -Demo, and the banner repeats the password
+        env:
+          DEMO_PASSWORD: CiDemoPassword2026
+        run: |
+          ${{ matrix.installer }} -SetupOnly -Demo | Tee-Object -Variable out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $plain = $out -replace '\x1b\[[0-9;]*m', ''
+          if (-not ($plain -match '^\s*Password:\s+CiDemoPassword2026\b')) {
+            Write-Output "the setup banner does not repeat the demo password"
+            exit 1
+          }
+
+  installer-linux:
+    name: Installer on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: install.sh --setup-only on a fresh checkout
+        run: ./install.sh --setup-only
+      - name: Django system check on what it installed
+        run: ../.venv/bin/python manage.py check
+        working-directory: backend
+      - name: Again with --demo, and the banner repeats the password
+        env:
+          DEMO_PASSWORD: CiDemoPassword2026
+        run: |
+          set -euo pipefail
+          ./install.sh --setup-only --demo | tee /tmp/demo.log
+          # A here-string, not a pipe, for the reason the docker job gives.
+          grep -Eq '^ *Password:? +CiDemoPassword2026( |$)' <<< "$(sed 's/\x1b\[[0-9;]*m//g' /tmp/demo.log)" \
+            || { echo "the setup banner does not repeat the demo password"; exit 1; }
+
   docker:
     name: Docker images build
     runs-on: ubuntu-latest
