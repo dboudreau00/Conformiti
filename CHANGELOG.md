@@ -13,13 +13,13 @@ says what changed and what to expect on upgrade.
 
 ## [0.9.5l], 2026-09-23
 
-A clean-install test of 0.9.5k, run twice: the core installed from nothing
-the ways the README offers (Docker built from source, the published images,
-both install scripts on Linux and on Windows, and by hand on bare metal),
-each step taken as a stranger would take it from the documents alone. Every
-defect reported was checked by a second reader and fixed, and each fix was
-read again by someone other than its author. The second run confirmed every
-fix from the first and found the rest of what is below.
+A clean-install test of 0.9.5k, run three times: the core installed from
+nothing the ways the README offers (Docker built from source, the published
+images, both install scripts on Linux and on Windows, and by hand on bare
+metal), each step taken as a stranger would take it from the documents alone.
+Every defect reported was checked by a second reader and fixed, and each fix
+was read again by someone other than its author. Each run confirmed the fixes
+from the one before it, and between them they found what is below.
 
 **On upgrade.** Two migrations: `accounts` 0013 repairs administrators that
 `createsuperuser` left without a workspace, and `compliance` 0007 changes only
