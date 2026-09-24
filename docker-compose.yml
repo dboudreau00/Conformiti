@@ -4,7 +4,9 @@
 #
 # No .env is required: the defaults below are production-safe (DEBUG off, a
 # strong secret key generated on first boot and persisted in the `secrets`
-# volume, Redis-backed rate limits, API/admin reachable only through nginx).
+# volume, Redis-backed rate limits, API/admin reachable from the network only
+# through nginx; the API is also published on the host's own loopback,
+# 127.0.0.1:8000 or CONFORMITI_API_PORT, for debugging on that machine).
 # Most keys in .env override these defaults (see .env.example), but DEBUG and
 # the signing key do not, on purpose (see the note on DJANGO_DEBUG below), and
 # DJANGO_ALLOWED_HOSTS adds your host names to the stack's own instead of
@@ -106,6 +108,12 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru", "--requirepass", "${REDIS_PASSWORD:-}"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    # Nothing is persisted (no snapshots, no append-only file), but the image
+    # declares /data a volume, so without this every new redis container got
+    # an anonymous volume that `docker compose down` left behind, one more on
+    # each stop and start.
+    tmpfs:
+      - /data
     healthcheck:
       # With a password the first form answers; without one it is refused and
       # the plain ping answers instead.

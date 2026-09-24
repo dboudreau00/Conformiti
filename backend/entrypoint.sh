@@ -49,7 +49,9 @@ python manage.py seed_frameworks --with-folders --all-workspaces
 
 case "${SEED_DEMO_DATA:-false}" in
   1|true|TRUE|yes|on)
-    log "Seeding demo dataset (SEED_DEMO_DATA=true)"
+    # Worded as a check, not a seed: on a workspace remove_demo_data retired,
+    # bootstrap_demo seeds nothing and its own next line says so.
+    log "SEED_DEMO_DATA=true: running bootstrap_demo (it seeds or refreshes the demo, or says why not)"
     # bootstrap_demo prints the generated sign-in password on first boot.
     # Set DEMO_PASSWORD to choose it, or SEED_DEMO_DATA=false to skip. After
     # remove_demo_data it seeds nothing: the container keeps this variable
@@ -122,7 +124,7 @@ sys.path.insert(0, '.')
 from documents.clamav import ping
 sys.exit(0 if ping(os.getenv('CLAMAV_HOST', 'clamav'), int(os.getenv('CLAMAV_PORT', '3310'))) else 1)
 " 2>/dev/null; then
-    log "Malware scanning ON - clamd answered at ${CLAMAV_HOST:-clamav}:${CLAMAV_PORT:-3310}"
+    log "Malware scanning ON: clamd answered at ${CLAMAV_HOST:-clamav}:${CLAMAV_PORT:-3310}"
   else
     log "!! Malware scanning is ON but clamd did not answer. Uploads will be REFUSED"
     log "!! until it does (scanning fails closed on purpose). Start it with:"

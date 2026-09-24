@@ -67,8 +67,11 @@ class Command(BaseCommand):
             rows = list(model.objects.values_list("pk", attname))
             by_key = {}
             for _, raw in rows:
-                by_key[fieldcrypto.envelope_key_id(raw) or "plaintext"] = \
-                    by_key.get(fieldcrypto.envelope_key_id(raw) or "plaintext", 0) + 1
+                # An empty value (a workspace with no webhook set) holds no
+                # secret: it is neither plaintext nor on any key.
+                bucket = ("empty" if raw in (None, "")
+                          else fieldcrypto.envelope_key_id(raw) or "plaintext")
+                by_key[bucket] = by_key.get(bucket, 0) + 1
             summary = ", ".join(f"{k}={n}" for k, n in sorted(by_key.items())) or "no rows"
             self.stdout.write(f"  {table}.{column}: {summary}")
 
@@ -82,7 +85,8 @@ class Command(BaseCommand):
                     # decrypting descriptor and we need to see which key wrote
                     # the row before deciding whether to touch it.
                     raw = instance.__dict__.get(attname)
-                    if fieldcrypto.envelope_key_id(raw) == newest:
+                    if raw in (None, "") or fieldcrypto.envelope_key_id(raw) == newest:
+                        # Nothing stored, or already on the newest key.
                         continue
                     plaintext = raw
                     if fieldcrypto.is_encrypted(raw):
@@ -94,7 +98,7 @@ class Command(BaseCommand):
                         # rather than replacing a recoverable ciphertext with "".
                         self.stderr.write(self.style.WARNING(
                             f"    {table}#{instance.pk}.{column} is not readable under any "
-                            "current key -- left untouched."
+                            "current key, so it was left untouched."
                         ))
                         continue
                     # Assigning plaintext makes pre_save encrypt under the newest key.
@@ -105,7 +109,7 @@ class Command(BaseCommand):
             self.stdout.write(f"    rotated {rotated} row(s) onto {newest}")
 
         if opts["status"]:
-            self.stdout.write("Status only -- nothing was changed.")
+            self.stdout.write("Status only: nothing was changed.")
         else:
             self.stdout.write(self.style.SUCCESS(
                 f"Rotation complete: {total_rotated} row(s) now on key {newest}. "

@@ -2,6 +2,9 @@
 only its own. The suite's fixtures live in the Default workspace (the test
 runner activates it); these tests add a second organisation, Beta, and
 check that nothing crosses the line in either direction."""
+from contextlib import redirect_stdout
+from io import StringIO
+
 from django.core import mail
 from django.core.files.base import ContentFile
 from django.core.management import call_command
@@ -288,7 +291,10 @@ class WorkspaceApiTests(TwoWorkspaces):
 
     def test_superuser_creates_a_workspace_with_its_roles(self):
         client = self.client_for(self.admin)
-        r = client.post("/api/workspaces/", {"name": "Gamma Inc", "with_frameworks": False}, format="json")
+        # The view seeds the roles with seed_frameworks, which prints its log.
+        with redirect_stdout(StringIO()):
+            r = client.post("/api/workspaces/", {"name": "Gamma Inc", "with_frameworks": False},
+                            format="json")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["slug"], "gamma-inc")
         gamma = Workspace.objects.get(slug="gamma-inc")
@@ -305,7 +311,9 @@ class WorkspaceApiTests(TwoWorkspaces):
         self.assertFalse(User.objects.filter(username="gail").exists())  # not in Default
 
     def test_creating_with_frameworks_seeds_the_library(self):
-        r = self.client_for(self.admin).post("/api/workspaces/", {"name": "Delta", "slug": "delta"}, format="json")
+        with redirect_stdout(StringIO()):
+            r = self.client_for(self.admin).post("/api/workspaces/", {"name": "Delta", "slug": "delta"},
+                                                 format="json")
         self.assertEqual(r.status_code, 201, r.data)
         with tenancy.scoped(Workspace.objects.get(slug="delta")):
             self.assertGreater(Framework.objects.count(), 0)
@@ -342,7 +350,7 @@ class JobsTests(TwoWorkspaces):
         self.assertEqual(set(run_all_scans(dry_run=True)), {"default"})
 
     def test_readiness_snapshot_per_workspace(self):
-        call_command("record_readiness", verbosity=0)
+        call_command("record_readiness", verbosity=0, stdout=StringIO())
         with tenancy.unscoped():
             self.assertEqual(ReadinessSnapshot.objects.filter(date=timezone.localdate()).count(), 2)
             self.assertEqual(set(ReadinessSnapshot.objects.values_list("workspace_id", flat=True)),
@@ -359,11 +367,11 @@ class JobsTests(TwoWorkspaces):
         self.assertNotIn("Alpha policy", body)
 
     def test_seed_frameworks_targets_one_workspace(self):
-        call_command("seed_frameworks", "--roles-only", "--workspace", "beta", verbosity=0)
+        call_command("seed_frameworks", "--roles-only", "--workspace", "beta", verbosity=0, stdout=StringIO())
         with tenancy.scoped(self.beta):
             self.assertEqual(Role.objects.count(), len(BUILTIN_ROLES))
         with self.assertRaises(CommandError):
-            call_command("seed_frameworks", "--roles-only", "--workspace", "nope", verbosity=0)
+            call_command("seed_frameworks", "--roles-only", "--workspace", "nope", verbosity=0, stdout=StringIO())
 
     def test_for_each_workspace_activates_each(self):
         seen = {ws.slug: Document.objects.count() for ws in tenancy.for_each_workspace()}

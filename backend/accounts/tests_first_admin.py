@@ -116,20 +116,43 @@ class FirstAdministratorPasswordTests(APITestBase):
         with tenancy.unscoped():
             self.assertFalse(User.objects.get(username="root").has_usable_password())
 
-    def test_the_interactive_bypass_does_not_create_the_account(self):
-        """Django still asks the question; answering yes no longer makes the
-        account."""
+    def test_the_interactive_path_offers_no_bypass_and_asks_again(self):
+        """Django asked "Bypass password validation and create user anyway?",
+        and a yes was then refused by the policy, throwing away the username
+        and email already typed. The command now says the policy has no
+        bypass and asks for another password, keeping what was typed."""
         err = io.StringIO()
+        asked = []
+
+        def typed(prompt=""):
+            asked.append(prompt)
+            if prompt.startswith("Username"):
+                return "root"
+            if prompt.startswith("Email"):
+                return "root@test.local"
+            return "y"  # what the clean-install run answered to the bypass
+
         with tenancy.unscoped(), \
-                mock.patch.object(stock.getpass, "getpass", side_effect=["short", "short"]), \
-                mock.patch("builtins.input", side_effect=["y"]) as asked:
-            with self.assertRaises(CommandError) as caught:
-                call_command("createsuperuser", interactive=True, username="root",
-                             email="root@test.local", stdin=_TTY(), stderr=err, verbosity=0)
-        self.assertIn("Bypass password validation", asked.call_args.args[0])
-        self.assertIn("too short", str(caught.exception))
-        self.assertIn("no bypass", str(caught.exception))
-        self.assertFalse(_exists("root"))
+                mock.patch.object(stock.getpass, "getpass",
+                                  side_effect=["short", "short", PASSWORD, PASSWORD]), \
+                mock.patch("builtins.input", side_effect=typed):
+            call_command("createsuperuser", interactive=True, stdin=_TTY(), stderr=err,
+                         verbosity=0)
+        self.assertEqual([p.split()[0].rstrip(":") for p in asked], ["Username", "Email"],
+                         "asked for the username and email once, and nothing else")
+        self.assertIn("too short", err.getvalue())
+        self.assertIn("password policy has no bypass", err.getvalue())
+        with tenancy.unscoped():
+            user = User.objects.get(username="root")
+        self.assertEqual(user.email, "root@test.local")
+        self.assertTrue(user.check_password(PASSWORD))
+
+    def test_the_command_is_ours_not_djangos(self):
+        """Django finds a command in the first installed app that has it, so
+        the override only runs while accounts comes before django.contrib.auth."""
+        from django.core.management import get_commands
+
+        self.assertEqual(get_commands()["createsuperuser"], "accounts")
 
     def test_the_interactive_path_with_a_good_password_works(self):
         with tenancy.unscoped(), \

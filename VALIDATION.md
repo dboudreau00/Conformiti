@@ -11,7 +11,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ## 1. Static validator: `python tools/validate.py`
 
 Dependency-free (standard library only), so it runs on a bare checkout before
-anything is installed. Exits non-zero on any error. Nineteen checks:
+anything is installed. Exits non-zero on any error. Twenty checks:
 
 | # | Check |
 |---|---|
@@ -33,7 +33,8 @@ anything is installed. Exits non-zero on any error. Nineteen checks:
 | 16 | Compose isolation: the Docker stack cannot inherit `DJANGO_DEBUG` or a signing key from a local development `.env` |
 | 17 | Malware scanning: the clamd protocol cases, the EICAR fixture, and the upload limits agreed between clamd and nginx |
 | 18 | Offsite assets: no page loads anything from a third party |
-| 19 | Version lock: the same version in six places, `version.py`, `package.json`, both version fields in `package-lock.json` (the top-level one and `packages[""]`), the README badge and the changelog heading |
+| 19 | Version lock: the same version in nine places, `version.py`, `package.json` in `frontend/` and in `e2e/`, both version fields in each of their `package-lock.json` files (the top-level one and `packages[""]`), the README badge and the changelog heading |
+| 20 | No em or en dash (U+2014, U+2013) in a text body: every tracked Markdown file, and every file under a `backend/**/templates/` directory (the emails). Code, scripts and configuration files are not checked, their comments included |
 
 Check 15 counts the test functions in each app's `tests.py` only, so the
 number it prints is smaller than the `Ran N tests` of the suite below. Both
@@ -73,7 +74,8 @@ against PostgreSQL 16. What it covers:
 - Both Docker images build; the API image boots standalone and answers
   `/api/health/`, the endpoint the compose healthchecks and installers poll.
 - The compose job exercises the stack end to end: sign in through nginx,
-  upload, download through X-Accel, back up, `down -v`, restore, and confirm
+  upload, download through X-Accel, back up, `down -v`, restore (which may
+  print nothing on standard output but its own `restore:` lines), and confirm
   the same bytes and the same signing key come back.
 - The **Playwright suite**, run twice in CI, once per auth transport. See
   [e2e/README.md](e2e/README.md).

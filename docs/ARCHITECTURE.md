@@ -138,10 +138,17 @@ revokes on sign-out.
 ## Deployment topology (compose)
 
 ```
-browser ─▶ nginx (frontend, :8080) ─┬─▶ gunicorn (backend, 127.0.0.1:8000)  ─▶ PostgreSQL
-                                     │        ▲  healthcheck /api/health/     └▶ Redis (cache + broker)
-                                     ├─ /static, /media from shared volumes
-                                     └─ CSP, security headers, 32 MB body cap
-celery worker + beat (worker) ──────────────────────────────────────────────▶ Redis / PostgreSQL / email
+browser ─▶ nginx (frontend, :8080) ─┬─▶ gunicorn (backend, :8000) ─┬─▶ PostgreSQL
+                                    │        ▲                     └─▶ Redis (cache + broker)
+                                    │        healthcheck /api/health/, and the host's
+                                    │        127.0.0.1:8000 for debugging (skips nginx)
+                                    ├─ /static, /media from shared volumes
+                                    └─ CSP, security headers, 32 MB body cap
+celery beat (the schedule) ─▶ Redis ─▶ celery worker ─▶ PostgreSQL / email
 volumes: pgdata · media · static · secrets (DJANGO_SECRET_KEY_FILE) · tree
 ```
+
+Inside its container gunicorn listens on 0.0.0.0:8000 so nginx can reach it
+over the compose network; the host publishes that port on 127.0.0.1 only
+(`CONFORMITI_API_PORT` moves it), and a request sent there skips nginx's
+headers and body cap.

@@ -4,6 +4,7 @@ OIDC sign-in, fully offline: a local RSA key stands in for the provider and
 the token endpoint and userinfo.
 """
 import time
+from io import StringIO
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
@@ -20,7 +21,10 @@ from testutils import APITestBase
 
 ISSUER = "https://idp.example"
 CLIENT = "conformiti-web"
-SETTINGS = dict(OIDC_ISSUER=ISSUER, OIDC_CLIENT_ID=CLIENT, OIDC_CLIENT_SECRET="s3cret",
+# 32 bytes or more: the symmetric-algorithm test signs with it, and PyJWT
+# warns (in the middle of the test gate's output) about a shorter HMAC key.
+SECRET = "s3cret-" * 6
+SETTINGS = dict(OIDC_ISSUER=ISSUER, OIDC_CLIENT_ID=CLIENT, OIDC_CLIENT_SECRET=SECRET,
                 OIDC_LABEL="Sign in with Example", OIDC_ALLOWED_DOMAINS=[],
                 OIDC_AUTO_PROVISION=False, OIDC_DEFAULT_ROLE="Viewer",
                 OIDC_LINK_BY_EMAIL=True, OIDC_REQUIRE_VERIFIED_EMAIL=True, DEBUG=False)
@@ -185,8 +189,9 @@ class OidcFlowTests(APITestBase):
         self.assertFalse(OidcIdentity.objects.exists())
         # ...but a deliberate CLI link is honoured.
         with self.assertRaises(CommandError):
-            call_command("link_oidc_identity", "ada", "sub-ada")
-        call_command("link_oidc_identity", "ada", "sub-ada", "--allow-privileged")
+            call_command("link_oidc_identity", "ada", "sub-ada", stdout=StringIO())
+        call_command("link_oidc_identity", "ada", "sub-ada", "--allow-privileged",
+                     stdout=StringIO())
         self.assertEqual(OidcIdentity.objects.get(subject="sub-ada").user, self.admin)
         ticket = self.sign_in()
         self.assertTrue(ticket)
@@ -262,7 +267,7 @@ class OidcFlowTests(APITestBase):
     def test_symmetric_alg_is_refused(self):
         self.start()
         raw = jwt.encode({"iss": ISSUER, "aud": CLIENT, "sub": "sub-val", "iat": 1, "exp": 2 ** 31},
-                         "s3cret", algorithm="HS256")
+                         SECRET, algorithm="HS256")
         from accounts import oidc
         with self.assertRaises(oidc.OidcError) as ctx:
             oidc.verify_id_token(oidc.config(), self.idp.discovery(), raw, "n")
@@ -301,7 +306,8 @@ class OidcFlowTests(APITestBase):
         self.viewer.is_staff = True
         self.viewer.save()
         self._refused("privileged")
-        call_command("link_oidc_identity", "val", "sub-val", "--allow-privileged")
+        call_command("link_oidc_identity", "val", "sub-val", "--allow-privileged",
+                     stdout=StringIO())
         self.assertTrue(self.sign_in())
 
     def test_step_up_follows_the_amr_claim(self):
@@ -372,5 +378,5 @@ class OidcConfigGuardTests(APITestBase):
 
     def test_unlink_command(self):
         OidcIdentity.objects.create(user=self.viewer, issuer=ISSUER, subject="s")
-        call_command("link_oidc_identity", "val", "--unlink")
+        call_command("link_oidc_identity", "val", "--unlink", stdout=StringIO())
         self.assertFalse(OidcIdentity.objects.exists())

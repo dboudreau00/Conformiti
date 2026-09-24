@@ -12,29 +12,63 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -SetupOnly      # Windows
 
 That creates `.venv`, installs backend and frontend dependencies, migrates a
 SQLite database and seeds the control libraries; add `--demo` (`-Demo`) for
-the sample organisation and its five accounts. Start the servers with
-`./install.sh` (both) or by hand:
+the sample organisation and its five accounts. Work on a branch from `main`,
+the development line (installs follow release tags; contributions do not).
+
+Start both servers with the installer:
+
+```bash
+./install.sh                                                     # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1           # Windows
+```
+
+or by hand, one terminal each, from the repository root:
 
 ```bash
 cd backend && ../.venv/bin/python manage.py runserver 127.0.0.1:8000
 cd frontend && npm run dev            # http://localhost:5173
 ```
 
+```powershell
+cd backend; ..\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+cd frontend; npm.cmd run dev          # http://localhost:5173
+```
+
+In Windows PowerShell use `npm.cmd`: a bare `npm` finds `npm.ps1`, which the
+default execution policy refuses.
+
 ## Before you open a pull request
 
 Run the same gates CI runs:
 
 ```bash
-./install.sh --test
+./install.sh --test                                              # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
-which is shorthand for these, except `npm audit`, which only CI runs:
+which is shorthand for these, except `npm audit`, which only CI runs. Each
+block starts at the repository root and runs top to bottom:
 
 ```bash
-python tools/validate.py                                   # static wiring/contract checks
-cd backend && python manage.py check && python manage.py makemigrations --check --dry-run
-cd backend && python manage.py test                        # the long one; ends with "Ran N tests" and OK
-cd frontend && npm run build && npm audit --audit-level=high
+python3 tools/validate.py             # static wiring/contract checks; any bare python 3 will do
+cd backend
+../.venv/bin/python manage.py check
+../.venv/bin/python manage.py makemigrations --check --dry-run
+../.venv/bin/python manage.py test    # the long one; ends with "Ran N tests" and OK
+cd ../frontend
+npm run build
+npm audit --audit-level=high
+```
+
+```powershell
+.venv\Scripts\python.exe tools\validate.py
+cd backend
+..\.venv\Scripts\python.exe manage.py check
+..\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+..\.venv\Scripts\python.exe manage.py test
+cd ..\frontend
+npm.cmd run build
+npm.cmd audit --audit-level=high
 ```
 
 Rules of thumb:
@@ -75,7 +109,7 @@ frontend/src/
   components/charts Donut, BarChart, TrendLine
   components/layout Sidebar, TopBar, PanelTransition
   pages/            one file per route
-tools/validate.py   dependency-free static validator (19 checks)
+tools/validate.py   dependency-free static validator (20 checks)
 ```
 
 ## Commit style
@@ -86,9 +120,10 @@ co-authored-by trailers.
 
 ## Releases
 
-Bump `backend/config/version.py`, `frontend/package.json` and both version
-fields in `frontend/package-lock.json` (the top-level one and `packages[""]`,
-by hand or with `npm install --package-lock-only` in `frontend/`), update the
+Bump `backend/config/version.py`, `frontend/package.json` and
+`e2e/package.json`, and both version fields in `frontend/package-lock.json`
+and in `e2e/package-lock.json` (the top-level one and `packages[""]`, by hand
+or with `npm install --package-lock-only` in that directory), update the
 README badge, add the CHANGELOG entry, tag `vX.Y.Z`, and publish a GitHub
 release. `tools/validate.py` refuses a build where these disagree. CI must be
 green.

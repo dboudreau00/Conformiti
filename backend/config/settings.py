@@ -169,6 +169,10 @@ CSRF_TRUSTED_ORIGINS = [
 
 INSTALLED_APPS = [
     "django.contrib.admin",
+    # Ahead of django.contrib.auth: Django runs a management command from the
+    # first app in this list that has one, and accounts replaces
+    # createsuperuser with one that never offers to bypass the password policy.
+    "accounts",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -179,8 +183,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
-    # local apps
-    "accounts",
+    # local apps (accounts is above)
     "compliance",
     "documents",
     "calendar_app",
@@ -436,6 +439,9 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    # OPTIONS without the view's docstring, which is developer commentary and
+    # was answered to anyone who asked (see config/metadata.py).
+    "DEFAULT_METADATA_CLASS": "config.metadata.NoDescriptionMetadata",
     # How many proxies sit in front of this process. DRF takes the client's
     # address from that many hops back along X-Forwarded-For, and every
     # throttle keys on it. DRF's own default (unset) trusts the WHOLE header,
@@ -902,3 +908,7 @@ LOGGING = {
 if getattr(sys, "argv", [])[1:2] == ["test"] and not _LOG_LEVEL_SET:
     LOGGING["loggers"]["django.request"] = {"handlers": ["console"], "level": "ERROR",
                                            "propagate": False}
+    # Every email the suite sends through the console backend was an INFO
+    # line between the dots, dozens per run. A failure to send still logs.
+    LOGGING["loggers"]["notifications.email_service"] = {
+        "handlers": ["console"], "level": "WARNING", "propagate": False}

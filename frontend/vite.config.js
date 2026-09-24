@@ -45,9 +45,19 @@ function manualChunks(id) {
 // its origin to CSRF_TRUSTED_ORIGINS and CORS_ALLOWED_ORIGINS in .env too.
 const DEV_PORT = Number(process.env.CONFORMITI_DEV_PORT) || 5173;
 
+// Vite's size warning starts at 500 kB, and a plain build crossed it with a
+// "(!)" that reads like a failure although the build succeeded. The pages are
+// imported eagerly, so the application's own code is one chunk by design: at
+// 0.9.5k it is about 568 kB minified (155 kB gzipped), and the largest vendor
+// chunks are pdf 431 kB, react 182 kB and motion 125 kB. The pdf.js worker
+// (1.27 MB) is emitted as a file, not a chunk, so the limit does not apply to
+// it. 700 kB clears today's index chunk with room to grow and still warns if
+// a large dependency is bundled into it by accident.
+const CHUNK_WARNING_KB = 700;
+
 export default defineConfig({
   plugins: [react()],
   server: { port: DEV_PORT, strictPort: true, proxy },
   preview: { port: 4173, proxy },
-  build: { rollupOptions: { output: { manualChunks } } },
+  build: { chunkSizeWarningLimit: CHUNK_WARNING_KB, rollupOptions: { output: { manualChunks } } },
 });

@@ -23,7 +23,9 @@ before fieldwork. Three questions expose it every time:
 
 - **Three control libraries, seeded on install.** SOC 2 (2017 TSC, rev. 2022),
   ISO/IEC 27001:2022 and PCI DSS v4.0.1: 217 controls, with a crosswalk
-  between them and an evidence tree of 1,117 folders generated from them. Your
+  between them and an evidence tree generated from them (249 folders in the
+  app, one per framework, category and control; 1,117 on disk, where each
+  control also gets policies, procedures, evidence and forms folders). Your
   own frameworks can be added alongside.
 - **Evidence that knows what it proves.** Every document declares the controls
   it satisfies and every control lists its documents, with versions, owners,
@@ -61,8 +63,8 @@ Compliance data is a map of an organisation's weaknesses: which controls are
 unimplemented, which reviews lapsed, which vendors were never assessed. The
 usual answer is to upload that to a vendor's cloud. Conformiti's answer is
 that it never leaves your infrastructure. One `docker compose up` brings up
-PostgreSQL, Redis, the API, a worker and nginx with production-safe defaults
-and no configuration file required.
+PostgreSQL, Redis, the API, a worker and its scheduler, and nginx with
+production-safe defaults and no configuration file required.
 
 One installation can serve several organisations, isolated in the ORM rather
 than by remembering to filter, which is what makes it usable by a consultancy
@@ -97,6 +99,7 @@ needs nothing but a bare interpreter.
 
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
+git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"   # the newest release
 docker compose up -d --build
 ```
 

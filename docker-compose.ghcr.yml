@@ -21,9 +21,19 @@
 #
 # After a later edit, restart the frontend service so nginx reads it again.
 #
-# `latest` follows the newest release; pin a version for production:
+# `latest` follows the newest release. Pin a version for production, in .env
+# beside COMPOSE_FILE, which names these two files once so that the short
+# forms (`docker compose up -d`, and scripts/restore.sh, which uses them)
+# stay on the images:
 #
-#   CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml
+#   CONFORMITI_VERSION=0.9.5k
+#
+# (Separate the files with `;` for Docker Desktop's Windows docker.exe.) A
+# value given inline, `CONFORMITI_VERSION=0.9.5k docker compose up -d`, lasts
+# for that one command: the next one, scripts/restore.sh included, goes back
+# to the pin in .env, or to `latest` without one. An exported value overrides
+# .env for as long as the shell keeps it, so unset it once the pin is there.
 #
 # `build: !reset null` removes the build stanza the base file sets, so these
 # services can only ever run what was pulled. It needs Compose v2.24 or newer.

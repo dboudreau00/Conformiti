@@ -150,6 +150,29 @@ retire_demo_advice() {
   "$p" "  docker compose exec backend python manage.py remove_demo_data"
 }
 banner_line() { printf "%s\n" "  $*"; }
+# frontend_deps_current is true when frontend/node_modules already holds what
+# package-lock.json pins: npm's own record of the installed tree
+# (node_modules/.package-lock.json) lists the same packages at the same
+# version, source and hash, leaving out only optional ones npm skipped (other
+# platforms' binaries), and each of them is on disk. Only those fields are
+# compared, because npm 10 leaves the libc ones out of that record. A run that
+# npm ci stopped part way fails the test. install.ps1 carries the same test.
+frontend_deps_current() {
+  ( cd frontend && node -e '
+    const fs = require("fs"), read = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
+    const pin = (e) => JSON.stringify([e.version, e.resolved, e.integrity, e.link]);
+    let ok = false;
+    try {
+      const lock = read("package-lock.json").packages, tree = read("node_modules/.package-lock.json").packages;
+      ok = Object.keys(tree).every((k) => k in lock) && Object.keys(lock).every((k) => k === "" ||
+        (k in tree ? pin(tree[k]) === pin(lock[k]) && fs.existsSync(k + "/package.json") : lock[k].optional === true));
+    } catch (e) {}
+    process.exit(ok ? 0 : 1);' ) 2>/dev/null
+}
+origin_warning() {  # $1 = the web app's dev port
+  warn "CONFORMITI_DEV_PORT is ${1}: add http://localhost:${1} to CSRF_TRUSTED_ORIGINS and"
+  warn "CORS_ALLOWED_ORIGINS in .env, or every sign-in from the web app is refused."
+}
 
 wait_for_health() {  # $1 = url, $2 = seconds
   local url="$1" limit="${2:-180}" i=0
@@ -267,7 +290,12 @@ ENV
   say "Building images and starting the stack (first build takes a few minutes)…"
   # Passed explicitly so a CONFORMITI_PORT exported in this shell (which would
   # beat .env) cannot publish the app on a port other than the one waited on.
-  CONFORMITI_PORT="$PORT" docker compose up -d --build
+  # No provenance attestation either: under the containerd image store (the
+  # default for Docker Desktop and new Docker Engine installs) it gives every
+  # build a new image id, even when each step came from the cache, and a new
+  # id makes Compose recreate the container. A re-run of an unchanged checkout
+  # then restarted the stack and took the demo password out of the log.
+  CONFORMITI_PORT="$PORT" BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose up -d --build
   say "Waiting for the API to report healthy…"
   if wait_for_health "http://localhost:${PORT}/api/health/" 240; then
     HEALTH=$(curl -fsS "http://localhost:${PORT}/api/health/")
@@ -296,7 +324,7 @@ BANNER
     if [ -n "$DEMO_PW" ]; then
       printf "%s\n" "  ${BOLD}Password${RESET} ${DEMO_PW}   ${DIM}(note it now)${RESET}"
       printf "%s\n" "  ${DIM}The backend log keeps it only until that container is recreated, which --port,${RESET}"
-      printf "%s\n" "  ${DIM}an update or any .env change does.${RESET}"
+      printf "%s\n" "  ${DIM}an upgrade or any .env change does.${RESET}"
     else
       printf "%s\n" "  ${DIM}Password: not in the current backend log. It is printed once, by the container that${RESET}"
       printf "%s\n" "  ${DIM}created the demo accounts. Set a new one for admin with:${RESET}"
@@ -319,7 +347,11 @@ BANNER
         printf "%s\n" "  No account yet? docker compose exec backend python manage.py createsuperuser" ;;
     esac
   fi
-  printf "%s\n" "  ${DIM}Logs: docker compose logs -f    Stop: docker compose down    Update: ./install.sh --docker${RESET}"
+  # A re-run rebuilds the checkout on disk, nothing more. An upgrade is a
+  # backup and a checkout of the new release first (README, "Upgrading").
+  printf "%s\n" "  ${DIM}Logs: docker compose logs -f    Stop: docker compose down    Rebuild: ./install.sh --docker${RESET}"
+  printf "%s\n" "  ${DIM}Upgrade: scripts/backup.sh, then git fetch --tags && git checkout <new release tag>,${RESET}"
+  printf "%s\n" "  ${DIM}         then ./install.sh --docker (README, \"Upgrading\")${RESET}"
   open_url "http://localhost:${PORT}"
   exit 0
 fi
@@ -355,6 +387,7 @@ if [ "$MODE" != "test" ]; then
 fi
 
 # --- .env (generate a secret key on first run) -----------------------------
+ENV_CREATED=""
 if [ ! -f .env ]; then
   cp .env.example .env
   SECRET=$(gen_secret "$PY")
@@ -365,18 +398,32 @@ t = re.sub(r'^DJANGO_SECRET_KEY=.*$', 'DJANGO_SECRET_KEY=' + sys.argv[1], t, fla
 p.write_text(t, encoding="utf-8")
 PY
   chmod 600 .env 2>/dev/null || true
+  ENV_CREATED="yes"
   ok ".env created (SQLite + console email; a secret key was generated, mode 600)"
 else
   ok ".env already present: leaving it untouched"
 fi
 # Sign-in is refused from any origin CSRF_TRUSTED_ORIGINS does not list, and
-# .env.example lists http://localhost:5173 only, so a moved web app says so.
+# .env.example lists http://localhost:5173 only. A .env this run created is
+# this script's own file, so a moved web app's origin goes into it here, the
+# way --docker --port moves its origins. An existing .env is the user's: it
+# is only warned about, here and again in the closing lines.
+ORIGIN_MISSING=""
 if [ "$MODE" != "test" ] && [ "$DEV_PORT" != "5173" ]; then
+  if [ -n "$ENV_CREATED" ]; then
+    for key in CSRF_TRUSTED_ORIGINS CORS_ALLOWED_ORIGINS; do
+      CURRENT=$(env_get "$key" | tr -d ' ')
+      case ",${CURRENT:=http://localhost:5173}," in
+        *",http://localhost:${DEV_PORT},"*) ;;
+        *) env_set "$key" "${CURRENT},http://localhost:${DEV_PORT}" ;;
+      esac
+    done
+    ok "added http://localhost:${DEV_PORT} (CONFORMITI_DEV_PORT) to CSRF_TRUSTED_ORIGINS and CORS_ALLOWED_ORIGINS in the new .env"
+  fi
   ORIGINS=$(env_get CSRF_TRUSTED_ORIGINS | tr -d ' ')
   case ",${CSRF_TRUSTED_ORIGINS:-${ORIGINS:-http://localhost:5173}}," in
     *",http://localhost:${DEV_PORT},"*) ;;
-    *) warn "CONFORMITI_DEV_PORT is ${DEV_PORT}: add http://localhost:${DEV_PORT} to CSRF_TRUSTED_ORIGINS and"
-       warn "CORS_ALLOWED_ORIGINS in .env, or every sign-in from the web app is refused." ;;
+    *) ORIGIN_MISSING="yes"; origin_warning "$DEV_PORT" ;;
   esac
 fi
 
@@ -414,16 +461,25 @@ if [ "$MODE" = "reset" ]; then
 fi
 
 # --- Frontend deps ---------------------------------------------------------
-say "Installing frontend dependencies (this can take a minute)…"
 # `npm ci` installs exactly what the lock file pins and never rewrites it;
 # `npm install` from npm 10 drops the lock's libc fields and leaves the
-# checkout dirty. npm install stays for a tree without a lock file.
-if [ -f frontend/package-lock.json ]; then
-  ( cd frontend && npm ci --no-fund --no-audit --silent )
+# checkout dirty. npm install stays for a tree without a lock file. npm ci
+# empties node_modules first, so a tree that already matches the lock file
+# is kept: a re-run or --test of an unchanged checkout does not pull the
+# packages out from under a dev server that is still running. --loglevel=error
+# rather than --silent, so npm's own explanation of a failure reaches the
+# screen.
+if [ -f frontend/package-lock.json ] && frontend_deps_current; then
+  ok "frontend dependencies already match package-lock.json: kept as they are"
 else
-  ( cd frontend && npm install --no-fund --no-audit --silent )
+  say "Installing frontend dependencies (this can take a minute)…"
+  if [ -f frontend/package-lock.json ]; then
+    ( cd frontend && npm ci --no-fund --no-audit --loglevel=error )
+  else
+    ( cd frontend && npm install --no-fund --no-audit --loglevel=error )
+  fi
+  ok "frontend dependencies installed"
 fi
-ok "frontend dependencies installed"
 
 # --- Test mode -------------------------------------------------------------
 if [ "$MODE" = "test" ]; then
@@ -508,13 +564,15 @@ To start the app later, run:
   (backend)   cd backend && ../.venv/bin/python manage.py runserver 127.0.0.1:${DEV_API_PORT}
   (frontend)  cd frontend && ${DEV_ENV}npm run dev
 Then open ${BOLD}http://localhost:${DEV_PORT}${RESET}
-${DIM}Ports: CONFORMITI_DEV_API_PORT=${DEV_API_PORT} (API), CONFORMITI_DEV_PORT=${DEV_PORT} (web app); set them in the shell to move either.${RESET}
 NEXT
+  [ -z "$ORIGIN_MISSING" ] || origin_warning "$DEV_PORT"
+  printf "%s\n" "${DIM}Ports: CONFORMITI_DEV_API_PORT=${DEV_API_PORT} (API), CONFORMITI_DEV_PORT=${DEV_PORT} (web app); set them in the shell to move either.${RESET}"
   exit 0
 fi
 
 say "Starting servers: API on :${DEV_API_PORT} (CONFORMITI_DEV_API_PORT), web app on :${DEV_PORT} (CONFORMITI_DEV_PORT)."
 say "Open ${BOLD}http://localhost:${DEV_PORT}${RESET} in your browser. Press Ctrl-C to stop."
+[ -z "$ORIGIN_MISSING" ] || origin_warning "$DEV_PORT"
 # `kill 0` signals this script's whole process group, the script included, so
 # the handler disarms itself first. Otherwise the TERM it sends would run it
 # again, and again, until bash crashed. Ctrl-C and TERM are how a user stops

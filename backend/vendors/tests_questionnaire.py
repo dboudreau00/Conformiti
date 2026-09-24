@@ -61,6 +61,19 @@ class SendTests(APITestBase):
         window = QuestionnaireInvite.objects.get().expires_at - timezone.now()
         self.assertAlmostEqual(window.days, 29, delta=1)
 
+    def test_the_audit_entry_counts_the_days_in_words(self):
+        """The entry read '1 day(s)' and '30 day(s)' in the Audit log."""
+        v = _vendor()
+        self.send(v, email="a@b.example", days=1)
+        self.send(v, email="a@b.example", days=30)
+        details = list(AuditLog.objects.filter(
+            object_type="vendor-questionnaire", detail__startswith="questionnaire sent to",
+        ).order_by("pk").values_list("detail", flat=True))
+        self.assertEqual(len(details), 2)
+        self.assertRegex(details[0], r"for Northwind Cloud, 1 day($| \()")
+        self.assertRegex(details[1], r"for Northwind Cloud, 30 days($| \()")
+        self.assertNotIn("(s)", " ".join(details))
+
     def test_a_second_send_supersedes_the_first_and_only_the_frameworks_capability_sends(self):
         v = _vendor()
         first = self.send(v).data["link"].rsplit("/", 1)[1]

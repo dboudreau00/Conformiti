@@ -127,12 +127,37 @@ unset (the rate limits are then counted per process), and warns about
   backend starts a new log. `install.ps1` prints its commands in the
   execution-policy form, and both installers warn about Python above 3.14 as
   untested.
-- `scripts/restore.sh` printed about sixty PostgreSQL notices; it is quiet,
-  and says so when `.env` is missing. `scripts/backup.sh` on a machine without
-  the Docker stack points to the bare-metal backup section. The
-  `NUM_PROXIES` warning's advice was wrong for a single proxy. Local
-  development logged a traceback for every 404 under `DJANGO_DEBUG`, and the
-  test run printed tracebacks for failures it provokes on purpose.
+- `scripts/restore.sh` printed about sixty PostgreSQL notices and a result
+  table for every sequence it set; it prints only its own progress, and says
+  so when `.env` is missing. `scripts/backup.sh` on a machine without the
+  Docker stack points to the bare-metal backup section. The `NUM_PROXIES`
+  warning's advice was wrong for a single proxy. Local development logged a
+  traceback for every 404 under `DJANGO_DEBUG`, and the test run printed
+  tracebacks, warnings and seed output for things it does on purpose; a
+  passing run is now quiet.
+- **Retiring the demo left the demo's control programme behind.** After
+  `remove_demo_data`, the register still claimed 62 controls implemented and
+  87 owned by deactivated demo accounts. Retiring now clears the demo owners
+  and puts back to Not started every status the seed set, except one you have
+  changed since, removes the demo's readiness history, and says what it reset.
+  Its report reads in the right tense for a real run and a dry run.
+- **The interactive `createsuperuser` offered to bypass the password policy**
+  and then refused the account, discarding what had been typed. It now says
+  the policy has no bypass and asks for another password.
+- **On Windows, the printed command to start the web app failed**: `npm run
+  dev` resolves to a script the default execution policy refuses. The
+  installer prints `npm.cmd run dev`. `-Test` and `-Reset` keep front-end
+  packages that already match the lockfile, and refuse to reinstall them
+  under a running dev server instead of leaving them half deleted.
+- The installers add a moved dev web port to a `.env` they have just created,
+  turn off the build attestation that made every Docker re-run recreate the
+  containers, and label the banner's re-run as a rebuild, pointing upgrades at
+  the README. Redis no longer leaves an anonymous volume behind on every
+  `docker compose down`. An `OPTIONS` request no longer returns each view's
+  internal description. The sign-in page gives the local and the Docker way to
+  create the first administrator, Settings calls a superuser a superuser, the
+  version reads `v0.9.5l` in lower case, and "SOC 2" stays on one line. Emails
+  say "1 day" and "1 item needs", not "1 day(s)" and "1 item need".
 
 ### Changed
 
@@ -161,8 +186,15 @@ unset (the rate limits are then counted per process), and warns about
   It also added the published images' nginx override, the corrected "Moving
   the ports", and git, curl and `python3-venv` in the prerequisites, with
   Python 3.11 to 3.14 stated the same way everywhere.
-- Every Markdown file and the shipped configuration are free of em and en
-  dashes, the release notes above included.
+- A third walk tightened the rest: `chmod 600 .env` on bare metal (it holds
+  the secret key and the database password); a version pin moved in `.env`,
+  not on the command line, when upgrading from the published images;
+  installs and upgrades follow release tags; the route to PostgreSQL 16 and a
+  current Node on Debian and Ubuntu; `generate_folder_tree` in the bare-metal
+  steps; the health endpoint's real fields.
+- Every Markdown file is free of em and en dashes, the release notes above
+  included, and the validator now checks the documentation and the email
+  templates for them.
 
 ## [0.9.5k], 2026-09-22
 

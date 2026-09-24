@@ -5,12 +5,14 @@ Three ways to run Conformiti, from "just show me" to production.
 | Path | Best for | Needs | Command |
 |---|---|---|---|
 | **Docker** | evaluating, LAN pilots, production | Docker Engine 24+ / Docker Desktop with Compose 2.24 or newer | `docker compose up -d --build` |
-| **Local dev** | hacking on the code | Python 3.11 to 3.14 with `venv` and `pip`, Node 20.19+ or 22.12+ | `./install.sh` / `.\install.ps1` |
+| **Local dev** | hacking on the code | Python 3.11 to 3.14 with `venv` and `pip`, Node 20.19+ or 22.12+ | `./install.sh`, or on Windows `powershell -ExecutionPolicy Bypass -File .\install.ps1` |
 | **Manual** | custom hosting, bare metal (Linux) | as above + PostgreSQL, Redis, nginx | see §3 |
 
-Every path starts with `git clone`, so you need git as well, and
-`./install.sh --docker` needs curl to wait for the stack. On Debian and Ubuntu
-Python's `venv` module is a separate package:
+Every path starts with `git clone` and a checkout of the newest release tag
+(`main` is the development line, and installs and upgrades follow release
+tags), so you need git as well, and `./install.sh --docker` needs curl to
+wait for the stack. On Debian and Ubuntu Python's `venv` module is a separate
+package:
 `sudo apt install python3-venv python3-pip`. The full list is in
 [PREREQUISITES.md](PREREQUISITES.md).
 
@@ -27,15 +29,23 @@ ships no Windows service setup.
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git
 cd Conformiti
+git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"   # the newest release
 docker compose up -d --build
 ```
 
-Then open **http://localhost:8080**. Create the first account with
-`docker compose exec backend python manage.py createsuperuser`. Its password
-must pass the same policy as every other account's: at least
+The third line checks out the newest release and leaves the checkout on a
+detached HEAD, which is intended ([README, Upgrading](README.md#upgrading)).
+In PowerShell it reads
+`git checkout (git tag --list 'v*' --sort=-v:refname | Select-Object -First 1)`.
+
+Then create the first account with
+`docker compose exec backend python manage.py createsuperuser` (the sign-in
+page cannot make one), open **http://localhost:8080** and sign in with it.
+Its password must pass the same policy as every other account's: at least
 `PASSWORD_MIN_LENGTH` characters (12 by default), not a common password, not
-all digits, and not too close to the username or email. A password that fails
-is refused, with no bypass, and no account is created.
+all digits, and not too close to the username or email. The policy has no
+bypass: `createsuperuser` refuses a password that fails it, says why and asks
+for another.
 
 To look around a worked example instead, put `SEED_DEMO_DATA=true` in `.env`
 (create the file if there is none) before you run `docker compose up`, or use
@@ -57,10 +67,13 @@ What happens on first boot:
 
 1. PostgreSQL 16 and Redis 7 start with healthchecks.
 2. The API container waits for the database, applies the shipped migrations,
-   seeds the three control libraries (217 controls, 1,117 folders) and the
-   built-in roles, seeds the demo dataset only if you asked for it
-   (`SEED_DEMO_DATA=true`), collects static files and starts gunicorn as an
-   unprivileged user.
+   seeds the three control libraries (217 controls, and 249 folders in the
+   app's document tree, one per framework, category and control: the boot
+   log says `App folders created: 249`) and the built-in roles, seeds the
+   demo dataset only if you asked for it (`SEED_DEMO_DATA=true`), writes the
+   evidence tree on disk (1,117 folders: those 249, plus `policies`,
+   `procedures`, `evidence` and `forms` under each control), collects static
+   files and starts gunicorn as an unprivileged user.
 3. A strong `DJANGO_SECRET_KEY` is generated and persisted in the `secrets`
    volume, so no placeholder ever signs a token.
 4. The Celery `worker` and `beat` services start once the API is *healthy*.
@@ -100,13 +113,19 @@ created stay until `remove_demo_data`.
 When the running stack reports demo accounts, the closing banner shows their
 password, which it reads from `docker compose logs backend`, marked
 *note it now*: the password is logged once, by the container that created
-the accounts, and recreating that container starts a log without it. An update recreates it, and so does any change to `.env`, the
-ones `--port`, `--demo` and `--no-demo` write included. From then on the
-banner says so and gives the command that sets a new one:
+the accounts, and recreating that container starts a log without it. An
+upgrade recreates it, and so does any change to `.env`, the ones `--port`,
+`--demo` and `--no-demo` write included. From then on the banner says so and
+gives the command that sets a new one:
 `docker compose exec backend python manage.py changepassword admin`.
 Without demo accounts, the banner reads the same health report: while the
 installation has no active account it gives the `createsuperuser` command for
 your first one, and once one exists it says to sign in with it.
+
+The banner's *Rebuild* line re-runs the script, which builds and starts
+whatever is checked out and nothing more. An upgrade is a backup and a
+checkout of the new release tag first, then that rebuild; its *Upgrade* line
+points at [README, Upgrading](README.md#upgrading), which has the commands.
 
 **Windows PowerShell and the execution policy.** On a default Windows 10 or 11
 client, Windows PowerShell 5.1 refuses every script with *running scripts is
@@ -158,6 +177,15 @@ reads for every command run in this directory, so the short forms (and
 COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml
 CONFORMITI_VERSION=0.9.5k
 ```
+
+Keep the pin there too. The `export` above lasts for that shell, and a
+version given inline (`CONFORMITI_VERSION=0.9.5k docker compose ...`) for
+that one command. While the export lasts it overrides `.env`, so once the pin
+is written there, run `unset CONFORMITI_VERSION` and keep the variable out of
+shell profiles: the pin in `.env` is then the one every later command reads,
+`scripts/restore.sh` included. An upgrade moves it there
+([README, Upgrading](README.md#upgrading)), and an exported value left
+behind would keep that shell on the old release.
 
 Separate the two files with `;` instead of `:` when you run Docker Desktop's
 Windows `docker.exe` rather than Docker inside WSL 2. Keep one `COMPOSE_FILE`
@@ -272,8 +300,9 @@ pulls what it pushed and boots it before the run is allowed to pass.
    go; `scripts/restore.sh <directory>` brings an installation back, here or
    on another machine. CI runs both on every push. On the published images,
    the restore stays on them only with `COMPOSE_FILE` and
-   `CONFORMITI_VERSION` (the backup's release) in `.env`, as *Without a
-   build* shows: the script takes no `-f` files, without `COMPOSE_FILE` it
+   `CONFORMITI_VERSION` (the backup's release) in `.env`, and none exported
+   in the shell that runs it (an exported value overrides `.env`), as
+   *Without a build* shows: the script takes no `-f` files, without `COMPOSE_FILE` it
    builds the stack from source, and without `CONFORMITI_VERSION` it runs
    `latest`, which migrates the restored database forward for good. `.env` is
    not in the backup, so on a new machine write both into it before
@@ -380,8 +409,9 @@ Two things to know:
 
 A key whose signature counter goes backwards is treated as cloned: it is
 disabled and the sign-in refused, and the person needs their other factor.
-`manage.py`-free recovery is an administrator's *Reset MFA* on the Users page,
-which removes the authenticator app and every passkey.
+`manage.py`-free recovery is an administrator's *Reset 2FA* on the Users page
+(its confirmation reads *Reset two-factor*), which removes the authenticator
+app, every passkey and the backup codes.
 
 On the local development servers the Vite proxy rewrites `Host` to the
 backend's, so pin the relying party there too:
@@ -546,17 +576,21 @@ Everyday operations:
 
 ```bash
 docker compose logs -f backend worker      # logs
-docker compose pull && docker compose up -d --build   # update, built from source
+docker compose pull && docker compose up -d --build   # rebuild what is checked out
 docker compose exec backend python manage.py send_review_reminders --dry-run
 docker compose down                        # stop (volumes are kept)
 ```
 
-Update after `scripts/backup.sh` and a checkout of the new release
-([README, Upgrading](README.md#upgrading)). An installation started from the
-published images must keep the override on both commands (or carry
-`COMPOSE_FILE` in `.env`, as *Without a build* shows): the plain update line
-above would quietly switch it to building from source. Set
-`CONFORMITI_VERSION` to the new release if you pin one:
+The rebuild line is an upgrade only after `scripts/backup.sh` and a checkout
+of the new release tag ([README, Upgrading](README.md#upgrading)). An
+installation started from the published images must keep the override on
+both commands (or carry `COMPOSE_FILE` in `.env`, as *Without a build*
+shows): the plain line above would quietly switch it to building from
+source. If you pin `CONFORMITI_VERSION`, set it in `.env` to the new release:
+an inline or exported value lasts only for that command or shell, and the
+next short-form command goes back to the pin in `.env`. An exported value
+also overrides `.env` for as long as it lasts, so `unset CONFORMITI_VERSION`
+before the upgrade.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
@@ -568,19 +602,26 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ## 2. Local development (SQLite, console email)
 
 ```bash
-./install.sh                 # macOS / Linux / WSL
-.\install.ps1                # Windows PowerShell
+./install.sh                                          # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows
 ```
 
-On Windows, if PowerShell refuses the script (*running scripts is disabled on
-this system*), use `powershell -ExecutionPolicy Bypass -File .\install.ps1`;
-§1's scripted variant explains the execution policy.
+On Windows the bypass is what lets the script run where the default policy
+refuses it (*running scripts is disabled on this system*); it lasts for that
+one run and changes no setting. §1's scripted variant explains the execution
+policy. For a trial, run it from a checkout of the newest release tag, as §1
+shows; to work on the code, from a branch of `main`
+([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 The installer checks for Python 3.11 or newer (3.11 to 3.14 are the tested
 versions; it warns above them) and Node 20.19+ or 22.12+. On Debian and
 Ubuntu, install Python's `venv` module first
 (`sudo apt install python3-venv python3-pip`): without it `.venv` cannot be
-created. Other requirements are in [PREREQUISITES.md](PREREQUISITES.md). The
+created. The `nodejs` package of Debian 12 and Ubuntu 24.04 (18) or Ubuntu
+22.04 (12) is too old, and the installer stops on it: install Node 22 LTS
+from NodeSource's repository (§3 shows the commands) or with nvm, and check
+`node --version`. Other requirements are in
+[PREREQUISITES.md](PREREQUISITES.md). The
 installer then creates `.env` with a generated secret key, builds `.venv`,
 installs backend and frontend
 dependencies, applies migrations, seeds the control libraries, and starts the
@@ -627,7 +668,13 @@ Useful flags:
 
 Re-running the installer is safe: it reuses `.venv` (a `.venv` without a
 working pip, which a creation that stopped part way leaves behind, is deleted
-and built again), leaves `.env` alone, and every seeder is idempotent.
+and built again), leaves `.env` alone, and every seeder is idempotent. It
+also keeps `frontend/node_modules` when that already matches
+`package-lock.json`, so a re-run or `--test` of an unchanged checkout does not
+pull the packages out from under a dev server that is still running. On
+Windows, where a running dev server holds files npm would have to replace, a
+reinstall is refused while the dev server's port is served: close the two
+server windows first.
 
 Review reminders on this path run on demand:
 
@@ -642,8 +689,29 @@ cd backend
 
 The examples assume the checkout is at `/srv/conformiti`, owned by a
 `conformiti` system user; adjust both to taste. The host needs PostgreSQL 16,
-Redis 7, nginx, git, Python 3.11 to 3.14 with `venv` and `pip`, and Node
-20.19+ or 22.12+ to build the interface.
+Redis 7, nginx, git, curl (for the NodeSource step below), Python 3.11 to
+3.14 with `venv` and `pip`, and Node 20.19+ or 22.12+ to build the interface.
+
+- **PostgreSQL 16** is what the Docker stack runs and CI tests. Django 5.2
+  itself refuses anything older than 14, and 14 and 15 are not tested here.
+  Ubuntu 24.04 ships 16; Debian 12 ships 15 and Ubuntu 22.04 ships 14, so on
+  those add the PostgreSQL project's repository first (its script asks for
+  Enter before it writes anything):
+  ```bash
+  sudo apt install postgresql-common gnupg
+  sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+  sudo apt install postgresql-16
+  ```
+- **Node**: the distributions' own `nodejs` packages are usually too old for
+  the build (Debian 12 and Ubuntu 24.04 ship 18, Ubuntu 22.04 ships 12).
+  Install Node 22 LTS from NodeSource's repository instead (curl first, which
+  minimal systems lack), then check `node --version`:
+  ```bash
+  sudo apt install curl ca-certificates
+  curl -fsSL https://deb.nodesource.com/setup_22.x -o nodesource_setup.sh
+  sudo bash nodesource_setup.sh
+  sudo apt install nodejs
+  ```
 
 Create the user with a home directory, and the checkout as that user:
 
@@ -670,6 +738,13 @@ keys the application writes at mode 0600, and a copy owned by root is one the
 services cannot read. Only the `sudo` lines (the user above, the database,
 systemd) and the nginx configuration need root.
 
+The first of them checks out the newest release, since `main` is the
+development line:
+
+```bash
+git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"
+```
+
 Create the database role and the database; `createuser -P` asks for the
 password that goes into `POSTGRES_PASSWORD` below:
 
@@ -678,7 +753,16 @@ sudo -u postgres createuser -P compliance
 sudo -u postgres createdb -O compliance compliance
 ```
 
-Copy the configuration with `cp .env.example .env` and set, in `.env`:
+Copy the configuration and make it readable by the `conformiti` account
+alone. It will hold `DJANGO_SECRET_KEY`, which also signs the sign-in tokens,
+and `POSTGRES_PASSWORD`; `cp` leaves it readable by every account on the
+host, nginx's included:
+
+```bash
+cp .env.example .env && chmod 600 .env
+```
+
+Then set, in `.env`:
 
 - `DJANGO_DEBUG=false` and a real `DJANGO_SECRET_KEY`
   (`python3 -c "import secrets; print(secrets.token_urlsafe(50))"`);
@@ -732,10 +816,21 @@ pip install -r backend/requirements.txt
 cd backend
 python manage.py migrate
 python manage.py seed_frameworks --with-folders
+python manage.py generate_folder_tree    # the evidence tree on disk, at COMPLIANCE_TREE_ROOT
 python manage.py createsuperuser         # the password must pass the policy in §1
 python manage.py collectstatic --noinput
+mkdir -p media                           # MEDIA_ROOT; nothing creates it before the first upload
 gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
 ```
+
+`generate_folder_tree` is what the Docker stack and the installers run after
+seeding. With the default `COMPLIANCE_TREE_ROOT` (`compliance-data/` at the
+top of the checkout) the clone already carries that tree and the command
+leaves it as it is; a tree root set anywhere else starts empty without it.
+`mkdir -p media` matters when `MEDIA_ROOT` is left at its default:
+`backend/media` does not exist until the first upload, and the backup below
+would otherwise report it missing and exit with status 2 (it still archives
+everything else).
 
 Run `celery -A config worker -l info` and, once and only once,
 `celery -A config beat -l info` under a supervisor for the daily jobs (a
@@ -882,9 +977,12 @@ and copy them off the machine:
 | The field-encryption key | the file `DJANGO_FIELD_ENCRYPTION_KEY_FILE` names: `/srv/conformiti/backend/.field-encryption-key` | without it enrolled authenticators cannot be read (backup codes still work) and a stored Jira token must be entered again |
 | `.env` | `/srv/conformiti/.env` | `DJANGO_SECRET_KEY` and the passwords |
 
-For example, as root from cron (`tar` names any file that does not exist,
-such as the field-encryption key file when you left the setting unset, and
-archives the rest):
+For example, as root from cron. `tar` names any path that does not exist,
+archives the rest and exits with status 2, which a cron wrapper reports as a
+failed backup. The field-encryption key file is missing when you left the
+setting unset (drop it from the line then), and `backend/media` on an
+installation that skipped the `mkdir -p media` above and has had no upload
+yet (create it, as the `conformiti` user):
 
 ```bash
 mkdir -p /var/backups/conformiti
@@ -899,7 +997,9 @@ the end of the command.
 To restore, stop the three services, reload the database with
 `sudo -u postgres pg_restore --clean --if-exists -d compliance <dump>`, unpack
 the files into `/srv/conformiti` (as the `conformiti` user, or `chown` them
-back to it), and start the services again.
+back to it), make sure the restored `.env` is the `conformiti` user's at mode
+0600 again (`chmod 600 .env`: an archive made before that step was in this
+recipe carries it readable by everyone), and start the services again.
 
 **The field-encryption key and `DJANGO_SECRET_KEY`.** With
 `DJANGO_FIELD_ENCRYPTION_KEY_FILE` unset and a real `DJANGO_SECRET_KEY`, the
@@ -932,7 +1032,7 @@ ever rotate it:
 | `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up, or the credentials differ between the `db` and `backend` services. The usual cause is `POSTGRES_PASSWORD` changed in `.env` after the first boot: the database volume keeps the password it was created with. Put the old value back, or change it in the database as §1 *Going to production* step 1 shows, then `docker compose up -d` (with the same `-f` files you started with). |
 | Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser` (the password must pass the policy in §1), or seed the sample data with `manage.py bootstrap_demo`. Or the web app runs on a port or host name missing from `CSRF_TRUSTED_ORIGINS` in `.env` (see *Moving the ports*). |
 | `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
-| Uploads rejected as too large | Raise `MAX_UPLOAD_MB` in `.env` **and** `client_max_body_size` in `frontend/nginx.conf`. nginx's configuration is built into the frontend image: after the edit, a source build needs `docker compose up -d --build`, and the published images need the edited file mounted (*Without a build*, above). Bare metal: edit your own copy and reload nginx. |
+| Uploads rejected as too large | Raise `MAX_UPLOAD_MB` in `.env` **and** `client_max_body_size` in `frontend/nginx.conf`. nginx's configuration is built into the frontend image: after the edit, a source build needs `docker compose up -d --build`, and the published images need the edited file mounted (*Without a build*, above). `frontend/nginx.conf` is a tracked file, so the edit has to be set aside for each upgrade's `git checkout` ([README, Upgrading](README.md#upgrading)). Bare metal: edit your own copy and reload nginx. |
 | Port in use | Docker needs host ports 8080 (`CONFORMITI_PORT`) and `127.0.0.1:8000` (`CONFORMITI_API_PORT`); the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move: see *Moving the ports* below. |
 
 <details>
@@ -974,17 +1074,27 @@ Docker ones: `CONFORMITI_DEV_API_PORT` (default 8000) is where `runserver`
 listens and where the Vite dev server proxies `/api/` and `/media/`, and
 `CONFORMITI_DEV_PORT` (default 5173) is the dev server's own port. Both are
 read from the shell, not from `.env`. Set them before running the installer
-and it starts both servers on them, or start the servers by hand, giving
-`runserver` the same API port on its command line:
+and it starts both servers on them. When that run creates `.env`, it also adds
+the moved web app's origin (`http://localhost:<port>`) to
+`CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS` in it; a `.env` that was
+already there is left alone, and the installer warns instead. Or start the
+servers by hand, giving `runserver` the same API port on its command line:
 
 ```bash
 cd backend && ../.venv/bin/python manage.py runserver 127.0.0.1:8001                 # first terminal
 cd frontend && CONFORMITI_DEV_API_PORT=8001 CONFORMITI_DEV_PORT=5174 npm run dev     # second terminal
 ```
 
-In PowerShell, set them first in the second window:
-`$env:CONFORMITI_DEV_API_PORT=8001; $env:CONFORMITI_DEV_PORT=5174; npm run dev`.
-(The end-to-end suite points the proxy at its own backend with
+In PowerShell, the same two windows:
+
+```powershell
+cd backend; ..\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8001                          # first window
+cd frontend; $env:CONFORMITI_DEV_API_PORT=8001; $env:CONFORMITI_DEV_PORT=5174; npm.cmd run dev    # second window
+```
+
+`npm.cmd`, not `npm`: in Windows PowerShell a bare `npm` finds `npm.ps1`,
+which the default execution policy refuses (*running scripts is disabled on
+this system*). (The end-to-end suite points the proxy at its own backend with
 `E2E_API_PORT`, which wins over `CONFORMITI_DEV_API_PORT`.)
 The dev server stops rather than moving when its port is taken. A web app on
 a new port or host name is a new origin: add it (`http://localhost:5174`

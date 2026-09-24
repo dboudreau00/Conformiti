@@ -70,12 +70,15 @@ done
 
 echo "restore: database"
 # -q quiets psql, not the server: without the SET, the CASCADE drop prints a
-# NOTICE and a DETAIL line for every table it takes with it. The load below
-# needs nothing extra, because pg_dump's output sets the same level itself.
+# NOTICE and a DETAIL line for every table it takes with it. pg_dump's output
+# sets that level itself, but -q does not hide query results, and the dump
+# runs a SELECT for every sequence (setval) and one set_config: -o /dev/null
+# drops those tables. Errors still go to stderr, and ON_ERROR_STOP still
+# stops the load with a non-zero exit.
 docker compose exec -T db sh -c \
-  'exec psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SET client_min_messages = warning; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+  'exec psql -v ON_ERROR_STOP=1 -q -o /dev/null -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SET client_min_messages = warning; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
 gunzip -c "$src/db.sql.gz" | docker compose exec -T db sh -c \
-  'exec psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+  'exec psql -v ON_ERROR_STOP=1 -q -o /dev/null -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
 for v in media secrets tree; do
   echo "restore: $v volume"

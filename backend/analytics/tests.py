@@ -2,6 +2,8 @@
 and the readiness history behind the trend line."""
 from datetime import date
 
+from io import StringIO
+
 from django.core.management import call_command
 from django.utils import timezone
 
@@ -63,7 +65,7 @@ class AnalyticsTests(APITestBase):
     def test_record_readiness_command_refreshes(self):
         record_today()
         Control.objects.update(status="implemented")
-        call_command("record_readiness", verbosity=0)
+        call_command("record_readiness", verbosity=0, stdout=StringIO())
         self.assertEqual(ReadinessSnapshot.objects.get().implemented, 2)
 
 

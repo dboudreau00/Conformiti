@@ -14,7 +14,8 @@
   before starting the other, or move one of them (the local API moves with
   `CONFORMITI_DEV_API_PORT`, which is separate from `CONFORMITI_API_PORT`).
 - Outbound internet once, to pull base images and build.
-- **git**, to clone the repository, and **curl** if you use
+- **git**, to clone the repository and check out the newest release tag
+  (`main` is the development line), and **curl** if you use
   `./install.sh --docker` (it waits for the stack with it; `install.ps1`
   needs nothing extra).
 - Nothing else. No `.env` is required.
@@ -32,8 +33,13 @@ package signing key, and a restore without it loses all three.
   (Debian or Ubuntu: `sudo apt install python3-venv python3-pip`). The
   installer refuses anything older than 3.11 and warns about anything newer
   than 3.14, which is untested.
-- **Node.js 20.19+ or 22.12+** with npm 10+ (Vite 8 requires it).
-- **git**, to clone the repository.
+- **Node.js 20.19+ or 22.12+** with npm 10+ (Vite 8 requires it). A Linux
+  distribution's own `nodejs` package is usually older (Debian 12 and Ubuntu
+  24.04 ship 18, Ubuntu 22.04 ships 12), so install Node 22 LTS from
+  nodejs.org, NodeSource's repository or nvm, and check `node --version`.
+  [INSTALL.md](INSTALL.md) §3 shows the NodeSource commands, which need
+  **curl**.
+- **git**, to clone the repository and check out the newest release tag.
 - Free local ports **8000** (Django) and **5173** (Vite), or others named in
   `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT`.
 - macOS 13+, any recent Linux, or Windows 10/11 (PowerShell 5.1 or 7).
@@ -51,6 +57,11 @@ Everything the local development path needs, plus PostgreSQL 16, Redis 7 and
 nginx on the host, a DNS name and a TLS certificate for production, and a
 backup of the database, the evidence files and the key files.
 [INSTALL.md](INSTALL.md) §3 walks through it, backups included.
+
+PostgreSQL 16 is the version the Docker stack runs and CI tests. Django 5.2
+refuses anything older than 14, and 14 and 15 are untested here. Ubuntu 24.04
+ships 16; Debian 12 (15) and Ubuntu 22.04 (14) need the PostgreSQL project's
+own repository first, which §3 shows how to add.
 
 ## Accounts and integrations
 

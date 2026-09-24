@@ -170,7 +170,7 @@ class DigestTests(APITestBase):
         NotificationReceipt.objects.create(user=self.owner, key=f"doc-due:{doc.pk}", dismissed_at=timezone.now())
         self.assertEqual(run_digests(), 1)
         self.assertNotIn("Soon policy", mail.outbox[1].body)
-        self.assertIn("1 item need", mail.outbox[1].subject)
+        self.assertEqual(mail.outbox[1].subject, "[Conformiti] 1 item needs your attention")
 
     def test_weekly_goes_on_mondays_and_an_empty_tray_sends_nothing(self):
         from datetime import date

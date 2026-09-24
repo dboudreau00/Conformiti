@@ -93,7 +93,10 @@ export default function Dashboard({ me }) {
   const risks = summary?.risks;
 
   const fwList = frameworks?.length ? frameworks : summary?.frameworks || [];
-  const fwNames = fwList.map((f) => f.name);
+  // Display names only. A number is bound to the word before it with a
+  // non-breaking space, so a narrow card never ends a line on "SOC" and starts
+  // the next with "2" (or splits "ISO/IEC 27001" the same way).
+  const fwNames = fwList.map((f) => (f.name || "").replace(/ (?=\d)/g, "\u00a0"));
   const fwKnown = frameworks !== null || Array.isArray(summary?.frameworks);
 
   const statusSegments = useMemo(() => {

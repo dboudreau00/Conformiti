@@ -10,7 +10,7 @@ walkthrough with exact expected values from the seeded demo data.
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
-Runs, in order: `tools/validate.py` (19 static checks), `manage.py check`,
+Runs, in order: `tools/validate.py` (20 static checks), `manage.py check`,
 `makemigrations --check`, the backend suite (by far the longest step on
 SQLite), and a production frontend build. CI runs the same plus the PostgreSQL job,
 `npm audit`, the Docker boot check, the compose backup-and-restore rehearsal
@@ -27,9 +27,10 @@ cd backend
 ## Manual walkthrough (~30 min)
 
 Needs the demo dataset, which is **not** seeded by default: start with
-`SEED_DEMO_DATA=true`, or `./install.sh --demo`. All demo accounts share the
-password the seeding step printed; set `DEMO_PASSWORD` before seeding to pin
-it. Seeded documents (owner Owen Owner):
+`SEED_DEMO_DATA=true`, or `./install.sh --demo` (Windows:
+`powershell -ExecutionPolicy Bypass -File .\install.ps1 -Demo`). All demo
+accounts share the password the seeding step printed; set `DEMO_PASSWORD`
+before seeding to pin it. Seeded documents (owner Owen Owner):
 
 | Document | Review due |
 |---|---|
@@ -54,9 +55,10 @@ Risk Review 1/2.
   persisted on reload, applied to the login page too.
 
 ### 2 · Dashboard
-**Expect:** readiness percentage matching *Analytics*; Frameworks **3**;
-Documents **7**; Reviews overdue **1**; Risk posture *3 open · 1 overdue*;
-Evidence coverage *15/217*. Calendar: the overdue *Incident Response Plan* is
+**Expect:** *Readiness score* out of 100, and beneath it the share of
+controls marked implemented, matching *Overall readiness* on *Analytics*;
+Frameworks **3**; Documents **7**; Reviews overdue **1**; Risk posture *3 open
+· 1 overdue*; Evidence coverage *15/217*. Calendar: the overdue *Incident Response Plan* is
 red; filter chips narrow by type; clicking a day lists its items. "Reviews
 coming up" lists the seven documents most urgent first with **Mark reviewed**.
 
@@ -157,6 +159,7 @@ panels appear without animation.
 
 ```bash
 ./install.sh --reset               # local path
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Reset   # local path, Windows
 docker compose down -v && docker compose up -d --build   # Docker (destroys data)
 ```
 

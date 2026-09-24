@@ -45,6 +45,12 @@ const CAP_LABELS = {
   auditor: "Auditor (read-only)",
 };
 
+// What the account is called in the profile card and the Role & access panel,
+// the same fallback as the sidebar's. The first administrator comes from
+// manage.py createsuperuser with no role, and "No role" read as an account
+// without permissions when it holds all of them.
+const roleLabel = (me) => me?.role_detail?.name || (me?.is_superuser ? "Superuser" : "No role");
+
 const DOCS_URL = "https://github.com/dboudreau00/Conformiti";
 const isHex = (v) => /^#[0-9a-f]{6}$/i.test(v || "");
 
@@ -103,6 +109,24 @@ const pickProfile = (u) => ({
   job_title: u?.job_title || "",
 });
 
+// Where a superuser finds the Django admin, which is served by the API, not
+// this app. Behind nginx (the Docker stack, a bare-metal install) /admin/ on
+// the site's own address is proxied to it. The local install's Vite dev
+// server proxies only /api and /media (vite.config.js), and this app's
+// catch-all route sends /admin to the dashboard (App.jsx), so there it is on
+// the API's port: runserver on 127.0.0.1:8000 unless CONFORMITI_DEV_API_PORT
+// moves it.
+function AdminWhere() {
+  return (
+    <>
+      the Django admin, under Users. With Docker, or any install behind nginx, that
+      is <span className="font-mono">/admin/</span> on this site's address. On a local install it is on the
+      API's port instead: <span className="font-mono">{"http://127.0.0.1:8000/admin/"}</span> by default, since the
+      dev server does not serve it.
+    </>
+  );
+}
+
 function ProfileSection({ me, onUpdate }) {
   const [form, setForm] = useState(() => pickProfile(me));
   const [saving, setSaving] = useState(false);
@@ -150,13 +174,18 @@ function ProfileSection({ me, onUpdate }) {
           <input id="acct-last" className="input" autoComplete="family-name" value={form.last_name} onChange={set("last_name")} />
         </Field>
         <Field id="acct-email" label="Email" className="sm:col-span-2"
-               hint="Your address is managed by an administrator: single sign-on matches on it.">
+               hint={me.is_superuser
+                 ? <>Single sign-on matches on this address, so it is not edited here. As a superuser, change it in <AdminWhere /></>
+                 : "Your address is managed by an administrator: single sign-on matches on it."}>
           <input id="acct-email" type="email" className="input" value={me.email || ""} disabled />
         </Field>
         <Field id="acct-title" label="Job title" className="sm:col-span-2">
           <input id="acct-title" className="input" autoComplete="organization-title" placeholder="e.g. Security Analyst" value={form.job_title} onChange={set("job_title")} />
         </Field>
-        <Field id="acct-username" label="Username" className="sm:col-span-2" hint="Usernames are managed by an administrator.">
+        <Field id="acct-username" label="Username" className="sm:col-span-2"
+               hint={me.is_superuser
+                 ? <>Not edited here. As a superuser, change it in <AdminWhere /></>
+                 : "Usernames are managed by an administrator."}>
           <input id="acct-username" className="input font-mono" value={me.username || ""} disabled />
         </Field>
         <div className="flex flex-col items-start gap-3 sm:col-span-2">
@@ -988,6 +1017,7 @@ function AccessSection({ me }) {
   }
   const caps = me.capabilities || {};
   const role = me.role_detail;
+  const superuser = !!me.is_superuser;
   return (
     <Panel className="p-5">
       <SectionTitle title="Role & access">Your role determines what you can manage and which folders you can open.</SectionTitle>
@@ -998,14 +1028,19 @@ function AccessSection({ me }) {
           </dt>
           <dd className="mt-1.5">
             <span className="flex flex-wrap items-center gap-1.5">
-              <Badge tone={role ? "accent" : "muted"}>{role?.name || "No role"}</Badge>
-              {me.is_superuser ? (
+              <Badge tone={role || superuser ? "accent" : "muted"}>{roleLabel(me)}</Badge>
+              {superuser && role ? (
                 <Badge tone="warning" mono>
                   superuser
                 </Badge>
               ) : null}
             </span>
             {role?.description ? <p className="mt-2 text-[13px] leading-snug text-muted">{role.description}</p> : null}
+            {superuser ? (
+              <p className="mt-2 text-[13px] leading-snug text-muted">
+                A superuser holds every management capability and sees every folder, with or without a role.
+              </p>
+            ) : null}
           </dd>
         </div>
         <div className="rounded-xl border border-line bg-surface-2 p-4">
@@ -1406,7 +1441,7 @@ export default function Account({ me, onUpdate }) {
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-[13px] font-semibold text-ink">{me?.full_name || me?.username || "…"}</span>
-                <span className="block truncate text-xs text-muted">{me?.role_detail?.name || "No role"}</span>
+                <span className="block truncate text-xs text-muted">{roleLabel(me)}</span>
               </span>
             </div>
             <nav aria-label="Settings sections">

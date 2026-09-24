@@ -11,7 +11,10 @@ Installation lives in [INSTALL.md](INSTALL.md); a guided first hour in
 **Framework → category → control.** SOC 2, ISO/IEC 27001:2022 and PCI DSS
 v4.0.1 ship pre-loaded (217 controls). Each control has a status (*not
 started*, *in progress*, *implemented*, *not applicable*), an owner, and a
-count of linked evidence. Readiness is *implemented ÷ applicable*.
+count of linked evidence. Readiness is *implemented ÷ applicable* (Analytics'
+*Overall readiness*); the Dashboard leads with the *readiness score*, the mean
+of every applicable control's own score out of 100 (implementation, an owner,
+evidence and its freshness, a test, less open risks).
 
 **Folders and documents.** Evidence lives in a folder tree generated from the
 control libraries (framework → category → control) plus any subfolders you
@@ -69,11 +72,13 @@ page by anyone with *manage* on that folder.
 ## 4. Pages
 
 ### Dashboard
-Overall readiness with the trend line and status bar; frameworks, documents
-and overdue-review cards; evidence coverage; risk posture; the compliance
-calendar (filter by Review / Audit / Task / Other, click a day for details,
-arrows for other months); and "Reviews coming up" with **Mark reviewed**
-(managers and owners with edit access).
+Readiness score (out of 100, the mean of the applicable controls' scores)
+with the share of controls marked implemented, the monthly trend line and
+the readiness bands (Ready, Nearly there, At risk, Not ready); frameworks,
+documents and overdue-review cards; evidence coverage; risk posture; the
+compliance calendar (filter by Review / Audit / Task / Other, click a day for
+details, arrows for other months); and "Reviews coming up" with **Mark
+reviewed** (managers and owners with edit access).
 
 ### Analytics
 Framework readiness bars, control and document status donuts, review load for
@@ -196,7 +201,7 @@ account, Amazon SES (see `.env.example`).
 
 ```bash
 manage.py createsuperuser              # first real administrator (the password policy applies)
-manage.py remove_demo_data [--delete]  # retire the demo accounts and sample data (after createsuperuser)
+manage.py remove_demo_data [--delete]  # retire the demo accounts, sample data and demo control statuses (after createsuperuser)
 manage.py send_review_reminders [--dry-run]
 manage.py record_readiness             # today's readiness snapshot (cron)
 manage.py flushexpiredtokens           # prune the JWT blacklist (cron)

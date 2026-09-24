@@ -145,8 +145,12 @@ export function TopBar() {
         ) : null}
       </div>
 
+      {/* Label uppercases its text; the version keeps its own case, since a
+          release is named by a lower-case revision letter (0.9.5k) and
+          "V0.9.5K" matched neither /api/health/ nor the tags. */}
       <Label className="hidden rounded-md border border-line px-2 py-1 lg:inline-block">
-        {health?.demo_accounts ? "Demo data · v" + (health?.version || "") : health?.version ? "v" + health.version : ""}
+        {health?.demo_accounts ? (health?.version ? "Demo data · " : "Demo data") : null}
+        {health?.version ? <span className="normal-case">{"v" + health.version}</span> : null}
       </Label>
 
       <NotificationBell />

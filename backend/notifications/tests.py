@@ -246,7 +246,7 @@ class TestMailboxCommandTests(SimpleTestCase):
         self.assertEqual(msg.to, [self.TO])
         self.assertTrue(msg.subject.startswith("[Test] "), msg.subject)
         self.assertIn("Sample document", msg.body)
-        self.assertIn("due for review in 30 day(s)", msg.body)
+        self.assertIn("due for review in 30 days.", msg.body)
         self.assertIn("Sample document", msg.alternatives[0][0])
         self.assertIn("over SMTP (smtp.example.com:587)", out)
         self.assertIn(f"Test email sent to {self.TO}.", out)
@@ -311,3 +311,45 @@ class TestMailboxCommandTests(SimpleTestCase):
                         side_effect=OSError("Connection refused")):
             with self.assertRaisesMessage(CommandError, "Test send failed: Connection refused"):
                 self._run(to=self.TO)
+
+
+class CountWordingTests(SimpleTestCase):
+    """A count and its noun agree. The plain-text reminder said "due for
+    review in 30 day(s)" while its HTML part said "30 days", and the
+    reminder subjects said "due in 1 day(s)"."""
+
+    def test_the_plain_text_review_reminder_says_day_or_days(self):
+        document = SimpleNamespace(name="Access policy", get_review_cadence_display="Annual",
+                                   next_review_date="1 Oct 2026")
+        for days, words in ((1, "due for review in 1 day."), (30, "due for review in 30 days.")):
+            with self.subTest(days=days):
+                text = render_to_string("emails/review_reminder.txt", {
+                    "owner_name": "Owen", "overdue": False, "days": days, "document": document,
+                    "folder_path": "Policies"})
+                self.assertIn(words, text)
+                self.assertNotIn("(s)", text)
+
+    def test_the_reminder_subjects_say_day_or_days(self):
+        from notifications import tasks
+
+        document = SimpleNamespace(owner=None, name="Access policy", folder_id=None)
+        request = SimpleNamespace(assignee=None, package=None, reference="PBC-1", title="Access review")
+        with mock.patch.object(tasks, "send_templated_email", return_value=True) as send, \
+                mock.patch.object(tasks, "compliance_inbox", return_value="grc@test.local"):
+            tasks._notify(document, 1, overdue=False)
+            tasks._notify(document, 6, overdue=False)
+            tasks._notify_pbc(request, 1, overdue=False)
+            tasks._notify_pbc(request, 5, overdue=False)
+        self.assertEqual([c.args[0] for c in send.call_args_list], [
+            "[Reminder] Review due in 1 day: Access policy",
+            "[Reminder] Review due in 6 days: Access policy",
+            "[Reminder] Auditor request PBC-1 due in 1 day: Access review",
+            "[Reminder] Auditor request PBC-1 due in 5 days: Access review",
+        ])
+
+    def test_the_count_helper(self):
+        from notifications.wording import count_of
+
+        self.assertEqual(count_of(1, "question"), "1 question")
+        self.assertEqual(count_of(0, "question"), "0 questions")
+        self.assertEqual(count_of(3, "item"), "3 items")

@@ -136,13 +136,30 @@ function Move-EnvOrigins([int]$Old, [int]$New) {
   Write-EnvText $moved
   return $true
 }
-function Test-PortBusy([int]$P) {
-  # True when something already accepts connections on 127.0.0.1:P.
-  $client = New-Object System.Net.Sockets.TcpClient
+function Test-PortBusy([int]$P, [string]$Address = "127.0.0.1") {
+  # True when something already accepts connections on Address:P. The client
+  # is made for the address's family: Windows PowerShell 5.1's default one is
+  # IPv4 only and cannot reach ::1.
+  $ip = [System.Net.IPAddress]::Parse($Address)
+  $client = New-Object System.Net.Sockets.TcpClient($ip.AddressFamily)
   try {
-    $pending = $client.BeginConnect("127.0.0.1", $P, $null, $null)
+    $pending = $client.BeginConnect($ip, $P, $null, $null)
     return ($pending.AsyncWaitHandle.WaitOne(1000) -and $client.Connected)
   } catch { return $false } finally { $client.Close() }
+}
+function Test-PortListened([int]$P) {
+  # True when a program on this machine listens on TCP port P, on any address
+  # and in either IP family. 127.0.0.1 alone is not enough: Vite's default
+  # host is "localhost", which a stock Windows resolves to ::1 first, so the
+  # dev server listens on [::1] and nowhere else. Windows' own table of
+  # listeners covers every address; should it be unreadable, both loopback
+  # addresses are tried instead.
+  try {
+    $all = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
+    return (@($all | Where-Object { $_.Port -eq $P }).Count -gt 0)
+  } catch {
+    return ((Test-PortBusy $P "127.0.0.1") -or (Test-PortBusy $P "::1"))
+  }
 }
 function Test-StackHolds([string]$Service, [int]$ContainerPort, [int]$HostPort) {
   # True when this project's own running SERVICE already publishes HostPort,
@@ -192,6 +209,32 @@ function Get-DevPort([string]$Name, [int]$Default) {
   if (-not $v) { return $Default }
   if ($v -notmatch '^\d{1,5}$' -or [int]$v -lt 1 -or [int]$v -gt 65535) { Fail "$Name must be a port number between 1 and 65535 (got '$v')." }
   return [int]$v
+}
+function Test-FrontendDepsCurrent {
+  # True when frontend\node_modules already holds what package-lock.json pins:
+  # npm's own record of the installed tree (node_modules\.package-lock.json)
+  # lists the same packages at the same version, source and hash, leaving out
+  # only optional ones npm skipped (other platforms' binaries), and each of
+  # them is on disk. Only those fields are compared, because npm 10 leaves the
+  # libc ones out of that record. A run that npm ci stopped part way fails the
+  # test. Run from frontend\. No double quotes in the code, for the reason
+  # Get-OwnAdminState gives. install.sh carries the same test.
+  $js = @'
+const fs = require('fs'), read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
+const pin = (e) => JSON.stringify([e.version, e.resolved, e.integrity, e.link]);
+let ok = false;
+try {
+  const lock = read('package-lock.json').packages, tree = read('node_modules/.package-lock.json').packages;
+  ok = Object.keys(tree).every((k) => k in lock) && Object.keys(lock).every((k) => k === '' ||
+    (k in tree ? pin(tree[k]) === pin(lock[k]) && fs.existsSync(k + '/package.json') : lock[k].optional === true));
+} catch (e) {}
+process.exit(ok ? 0 : 1);
+'@
+  return ((Probe node -e $js) -eq 0)
+}
+function Show-OriginWarning([int]$WebPort) {
+  Warn "CONFORMITI_DEV_PORT is ${WebPort}: add http://localhost:$WebPort to CSRF_TRUSTED_ORIGINS and"
+  Warn "CORS_ALLOWED_ORIGINS in .env, or every sign-in from the web app is refused."
 }
 if ($Port -lt 1 -or $Port -gt 65535) { Fail "-Port must be between 1 and 65535 (got $Port)." }
 # Off unless asked for: an installation carrying the sample organisation says
@@ -248,7 +291,7 @@ if ($Docker) {
   } else {
     Ok ".env already present: using it"
     if (Select-String -Path ".env" -Pattern '^CONFORMITI_DEBUG=(1|true|yes|on)' -Quiet) {
-      Warn "your .env sets CONFORMITI_DEBUG=true - the Docker stack will run in DEBUG mode."
+      Warn "your .env sets CONFORMITI_DEBUG=true, so the Docker stack will run in DEBUG mode."
     } elseif (Select-String -Path ".env" -Pattern '^DJANGO_DEBUG=(1|true|yes|on)' -Quiet) {
       Warn "your .env has DJANGO_DEBUG=true (from the local dev path). It does NOT affect"
       Warn "the Docker stack, which stays in production mode. Use CONFORMITI_DEBUG to change that."
@@ -307,9 +350,19 @@ if ($Docker) {
   # Set for this one call, so a CONFORMITI_PORT already in the environment
   # (which beats .env) cannot publish the app on a port other than the one
   # waited on below. Put back after it, since this can be the user's session.
+  # No provenance attestation either: under the containerd image store (the
+  # default for Docker Desktop and new Docker Engine installs) it gives every
+  # build a new image id, even when each step came from the cache, and a new
+  # id makes Compose recreate the container. A re-run of an unchanged checkout
+  # then restarted the stack and took the demo password out of the log.
   $shellPort = $env:CONFORMITI_PORT
+  $shellAttest = $env:BUILDX_NO_DEFAULT_ATTESTATIONS
   $env:CONFORMITI_PORT = "$Port"
-  try { Run docker compose up -d --build } finally { $env:CONFORMITI_PORT = $shellPort }
+  $env:BUILDX_NO_DEFAULT_ATTESTATIONS = "1"
+  try { Run docker compose up -d --build } finally {
+    $env:CONFORMITI_PORT = $shellPort
+    $env:BUILDX_NO_DEFAULT_ATTESTATIONS = $shellAttest
+  }
   Say "Waiting for the API to report healthy..."
   $health = Wait-Healthy "http://localhost:$Port/api/health/"
   if (-not $health) { & docker compose ps; Fail "The stack did not become healthy in time. Inspect with: docker compose logs backend" }
@@ -330,7 +383,7 @@ if ($Docker) {
     if ($demoPw) {
       Write-Host "  Password $demoPw   (note it now)"
       Write-Host "  The backend log keeps it only until that container is recreated, which -Port," -ForegroundColor DarkGray
-      Write-Host "  an update or any .env change does." -ForegroundColor DarkGray
+      Write-Host "  an upgrade or any .env change does." -ForegroundColor DarkGray
     } else {
       Write-Host "  Password: not in the current backend log. It is printed once, by the container that" -ForegroundColor DarkGray
       Write-Host "  created the demo accounts. Set a new one for admin with:" -ForegroundColor DarkGray
@@ -350,8 +403,12 @@ if ($Docker) {
       Write-Host "  No account yet? docker compose exec backend python manage.py createsuperuser"
     }
   }
+  # A re-run rebuilds the checkout on disk, nothing more. An upgrade is a
+  # backup and a checkout of the new release first (README, "Upgrading").
   Write-Host "  Logs: docker compose logs -f    Stop: docker compose down" -ForegroundColor DarkGray
-  Write-Host "  Update: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker" -ForegroundColor DarkGray
+  Write-Host "  Rebuild: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker" -ForegroundColor DarkGray
+  Write-Host "  Upgrade: back up with scripts/backup.sh, check out the new release tag, then rebuild" -ForegroundColor DarkGray
+  Write-Host "           (README, `"Upgrading`", has the commands)" -ForegroundColor DarkGray
   if ($Open) { Start-Process "http://localhost:$Port" }
   exit 0
 }
@@ -387,22 +444,38 @@ if (-not $Test) {
 }
 
 # --- .env with a generated secret key ---------------------------------------
+$envCreated = $false
 if (-not (Test-Path ".env")) {
   Copy-Item ".env.example" ".env"
   $secret = & $py -c "import secrets; print(secrets.token_urlsafe(50))"
   (Get-Content ".env") -replace '^DJANGO_SECRET_KEY=.*$', "DJANGO_SECRET_KEY=$secret" | Set-Content ".env"
+  $envCreated = $true
   Ok ".env created (SQLite + console email; secret key generated)"
 } else {
   Ok ".env already present: leaving it untouched"
 }
 # Sign-in is refused from any origin CSRF_TRUSTED_ORIGINS does not list, and
-# .env.example lists http://localhost:5173 only, so a moved web app says so.
+# .env.example lists http://localhost:5173 only. A .env this run created is
+# this script's own file, so a moved web app's origin goes into it here, the
+# way -Docker -Port moves its origins. An existing .env is the user's: it is
+# only warned about, here and again in the closing lines.
+$originMissing = $false
 if (-not $Test -and $devPort -ne 5173) {
+  $origin = "http://localhost:$devPort"
+  if ($envCreated) {
+    foreach ($key in @("CSRF_TRUSTED_ORIGINS", "CORS_ALLOWED_ORIGINS")) {
+      $current = Get-EnvValue $key
+      if (-not $current) { $current = "http://localhost:5173" }
+      $list = @($current -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+      if ($list -notcontains $origin) { Set-EnvValue $key (($list + $origin) -join ",") }
+    }
+    Ok "added $origin (CONFORMITI_DEV_PORT) to CSRF_TRUSTED_ORIGINS and CORS_ALLOWED_ORIGINS in the new .env"
+  }
   $origins = if ($env:CSRF_TRUSTED_ORIGINS) { $env:CSRF_TRUSTED_ORIGINS } else { Get-EnvValue "CSRF_TRUSTED_ORIGINS" }
   if (-not $origins) { $origins = "http://localhost:5173" }
-  if (@($origins -split "," | ForEach-Object { $_.Trim() }) -notcontains "http://localhost:$devPort") {
-    Warn "CONFORMITI_DEV_PORT is ${devPort}: add http://localhost:$devPort to CSRF_TRUSTED_ORIGINS and"
-    Warn "CORS_ALLOWED_ORIGINS in .env, or every sign-in from the web app is refused."
+  if (@($origins -split "," | ForEach-Object { $_.Trim() }) -notcontains $origin) {
+    $originMissing = $true
+    Show-OriginWarning $devPort
   }
 }
 
@@ -438,19 +511,47 @@ if ($Reset) {
 }
 
 # --- Frontend deps -------------------------------------------------------------
-Say "Installing frontend dependencies (this can take a minute)..."
 # "npm ci" installs exactly what the lock file pins and never rewrites it;
 # "npm install" from npm 10 drops the lock's libc fields and leaves the
 # checkout dirty. npm install stays for a tree without a lock file.
+#
+# npm ci empties node_modules first, and Windows refuses to delete a file a
+# running program has loaded. With the web app's dev server still up (Vite
+# holds its native bundler binding), -Test stopped at "exited with code
+# -4048" and left node_modules half deleted, so the dev server's next start
+# failed too. A node_modules that already matches the lock file is therefore
+# kept, which covers every re-run and -Test of an unchanged checkout, and a
+# reinstall over an existing node_modules is refused while anything listens
+# on the dev port, on any address (Vite is often on [::1] only). With no
+# node_modules there is nothing to hold, so a fresh clone is never refused
+# over another program on that port. --loglevel=error rather than --silent,
+# so npm's own explanation of a failure reaches the screen.
+# -Test ignores CONFORMITI_DEV_PORT for everything else, so it is read
+# leniently here: the probe is the only use it has in that mode.
+$webPort = $devPort
+if ($Test -and $env:CONFORMITI_DEV_PORT -match '^\d{1,5}$' -and [int]$env:CONFORMITI_DEV_PORT -ge 1 -and [int]$env:CONFORMITI_DEV_PORT -le 65535) {
+  $webPort = [int]$env:CONFORMITI_DEV_PORT
+}
 Push-Location frontend
 try {
-  if (Test-Path "package-lock.json") {
-    Run npm ci --no-fund --no-audit --silent
+  if ((Test-Path "package-lock.json") -and (Test-FrontendDepsCurrent)) {
+    Ok "frontend dependencies already match package-lock.json: kept as they are"
   } else {
-    Run npm install --no-fund --no-audit --silent
+    if ((Test-Path "node_modules") -and (Test-PortListened $webPort)) {
+      Fail ("the frontend dependencies need reinstalling, but something is serving the web app's dev port, " +
+            "$webPort (usually the dev server window an earlier run opened). Windows does not let npm replace " +
+            "files a running dev server has loaded, and npm would stop part way with node_modules half deleted. " +
+            "Close the two server windows, or stop whatever holds port $webPort, then run this again.")
+    }
+    Say "Installing frontend dependencies (this can take a minute)..."
+    if (Test-Path "package-lock.json") {
+      Run npm ci --no-fund --no-audit --loglevel=error
+    } else {
+      Run npm install --no-fund --no-audit --loglevel=error
+    }
+    Ok "frontend dependencies installed"
   }
 } finally { Pop-Location }
-Ok "frontend dependencies installed"
 
 # --- Test mode -----------------------------------------------------------------
 if ($Test) {
@@ -534,20 +635,24 @@ Write-Host "  Mailer:   cd backend; ..\.venv\Scripts\python.exe manage.py send_r
 Write-Host ""
 
 if ($SetupOnly) {
-  # A moved port has to reach Vite too, so the command carries it.
+  # A moved port has to reach Vite too, so the command carries it. npm.cmd,
+  # not npm: in a PowerShell window "npm" is the npm.ps1 shim, which the
+  # default Restricted execution policy refuses to run.
   $devEnv = ""
   if ($devApiPort -ne 8000) { $devEnv += "`$env:CONFORMITI_DEV_API_PORT=$devApiPort; " }
   if ($devPort -ne 5173) { $devEnv += "`$env:CONFORMITI_DEV_PORT=$devPort; " }
   Write-Host "To start later:"
   Write-Host "  (backend)   cd backend; ..\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:$devApiPort"
-  Write-Host "  (frontend)  cd frontend; ${devEnv}npm run dev"
+  Write-Host "  (frontend)  cd frontend; ${devEnv}npm.cmd run dev"
   Write-Host "Then open http://localhost:$devPort"
+  if ($originMissing) { Show-OriginWarning $devPort }
   Write-Host "Ports: CONFORMITI_DEV_API_PORT=$devApiPort (API), CONFORMITI_DEV_PORT=$devPort (web app); set them in the shell to move either." -ForegroundColor DarkGray
   exit 0
 }
 
 Say "Starting servers: API on :$devApiPort (CONFORMITI_DEV_API_PORT), web app on :$devPort (CONFORMITI_DEV_PORT)."
 Say "Open http://localhost:$devPort in your browser. Close the two windows to stop."
+if ($originMissing) { Show-OriginWarning $devPort }
 $backendDir = Join-Path $PSScriptRoot "backend"
 $frontendDir = Join-Path $PSScriptRoot "frontend"
 Start-Process -FilePath "cmd.exe" -ArgumentList "/k", "`"$pyexe`" manage.py runserver 127.0.0.1:$devApiPort" -WorkingDirectory $backendDir

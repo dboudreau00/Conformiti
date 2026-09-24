@@ -28,6 +28,31 @@ const SSO_ERRORS = {
 
 const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0, backup_codes: false };
 
+// createsuperuser as each install path runs it, the forms INSTALL.md gives. A
+// bare "manage.py createsuperuser" is not runnable as typed on a local
+// install: it needs the backend directory and the checkout's own virtualenv.
+const CREATE_ADMIN = [
+  ["Local install (Linux, macOS)", "cd backend && ../.venv/bin/python manage.py createsuperuser"],
+  ["Local install (Windows)", "cd backend; ..\\.venv\\Scripts\\python.exe manage.py createsuperuser"],
+  ["Docker", "docker compose exec backend python manage.py createsuperuser"],
+];
+
+// The list's accessible name follows the hint it sits under: the first
+// administrator on an empty installation, or an administrator of the
+// operator's own beside the seeded demo accounts (whose admin already is one).
+function CreateAdminCommands({ label }) {
+  return (
+    <ul className="mt-2 space-y-1.5 text-left text-2xs text-faint" aria-label={label}>
+      {CREATE_ADMIN.map(([where, command]) => (
+        <li key={where}>
+          <span className="block">{where}:</span>
+          <code className="block break-words font-mono text-muted">{command}</code>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // Why a sign-in request failed, when the answer was not about the credentials
 // at all; null when it was (a JSON 400, or a 401) or is the throttle (429),
 // so the caller's own wording applies. A CSRF or origin refusal is the
@@ -373,35 +398,40 @@ export default function Login({ onDone }) {
                 {ssoTicket ? "← Start over" : "← Back to password"}
               </button>
             ) : health?.demo_accounts ? (
-              <p className="mt-4 text-center text-xs text-muted">
-                This installation still has its seeded demo accounts.
-                <span className="block text-2xs text-faint">
-                  Their shared password was printed once when the demo data was seeded (in the
-                  backend log with Docker), on the line that starts <span className="font-mono">Sign in as</span>. Before real use,
-                  create an administrator of your own with <span className="font-mono">manage.py createsuperuser</span>, then
-                  retire them with <span className="font-mono">manage.py remove_demo_data</span>, which refuses until that
-                  account exists.
-                </span>
-              </p>
+              <div className="mt-4 text-xs text-muted">
+                <p className="text-center">
+                  This installation still has its seeded demo accounts.
+                  <span className="block text-2xs text-faint">
+                    Their shared password was printed once when the demo data was seeded (in the
+                    backend log with Docker), on the line that starts <span className="font-mono">Sign in as</span>. Before real use,
+                    create an administrator of your own, then retire the demo with <span className="font-mono">manage.py remove_demo_data</span>,
+                    run the same way. It refuses until that account exists.
+                  </span>
+                </p>
+                <CreateAdminCommands label="Create an administrator of your own" />
+              </div>
             ) : health?.first_admin_needed === true ? (
               // Only while no active account exists at all, so a deployment
               // anyone signs in to never shows it.
-              <p className="mt-4 text-center text-xs text-muted">
-                This installation has no accounts yet.
-                <span className="block text-2xs text-faint">
-                  Create the first administrator on the server with
-                  <span className="font-mono"> manage.py createsuperuser</span> (with Docker:
-                  <span className="font-mono"> docker compose exec backend python manage.py createsuperuser</span>),
-                  then sign in here.
-                </span>
-              </p>
+              <div className="mt-4 text-xs text-muted">
+                <p className="text-center">
+                  This installation has no accounts yet.
+                  <span className="block text-2xs text-faint">Create the first administrator on the server, then sign in here.</span>
+                </p>
+                <CreateAdminCommands label="Create the first administrator" />
+              </div>
             ) : null}
             {!mfaStep && health?.first_admin_needed !== true ? (
               <p className="mt-4 text-center text-xs text-muted">Forgotten your password? An administrator can set a new one for you from the Users page.</p>
             ) : null}
           </form>
         </Panel>
-        <p className="mt-4 text-center font-mono text-2xs uppercase tracking-label text-faint">{health?.version ? `Conformiti v${health.version}` : ""}</p>
+        {/* The version keeps its case: releases are named by a lower-case
+            revision letter (0.9.5k), as /api/health/, the tags and the
+            changelog spell them. */}
+        <p className="mt-4 text-center font-mono text-2xs uppercase tracking-label text-faint">
+          {health?.version ? <>Conformiti <span className="normal-case">v{health.version}</span></> : ""}
+        </p>
       </motion.div>
     </div>
   );

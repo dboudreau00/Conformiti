@@ -737,6 +737,19 @@ def check_version_lock():
     sources["frontend/package-lock.json packages[\"\"]"] = (
         (lock.get("packages") or {}).get("", {}).get("version"))
 
+    # The browser-test harness in e2e/ is versioned with the release too: it
+    # said 0.9.4 and its lock file 0.3.0 at 0.9.5k, three versions for one
+    # release. Same two lock fields; `npm install --package-lock-only` in e2e/
+    # rewrites both.
+    e2e_path = os.path.join(ROOT, "e2e", "package.json")
+    e2e = json.load(open(e2e_path, encoding="utf-8")) if os.path.exists(e2e_path) else {}
+    sources["e2e/package.json"] = e2e.get("version")
+    e2e_lock_path = os.path.join(ROOT, "e2e", "package-lock.json")
+    e2e_lock = json.load(open(e2e_lock_path, encoding="utf-8")) if os.path.exists(e2e_lock_path) else {}
+    sources["e2e/package-lock.json"] = e2e_lock.get("version")
+    sources["e2e/package-lock.json packages[\"\"]"] = (
+        (e2e_lock.get("packages") or {}).get("", {}).get("version"))
+
     readme = read(os.path.join(ROOT, "README.md"))
     m = re.search(r"badge/release-v([0-9][^-\s]*)-", readme)
     sources["README.md badge"] = m.group(1) if m else None
@@ -746,12 +759,91 @@ def check_version_lock():
     sources["CHANGELOG.md first entry"] = m.group(1) if m else None
 
     distinct = {v for v in sources.values()}
-    if None in distinct or len(distinct) != 1:
+    agree = None not in distinct and len(distinct) == 1
+    if not agree:
         for where, value in sources.items():
             err("version", f"{where}: {value or 'not found'}")
         err("version", f"the release version must be identical in all {len(sources)} places")
     print(f" 19. version lock: {sources['backend/config/version.py']} in "
-          f"{len(sources)} places, all agree")
+          f"{len(sources)} places, {'all agree' if agree else 'they disagree'}")
+
+
+# ===========================================================================
+# 20. No em or en dashes in text bodies: the Markdown docs and the templates
+# ===========================================================================
+DASHES = {"\u2013": "en dash (U+2013)", "\u2014": "em dash (U+2014)"}
+# Directories a walk never enters: they are not part of the repository, and
+# node_modules alone holds thousands of Markdown files of other projects.
+WALK_SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist",
+             "backups", ".claude", ".pytest_cache", "htmlcov", ".report", ".results"}
+WALK_SKIP_PATHS = {"backend/media", "backend/staticfiles", "backend/secrets"}
+
+
+def _dash_rule_covers(rel):
+    """True for a repository path (forward slashes) the dash rule covers:
+    text bodies only, which is every Markdown file and every file under a
+    backend templates directory (the emails). Code, scripts and configuration
+    are not covered, their comments included: the owner's rule is that a
+    dash there is fine."""
+    return (rel.endswith(".md")
+            or re.fullmatch(r"backend/(?:.+/)?templates/.+", rel) is not None)
+
+
+def _repository_files():
+    """Every file in the repository, as paths relative to ROOT. `git ls-files`
+    in a checkout, so an untracked local note is never read; a walk that
+    skips what is never committed (installed packages, build output) in a
+    release archive, which holds nothing untracked to begin with."""
+    import subprocess
+    try:
+        run = subprocess.run(["git", "-C", ROOT, "ls-files", "-z"],
+                             capture_output=True, timeout=60)
+        if run.returncode == 0 and run.stdout:
+            return [p for p in run.stdout.decode("utf-8").split("\0") if p]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    found = []
+    for here, dirs, files in os.walk(ROOT):
+        rel_here = os.path.relpath(here, ROOT).replace(os.sep, "/")
+        rel_here = "" if rel_here == "." else rel_here + "/"
+        dirs[:] = [d for d in dirs
+                   if d not in WALK_SKIP and rel_here + d not in WALK_SKIP_PATHS]
+        found.extend(rel_here + f for f in files)
+    return found
+
+
+def check_no_dashes():
+    """House style: no em or en dash in a text body, where each is replaced
+    by what it was doing (a full stop, a comma, a colon or parentheses).
+    Earlier passes swept the docs by hand and the dashes came back in the
+    next edit. Checked: every tracked Markdown file and every file under a
+    backend templates directory (the emails). Code, scripts and configuration
+    files are left alone, comments included."""
+    checked = 0
+    for rel in sorted(_repository_files()):
+        if not _dash_rule_covers(rel):
+            continue
+        path = os.path.join(ROOT, *rel.split("/"))
+        if not os.path.isfile(path):
+            continue  # deleted in the working tree, not yet committed
+        checked += 1
+        try:
+            text = read(path)
+        except UnicodeDecodeError:
+            err("dashes", f"{rel} is not UTF-8, so it cannot be checked")
+            continue
+        hits = [(n, line) for n, line in enumerate(text.splitlines(), 1)
+                if any(d in line for d in DASHES)]
+        for n, line in hits[:5]:
+            kinds = " and ".join(name for d, name in DASHES.items() if d in line)
+            # ASCII only, the dash shown as \u2014: a Windows console that is
+            # not UTF-8 cannot print the line as it is.
+            shown = line.strip()[:90].encode("ascii", "backslashreplace").decode("ascii")
+            err("dashes", f"{rel}:{n}: {kinds}: {shown}")
+        if len(hits) > 5:
+            err("dashes", f"{rel}: {len(hits) - 5} more line(s) with a dash")
+    print(f" 20. dashes: {checked} Markdown and template files "
+          f"checked for em and en dashes")
 
 
 def main():
@@ -775,6 +867,7 @@ def main():
     check_malware_scanning()
     check_no_offsite_assets()
     check_version_lock()
+    check_no_dashes()
 
     print()
     for w in warnings:

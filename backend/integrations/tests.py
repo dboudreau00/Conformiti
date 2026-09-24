@@ -32,8 +32,12 @@ class JiraConfigTests(APITestBase):
         v = self.client_for(self.viewer)
         self.assertEqual(v.get("/api/integrations/jira/boards/").data["count"], 1)
         self.assertEqual(v.post("/api/integrations/jira/boards/", {"board_id": 13, "name": "x"}, format="json").status_code, 403)
-        # issues proxy fails cleanly when the integration is off / unconfigured
-        r = v.get(f"/api/integrations/jira/boards/{r.data['id']}/issues/")
+        # issues proxy fails cleanly when the integration is off / unconfigured.
+        # Django logs every 5xx at ERROR; this one is on purpose, so it is
+        # asserted here rather than printed in the middle of the test gate.
+        with self.assertLogs("django.request", "ERROR") as logged:
+            r = v.get(f"/api/integrations/jira/boards/{r.data['id']}/issues/")
+        self.assertIn("Bad Gateway", logged.output[0])
         self.assertEqual(r.status_code, 502)
         self.assertIn("detail", r.data)
 

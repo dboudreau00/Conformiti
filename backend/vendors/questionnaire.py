@@ -20,6 +20,7 @@ from django.utils import timezone
 from accounts import tenancy
 from audit.middleware import _client_ip
 from audit.models import AuditLog
+from notifications.wording import count_of
 
 from .models import DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, Vendor, VendorAssessment
 
@@ -175,7 +176,7 @@ def create_invite(vendor, request, email, days=None, message=""):
     invite.email_sent = _send_invite(invite, link)
     invite.save(update_fields=["email_sent"])
     _audit(request, invite, "create",
-           f"questionnaire sent to {email} for {vendor.name}, {days} day(s)"
+           f"questionnaire sent to {email} for {vendor.name}, {count_of(days, 'day')}"
            f"{'' if invite.email_sent else ' (email not sent)'}")
     return invite, link
 

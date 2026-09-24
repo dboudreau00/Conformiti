@@ -14,6 +14,7 @@ person sees is therefore a function of two "assigned parameters":
 Each item has a stable ``key`` so read/dismissed state (NotificationReceipt)
 survives recomputation. Severity drives ordering and the unread badge.
 """
+from .wording import count_of
 
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 MAX_ITEMS = 40
@@ -164,7 +165,7 @@ def build(user):
         items.append(_n(
             f"vendor-questionnaire:{inv.assessment_id}", "vendor", "medium",
             f"Questionnaire returned by {inv.vendor.name}",
-            f"{inv.respondent_name or inv.sent_to} answered {answered} question(s) on "
+            f"{inv.respondent_name or inv.sent_to} answered {count_of(answered, 'question')} on "
             f"{inv.submitted_at.date().isoformat()}. Review the answers and record the outcome.",
             f"/vendors?vendor={inv.vendor_id}&tab=questionnaire", inv.submitted_at.date(),
         ))

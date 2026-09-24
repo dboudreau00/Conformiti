@@ -163,6 +163,72 @@ jobs:
             exit 1
           }
           .venv\Scripts\python.exe -m pip --version
+      # A new .env and the web app moved: the installer writes the moved
+      # origin into the .env it created, and the start command it prints has
+      # to run in a stock Windows PowerShell, whose Restricted policy refuses
+      # the npm.ps1 shim a bare "npm" finds (npm.cmd is the fix). With that
+      # dev server up, a reinstall of the frontend packages is refused:
+      # Windows keeps the files the server has loaded, and npm ci used to stop
+      # part way and leave node_modules half deleted.
+      - name: Moved web port, the printed start command, no reinstall under the dev server
+        env:
+          CONFORMITI_DEV_API_PORT: "18000"
+          CONFORMITI_DEV_PORT: "18001"
+        run: |
+          Remove-Item .env
+          ${{ matrix.installer }} -SetupOnly | Tee-Object -Variable out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $plain = @($out) -replace '\x1b\[[0-9;]*m', ''
+          foreach ($key in 'CSRF_TRUSTED_ORIGINS', 'CORS_ALLOWED_ORIGINS') {
+            if (-not (Select-String -Path .env -Pattern "^$key=(.*,)?http://localhost:18001(,|$)" -Quiet)) {
+              Write-Output "the .env install.ps1 created does not list http://localhost:18001 in $key"
+              exit 1
+            }
+          }
+          if (-not ($plain -match 'frontend dependencies already match package-lock\.json')) {
+            Write-Output "install.ps1 reinstalled frontend packages that already matched the lock file"
+            exit 1
+          }
+          $line = @($plain | Where-Object { $_ -match '^\s*\(frontend\)\s' }) -replace '^\s*\(frontend\)\s+', ''
+          if ($line.Count -ne 1 -or $line[0] -notmatch '\bnpm\.cmd run dev$') {
+            Write-Output "unexpected frontend start line: $line"
+            exit 1
+          }
+          $web = Start-Process powershell -PassThru -NoNewWindow -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Restricted', '-Command', $line[0]
+          try {
+            $up = $false
+            for ($i = 0; $i -lt 60 -and -not $up -and -not $web.HasExited; $i++) {
+              Start-Sleep -Seconds 1
+              try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://localhost:18001/ | Out-Null; $up = $true } catch { }
+            }
+            if (-not $up) { Write-Output "the printed start command did not serve the web app under the Restricted policy"; exit 1 }
+            Rename-Item frontend\node_modules\.package-lock.json .package-lock.json.ci
+            try {
+              ${{ matrix.installer }} -SetupOnly | Tee-Object -Variable out
+              $code = $LASTEXITCODE
+            } finally { Rename-Item frontend\node_modules\.package-lock.json.ci .package-lock.json }
+            if ($code -eq 0 -or -not ((@($out) -join "`n") -match 'need reinstalling, but something is serving')) {
+              Write-Output "install.ps1 did not refuse to reinstall under the running dev server (exit $code)"
+              exit 1
+            }
+            if (-not (Test-Path frontend\node_modules\react\package.json)) { Write-Output "node_modules was damaged"; exit 1 }
+          } finally { taskkill /T /F /PID $web.Id | Out-Null }
+          exit 0
+      # Vite on a stock Windows listens on [::1] only, which a probe of
+      # 127.0.0.1 misses; and a checkout with no node_modules has nothing a
+      # server could hold open, so another program on the port is no reason
+      # to refuse.
+      - name: The reinstall guard sees a server on [::1] and leaves a checkout without node_modules alone
+        run: |
+          $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Loopback, 5173); $l.Start()
+          try {
+            Rename-Item frontend\node_modules\.package-lock.json .package-lock.json.ci
+            try { ${{ matrix.installer }} -SetupOnly | Tee-Object -Variable out; $code = $LASTEXITCODE } finally { if (Test-Path frontend\node_modules\.package-lock.json.ci) { Rename-Item frontend\node_modules\.package-lock.json.ci .package-lock.json } }
+            if ($code -eq 0 -or -not ((@($out) -join "`n") -match 'need reinstalling, but something is serving')) { Write-Output "not refused with a listener on [::1]:5173 only (exit $code)"; exit 1 }
+            Rename-Item frontend\node_modules node_modules.ci
+            try { ${{ matrix.installer }} -SetupOnly | Tee-Object -Variable out; $code = $LASTEXITCODE } finally { if (Test-Path frontend\node_modules\react\package.json) { Remove-Item -Recurse -Force frontend\node_modules.ci } else { if (Test-Path frontend\node_modules) { Remove-Item -Recurse -Force frontend\node_modules }; Rename-Item frontend\node_modules.ci node_modules } }
+            if ($code -ne 0) { Write-Output "a checkout without node_modules was refused over another program on 5173 (exit $code)"; exit 1 }
+          } finally { $l.Stop() }
 
   installer-linux:
     name: Installer on Linux
@@ -287,6 +353,24 @@ jobs:
           grep -q 'the existing \.venv has no working pip' /tmp/venv.log \
             || { echo "install.sh did not say it rebuilt the half-created .venv"; exit 1; }
           .venv/bin/python -m pip --version
+      # A new .env and the web app moved: the installer writes the moved
+      # origin into the .env it created instead of only warning about it at
+      # the top of ninety lines of output. The frontend packages installed by
+      # the steps above match the lock file, so they are kept.
+      - name: A new .env lists the moved web port's origin, and matching packages are kept
+        env:
+          CONFORMITI_DEV_API_PORT: "18000"
+          CONFORMITI_DEV_PORT: "18001"
+        run: |
+          set -euo pipefail
+          rm .env
+          ./install.sh --setup-only | tee /tmp/origin.log
+          for key in CSRF_TRUSTED_ORIGINS CORS_ALLOWED_ORIGINS; do
+            grep -Eq "^${key}=(.*,)?http://localhost:18001(,|\$)" .env \
+              || { echo "the .env install.sh created does not list http://localhost:18001 in ${key}"; exit 1; }
+          done
+          grep -q 'frontend dependencies already match package-lock.json' /tmp/origin.log \
+            || { echo "install.sh reinstalled frontend packages that already matched the lock file"; exit 1; }
 
   docker:
     name: Docker images build
@@ -500,8 +584,20 @@ jobs:
           grep -q package_signing_key <<< "$(tar tzf /tmp/backup/secrets.tgz)"
       - name: Destroy the installation and restore it
         run: |
+          set -euo pipefail
           docker compose down -v
-          scripts/restore.sh /tmp/backup
+          # Standard output is the restore's own progress lines and nothing
+          # else. Compose reports on stderr; psql's result tables, one for
+          # every sequence in the dump, used to land here (0.9.5k). A
+          # here-string, not a pipe, for the reason the docker job gives.
+          scripts/restore.sh /tmp/backup > /tmp/restore.out
+          cat /tmp/restore.out
+          extra=$(grep -v '^restore: ' /tmp/restore.out || true)
+          if [ -n "$extra" ]; then
+            echo "restore.sh printed more than its own lines:"
+            head -n 20 <<< "$extra"
+            exit 1
+          fi
           for i in $(seq 1 120); do
             if curl -fsS http://localhost:8080/api/health/ > /dev/null 2>&1; then break; fi
             sleep 3

@@ -1,4 +1,6 @@
 """Control library, evidence mapping RBAC and seed idempotence."""
+from io import StringIO
+
 from django.core.management import call_command
 
 from compliance.models import Control, ControlEvidence, Framework
@@ -107,14 +109,14 @@ class EvidenceMappingTests(APITestBase):
 
 class SeedTests(APITestBase):
     def test_seed_frameworks_is_idempotent_and_matches_the_documented_counts(self):
-        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         counts = {
             fw.key: Control.objects.filter(category__framework=fw).count()
             for fw in Framework.objects.exclude(key="tfw")
         }
         self.assertEqual(counts, {"soc2": 61, "iso27001": 93, "pci_dss_v4": 63})
         folders_before = Folder.objects.count()
-        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         self.assertEqual(Folder.objects.count(), folders_before)
         self.assertEqual(sum(counts.values()), 217)
         # every control has exactly one folder, every folder root is flagged

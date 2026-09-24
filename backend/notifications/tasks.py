@@ -13,6 +13,7 @@ from accounts import tenancy
 from documents.models import Document
 from documents.serializers import person_name
 from .email_service import send_templated_email
+from .wording import count_of
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def _notify(document, days, overdue, window=None):
     if overdue:
         subject = f"[Overdue] Review overdue: {document.name}"
     else:
-        subject = f"[Reminder] Review due in {days} day(s): {document.name}"
+        subject = f"[Reminder] Review due in {count_of(days, 'day')}: {document.name}"
 
     context = {
         "document": document,
@@ -170,7 +171,7 @@ def _notify_pbc(req, days, overdue, window=None):
     if overdue:
         subject = f"[Overdue] Auditor request {req.reference} overdue: {req.title}"
     else:
-        subject = f"[Reminder] Auditor request {req.reference} due in {days} day(s): {req.title}"
+        subject = f"[Reminder] Auditor request {req.reference} due in {count_of(days, 'day')}: {req.title}"
     context = {
         "request": req, "package": req.package, "days": days, "overdue": overdue, "window": window,
         "assignee_name": person_name(req.assignee) or "team",
@@ -322,7 +323,8 @@ def run_digests(dry_run=False, today=None):
             "user": user, "items": items, "groups": groups, "count": len(items),
             "base": base, "cadence": user.get_digest_display().lower(), "today": today,
         }
-        subject = f"[Conformiti] {len(items)} item{'s' if len(items) != 1 else ''} need your attention"
+        needs = "needs" if len(items) == 1 else "need"
+        subject = f"[Conformiti] {count_of(len(items), 'item')} {needs} your attention"
         try:
             if not dry_run:
                 send_templated_email(subject, "digest", context, [user.email])

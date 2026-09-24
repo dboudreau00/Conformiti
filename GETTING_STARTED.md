@@ -14,9 +14,14 @@ Legend: **⌨ terminal** · **🖱 browser** · **✓ what you should see**
 
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
+git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"   # the newest release
 ./install.sh --docker --demo
-# Windows: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker -Demo
+# Windows: git checkout (git tag --list 'v*' --sort=-v:refname | Select-Object -First 1)
+#          powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker -Demo
 ```
+
+`main` is the development line; installs follow release tags, and the second
+line checks out the newest one.
 
 ✓ The script builds the images, waits for `/api/health/` to say `ok`, and
 prints `App http://localhost:8080` and the demo password. The password is
@@ -40,8 +45,9 @@ deployment you intend to keep, leave it out and create your administrator with
 `DJANGO_SUPERUSER_EMAIL` in `.env` before the first boot. Either way the
 password must pass the password policy: at least `PASSWORD_MIN_LENGTH`
 characters (12 by default), not a common password, not all digits, and not
-too close to the username or email. One that fails creates no account:
-`createsuperuser` says why, and so does the backend log for the `.env` route.
+too close to the username or email. The policy has no bypass:
+`createsuperuser` says why a password fails and asks for another, and on the
+`.env` route no account is created and the backend log says why.
 
 **Windows:** the `powershell -ExecutionPolicy Bypass -File` form runs the
 script where the default policy would refuse it (*running scripts is
@@ -75,9 +81,13 @@ Manager) · `owen` (Control Owner) · `aria` (Auditor) · `val` (Viewer).
 ## Part C: Every function
 
 ### 1 · Dashboard 🖱
-✓ "Overall readiness" with the big percentage, the control status bar and a
-trend line that grows one point per day (a fresh install shows a single point
-and the note *History builds from daily snapshots*). ✓ Frameworks / Documents /
+✓ "Readiness score" out of 100 (the mean score of the applicable controls:
+implementation, an owner, evidence and its freshness, a test, less open
+risks), the share of controls marked implemented beneath it, a trend line
+with one point per month (the demo back-fills five months; an installation
+without it shows the note *History builds from daily snapshots* until a
+second month is recorded) and a bar of readiness bands (Ready, Nearly there,
+At risk, Not ready). ✓ Frameworks / Documents /
 Reviews overdue cards, Evidence coverage, Risk posture. ✓ The compliance
 calendar with Review/Audit/Task/Other filters; click a day to list its items.
 ✓ "Reviews coming up" with **Mark reviewed** (managers/owners only).

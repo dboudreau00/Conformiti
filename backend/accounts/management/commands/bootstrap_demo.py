@@ -18,6 +18,8 @@ organisation back into real data on its next boot. `--force` seeds it anyway,
 makes the demo accounts usable again and records that after the retirement,
 so later boots refresh the demo until remove_demo_data retires it again.
 """
+import hashlib
+import re
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -61,6 +63,49 @@ DEMO_VENDOR_NAMES = ["Amazon Web Services", "Okta", "Stripe", "Brightline Securi
 RETIRED_OBJECT_TYPE = "demo-data"
 RETIRED_ACTION = "delete"
 REVIVED_ACTION = "create"
+
+# The demo's control programme (_control_program): walking the register in
+# PROGRAMME_ORDER, the control at position i gets programme_values(i). The
+# seeder records each application in the audit log as a PROGRAMME_OBJECT_TYPE
+# entry whose object_id names the last control it saw and a fingerprint of
+# the order it walked ("<last pk>-<fingerprint>", PROGRAMME_MARK), so
+# remove_demo_data can put back exactly what it set, and only where nobody
+# has changed it since. A seed that starts the demo on a register already
+# worked on sets nothing, and records a walk of no controls ("0-..."), so
+# that retirement is not taken for one of a demo an older release seeded,
+# which kept no record. The Audit log shows object_id as the record's
+# reference, so the entry's detail stays in plain words for whoever reads it.
+# A type of its own, so it never counts as a retirement or a revival.
+PROGRAMME_ORDER = ("category__framework__key", "category__order", "control_id")
+PROGRAMME_OBJECT_TYPE = "demo-controls"
+PROGRAMME_MARK = re.compile(r"(\d+)-([0-9a-f]{16})")
+_PROGRAMME_OWNERS = {0: "owen", 2: "mia", 4: "aria"}
+_PROGRAMME_IMPLEMENTED = {0, 3, 6, 9, 12, 15, 18}
+_PROGRAMME_IN_PROGRESS = {1, 5, 10, 14, 20}
+_PROGRAMME_NOT_APPLICABLE = {24}
+
+
+def programme_values(i):
+    """(status, owner username) the demo programme gives the control at
+    position ``i`` of PROGRAMME_ORDER. A status of None leaves the control
+    as the programme found it, which is Not started: it only ever runs on an
+    untouched register."""
+    r = i % 25
+    if r in _PROGRAMME_IMPLEMENTED:
+        status = Control.Status.IMPLEMENTED
+    elif r in _PROGRAMME_IN_PROGRESS:
+        status = Control.Status.IN_PROGRESS
+    elif r in _PROGRAMME_NOT_APPLICABLE:
+        status = Control.Status.NOT_APPLICABLE
+    else:
+        status = None
+    owner = _PROGRAMME_OWNERS.get(i % 5) if i % 3 != 1 else None
+    return status, owner
+
+
+def programme_fingerprint(pks):
+    """A short digest of the control ids in the order the programme walked."""
+    return hashlib.sha256(",".join(str(pk) for pk in pks).encode()).hexdigest()[:16]
 
 
 def retirement_recorded():
@@ -220,6 +265,7 @@ class Command(BaseCommand):
                     ))
                     return
                 self._revive = True
+            self._fresh = not self._demo_present()
             self._users()
             self._permissions()
             self._control_program()
@@ -233,6 +279,7 @@ class Command(BaseCommand):
             self._evidence_package()
             self._audit()
             self._history()
+            self._record_programme()
             if self._revive:
                 self._record_revival()
         if self._password_shown:
@@ -287,6 +334,22 @@ class Command(BaseCommand):
     # switched off with no usable password, and seeding around them would
     # bring back the sample records with nobody able to sign in to see them.
     _revive = False
+    # The (object_id, detail) of the audit entry _control_program leaves for
+    # _record_programme.
+    _programme_record = None
+    # No part of the demo was here before this run: it starts the demo.
+    _fresh = False
+
+    @staticmethod
+    def _demo_present():
+        """Whether any of the demo is in the active workspace: its accounts,
+        or the sample documents or vendors it adds."""
+        from vendors.models import Vendor
+
+        return (User.objects.filter(username__in=[u[0] for u in DEMO_USERS],
+                                    email__endswith="@example.com").exists()
+                or Document.objects.filter(name__in=[d[1] for d in SAMPLE_DOCS]).exists()
+                or Vendor.objects.filter(name__in=DEMO_VENDOR_NAMES).exists())
 
     def _users(self):
         for username, first, last, role_name, is_super in DEMO_USERS:
@@ -913,38 +976,78 @@ class Command(BaseCommand):
         if Control.objects.exclude(status=Control.Status.NOT_STARTED).exists() \
                 or Control.objects.filter(owner__isnull=False).exists():
             self.stdout.write("  Control programme: already set, left alone")
+            if self._fresh:
+                # This seed starts the demo on a register someone already
+                # worked on, so the demo sets no status at all. Recorded as a
+                # walk of no controls, which remove_demo_data reads back as
+                # nothing to reset: without it, the retirement took the
+                # statuses for those of a demo an older release seeded, which
+                # kept no record, and warned about a cause that was not true.
+                # A refresh boot finds the demo already here and adds nothing.
+                self._programme_record = (
+                    f"0-{programme_fingerprint([])}",
+                    "Demo control programme not applied: the controls already had statuses "
+                    "or owners, which stay as they are.",
+                )
             return
-        owners = {
-            0: User.objects.filter(username="owen").first(),
-            2: User.objects.filter(username="mia").first(),
-            4: User.objects.filter(username="aria").first(),
-        }
-        implemented, in_progress, na = {0, 3, 6, 9, 12, 15, 18}, {1, 5, 10, 14, 20}, {24}
-        touched = 0
-        for i, control in enumerate(Control.objects.order_by("category__framework__key", "category__order", "control_id")):
-            r = i % 25
-            if r in implemented:
-                control.status = Control.Status.IMPLEMENTED
-            elif r in in_progress:
-                control.status = Control.Status.IN_PROGRESS
-            elif r in na:
-                control.status = Control.Status.NOT_APPLICABLE
-            control.owner = owners.get(i % 5) if (i % 5) in owners and i % 3 != 1 else None
+        owners = {name: User.objects.filter(username=name).first()
+                  for name in ("owen", "mia", "aria")}
+        walked = []
+        for i, control in enumerate(Control.objects.order_by(*PROGRAMME_ORDER)):
+            status, owner = programme_values(i)
+            if status is not None:
+                control.status = status
+            control.owner = owners.get(owner)
             control.save(update_fields=["status", "owner"])
-            touched += 1
-        self.stdout.write(f"  Control programme: statuses/owners set on {touched} controls")
+            walked.append(control.pk)
+        if walked:
+            # Written at the end of the run: _audit seeds its sample history
+            # only into an empty log. (object_id, detail): what
+            # remove_demo_data reads back, and the words a person reads.
+            self._programme_record = (
+                f"{max(walked)}-{programme_fingerprint(walked)}",
+                f"Demo control programme set statuses and owners on {len(walked)} controls; "
+                f"remove_demo_data resets the ones still as it left them.",
+            )
+        self.stdout.write(f"  Control programme: statuses/owners set on {len(walked)} controls")
+
+    def _record_programme(self):
+        """The audit entry remove_demo_data reads back to undo the programme.
+        ip_address stays empty, so its seeded-row match never deletes it."""
+        if not self._programme_record:
+            return
+        from audit.models import AuditLog
+
+        mark, detail = self._programme_record
+        AuditLog.objects.create(user=None, action="update", object_type=PROGRAMME_OBJECT_TYPE,
+                                object_id=mark, detail=detail)
 
     def _history(self):
-        """Back-fill five monthly readiness points so the dashboard trend has a
-        shape on day one, then record today. Demo-only: remove_demo_data drops
-        every snapshot dated before the day it runs."""
+        """Record today's readiness point and, on a first seed, back-fill five
+        monthly points before it so the dashboard trend has a shape on day
+        one.
+
+        The back-fill goes only into a trend with no point before today, and
+        never into a workspace the demo was retired from (this run's --force,
+        or a demo-data entry in its audit log): that trend is the operator's
+        real history, and invented months never go in among it, as _audit's
+        sample rows never go in among real entries. remove_demo_data relies
+        on this. On the run that retires the demo it deletes the points dated
+        before today, only those from the newest --force revival on when
+        there is one (the earlier ones are the operator's), and none where
+        no demo was ever seeded; a later run deletes none. Back-filled months
+        dated before a revival would be out of its reach, and would stay in a
+        real installation's trend."""
         from dateutil.relativedelta import relativedelta
 
         from analytics.models import ReadinessSnapshot
         from analytics.snapshots import record_today
+        from audit.models import AuditLog
 
         today = timezone.localdate()
-        if ReadinessSnapshot.objects.filter(date__lt=today).exists():
+        retired_before = self._revive or AuditLog.objects.filter(
+            object_type=RETIRED_OBJECT_TYPE).exists()
+        if retired_before or ReadinessSnapshot.objects.filter(date__lt=today).exists():
             record_today(force=True)
             return
         now = record_today(force=True)

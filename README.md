@@ -79,22 +79,31 @@ and free host ports 8080 and 8000, or others named in `CONFORMITI_PORT` and
 
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
+git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"   # the newest release
 docker compose up -d --build
 ```
+
+`main` is the development line and can carry changes no release has yet, so
+installs and upgrades follow release tags. The second line checks out the
+newest one and leaves the checkout on a detached HEAD, which is intended
+([Upgrading](#upgrading)). In PowerShell it reads
+`git checkout (git tag --list 'v*' --sort=-v:refname | Select-Object -First 1)`.
 
 The first build downloads the Python and Node dependencies and takes several
 minutes. `up -d` then waits for the API to report healthy before it starts
 nginx, so a pause at that point is normal. The prebuilt images below skip the
 build.
 
-Open **http://localhost:8080** and create the first account. Its password
-must pass the password policy: at least `PASSWORD_MIN_LENGTH` characters (12
-by default), not a common password, not all digits, and not too close to the
-username or email.
+Then create the first account. The sign-in page cannot make one, so it is
+made here. Its password must pass the password policy: at least
+`PASSWORD_MIN_LENGTH` characters (12 by default), not a common password, not
+all digits, and not too close to the username or email.
 
 ```bash
 docker compose exec backend python manage.py createsuperuser
 ```
+
+Open **http://localhost:8080** and sign in with it.
 
 That is the whole install. PostgreSQL, Redis, the API, the reminder worker, its
 scheduler and nginx come up with production-safe defaults: `DEBUG` off, a
@@ -544,7 +553,7 @@ access still sees and answers the lines assigned to them.**
 |---|---|---|
 | 1 | `docker compose up -d --build` | The stack comes up with production-safe defaults |
 | 2 | `manage.py createsuperuser` | Your first real administrator, with a password that passes the policy (`PASSWORD_MIN_LENGTH`, 12 by default). No demo dataset is seeded unless you asked for one |
-| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate) | Only if you did ask: those accounts share one password and have no second factor. It refuses to run until the administrator from step 2 exists, and the retirement holds across restarts even with `SEED_DEMO_DATA=true` still set |
+| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate, `--dry-run` to see what it would change) | Only if you did ask: those accounts share one password and have no second factor. It refuses to run until the administrator from step 2 exists, and the retirement holds across restarts even with `SEED_DEMO_DATA=true` still set. It also takes back the demo's control programme: controls a demo account owns are left with no owner, the statuses the demo set go back to *Not started* unless someone changed them since, and the demo's readiness history goes |
 | 4 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. `DJANGO_ALLOWED_HOSTS` is your public host name(s); the Docker stack adds its own internal names itself. Sending a vendor questionnaire is refused until `PUBLIC_URL` is set, because the link carries a bearer token |
 | 5 | Put TLS in front and set `BEHIND_TLS=true` | Secure cookies, HTTPS redirect, `__Host-` prefixes. The prefix only works over https |
 | 6 | Configure `EMAIL_PROVIDER`, then send yourself a test: `manage.py test_mailbox --to you@example.com` | Reminders are half the product. It sends a sample review reminder through whichever provider is configured, with the template and transport real reminders use, and with `mailbox` checks the account's sign-in first |
@@ -561,7 +570,7 @@ access still sees and answers the lines assigned to them.**
 | Path | Needs |
 |---|---|
 | **Docker** (recommended) | git, and Docker Engine 24+ with Docker Compose 2.24.0 or newer (older Compose rejects the compose file's optional `.env` entry); curl too for `install.sh --docker`. 2 vCPU / 4 GB RAM / 20 GB disk is comfortable. Host port 8080 free, and 8000 on 127.0.0.1 |
-| **Local** (trial, development) | git, Python 3.11 to 3.14 with `venv` and `pip` (Debian/Ubuntu: `sudo apt install python3-venv python3-pip`), Node 20.19+ or 22.12+. SQLite, console email, nothing to run. Local ports 8000 and 5173 free, or others named in `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT` |
+| **Local** (trial, development) | git, Python 3.11 to 3.14 with `venv` and `pip` (Debian/Ubuntu: `sudo apt install python3-venv python3-pip`), Node 20.19+ or 22.12+ (the `nodejs` package of Debian 12 and Ubuntu 22.04 or 24.04 is older: install 22 LTS from NodeSource or nvm). SQLite, console email, nothing to run. Local ports 8000 and 5173 free, or others named in `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT` |
 | **Production** | PostgreSQL 16, Redis 7, a TLS-terminating proxy, an SMTP/SES sender, a backup target |
 | **Optional** | Amazon S3, ClamAV, an OIDC or SAML IdP, a Slack/Teams webhook, Jira Cloud |
 
@@ -592,9 +601,10 @@ CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose
 `docker-compose.ghcr.yml` only swaps the four built services for the published
 images. The environment, the volumes, the healthchecks and the published ports
 are the ones in `docker-compose.yml`, so an installation assembled this way
-is the same installation. Pin `CONFORMITI_VERSION` in production: `latest` moves.
-Keep both files on every later `up` and `pull`, or name them once in `.env`
-with `COMPOSE_FILE` ([INSTALL.md](INSTALL.md#without-a-build-the-published-images)):
+is the same installation. Pin `CONFORMITI_VERSION` in production, and pin it
+in `.env`: `latest` moves, and a version given on the command line, as above,
+lasts for that one command. Keep both files on every later `up` and `pull`,
+or name them once in `.env` with `COMPOSE_FILE` ([INSTALL.md](INSTALL.md#without-a-build-the-published-images)):
 a plain `docker compose up -d` reads `docker-compose.yml` alone and builds the
 stack from source.
 
@@ -769,7 +779,7 @@ running once after any mail configuration change.
 manage.py createsuperuser
 manage.py seed_frameworks --with-folders          # idempotent; re-sync after an upgrade
 manage.py seed_frameworks --roles-only
-manage.py remove_demo_data [--delete] [--workspace <slug>]
+manage.py remove_demo_data [--delete] [--dry-run] [--workspace <slug>]
 manage.py rotate_signing_key                      # new Ed25519 key; old public key stays published
 manage.py link_oidc_identity
 manage.py test_mailbox --to you@example.com       # sample reminder through EMAIL_PROVIDER (mailbox: sign-in checked first)
@@ -818,7 +828,8 @@ key reported there should be the one you had.
 On the published images, the restore stays on them only with `COMPOSE_FILE`
 and `CONFORMITI_VERSION` in `.env`
 ([INSTALL.md](INSTALL.md#without-a-build-the-published-images)), the version
-being the release the backup came from. The script takes no `-f` files, and
+being the release the backup came from (and none exported in the shell, where
+it would override `.env`). The script takes no `-f` files, and
 without `COMPOSE_FILE` its `docker compose` commands read
 `docker-compose.yml` alone and build the stack from the checked-out source.
 Without `CONFORMITI_VERSION` the images are `latest`, and the restored
@@ -827,16 +838,22 @@ backup, so on a fresh machine write both into it before restoring.
 
 ### Health
 
-`GET /api/health/` reports version, database, cache, mail, scanner and signing
-status. It is what the container healthcheck uses, and the first thing to
-attach to a bug report.
+`GET /api/health/` reports `status` (`ok`, or `degraded` with HTTP 503 when
+the database does not answer), `version`, `database`, `demo_accounts`,
+`first_admin_needed` (true while no active account exists), `scanning` (the
+malware scanner: `enabled`, `reachable`, `checked_at`, `latency_ms`,
+`down_since`) and `signing` (the package-signing key: `enabled`, `algorithm`,
+`key_id`, `fingerprint`, `error`). It is what the container healthcheck uses,
+and the first thing to attach to a bug report.
 
 ---
 
 ## Upgrading
 
 Upgrade notes for each release, including migration counts and what to budget
-for them, are in [CHANGELOG.md](CHANGELOG.md).
+for them, are in [CHANGELOG.md](CHANGELOG.md). Installs and upgrades follow
+release tags; `main` is the development line. After `git fetch --tags`,
+`git tag --list 'v*' --sort=-v:refname` lists the releases, newest first.
 
 ```bash
 scripts/backup.sh                 # first, always
@@ -846,22 +863,56 @@ docker compose pull && docker compose up -d --build
 
 Checking out the tag leaves the working copy on a detached HEAD at that
 release, which is intended: each upgrade names the release it moves to, where
-`git pull` would follow the branch past it. Anything installed on top of the
-checkout that changes its files has to come off before `git checkout` and go
-back on afterwards, following its own upgrade notes.
+`git pull` would follow the branch past it.
+
+Local edits to tracked files get in the way. `frontend/nginx.conf` edited for
+a larger upload limit is the usual one: when the release changes that file,
+`git checkout` stops with *Your local changes to the following files would be
+overwritten by checkout*, and when it does not, the edit is carried forward
+without a word. `git status` lists them. Put them aside for the checkout and
+back afterwards (after the backup, as always):
+
+```bash
+git stash
+git fetch --tags && git checkout v0.9.5k
+git stash pop                     # settle any conflict it reports, then rebuild
+```
+
+Anything installed on top of the checkout that changes its files has to come
+off before `git checkout` and go back on afterwards, following its own upgrade
+notes.
 
 Running the published images instead? The checkout still matters, because the
 compose file and the backup scripts come from it. nginx's configuration does
 not: it ships inside the frontend image, unless you mount your own
-([INSTALL.md](INSTALL.md#without-a-build-the-published-images)). The
-upgrade:
+([INSTALL.md](INSTALL.md#without-a-build-the-published-images)). The upgrade,
+with `COMPOSE_FILE` and the `CONFORMITI_VERSION` pin in `.env` as that page
+sets them:
 
 ```bash
 scripts/backup.sh
 git fetch --tags && git checkout v0.9.5k
-CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
-CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+unset CONFORMITI_VERSION          # an exported pin overrides the one in .env
+# In .env, move the pin to the new release: CONFORMITI_VERSION=0.9.5k
+docker compose pull && docker compose up -d
 ```
+
+Change the pin in `.env`, not on the command line. A version given inline
+(`CONFORMITI_VERSION=0.9.5k docker compose ...`) or exported lasts for that
+one command or shell. The next short-form command, an `up -d` after any
+`.env` edit or `scripts/restore.sh`, reads the old pin from `.env` again and
+puts the previous release's images back on a database the new release has
+already migrated. The `unset` is for the opposite case: a `CONFORMITI_VERSION`
+still exported in the shell (as the `export` in
+[INSTALL.md](INSTALL.md#without-a-build-the-published-images) leaves it, or
+one set in a shell profile) overrides `.env`, so moving the pin there changes
+nothing and `pull` and `up` stay on the old release while the checkout moves
+on. Take it out of the profile too. `docker compose config --images` lists
+the images the next `up` will run. Without `COMPOSE_FILE` in `.env`, give both files on each
+command (`docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull`,
+then the same with `up -d`). Files named with `-f` replace `COMPOSE_FILE` for
+that command, so a third file listed there, such as a
+`docker-compose.nginx.yml` mount, has to be named with `-f` too.
 
 The backend container applies the shipped migrations and re-seeds the control
 libraries in every workspace at boot, so the two `manage.py` steps earlier
@@ -1067,7 +1118,7 @@ writing the same audit-trail entries.
 | `/api/signing-keys/` | Published Ed25519 public keys and fingerprints |
 | `/api/workspaces/` | List, create, patch, `current` |
 | `/api/audit/` · `/api/notifications/` · `/api/analytics/` | The read-only trail, the derived feed with receipts, the dashboard summary |
-| `/api/health/` | Version, database, cache, mail, scanner, signing |
+| `/api/health/` | Status, version, database, demo accounts, whether a first administrator is needed, the scanner, the signing key |
 
 Every list is scoped to the caller's workspace **and** their folder grants at
 the queryset level, so a view that forgets to filter cannot leak.
@@ -1086,7 +1137,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 
 | Gate | What it proves |
 |---|---|
-| `tools/validate.py`: **19 static checks** | App and route wiring, the API contract between the SPA and the backend, that every model change has a shipped migration, theme packs, tests and CI present. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
+| `tools/validate.py`: **20 static checks** | App and route wiring, the API contract between the SPA and the backend, that every model change has a shipped migration, theme packs, tests and CI present, one release version wherever it is written, and no em or en dashes in the Markdown docs and the email templates. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
 | `manage.py test` | Workspace isolation, auth, MFA, token rotation, the auditor's reachable surface enumerated by walking the routers, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder claims, outbound request checks, field encryption and key rotation, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against RFC 8032 vectors |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 / 3.14 on SQLite, plus PostgreSQL 16 |
 | Frontend | A production build that must succeed, plus `npm audit --audit-level=high` |
@@ -1237,7 +1288,8 @@ for what is offered around it.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
 
-- Run the gates before opening a pull request: `./install.sh --test`.
+- Run the gates before opening a pull request: `./install.sh --test`
+  (Windows: `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test`).
 - New models need a shipped migration: `tools/validate.py` will fail the build
   otherwise, and it runs on a bare interpreter so it cannot be skipped.
 - Validator checks must be **standard library only**; the CI `validate` job

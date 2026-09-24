@@ -83,11 +83,11 @@ class DemoDataTests(TestCase):
     these tests pin it so the assertions below are stable."""
 
     def test_bootstrap_then_remove(self):
-        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         with tempfile.TemporaryDirectory() as media:
             from django.test import override_settings
             with override_settings(MEDIA_ROOT=media):
-                call_command("bootstrap_demo", verbosity=0)
+                call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 User = get_user_model()
                 # bootstrap_demo generates a password unless DEMO_PASSWORD
                 # names one; this suite pins it so the assertion is stable.
@@ -108,7 +108,7 @@ class DemoDataTests(TestCase):
                 self.assertTrue(demo_accounts_present())
                 # idempotent, and it never clobbers a status an operator changed
                 _Control.objects.filter(status="implemented").update(status="not_started")
-                call_command("bootstrap_demo", verbosity=0)
+                call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 self.assertEqual(Document.objects.count(), 9)
                 self.assertEqual(CalendarEvent.objects.count(), 3)
                 self.assertEqual(ReadinessSnapshot.objects.count(), 6)
@@ -116,9 +116,9 @@ class DemoDataTests(TestCase):
 
                 # refuses to strand the install without an admin
                 with self.assertRaises(CommandError):
-                    call_command("remove_demo_data", verbosity=0)
+                    call_command("remove_demo_data", verbosity=0, stdout=StringIO())
                 make_user("realadmin", superuser=True)
-                call_command("remove_demo_data", verbosity=0)
+                call_command("remove_demo_data", verbosity=0, stdout=StringIO())
                 self.assertFalse(User.objects.get(username="admin").is_active)
                 self.assertFalse(User.objects.get(username="mia").has_usable_password())
                 self.assertEqual(Document.objects.count(), 0)
@@ -135,7 +135,7 @@ class DemoDataTests(TestCase):
                 # the libraries survive
                 from compliance.models import Control
                 self.assertEqual(Control.objects.count(), 217)
-                call_command("remove_demo_data", "--delete", verbosity=0)
+                call_command("remove_demo_data", "--delete", verbosity=0, stdout=StringIO())
                 self.assertFalse(User.objects.filter(username="mia").exists())
 
     def test_a_superuser_with_no_workspace_counts_as_the_surviving_administrator(self):
@@ -147,10 +147,10 @@ class DemoDataTests(TestCase):
         see it or the documented path dead-ends."""
         from accounts import tenancy
 
-        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         with tempfile.TemporaryDirectory() as media:
             with override_settings(MEDIA_ROOT=media):
-                call_command("bootstrap_demo", verbosity=0)
+                call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 User = get_user_model()
                 platform = make_user("realadmin", superuser=True)
                 # Detached by hand, as an older release's createsuperuser left
@@ -159,7 +159,7 @@ class DemoDataTests(TestCase):
                 with tenancy.unscoped():
                     self.assertIsNone(User.objects.get(pk=platform.pk).workspace_id)
 
-                call_command("remove_demo_data", verbosity=0)  # must not raise
+                call_command("remove_demo_data", verbosity=0, stdout=StringIO())  # must not raise
                 self.assertFalse(User.objects.get(username="admin").is_active)
 
     def test_an_auditor_role_that_stores_manage_users_is_no_surviving_administrator(self):
@@ -167,34 +167,34 @@ class DemoDataTests(TestCase):
         no capability, so its holder cannot be the administrator left behind."""
         from accounts.models import Role
 
-        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         with tempfile.TemporaryDirectory() as media:
             with override_settings(MEDIA_ROOT=media):
-                call_command("bootstrap_demo", verbosity=0)
+                call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 role = Role.objects.create(name="Auditing admin", can_manage_users=True,
                                            is_auditor=True)
                 auditor = make_user("outside-auditor", role=role)
                 self.assertFalse(auditor.can_manage_users)
                 with self.assertRaisesMessage(CommandError, "no administrator other than"):
-                    call_command("remove_demo_data", verbosity=0)
+                    call_command("remove_demo_data", verbosity=0, stdout=StringIO())
                 self.assertTrue(get_user_model().objects.get(username="admin").is_active)
 
     def test_remove_still_finds_the_data_when_the_demo_accounts_are_already_gone(self):
         """An operator who deleted the demo users by hand first must not be
         left with the demo vendors, documents and RACI rows -- those rows
         lose their creator (SET_NULL) and used to slip through the match."""
-        call_command("seed_frameworks", "--with-folders", verbosity=0)
+        call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         with tempfile.TemporaryDirectory() as media:
             from django.test import override_settings
             with override_settings(MEDIA_ROOT=media):
-                call_command("bootstrap_demo", verbosity=0)
+                call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 from documents.models import Document
                 from vendors.models import Vendor
                 User = get_user_model()
                 make_user("realadmin", superuser=True)
                 User.objects.filter(username__in=["admin", "mia", "owen", "aria", "val"]).delete()
                 self.assertGreater(Vendor.objects.count(), 0)
-                call_command("remove_demo_data", verbosity=0)
+                call_command("remove_demo_data", verbosity=0, stdout=StringIO())
                 self.assertEqual(Vendor.objects.count(), 0)
                 self.assertEqual(Document.objects.count(), 0)
 
@@ -386,7 +386,7 @@ class FieldKeyRotationTests(TestCase):
         old_id = fieldcrypto.envelope_key_id(_raw_secret(user))
 
         with override_settings(FIELD_ENCRYPTION_KEYS=[KEY_B, KEY_A]):
-            call_command("rotate_field_keys", verbosity=0)
+            call_command("rotate_field_keys", stdout=StringIO(), stderr=StringIO())
             new_id = fieldcrypto.envelope_key_id(_raw_secret(user))
             self.assertNotEqual(new_id, old_id)
             self.assertEqual(new_id, fieldcrypto.key_ids()[0])
@@ -398,8 +398,8 @@ class FieldKeyRotationTests(TestCase):
     def test_rotation_never_double_encrypts(self):
         user = make_user("rot2")
         MfaDevice.objects.create(user=user, secret="ONCEONLYONCEONLY")
-        call_command("rotate_field_keys", verbosity=0)
-        call_command("rotate_field_keys", verbosity=0)
+        call_command("rotate_field_keys", stdout=StringIO(), stderr=StringIO())
+        call_command("rotate_field_keys", stdout=StringIO(), stderr=StringIO())
         self.assertEqual(_raw_secret(user).count("fc1$"), 1)
         self.assertEqual(MfaDevice.objects.get(user=user).secret, "ONCEONLYONCEONLY")
 
@@ -410,6 +410,28 @@ class FieldKeyRotationTests(TestCase):
         out = StringIO()
         call_command("rotate_field_keys", "--status", stdout=out)
         self.assertIn(fieldcrypto.key_ids()[0], out.getvalue())
+        self.assertEqual(_raw_secret(user), before)
+        self.assertIn("Status only: nothing was changed.", out.getvalue())
+
+    def test_an_empty_column_is_neither_unreadable_nor_plaintext(self):
+        """A workspace with no Slack or Teams webhook stores an empty value.
+        Every rotation warned that it was "not readable under any current
+        key", and --status counted it as plaintext."""
+        out, err = StringIO(), StringIO()
+        call_command("rotate_field_keys", stdout=out, stderr=err)
+        self.assertNotIn("not readable", err.getvalue())
+        self.assertIn("accounts_workspace.slack_webhook_url: empty=", out.getvalue())
+        self.assertNotIn("slack_webhook_url: plaintext", out.getvalue())
+
+    def test_a_row_no_key_reads_is_named_and_left_alone(self):
+        user = make_user("rot4")
+        MfaDevice.objects.create(user=user, secret="LOSTLOSTLOSTLOST")
+        before = _raw_secret(user)
+        err = StringIO()
+        with override_settings(FIELD_ENCRYPTION_KEYS=[KEY_B]):
+            call_command("rotate_field_keys", stdout=StringIO(), stderr=err)
+        self.assertIn(".secret is not readable under any current key, so it was left untouched.",
+                      err.getvalue())
         self.assertEqual(_raw_secret(user), before)
 
 
@@ -598,7 +620,8 @@ class LoggingNoiseTests(SimpleTestCase):
         "from django.template import engines\n"
         "engines['django'].from_string('{{ a.b }}').render({'a': {}})\n"
         "print(json.dumps({n: logging.getLogger(n).getEffectiveLevel() for n in\n"
-        "    ('django', 'django.template', 'django.request', 'django.utils.autoreload')}))\n"
+        "    ('django', 'django.template', 'django.request', 'django.utils.autoreload',\n"
+        "     'notifications.email_service')}))\n"
     )
 
     def probe(self, argv=(), **env):
@@ -647,6 +670,40 @@ class LoggingNoiseTests(SimpleTestCase):
         levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true", LOG_LEVEL="WARNING")
         self.assertEqual(levels["django.request"], logging.WARNING, "a LOG_LEVEL set on purpose wins")
 
+    def test_the_test_runner_does_not_list_every_email_it_sends(self):
+        """Each console email the suite sends was an INFO line in the test
+        gate, dozens of them between the dots. A run with LOG_LEVEL set, and
+        every other command, still lists them."""
+        levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true")
+        self.assertEqual(levels["notifications.email_service"], logging.WARNING)
+        levels, _ = self.probe(argv=("runserver",), DJANGO_DEBUG="true")
+        self.assertEqual(levels["notifications.email_service"], logging.DEBUG)
+        levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true", LOG_LEVEL="INFO")
+        self.assertEqual(levels["notifications.email_service"], logging.INFO)
+
+
+class OptionsMetadataTests(TestCase):
+    """An OPTIONS request answered with the view's docstring as its
+    "description": developer notes on the login throttle and CSRF, to anyone,
+    signed in or not."""
+
+    def test_options_still_answers_but_carries_no_docstring(self):
+        from config.urls import ThrottledTokenObtainPairView
+
+        response = self.client.options("/api/auth/token/")
+        self.assertEqual(response.status_code, 200, "OPTIONS keeps working")
+        body = response.json()
+        self.assertNotIn("description", body)
+        self.assertIn("name", body)
+        first_line = ThrottledTokenObtainPairView.__doc__.strip().splitlines()[0]
+        self.assertNotIn(first_line[:30], response.content.decode())
+
+    def test_an_authenticated_options_request_carries_none_either(self):
+        client = APITestBase.client_for(make_user("optioner", superuser=True))
+        response = client.options("/api/users/")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("description", response.json())
+
 
 class ShippedTextTests(SimpleTestCase):
     """verify.py goes to auditors inside every sealed bundle, so it is copy."""
@@ -654,5 +711,33 @@ class ShippedTextTests(SimpleTestCase):
     def test_the_shipped_verifier_has_no_em_or_en_dash(self):
         text = (BACKEND / "attestations" / "verifier.py").read_text(encoding="utf-8")
         # Escapes, so no dash sweep of this file can rewrite what it looks for.
-        for dash in ("—", "–"):
+        for dash in ("\u2014", "\u2013"):
             self.assertNotIn(dash, text)
+
+    def test_the_backends_shipped_text_has_no_em_or_en_dash(self):
+        """Every template the backend renders is text a person reads (the
+        emails above all). Code, scripts and configuration are not copy: a
+        dash in a comment there is fine."""
+        files = [p for p in BACKEND.glob("**/templates/**/*") if p.is_file()]
+        self.assertGreater(len(files), 10)
+        for path in files:
+            text = path.read_text(encoding="utf-8")
+            for dash in ("\u2014", "\u2013"):
+                self.assertNotIn(dash, text, path.relative_to(BACKEND))
+
+    def test_the_validators_dash_check_covers_text_bodies_only(self):
+        """Check 20 guards what people read, and leaves code, scripts and
+        configuration alone, comments included."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "conformiti_validate", BACKEND.parent / "tools" / "validate.py")
+        validate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(validate)
+        for rel in ("README.md", "docs/ARCHITECTURE.md", "e2e/README.md",
+                    "backend/notifications/templates/emails/review_reminder.txt"):
+            self.assertTrue(validate._dash_rule_covers(rel), rel)
+        for rel in ("install.ps1", "install.sh", "docker-compose.ghcr.yml",
+                    "backend/requirements.txt", "backend/entrypoint.sh", ".env.example",
+                    "scripts/backup.sh", "frontend/nginx.conf", "backend/config/settings.py"):
+            self.assertFalse(validate._dash_rule_covers(rel), rel)
