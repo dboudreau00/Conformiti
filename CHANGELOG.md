@@ -11,7 +11,7 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5l], 2026-09-23
 
 A clean-install test of 0.9.5k, run twice: the core installed from nothing
 the ways the README offers (Docker built from source, the published images,

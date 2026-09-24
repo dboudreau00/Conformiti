@@ -27,10 +27,10 @@
 # stay on the images:
 #
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml
-#   CONFORMITI_VERSION=0.9.5k
+#   CONFORMITI_VERSION=0.9.5l
 #
 # (Separate the files with `;` for Docker Desktop's Windows docker.exe.) A
-# value given inline, `CONFORMITI_VERSION=0.9.5k docker compose up -d`, lasts
+# value given inline, `CONFORMITI_VERSION=0.9.5l docker compose up -d`, lasts
 # for that one command: the next one, scripts/restore.sh included, goes back
 # to the pin in .env, or to `latest` without one. An exported value overrides
 # .env for as long as the shell keeps it, so unset it once the pin is there.

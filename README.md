@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1: controls, evidence, vendors, risk and access reviews in one audit-ready system, ending in a sealed package your assessor can verify without you.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.9.5k-1D6FE0.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.9.5l-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%20to%203.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -586,16 +586,16 @@ a guided first hour in [GETTING_STARTED.md](GETTING_STARTED.md).
 
 Both are built for `linux/amd64` and `linux/arm64`, so the same tag runs on an
 Ampere or Graviton VPS and on an Apple Silicon laptop. Each release is tagged
-with its version (`0.9.5k`), with the first seven characters of the commit it
+with its version (`0.9.5l`), with the first seven characters of the commit it
 was built from (`sha-…`), and the newest release also answers to `latest`. The version an image carries
 is read out of `backend/config/version.py` at build time, which is the same
 string `/api/health/` reports, so a running container cannot claim a version
 its code is not.
 
 ```bash
-docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5k
-CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
-CONFORMITI_VERSION=0.9.5k docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5l
+CONFORMITI_VERSION=0.9.5l docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+CONFORMITI_VERSION=0.9.5l docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 `docker-compose.ghcr.yml` only swaps the four built services for the published
@@ -857,7 +857,7 @@ release tags; `main` is the development line. After `git fetch --tags`,
 
 ```bash
 scripts/backup.sh                 # first, always
-git fetch --tags && git checkout v0.9.5k
+git fetch --tags && git checkout v0.9.5l
 docker compose pull && docker compose up -d --build
 ```
 
@@ -874,7 +874,7 @@ back afterwards (after the backup, as always):
 
 ```bash
 git stash
-git fetch --tags && git checkout v0.9.5k
+git fetch --tags && git checkout v0.9.5l
 git stash pop                     # settle any conflict it reports, then rebuild
 ```
 
@@ -891,14 +891,14 @@ sets them:
 
 ```bash
 scripts/backup.sh
-git fetch --tags && git checkout v0.9.5k
+git fetch --tags && git checkout v0.9.5l
 unset CONFORMITI_VERSION          # an exported pin overrides the one in .env
-# In .env, move the pin to the new release: CONFORMITI_VERSION=0.9.5k
+# In .env, move the pin to the new release: CONFORMITI_VERSION=0.9.5l
 docker compose pull && docker compose up -d
 ```
 
 Change the pin in `.env`, not on the command line. A version given inline
-(`CONFORMITI_VERSION=0.9.5k docker compose ...`) or exported lasts for that
+(`CONFORMITI_VERSION=0.9.5l docker compose ...`) or exported lasts for that
 one command or shell. The next short-form command, an `up -d` after any
 `.env` edit or `scripts/restore.sh`, reads the old pin from `.env` again and
 puts the previous release's images back on a database the new release has
