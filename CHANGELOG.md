@@ -11,6 +11,40 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+The control register in the standard's own order, and two small things an
+independent check of the published 0.9.5l found.
+
+**On upgrade.** One migration: `compliance` 0008 gives every control a place
+in its category and fills it in for the controls you already have, from the
+framework files this release ships. Controls those files do not list come
+after them, in the order they were created. `seed_frameworks` puts the places
+back on every run, which the Docker entrypoint already does at each start. Without
+`?ordering=`, `GET /api/controls/` follows the places.
+
+### Fixed
+
+- **The control register listed A.5.10 before A.5.2.** Controls sorted by
+  their identifier as text, so ISO 27001 read A.5.1, A.5.10 ... A.5.19, A.5.2
+  and PCI DSS read 12.1, 12.10, 12.2, while the folder tree beside them was in
+  clause order. Each control now keeps its place in its framework's file, the
+  way categories already did, and the register, a framework's control list,
+  the controls CSV, the evidence-link picker, the responsibility matrix and a
+  vendor's shared-responsibility matrix follow it. A control added with no
+  place goes last in its category.
+- **`scripts/restore.sh` still printed a Compose status line for every
+  container it stopped or started.** The 0.9.5l notes said it printed only its
+  own progress, which was true of PostgreSQL's output and not of Compose's.
+  It now asks Compose for quiet progress where Compose supports it, and errors
+  still print. CI fails the restore if a container status line gets through.
+
+### Changed
+
+- The published images' documentation label points at `INSTALL.md` as of the
+  commit the image was built from, not at the latest one, so `docker inspect`
+  on an older image leads to the instructions for that image.
+
 ## [0.9.5l], 2026-09-23
 
 A clean-install test of 0.9.5k, run three times: the core installed from

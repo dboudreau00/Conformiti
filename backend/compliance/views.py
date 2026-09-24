@@ -23,7 +23,7 @@ from .serializers import (
 
 
 # Control.Meta.ordering plus the id, so every page of the register is stable.
-CONTROL_ORDER = ("category", "control_id", "id")
+CONTROL_ORDER = ("category", "order", "control_id", "id")
 
 
 def _controls_with_evidence_counts(user, qs=None):
@@ -108,7 +108,7 @@ class ControlViewSet(viewsets.ModelViewSet):
         from config.csvsafe import csv_safe
 
         qs = self.filter_queryset(self.get_queryset()).order_by(
-            "category__framework__name", "category__order", "control_id"
+            "category__framework__name", "category__order", "category__key", "order", "control_id"
         )
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="controls.csv"'
@@ -238,7 +238,7 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             docs = docs.filter(name__icontains=q)
         controls = Control.objects.select_related(
             "category", "category__framework"
-        ).order_by("category__framework__name", "category__order", "control_id")
+        ).order_by("category__framework__name", "category__order", "category__key", "order", "control_id")
         return Response({
             "documents": [
                 {"id": d.id, "name": d.name, "path": d.folder.path, "status": d.status}

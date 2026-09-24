@@ -52,6 +52,13 @@ class Control(TenantModel):
 
     category = models.ForeignKey(ControlCategory, on_delete=models.CASCADE, related_name="controls")
     control_id = models.CharField(max_length=40)
+    # Where the control sits in its category: its place in the framework's
+    # data file, the way ControlCategory.order places categories. The register
+    # sorted control_id as text, so ISO 27001 read A.5.1, A.5.10 ... A.5.19,
+    # A.5.2, and no text or numeric sort gets every standard right: NIST CSF
+    # 2.0 lists GV.OC, GV.RM, GV.RR, GV.PO, GV.OV, GV.SC. 0 means not placed;
+    # save() puts such a control last in its category.
+    order = models.PositiveIntegerField(default=0)
     title = models.CharField(max_length=255)
     objective = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NOT_STARTED)
@@ -78,8 +85,49 @@ class Control(TenantModel):
     last_tested_recorded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["category", "control_id"]
+        ordering = ["category", "order", "control_id"]
         unique_together = ("category", "control_id")
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            # Read twice below, and Django accepts any iterable here.
+            update_fields = kwargs["update_fields"] = list(update_fields)
+        if self._needs_place(update_fields):
+            self.order = self.next_order(self.category_id)
+            if update_fields is not None:
+                update_fields.append("order")
+        super().save(*args, **kwargs)
+
+    def _needs_place(self, update_fields):
+        """A new control with no place, or one moved to another category
+        without a new place, goes last in its category. Callers that know
+        the place (the seeders) pass ``order``, and it is kept.
+
+        Whether it moved is read from the row, not remembered from the load:
+        a deferred field or a partial refresh would make a remembered place
+        wrong. Only a save that can write the category pays the query."""
+        if self._state.adding:
+            return not self.order
+        if update_fields is not None and (
+                "order" in update_fields
+                or not {"category", "category_id"} & set(update_fields)):
+            return False
+        stored = (type(self)._base_manager.filter(pk=self.pk)
+                  .values_list("category_id", "order").first())
+        if stored is None:
+            return not self.order
+        category_id, order = stored
+        return category_id != self.category_id and order == self.order
+
+    @classmethod
+    def next_order(cls, category_id):
+        """One past the last place in the category. Unscoped on purpose: the
+        category already names the workspace, and a seeder may run with none
+        active."""
+        last = (cls._base_manager.filter(category_id=category_id)
+                .aggregate(last=models.Max("order"))["last"])
+        return (last or 0) + 1
 
     @property
     def framework(self):

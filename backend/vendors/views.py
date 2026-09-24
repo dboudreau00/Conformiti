@@ -107,7 +107,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         framework = request.query_params.get("framework") or request.data.get("framework")
         if framework:
             controls = controls.filter(category__framework__key=framework)
-        return controls.order_by("category__framework__name", "category__order", "control_id")
+        return controls.order_by("category__framework__name", "category__order", "category__key", "order", "control_id")
 
     @action(detail=True, methods=["get"], url_path="matrix")
     def matrix(self, request, pk=None):

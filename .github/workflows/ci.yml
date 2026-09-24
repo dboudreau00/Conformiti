@@ -587,15 +587,26 @@ jobs:
           set -euo pipefail
           docker compose down -v
           # Standard output is the restore's own progress lines and nothing
-          # else. Compose reports on stderr; psql's result tables, one for
-          # every sequence in the dump, used to land here (0.9.5k). A
-          # here-string, not a pipe, for the reason the docker job gives.
-          scripts/restore.sh /tmp/backup > /tmp/restore.out
+          # else. psql's result tables, one for every sequence in the dump,
+          # used to land here (0.9.5k). Compose reports on stderr, and its
+          # status line for every container it starts or stops is quieted
+          # where Compose allows it, as it does here (0.9.5m). Here-strings,
+          # not pipes, for the reason the docker job gives.
+          rc=0
+          scripts/restore.sh /tmp/backup > /tmp/restore.out 2> /tmp/restore.err || rc=$?
           cat /tmp/restore.out
+          cat /tmp/restore.err >&2
+          [ "$rc" -eq 0 ] || exit "$rc"
           extra=$(grep -v '^restore: ' /tmp/restore.out || true)
           if [ -n "$extra" ]; then
             echo "restore.sh printed more than its own lines:"
             head -n 20 <<< "$extra"
+            exit 1
+          fi
+          status=$(grep ' Container ' /tmp/restore.err || true)
+          if [ -n "$status" ]; then
+            echo "restore.sh let Compose's container status lines through:"
+            head -n 20 <<< "$status"
             exit 1
           fi
           for i in $(seq 1 120); do

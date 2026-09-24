@@ -110,7 +110,7 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
                      queryset=SharedResponsibility.objects.filter(
                          responsibility__in=("provider", "shared")
                      ).select_related("vendor")),
-        ).order_by("category__framework__name", "category__order", "control_id")
+        ).order_by("category__framework__name", "category__order", "category__key", "order", "control_id")
 
         rows = []
         gaps = {"no_accountable": 0, "no_responsible": 0}

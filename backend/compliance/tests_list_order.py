@@ -49,12 +49,13 @@ class ListOrderTests(APITestBase):
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
-        # Controls: a second framework whose name sorts first, and control ids
-        # created out of order, so Meta.ordering has something to do.
+        # Controls: a second framework whose name sorts first, and controls
+        # created out of their places, whose ids also sort wrongly as text
+        # (AA.10 before AA.2), so Meta.ordering has something to do.
         alpha = Framework.objects.create(key="alpha", name="Alpha Framework", version="1")
         cat = ControlCategory.objects.create(framework=alpha, key="AA", name="AA", order=0)
-        for control_id in ("AA.3", "AA.1", "AA.2"):
-            Control.objects.create(category=cat, control_id=control_id, title=control_id)
+        for control_id, place in (("AA.10", 3), ("AA.1", 1), ("AA.2", 2)):
+            Control.objects.create(category=cat, control_id=control_id, title=control_id, order=place)
 
         # Risks and packages: three rows share one timestamp, so only the id
         # separates them.
@@ -80,7 +81,7 @@ class ListOrderTests(APITestBase):
 
     CASES = (
         # (route, viewset, expected order of the whole list)
-        ("/api/controls/", ControlViewSet, ("category", "control_id", "id")),
+        ("/api/controls/", ControlViewSet, ("category", "order", "control_id", "id")),
         ("/api/risks/", RiskViewSet, ("-created_at", "-id")),
         ("/api/vendors/", VendorViewSet, ("name", "id")),
         ("/api/folder-permissions/", FolderPermissionViewSet, ("id",)),
@@ -123,8 +124,8 @@ class ListOrderTests(APITestBase):
     def test_the_fixture_exercises_the_order(self):
         """Guards the test itself: insertion order is not the answer."""
         ids, _ = self.page_through("/api/controls/")
-        first = Control.objects.get(pk=ids[0])
-        self.assertEqual((first.category.framework.key, first.control_id), ("alpha", "AA.1"))
+        controls = Control.objects.in_bulk(ids)
+        self.assertEqual([controls[i].control_id for i in ids[:3]], ["AA.1", "AA.2", "AA.10"])
         ids, _ = self.page_through("/api/vendors/")
         self.assertEqual(Vendor.objects.get(pk=ids[0]).name, "Acme Payroll")
         # Newest first, and the three rows sharing a timestamp newest id first.
@@ -149,4 +150,4 @@ class ListOrderTests(APITestBase):
         r = self.client_for(self.admin).get(f"/api/frameworks/{self.tree.framework.key}/controls/")
         self.assertEqual([row["control_id"] for row in r.data], ["TC1.1", "TC1.2"])
         r = self.client_for(self.admin).get("/api/frameworks/alpha/controls/")
-        self.assertEqual([row["control_id"] for row in r.data], ["AA.1", "AA.2", "AA.3"])
+        self.assertEqual([row["control_id"] for row in r.data], ["AA.1", "AA.2", "AA.10"])

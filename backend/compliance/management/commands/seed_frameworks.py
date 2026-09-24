@@ -112,7 +112,9 @@ class Command(BaseCommand):
                     defaults=dict(name=cat["name"], order=order),
                 )
                 ncat += 1
-                for control in cat["controls"]:
+                # The file's order is the standard's order, and the register
+                # follows it (Control.order), so every run puts it back.
+                for place, control in enumerate(cat["controls"], start=1):
                     # Identify the control by (framework, control_id), not by
                     # (category, control_id): a control that moves to another
                     # category must be *updated*, not duplicated as a second row
@@ -122,16 +124,26 @@ class Command(BaseCommand):
                     ).first()
                     if existing:
                         existing.category = category
+                        existing.order = place
                         existing.title = control["title"]
                         existing.objective = control.get("objective", "")
-                        existing.save(update_fields=["category", "title", "objective"])
+                        existing.save(update_fields=["category", "order", "title", "objective"])
                     else:
                         Control.objects.create(
                             category=category, control_id=control["control_id"],
-                            title=control["title"],
+                            order=place, title=control["title"],
                             objective=control.get("objective", ""),
                         )
                     nctrl += 1
+                # A control the file does not list (added by hand) stays after
+                # the listed ones, so a file that grows cannot tie with it.
+                listed = [control["control_id"] for control in cat["controls"]]
+                rest = (Control.objects.filter(category=category)
+                        .exclude(control_id__in=listed).order_by("order", "pk"))
+                for place, control in enumerate(rest, start=len(listed) + 1):
+                    if control.order != place:
+                        control.order = place
+                        control.save(update_fields=["order"])
             self.stdout.write(f"  {fw.name} {fw.version}: {ncat} categories, {nctrl} controls")
 
     # -------------------------------------------------------------- crosswalk

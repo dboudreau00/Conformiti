@@ -50,9 +50,19 @@ if [ ! -f .env ]; then
   fi
 fi
 
-docker compose up -d --no-recreate db
-docker compose up --no-start
-docker compose stop backend worker beat frontend
+# Compose prints a status line per container for every up and stop. Where it
+# can be told not to (--progress quiet; an older Compose refuses the flag or
+# the value, so ask first: `config` checks both, `version` checks neither),
+# only this script's own lines show. Errors print either way.
+if docker compose --progress quiet config -q >/dev/null 2>&1; then
+  compose() { docker compose --progress quiet "$@"; }
+else
+  compose() { docker compose "$@"; }
+fi
+
+compose up -d --no-recreate db
+compose up --no-start
+compose stop backend worker beat frontend
 
 db="$(docker compose ps -q db)"
 project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$db")"
@@ -87,5 +97,5 @@ for v in media secrets tree; do
 done
 
 echo "restore: starting the stack"
-docker compose up -d
+compose up -d
 echo "restore: done. Check docker compose ps and /api/health/."
