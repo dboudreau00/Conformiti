@@ -158,7 +158,7 @@ Like the base file, it needs Compose 2.24 or newer.
 in both commands, because `pull` and `up` each read it:
 
 ```bash
-export CONFORMITI_VERSION=0.9.5l
+export CONFORMITI_VERSION=0.9.5m
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
@@ -175,11 +175,11 @@ reads for every command run in this directory, so the short forms (and
 
 ```ini
 COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml
-CONFORMITI_VERSION=0.9.5l
+CONFORMITI_VERSION=0.9.5m
 ```
 
 Keep the pin there too. The `export` above lasts for that shell, and a
-version given inline (`CONFORMITI_VERSION=0.9.5l docker compose ...`) for
+version given inline (`CONFORMITI_VERSION=0.9.5m docker compose ...`) for
 that one command. While the export lasts it overrides `.env`, so once the pin
 is written there, run `unset CONFORMITI_VERSION` and keep the variable out of
 shell profiles: the pin in `.env` is then the one every later command reads,
@@ -212,7 +212,7 @@ nginx read the file again.
 
 A container will tell you what it is: `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
-`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5l` carries the
+`docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5m` carries the
 commit it was built from in `org.opencontainers.image.revision`.
 
 Building from source remains the default, and stays supported: the images are
