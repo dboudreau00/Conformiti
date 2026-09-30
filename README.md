@@ -5,7 +5,7 @@
 **Self-hosted GRC for SOC 2, ISO/IEC 27001:2022 and PCI DSS v4.0.1: controls, evidence, vendors, risk and access reviews in one audit-ready system, ending in a sealed package your assessor can verify without you.**
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.9.5ma-1D6FE0.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.9.5mb-1D6FE0.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%20to%203.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
@@ -668,16 +668,16 @@ a guided first hour in [GETTING_STARTED.md](GETTING_STARTED.md).
 
 Both are built for `linux/amd64` and `linux/arm64`, so the same tag runs on an
 Ampere or Graviton VPS and on an Apple Silicon laptop. Each release is tagged
-with its version (`0.9.5ma`), with the first seven characters of the commit it
+with its version (`0.9.5mb`), with the first seven characters of the commit it
 was built from (`sha-…`), and the newest release also answers to `latest`. The version an image carries
 is read out of `backend/config/version.py` at build time, which is the same
 string `/api/health/` reports, so a running container cannot claim a version
 its code is not.
 
 ```bash
-docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5ma
-CONFORMITI_VERSION=0.9.5ma docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
-CONFORMITI_VERSION=0.9.5ma docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+docker pull ghcr.io/dboudreau00/conformiti-backend:0.9.5mb
+CONFORMITI_VERSION=0.9.5mb docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+CONFORMITI_VERSION=0.9.5mb docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
 `docker-compose.ghcr.yml` only swaps the four built services for the published
@@ -973,7 +973,7 @@ release tags; `main` is the development line. After `git fetch --tags`,
 
 ```bash
 scripts/backup.sh                 # first, always
-git fetch --tags && git checkout v0.9.5ma
+git fetch --tags && git checkout v0.9.5mb
 docker compose pull && docker compose up -d --build
 ```
 
@@ -990,7 +990,7 @@ back afterwards (after the backup, as always):
 
 ```bash
 git stash
-git fetch --tags && git checkout v0.9.5ma
+git fetch --tags && git checkout v0.9.5mb
 git stash pop                     # settle any conflict it reports, then rebuild
 ```
 
@@ -1007,14 +1007,14 @@ sets them:
 
 ```bash
 scripts/backup.sh
-git fetch --tags && git checkout v0.9.5ma
+git fetch --tags && git checkout v0.9.5mb
 unset CONFORMITI_VERSION          # an exported pin overrides the one in .env
-# In .env, move the pin to the new release: CONFORMITI_VERSION=0.9.5ma
+# In .env, move the pin to the new release: CONFORMITI_VERSION=0.9.5mb
 docker compose pull && docker compose up -d
 ```
 
 Change the pin in `.env`, not on the command line. A version given inline
-(`CONFORMITI_VERSION=0.9.5ma docker compose ...`) or exported lasts for that
+(`CONFORMITI_VERSION=0.9.5mb docker compose ...`) or exported lasts for that
 one command or shell. The next short-form command, an `up -d` after any
 `.env` edit or `scripts/restore.sh`, reads the old pin from `.env` again and
 puts the previous release's images back on a database the new release has
@@ -1038,6 +1038,10 @@ the framework files list, so edits to those fields (possible only in the
 Django admin) do not survive a restart. Controls you add yourself are left as
 they are.
 
+**0.9.5mb** has no migration. Sealing and exporting a package are now held to
+`THROTTLE_PACKAGE_WORK` per account, and audit entries find the client along
+`X-Forwarded-For` as `NUM_PROXIES` says, so set it as the production section
+describes if a TLS terminator sits in front of the shipped nginx.
 **0.9.5ma** is one migration (`accounts` 0014), which gives an administrator
 made before 0.9.5l with the default address `admin@example.com` the address
 `admin@localhost`, so it is no longer taken for the demo administrator.

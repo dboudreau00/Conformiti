@@ -11,7 +11,7 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5mb], 2026-09-30
 
 A security release from an audit that held every document to the code before
 a partner's security review. Eleven places where the code fell short of what
