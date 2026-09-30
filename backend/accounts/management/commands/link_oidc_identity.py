@@ -53,7 +53,10 @@ class Command(BaseCommand):
                 "provider's administrators sign in as your administrator; pass --allow-privileged "
                 "if that is what you intend."
             )
-        clash = OidcIdentity.objects.filter(issuer=issuer, subject=subject).exclude(user=user).first()
+        # Sign-in takes an issuer with and without a trailing "/" as one
+        # (accounts/oidc.py), so a clash is looked for under both spellings.
+        clash = (OidcIdentity.objects.filter(issuer__in={issuer, issuer + "/"}, subject=subject)
+                 .exclude(user=user).first())
         if clash:
             raise CommandError(f"That identity is already linked to {clash.user.get_username()}.")
         identity, created = OidcIdentity.objects.update_or_create(

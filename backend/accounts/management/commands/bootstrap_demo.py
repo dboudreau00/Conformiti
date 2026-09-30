@@ -24,7 +24,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from accounts import tenancy
@@ -42,6 +42,32 @@ DEMO_USERS = [
     ("aria", "Aria", "Auditor", "Auditor", False),
     ("val", "Val", "Viewer", "Viewer", False),
 ]
+
+
+def check_demo_password(password):
+    """Refuse a chosen DEMO_PASSWORD the password policy would refuse for
+    any of the demo accounts. They all share it and `admin` is a superuser:
+    unchecked, `DEMO_PASSWORD=admin` made a superuser with a five-letter
+    password on an installation that asks everyone else for twelve."""
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError
+
+    problems = []
+    for username, first, last, _role, _is_super in DEMO_USERS:
+        sketch = User(username=username, first_name=first, last_name=last,
+                      email=f"{username}@example.com")
+        try:
+            validate_password(password, sketch)
+        except ValidationError as exc:
+            problems += [m for m in exc.messages if m not in problems]
+    if problems:
+        raise CommandError(
+            "DEMO_PASSWORD does not meet the password policy, which it must: every "
+            "demo account shares it and the demo admin is a superuser. "
+            + " ".join(problems)
+            + " Choose another, or leave DEMO_PASSWORD unset and a strong one is "
+              "generated and printed once.")
+
 
 # The seeded access review is named for the quarter it was created in, so both
 # the seeder and remove_demo_data identify it by shape rather than by a literal.
@@ -318,14 +344,24 @@ class Command(BaseCommand):
         `DEMO_PASSWORD` when an operator sets one (the test suites and the
         end-to-end run do); otherwise a fresh random one per installation,
         printed once. A constant here is a published credential on every
-        deployment that ever ran `docker compose up`.
+        deployment that ever ran `docker compose up`. A chosen one is held to
+        the password policy (check_demo_password).
         """
         if self._password is None:
             import os
             import secrets
 
-            self._password = os.getenv("DEMO_PASSWORD") or (
-                "demo-" + secrets.token_urlsafe(12))
+            from django.conf import settings
+
+            chosen = os.getenv("DEMO_PASSWORD")
+            if chosen:
+                check_demo_password(chosen)
+                self._password = chosen
+            else:
+                # Sized from the policy, so a longer PASSWORD_MIN_LENGTH
+                # cannot leave the generated one short of it.
+                length = max(12, getattr(settings, "PASSWORD_MIN_LENGTH", 12))
+                self._password = "demo-" + secrets.token_urlsafe(length)
         return self._password
 
     _password = None
@@ -352,6 +388,12 @@ class Command(BaseCommand):
                 or Vendor.objects.filter(name__in=DEMO_VENDOR_NAMES).exists())
 
     def _users(self):
+        names = [u[0] for u in DEMO_USERS]
+        if self._revive or User.objects.filter(username__in=names).count() < len(names):
+            # Resolved, and a chosen one checked, before any account is
+            # created: a refused DEMO_PASSWORD must not leave an account
+            # behind with no password at all.
+            self.demo_password()
         for username, first, last, role_name, is_super in DEMO_USERS:
             role = Role.objects.filter(name=role_name).first()
             user, created = User.objects.get_or_create(

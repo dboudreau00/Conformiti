@@ -45,7 +45,26 @@ class RoleViewSet(viewsets.ModelViewSet):
                     "Capability flags on built-in roles are fixed. Create a custom role "
                     "with the flags you need and assign it instead."
                 )
+        # The promise the user edits keep, kept here too: no change leaves the
+        # workspace without an active administrator. A custom role can carry
+        # can_manage_users, and taking the flag off it went round that guard.
+        role = serializer.instance
+        if (role.can_manage_users
+                and serializer.validated_data.get("can_manage_users", True) is False
+                and not self._administrator_remains_without(role)):
+            raise PermissionDenied(
+                "Removing user management from this role would leave no active "
+                "administrator. Give another account a role that manages users first."
+            )
         serializer.save()
+
+    @staticmethod
+    def _administrator_remains_without(role):
+        return (
+            User.objects.filter(is_active=True)
+            .filter(Q(is_superuser=True) | (Q(role__can_manage_users=True) & ~Q(role=role)))
+            .exists()
+        )
 
     def perform_destroy(self, instance):
         if instance.is_system:

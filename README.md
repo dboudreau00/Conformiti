@@ -523,7 +523,9 @@ pinned file, refuses if one has changed, and writes those rows into a
 control was added is not picked up at seal. The manifest is signed with a
 detached **Ed25519** signature from a key held in a file *outside the
 database* (`SIGNING_KEY_FILE`). The package freezes: the assessed organisation
-can no longer change what the auditor is looking at. A seal entry goes into
+can no longer change what the auditor is looking at. A new version of a
+pinned document afterwards leaves the package alone: the auditor opens, and
+the export carries, the bytes that were sealed. A seal entry goes into
 the audit trail, and the key fingerprint is published under *Settings › About*
 and at `/api/signing-keys/`.
 

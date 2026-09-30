@@ -595,7 +595,7 @@ function MfaBlock() {
             />
           </Field>
           <p className="mt-2 text-xs text-muted">
-            Signed in through your organisation's identity provider, so you have no password here? Use a backup code instead.
+            Signed in through your organisation's identity provider, so you have no password here? Leave this empty.
           </p>
         </div>
       ) : null}

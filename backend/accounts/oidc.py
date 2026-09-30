@@ -450,8 +450,15 @@ def resolve_user(claims, cfg):
         raise OidcError("token", "ID token has no subject")
     email = str(claims.get("email") or "").strip().lower()[:254]
 
-    identity = (OidcIdentity.objects.select_related("user__role")
-                .filter(issuer=issuer, subject=subject).first())
+    # A provider may spell its issuer with a trailing "/" (Entra ID's SAML
+    # entity id and Auth0's issuer do) and link_oidc_identity stores it
+    # without one, so a link made by hand never matched those providers. Both
+    # spellings are one identity, and two accounts holding it is refused.
+    matches = list(OidcIdentity.objects.select_related("user__role")
+                   .filter(issuer__in={issuer, issuer.rstrip("/")}, subject=subject))
+    if len({m.user_id for m in matches}) > 1:
+        raise OidcError("denied", "identity linked to more than one account")
+    identity = matches[0] if matches else None
     if identity is not None:
         if not identity.user.is_active:
             raise OidcError("inactive")

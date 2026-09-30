@@ -35,7 +35,11 @@ BUILTIN_ROLES = [
     # is what accounts/permissions.py actually allows.
     ("Auditor", "Read-only outside party: packages issued to them, the folders granted with them, and the trail.",
      dict(is_auditor=True)),
-    ("Viewer", "Read-only access to granted folders.", dict()),
+    # Not "read-only access to granted folders" either: every account but the
+    # Auditor reads the programme-wide records, and a viewer adds notes to
+    # risks and edits the ones they own (USER_GUIDE.md, Roles).
+    ("Viewer", "Reads the programme-wide records and the folders granted to them; adds "
+               "notes to risks and edits the risks they own.", dict()),
 ]
 
 

@@ -251,16 +251,18 @@ class DisclosureBoundaryTests(PackageTestBase):
     def test_deactivating_or_demoting_the_auditor_revokes_on_the_next_request(self):
         self.auditor.role = self.roles["Viewer"]
         self.auditor.save()
+        # Reading ends with the role, as SECURITY.md says: a grant is issued
+        # to an auditor, and it bypasses folder permissions that no other role
+        # gets round. Until the documentation audit's fixes reads went on and
+        # only conclusions stopped.
         self.assertEqual(
             self.client_for(self.auditor).get(
                 f"/api/package-controls/{PackageControl.objects.get().pk}/",
-                ).status_code, 200,
-            "reading is still allowed -- the grant is what governs that")
-        # ...but writing a conclusion is not, because live_grant re-checks the role.
+                ).status_code, 404)
         r = self.client_for(self.auditor).patch(
             f"/api/package-controls/{PackageControl.objects.get().pk}/",
             {"design_conclusion": "no_exceptions"}, format="json")
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 404)
 
     def test_a_grant_on_a_draft_is_refused(self):
         """Otherwise 'seal small, grant, keep adding' would widen silently."""
@@ -496,7 +498,11 @@ class BundleTests(PackageTestBase):
         """The bundle must not lie, and must not disagree with itself."""
         self.add_control()
         self.seal()
-        self.doc.file.save("swapped.txt", SimpleUploadedFile("swapped.txt", b"tampered"), save=True)
+        # Changed where it lies, which is what tampering is. A new version, or
+        # a new file under another name, leaves the sealed bytes to the
+        # package (snapshot.pinned_file).
+        with open(self.doc.file.path, "wb") as fh:
+            fh.write(b"tampered")
         r = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/export/")
         self.assertEqual(r.status_code, 200)
         self.assertIn("discrepancies=1", r["X-Conformiti-Integrity"])

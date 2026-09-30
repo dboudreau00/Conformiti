@@ -91,20 +91,54 @@ def pin_document(package_control, document, user, link=None, ordinal=0, **extra)
     )
 
 
+def pinned_file(row):
+    """The file a pinned row stands for, as ``(file, archived_version)``.
+
+    The document's own file while it is still the one pinned; after a new
+    version, the archived version that kept it. Every read used to take the
+    document's current file, so once a new version landed after the seal the
+    auditor opened bytes the package never sealed while the package went on
+    showing the sealed digest. ``(None, None)`` when neither holds it: a file
+    the package did not seal is not served in its place.
+    """
+    document = row.document
+    if document is None or not document.file:
+        return None, None
+    # A row with no storage_path names no file, so the document's own is all
+    # there is to go on.
+    if not row.storage_path or document.file.name == row.storage_path:
+        return document.file, None
+    archived = document.versions.filter(file=row.storage_path).first()
+    if archived is None:
+        return None, None
+    return archived.file, archived.version
+
+
 def verify_pins(package):
     """Re-hash every pinned artefact. Returns the rows that no longer match.
+
+    While the package is a draft the question is whether each document still
+    holds what was pinned, so a new version means refresh or unpin before
+    sealing. Once it is sealed the question is whether the package can still
+    produce what it sealed (pinned_file), which a later version of the
+    document does not change.
 
     Each entry is ``{"item", "control_ref", "document", "expected", "actual"}``
     where ``actual`` is ``None`` if the file has gone.
     """
     drifted = []
+    sealed = not package.is_open
     rows = PackageEvidence.objects.filter(
         package_control__package=package
     ).select_related("package_control", "document")
     for row in rows:
         current = None
-        if row.document and row.document.file:
-            current, _ = digest_and_size(row.document.file)
+        if sealed:
+            source, _ = pinned_file(row)
+        else:
+            source = row.document.file if row.document and row.document.file else None
+        if source:
+            current, _ = digest_and_size(source)
         if current != row.content_sha256:
             drifted.append({
                 "item": row.pk,

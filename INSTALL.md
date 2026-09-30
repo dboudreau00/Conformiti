@@ -52,9 +52,10 @@ To look around a worked example instead, put `SEED_DEMO_DATA=true` in `.env`
 `--demo` with the scripted variant below. That seeds five accounts sharing one
 password, generated on first boot and printed once
 (`docker compose logs backend | grep "Sign in as"`, or set `DEMO_PASSWORD` in
-`.env` beforehand). `DEMO_PASSWORD` is not checked against the password
-policy, and the demo `admin` is a superuser, so leave it unset to get a strong
-generated one on any machine others can reach. Note the password when you
+`.env` beforehand). A chosen `DEMO_PASSWORD` must meet the password policy,
+because the demo `admin` is a superuser: one that does not is refused before
+any account is made, the backend log says why and the stack starts without
+the demo. Leave it unset to get a strong generated one. Note the password when you
 see it: the log keeps it only until the backend container is recreated, which
 `docker compose up` does after any change to `.env`. It is off by default: an
 installation carrying those accounts says so on its own sign-in page, which is

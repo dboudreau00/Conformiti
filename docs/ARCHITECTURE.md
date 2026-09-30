@@ -171,10 +171,12 @@ below 400, writes `{user, action, object_type, object_id,
 `/api/health/` are excluded; sign-in, failed sign-in and sign-out, passkey
 enrolment, removal and refusals, MFA resets, evidence downloads, package
 reads and exports, and malware detections and quarantines are written
-explicitly by `audit.events` and the scanner. The middleware sees `/api/`
-only: changes made in the Django admin site are kept in Django's own admin
-history, and the trail receives only a password set there and a refused
-second factor at its sign-in. The trail is read through `GET /api/audit-log/`
+explicitly by `audit.events` and the scanner. Under `/admin/` the
+middleware writes each change the Django admin saved (a POST it answered
+with a redirect: an add, a change, a delete or a bulk action, with the field
+names), and the admin's sign-in form writes its sign-ins and refusals. The
+admin shows the trail, evidence packages and completed access reviews
+read-only, and takes no uploaded file. The trail is read through `GET /api/audit-log/`
 by administrators, view-all managers and the Auditor role, and that endpoint
 has no write surface.
 

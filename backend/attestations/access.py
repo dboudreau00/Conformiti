@@ -48,6 +48,12 @@ def readable_packages(user):
         # A frameworks role without view-all reads only what it assembled,
         # which by construction holds only folders it could already see.
         return EvidencePackage.objects.filter(created_by=user)
+    if not (user.is_active and user.is_auditor):
+        # A grant is issued to an active account holding the Auditor role,
+        # and reading under it ends with either: demoting the account out of
+        # the role used to leave every package issued to it readable until
+        # the grant expired, although live_grant() refused it at once.
+        return EvidencePackage.objects.none()
     return EvidencePackage.objects.filter(
         pk__in=PackageGrant.objects.filter(
             user=user,

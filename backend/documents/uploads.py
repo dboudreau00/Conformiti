@@ -1,9 +1,9 @@
 """Upload validation shared by every file-accepting endpoint.
 
 nginx caps the request body at the edge; this enforces the same ceiling inside
-the application (so the dev server, the admin and any direct-to-gunicorn
-deployment behave identically) and rejects filenames that would be
-meaningless or dangerous on disk.
+the application (so the dev server and any direct-to-gunicorn deployment
+behave identically) and rejects filenames that would be meaningless or
+dangerous on disk. The Django admin takes no file at all (documents/admin.py).
 """
 import os
 import zipfile

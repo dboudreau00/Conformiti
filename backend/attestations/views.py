@@ -40,7 +40,7 @@ from .serializers import (
     PackageGrantSerializer,
     PackageSampleSerializer,
 )
-from .snapshot import pin_document, snapshot_control, stamp, verify_pins
+from .snapshot import pin_document, pinned_file, snapshot_control, stamp, verify_pins
 
 MIN_ASSERTION = 40
 
@@ -767,15 +767,26 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
             lock_open(instance.package_control.package)
             instance.delete()
 
+    @staticmethod
+    def _sealed_bytes(row):
+        """What /file/ and /preview/ serve: the bytes the row pinned
+        (snapshot.pinned_file), never a later version in their place."""
+        if row.document is None or not row.document.file:
+            raise ValidationError({"detail": "This evidence file is no longer available."})
+        monitor.refuse_if_quarantined(row.document)
+        source, version = pinned_file(row)
+        if source is None:
+            raise ValidationError({"detail": "The file pinned here is no longer stored, "
+                                             "and no other file is served in its place."})
+        return source, version
+
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         """Preview a pinned artefact under the same grant rule as /file/."""
         from documents.views import preview_response
 
         row = self.get_object()
-        if row.document is None or not row.document.file:
-            raise ValidationError({"detail": "This evidence file is no longer available."})
-        monitor.refuse_if_quarantined(row.document)
+        source, version = self._sealed_bytes(row)
         package = row.package_control.package
         grant = access.live_grant(request.user, package)
         if grant is not None:
@@ -785,7 +796,8 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
             request, package, "read",
             f"previewed evidence '{row.document_name}' from package {package.pk}",
         )
-        return preview_response(request, row.document.file, row.document_name, row.document)
+        return preview_response(request, source, row.document_name, row.document,
+                                version=version)
 
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
@@ -796,9 +808,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         for an external auditor means a live grant on a sealed package.
         """
         row = self.get_object()
-        if row.document is None or not row.document.file:
-            raise ValidationError({"detail": "This evidence file is no longer available."})
-        monitor.refuse_if_quarantined(row.document)
+        source, _ = self._sealed_bytes(row)
         package = row.package_control.package
         grant = access.live_grant(request.user, package)
         if grant is not None:
@@ -808,7 +818,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
             request, package, "read",
             f"read evidence '{row.document_name}' from package {package.pk}",
         )
-        return serve_stored_file(row.document.file, row.document_name)
+        return serve_stored_file(source, row.document_name)
 
 
 class PackageGrantViewSet(viewsets.ModelViewSet):

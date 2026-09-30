@@ -21,6 +21,17 @@ class AccessReviewAdmin(admin.ModelAdmin):
     list_display = ["name", "status", "created_by", "created_at", "completed_at"]
     inlines = [AccessReviewItemInline]
 
+    # A completed review is evidence, here as in the API.
+    def has_change_permission(self, request, obj=None):
+        if obj is not None and obj.status == AccessReview.Status.COMPLETED:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.status == AccessReview.Status.COMPLETED:
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 @admin.register(MeetingSeries)
 class MeetingSeriesAdmin(admin.ModelAdmin):
@@ -31,6 +42,9 @@ class MeetingSeriesAdmin(admin.ModelAdmin):
 class MeetingMinuteAdmin(admin.ModelAdmin):
     list_display = ["series", "date", "title", "created_by"]
     list_filter = ["series"]
+    # The file arrives through the API, where uploads are checked and
+    # scanned (documents/admin.py says why the admin takes none).
+    readonly_fields = ["file"]
 
 
 class GroupMemberInline(admin.TabularInline):

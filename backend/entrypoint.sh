@@ -61,8 +61,24 @@ case "${SEED_DEMO_DATA:-false}" in
     # before-real-use advice to the banner at the end instead of telling the
     # operator to run createsuperuser first. The flag is added only when both
     # are non-empty, the test that step applies.
-    python manage.py bootstrap_demo \
-      ${DJANGO_SUPERUSER_USERNAME:+${DJANGO_SUPERUSER_PASSWORD:+--superuser-follows}}
+    # A DEMO_PASSWORD the password policy refuses stops the seed before it
+    # creates anything, and the boot carries on without the demo, as it does
+    # when the policy refuses DJANGO_SUPERUSER_PASSWORD below. Any other
+    # failure still stops the boot.
+    if demo_out=$(python manage.py bootstrap_demo \
+        ${DJANGO_SUPERUSER_USERNAME:+${DJANGO_SUPERUSER_PASSWORD:+--superuser-follows}} 2>&1); then
+      printf '%s\n' "$demo_out"
+    elif [[ "$demo_out" == *"DEMO_PASSWORD does not meet the password policy"* ]]; then
+      log "!! The demo was NOT seeded. bootstrap_demo said:"
+      while IFS= read -r line; do
+        if [ -n "$line" ]; then log "!!   ${line}"; fi
+      done <<<"$demo_out"
+      log "!! Set a DEMO_PASSWORD that passes it, or unset it to have one generated,"
+      log "!! and run docker compose up -d again."
+    else
+      printf '%s\n' "$demo_out"
+      exit 1
+    fi
     ;;
   *)
     # Defaulted for the same reason as CLAMAV_ENABLED below: `set -u` makes a

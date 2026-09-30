@@ -158,6 +158,15 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
         review = serializer.save(created_by=self.request.user)
         _snapshot_items(review)
 
+    def perform_destroy(self, instance):
+        # Deleting took every row with it, so a completed review, the evidence
+        # that the control operated, could simply go.
+        from rest_framework.exceptions import ValidationError
+
+        if instance.status == AccessReview.Status.COMPLETED:
+            raise ValidationError({"detail": "This review is completed and read-only."})
+        instance.delete()
+
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         review = self.get_object()

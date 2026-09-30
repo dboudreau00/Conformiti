@@ -51,7 +51,7 @@ is named by the release that closed it, as the code comments cite it, so the
 | 0.9.5j, code review | internal | 155 upheld of 161 reported | [CHANGELOG.md](CHANGELOG.md) | 0.9.5k |
 | 0.9.5l, post-release install check | internal, run with automated agents | 2 | [CHANGELOG.md](CHANGELOG.md) | 0.9.5m |
 | 0.9.5m, release review | **independent** | 3 (one bug, two suggestions), all closed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5ma |
-| 0.9.5ma, documentation audit | internal, run with automated agents | every document held to the code; 11 code defects fixed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5mb |
+| 0.9.5ma, documentation audit | internal, run with automated agents | every document held to the code; 19 code defects fixed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5mb (11); the other 8 unreleased |
 
 The independent reviews up to 0.9.5h are the substantial ones. The 0.9.0
 review attacked tenancy, authentication, single sign-on, file ingest,
@@ -266,7 +266,8 @@ point of view.
   `.xlsx` and `.pptx` files (and their template and show variants) that
   carry macros or embedded OLE objects. It is a list of what is refused, not
   of what is allowed: any other type is stored and downloaded as an
-  attachment.
+  attachment. Files arrive through the API only: the Django admin takes
+  none, and cannot change a document's scan verdict or clear its quarantine.
 - **Optional malware scanning.** `docker compose --profile scanning up -d` plus
   `CONFORMITI_SCANNING=true` (on bare metal, `CLAMAV_ENABLED=true` with
   `CLAMAV_HOST` and `CLAMAV_PORT` pointing at your clamd:
@@ -339,8 +340,9 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   `is_superuser`/`is_staff`, so the API cannot mint a Django superuser (tested).
 - Self-service profile edits (`PATCH /users/me/`) cannot change role, status
   or superuser (tested).
-- Access-review rows snapshot decisions server-side; completed reviews are
-  read-only (tested).
+- Access-review rows snapshot decisions server-side; a completed review is
+  read-only and cannot be deleted, in the API and in the Django admin
+  (tested).
 - The Jira API token is write-only in the API and issue fetches are proxied
   server-side; base URLs must be `https` to a public host (tested). If the
   server's environment sets an egress proxy (`HTTPS_PROXY`) that does not
@@ -436,7 +438,8 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   Grants are per user (never per role), time-boxed, revocable in one click,
   and re-evaluated on every request, so deactivating or demoting the account
   closes it immediately.
-  Every file that leaves is recorded before it leaves.
+  Every file that leaves is recorded before it leaves. The Django admin shows
+  a package, its rows, its pinned evidence and its grants read-only.
 - **The Auditor role reads two things without a package grant, by
   decision.** Any active account whose role is an auditor role can read
   every access-review snapshot of its workspace (each account's username,

@@ -15,6 +15,7 @@ from config.csvsafe import csv_safe
 
 from . import manifest as mf
 from .models import PackageEvidence
+from .snapshot import pinned_file
 
 GENERATOR = "Conformiti"
 
@@ -452,11 +453,13 @@ def write_bundle(package, fh):
             if not row.member_path:
                 continue
             digest = None
-            if row.document and row.document.file:
+            # The bytes this row sealed, not whatever the document holds now.
+            sealed_file, _ = pinned_file(row)
+            if sealed_file:
                 info = zipfile.ZipInfo(row.member_path, date_time=stamp)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 try:
-                    source = row.document.file.open("rb")
+                    source = sealed_file.open("rb")
                 except (FileNotFoundError, OSError, ValueError):
                     source = None
                 if source is not None:

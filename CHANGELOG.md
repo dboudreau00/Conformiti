@@ -11,6 +11,77 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+The rest of what the 0.9.5ma documentation audit found. Eight places where
+the code still fell short of the documents are fixed, each with a test that
+fails on 0.9.5mb, which closes every product defect the audit reported.
+
+**On upgrade.** No migration. The Django admin no longer adds documents,
+document versions or form templates, takes no file on any form, and shows
+evidence packages, their rows, pins and grants read-only, as it now shows a
+completed access review. An account moved out of the Auditor role stops
+reading the packages issued to it at once. A `DEMO_PASSWORD` that does not
+meet the password policy is refused when the demo accounts would be created:
+the backend log says why and the stack starts without the demo. Demo
+accounts that already exist are not affected.
+
+### Fixed
+
+- **A new version of a pinned document reached the auditor through a sealed
+  package.** The package's reads and previews served the document's current
+  file, so after the seal the auditor opened bytes the package never sealed
+  while it still showed the sealed digest; only `/verify/` and the export
+  said so. The package now serves the file it pinned: the document's own
+  while it is current, then the archived version that kept it, and it
+  refuses rather than serve anything else. The export carries the sealed
+  bytes, and `/verify/` on a sealed package asks whether it can still
+  produce them. Before the seal a new version is still drift that asks for a
+  refresh.
+- **Demoting an auditor left every package issued to them readable.**
+  Conclusions stopped at once but reads went on until the grant expired,
+  although SECURITY.md said demotion closes the grant. A grant bypasses
+  folder permissions, and it now holds only for an active account in an
+  auditor role. The test that asserted the old behaviour asserts this one.
+- **The Django admin stored uploads unchecked.** Documents, versions, form
+  templates and meeting minutes took a file there with none of the API's
+  size, type, macro and malware checks, and the admin could clear a
+  document's quarantine. It now takes no file and leaves the scanner's
+  verdict alone; files arrive through the API.
+- **The Django admin edited sealed packages.** Auditor conclusions, pinned
+  digests and grants were all editable there, although the API refuses them
+  to anyone at the assessed organisation. The admin shows them read-only.
+- **A completed access review could be renamed or deleted.** Its rows were
+  locked on completion, but the review itself answered PATCH and DELETE, and
+  deleting it took every row. Both are refused once it is completed, in the
+  API and in the Django admin.
+- **Taking user management off a custom role could leave no
+  administrator.** The last-administrator guard covered user edits only.
+  Role edits now refuse a change that would leave the workspace without an
+  active administrator.
+- **`DEMO_PASSWORD` was not held to the password policy**, although it is the
+  password of the demo superuser. A chosen one must meet it and is checked
+  before any demo account is created; a generated one is sized from
+  `PASSWORD_MIN_LENGTH`.
+- **A single sign-on link made by hand never matched a provider whose issuer
+  ends in `/`**, such as Entra ID's SAML entity id: `link_oidc_identity`
+  stored the issuer without it, and sign-in looked it up as the provider
+  spells it. It failed closed, so the account could not sign in through SSO.
+  Both spellings are now one issuer, and one identity linked to two
+  accounts is refused.
+
+### Changed
+
+- The built-in Viewer role's description says what the role does (reads the
+  programme-wide records and the folders granted to it, adds notes to risks
+  and edits the risks it owns) instead of "Read-only access to granted
+  folders".
+- The two-factor setup hint for an account with no password says to leave
+  the password empty, which is what works; it suggested a backup code the
+  account cannot have yet.
+- `docs/ARCHITECTURE.md` described the audit trail as blind to the Django
+  admin, which stopped being true in 0.9.5mb.
+
 ## [0.9.5mb], 2026-09-30
 
 A security release from an audit that held every document to the code before

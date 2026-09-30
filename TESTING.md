@@ -34,7 +34,7 @@ use `./install.sh --demo` (Windows:
 `manage.py bootstrap_demo`; on the Docker stack set `SEED_DEMO_DATA=true` in
 `.env` or use `./install.sh --docker --demo`. All demo accounts share the
 password the seeding step printed; set `DEMO_PASSWORD` before seeding to pin
-it. Seeded documents (owner Owen Owner):
+it (it must meet the password policy). Seeded documents (owner Owen Owner):
 
 | Document | Review due |
 |---|---|
