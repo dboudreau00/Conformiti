@@ -23,7 +23,7 @@ class JiraError(Exception):
 
 # The safety checks below used to live here in full. They moved to
 # config/outbound.py in 0.9.5b so the chat webhooks could not ship a second,
-# weaker copy of them (REVIEW_095.md, S-2). Jira keeps its own wording.
+# weaker copy of them (REVIEWS.md (0.9.5 review), S-2). Jira keeps its own wording.
 _MESSAGES = {
     "scheme": "Jira base URL must start with https:// (e.g. https://your-team.atlassian.net).",
     "userinfo": "Jira base URL must not carry a username or password.",

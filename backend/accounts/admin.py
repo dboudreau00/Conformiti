@@ -33,19 +33,28 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
         return f"admin-login:{_client_ip(self.request) if self.request else 'unknown'}"
 
     def clean(self):
+        # Every outcome reaches the audit trail (from 0.9.5mb), as an API
+        # sign-in does; a refusal for the rate limit once per client and window.
+        from audit.events import record_admin_sign_in
+
         key = self._throttle_key()
+        username = (self.data.get("username") or "") if self.data else ""
         if (cache.get(key) or 0) >= self.ATTEMPTS:
+            if cache.add(f"{key}:audited", 1, self.WINDOW):
+                record_admin_sign_in(self.request, username, "throttled")
             raise ValidationError("Too many sign-in attempts. Try again in a minute.")
         try:
             cleaned = super().clean()
         except ValidationError:
             cache.set(key, (cache.get(key) or 0) + 1, self.WINDOW)
+            record_admin_sign_in(self.request, username, "invalid credentials or not a staff account")
             raise
 
         user = self.get_user()
         if user is not None:
             workspace = getattr(user, "workspace", None)
             if workspace is not None and not workspace.is_active and not user.is_superuser:
+                record_admin_sign_in(self.request, username, "workspace archived")
                 raise ValidationError("This workspace is archived.")
             if user.mfa_enabled:
                 code = (self.cleaned_data.get("otp") or "").strip()
@@ -63,6 +72,7 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
                     raise ValidationError(
                         "Enter the code from your authenticator app, or a backup code."
                     )
+        record_admin_sign_in(self.request, username)
         return cleaned
 
 
@@ -78,6 +88,11 @@ admin.site.register(Role)
 class WorkspaceAdmin(admin.ModelAdmin):
     list_display = ("name", "slug", "is_active", "created_at")
 
+    # A workspace is archived, never deleted (the API has no delete either):
+    # deleting one takes every row it owns with it, its audit trail included.
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(WebAuthnCredential)
 class WebAuthnCredentialAdmin(admin.ModelAdmin):
@@ -91,21 +106,28 @@ class CustomUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (("Compliance", {"fields": ("role", "job_title")}),)
     list_display = ("username", "email", "first_name", "last_name", "role", "is_staff")
 
-    def save_model(self, request, obj, form, change):
+    def user_change_password(self, request, id, form_url=""):
         """A password set here ends the account's sessions, as it does
-        everywhere else.
+        everywhere else, and is written to the trail.
 
-        The API path has revoked them since 0.9.5; this one had not, so the
-        recovery action for an account believed to be in the wrong hands left
-        whoever held it signed in. Django's own form hashes the password into
-        ``password``, which is what ``changed_data`` reports.
+        The admin sets a password on this page only: the change form shows the
+        hash read-only, and this view saves through its own form without
+        calling ``save_model``. The hook that used to live in ``save_model``
+        therefore never ran (fixed in 0.9.5mb), and the recovery action for an
+        account believed to be in the wrong hands left whoever held it signed
+        in. A saved form answers with a redirect; a refused one re-renders.
         """
-        super().save_model(request, obj, form, change)
-        if change and "password" in (form.changed_data or ()):
+        from django.contrib.admin.utils import unquote
+
+        response = super().user_change_password(request, id, form_url)
+        if request.method == "POST" and response.status_code == 302:
             from accounts.session_views import end_all_sessions
             from audit.events import record_auth_event
 
-            revoked = end_all_sessions(obj)
-            record_auth_event(request, obj, "password",
-                              f"password set in the admin by {request.user.get_username()}; "
-                              f"{revoked} refresh token(s) revoked and issued access tokens refused")
+            user = self.get_object(request, unquote(id))
+            if user is not None:
+                revoked = end_all_sessions(user)
+                record_auth_event(request, user, "password",
+                                  f"password set in the admin by {request.user.get_username()}; "
+                                  f"{revoked} refresh token(s) revoked and issued access tokens refused")
+        return response

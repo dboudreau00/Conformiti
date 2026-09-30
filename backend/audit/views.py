@@ -19,7 +19,7 @@ from .serializers import AuditLogSerializer
 
 class AuditLogFilter(filters.FilterSet):
     """``user`` as a number. The trail is readable by an issued auditor with
-    no live grant, by the product decision recorded in REVIEW_095F.md, so the
+    no live grant, by the product decision recorded in REVIEWS.md (0.9.5f review), so the
     filter on it must not answer whether an id belongs to anybody
     (0.9.5i, L-1)."""
 

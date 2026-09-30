@@ -133,7 +133,7 @@ class AuditorSurfaceTests(APITestBase):
         "workspaces" is on the allowed list so the auditor can see whose
         engagement they are on, and until 0.9.5b that answer also carried the
         organisation's Slack and Teams webhook URLs, which are credentials
-        (REVIEW_095.md, S-1). Being listed here is not a licence to disclose."""
+        (REVIEWS.md (0.9.5 review), S-1). Being listed here is not a licence to disclose."""
         from accounts.models import Workspace
 
         workspace = Workspace.objects.get(pk=self.auditor.workspace_id)

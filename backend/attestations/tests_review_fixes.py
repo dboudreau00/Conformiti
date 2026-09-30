@@ -1,6 +1,6 @@
 """Regression tests for the 0.9.0 adversarial review.
 
-Each test names the defect it locks shut. See REVIEW_090.md for the full set
+Each test names the defect it locks shut. See REVIEWS.md (0.9.0 review) for the full set
 of findings; these cover the ones remediated in this pass.
 """
 from django.core.files.base import ContentFile

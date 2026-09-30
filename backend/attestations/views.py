@@ -20,7 +20,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from audit.events import record_package_event
@@ -82,7 +82,15 @@ def lock_open(package):
     return row
 
 
-class PackageWorkThrottle(ScopedRateThrottle):
+class PackageWorkThrottle(UserRateThrottle):
+    """THROTTLE_PACKAGE_WORK, per account, for the routes that hash every
+    pinned file (seal and export).
+
+    UserRateThrottle so ``scope`` binds directly to the rate. It was a
+    ScopedRateThrottle until 0.9.5mb, which reads its scope from a view
+    ``throttle_scope`` attribute and lets every request through without one,
+    so the documented limit was never applied (the trap config/urls.py
+    describes for the login throttle)."""
     scope = "package_work"
 
 
@@ -228,7 +236,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         return Response({"added": len(added), "skipped": skipped},
                         status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], throttle_classes=[PackageWorkThrottle])
     def seal(self, request, pk=None):
         """Freeze the package and compute its manifest digest."""
         package = self.get_object()
@@ -420,7 +428,7 @@ class SigningKeysView(APIView):
         # A public key is for publishing; a list of the tenants on a server is
         # not. On an installation serving more than one, the caller names the
         # organisation whose key they are checking, which an auditor holding a
-        # bundle always knows (REVIEW_095.md, S-8).
+        # bundle always knows (REVIEWS.md (0.9.5 review), S-8).
         active = Workspace.objects.filter(is_active=True)
         if not slug:
             if active.count() > 1:
@@ -467,6 +475,22 @@ class SigningKeysView(APIView):
         return Response({"algorithm": signing.ALGORITHM, "enabled": current["enabled"],
                          "workspace": workspace.slug if workspace else None,
                          "current": current if current.get("key_id") else None, "keys": keys})
+
+
+class CurrentSigningKeyView(APIView):
+    """The key that signs this workspace's packages, for the settings screen.
+
+    /api/health/ answers with no workspace, so on an installation serving
+    several organisations it cannot say which key signs yours; this answers
+    as the signed-in person, in their workspace. The default permissions
+    apply: an external auditor is given the fingerprint out of band."""
+
+    def get(self, request):
+        info = signing.current_key_info(create=True)
+        # Never the configuration error itself: it names the key's path.
+        return Response({"enabled": info["enabled"], "algorithm": info["algorithm"],
+                         "key_id": info["key_id"], "fingerprint": info["fingerprint"],
+                         "error": "misconfigured" if info.get("error") else None})
 
 
 class PackageControlViewSet(viewsets.ModelViewSet):

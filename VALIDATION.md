@@ -1,7 +1,8 @@
 # Validation
 
-Three layers, all of them run in CI on every push. Locally, one command runs
-the validator, the backend suite and the frontend build:
+Three layers, all of them run in CI on every push to `main` and on every pull
+request. Locally, one command runs the validator, the backend suite and the
+frontend build:
 
 ```bash
 ./install.sh --test                                              # macOS / Linux / WSL
@@ -30,9 +31,9 @@ anything is installed. Exits non-zero on any error. Twenty checks:
 | 13 | MFA engine against the RFC 4226 / 6238 test vectors |
 | 14 | Review-reminder wiring: beat task → registered task, Celery app import, cron command, templates, provider branches, model fields |
 | 15 | Tests + CI: every app has a `tests.py`, the CI workflow and `LICENSE` exist |
-| 16 | Compose isolation: the Docker stack cannot inherit `DJANGO_DEBUG` or a signing key from a local development `.env` |
+| 16 | Compose isolation: the Docker stack cannot inherit `DJANGO_DEBUG`, the Django secret key (which signs the sign-in tokens) or the field-encryption key from a local development `.env`; they come from `CONFORMITI_*` variables or the `secrets` volume |
 | 17 | Malware scanning: the clamd protocol cases, the EICAR fixture, and the upload limits agreed between clamd and nginx |
-| 18 | Offsite assets: no page loads anything from a third party |
+| 18 | Offsite assets: `index.html` loads nothing from another host, and neither it nor `nginx.conf` names a known CDN; the shipped Content-Security-Policy (`default-src 'self'`) is what refuses a third-party load at run time |
 | 19 | Version lock: the same version in nine places, `version.py`, `package.json` in `frontend/` and in `e2e/`, both version fields in each of their `package-lock.json` files (the top-level one and `packages[""]`), the README badge and the changelog heading |
 | 20 | No em or en dash (U+2014, U+2013) in a text body: every tracked Markdown file, and every file under a `backend/**/templates/` directory (the emails). Code, scripts and configuration files are not checked, their comments included |
 
@@ -42,8 +43,11 @@ are correct; they count different things.
 
 ## 2. Backend test suite: `python manage.py test`
 
-Runs on SQLite by default; CI runs it on Python 3.11 to 3.14 and once more
-against PostgreSQL 16. What it covers:
+Runs on SQLite by default, with DEBUG on (the code default, and CI sets
+`DJANGO_DEBUG=true`); CI runs it on Python 3.11 to 3.14 and once more against
+PostgreSQL 16. Settings that differ with DEBUG off are covered by tests that
+start the settings module with DEBUG off in a subprocess, and by the Docker
+job below. What it covers:
 
 - **Tenancy.** ORM-level workspace scoping, the fail-loud unscoped read,
   `X-Workspace` ignored for everyone but a superuser, per-workspace seeding,
@@ -71,6 +75,10 @@ against PostgreSQL 16. What it covers:
 ## 3. Frontend and containers
 
 - `npm run build` (Vite 8) must succeed; `npm audit --audit-level=high` clean.
+- `node ../tools/jscheck.mjs src` (from `frontend/`): every source file parses
+  and uses no undeclared name, which a Vite build does not catch.
+- Both installers run on a fresh checkout (Windows PowerShell 5.1, PowerShell
+  7, Linux).
 - Both Docker images build; the API image boots standalone and answers
   `/api/health/`, the endpoint the compose healthchecks and installers poll.
 - The compose job exercises the stack end to end: sign in through nginx,
@@ -87,4 +95,13 @@ against PostgreSQL 16. What it covers:
   whether a message is actually intelligible.
 - Real email delivery (`manage.py test_mailbox --to you@…`) and Jira, both of
   which need real accounts.
+- Malware scanning against a real ClamAV daemon (`docker compose --profile
+  scanning up`, then an EICAR upload). The suite uses a fake clamd, and no CI
+  job starts the scanning profile.
+- S3 storage (`USE_S3=true`), which has no automated test.
+- Single sign-on against a real OIDC or SAML identity provider. The suite
+  signs its own assertions.
+- The stack behind TLS (`BEHIND_TLS=true`), end to end: the HTTPS redirect,
+  HSTS and Secure cookies. The suite checks the cookie names; the CI compose
+  job runs over plain HTTP.
 - Load testing.

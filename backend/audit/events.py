@@ -63,6 +63,26 @@ def record_login_attempt(request, response):
         logger.exception("Failed to record login attempt")
 
 
+def record_admin_sign_in(request, username, reason=None):
+    """A sign-in to the Django admin: succeeded when ``reason`` is None,
+    otherwise refused for that reason. Written with the same fields as an API
+    sign-in, and never with the password or a code."""
+    try:
+        username = str(username or "")[:150]
+        user = get_user_model().objects.filter(username=username).first() if username else None
+        ok = reason is None
+        AuditLog.objects.create(
+            user=user if ok else None, action=LOGIN_OK if ok else LOGIN_FAILED,
+            object_type="auth", object_id=str(user.pk) if (ok and user) else "",
+            detail=(f"signed in to the Django admin: {username}" if ok
+                    else f"Django admin sign-in failed for {username or '<blank>'}: {reason}")[:255],
+            ip_address=_client_ip(request) if request is not None else None,
+            workspace_id=user.workspace_id if user else None,
+        )
+    except Exception:  # never let audit bookkeeping break authentication
+        logger.exception("Failed to record an admin sign-in")
+
+
 def record_logout(request):
     try:
         AuditLog.objects.create(

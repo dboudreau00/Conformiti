@@ -45,6 +45,19 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
     throttle_classes = [LoginRateThrottle]
     serializer_class = MFATokenObtainPairSerializer
 
+    def throttled(self, request, wait):
+        """A refused attempt reaches the trail too. DRF refuses it before
+        ``post`` runs, which is where every other attempt is recorded, so the
+        throttled reason used to be unreachable (fixed in 0.9.5mb). Once per
+        client address and minute: a flood of refused attempts must not turn
+        into a flood of writes."""
+        from django.core.cache import cache
+
+        ident = LoginRateThrottle().get_ident(request)
+        if cache.add(f"login-throttled-audit:{ident}", 1, 60):
+            record_login_attempt(request, Response(status=429))
+        super().throttled(request, wait)
+
     def post(self, request, *args, **kwargs):
         refused = cookie_auth.csrf_required(request)
         if refused:
@@ -109,7 +122,7 @@ urlpatterns = [
     # The same view, inside the refresh cookie's narrow path. The browser
     # attaches the refresh cookie to this URL and not to the one above, so
     # this is the only sign-out that can revoke the token when the access
-    # cookie has already expired (REVIEW_095.md, S-7). The SPA calls this one
+    # cookie has already expired (REVIEWS.md (0.9.5 review), S-7). The SPA calls this one
     # and falls back to the other, which older builds still use.
     path("api/auth/token/clear/", SessionClearView.as_view(), name="token_clear"),
     path("api/auth/config/", AuthConfigView.as_view(), name="auth_config"),

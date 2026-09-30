@@ -188,7 +188,7 @@ test.describe("workspace chat channels", () => {
   /** The webhook URL is a credential and is never returned by the API, so the
    *  box is always empty on load and says whether one is configured. That
    *  makes "saved the form with an empty box" ambiguous, and getting it wrong
-   *  deletes a working channel (REVIEW_095.md, S-1). */
+   *  deletes a working channel (REVIEWS.md (0.9.5 review), S-1). */
   test("a saved webhook is shown as configured, never echoed, and survives an unrelated save",
     async ({ page }) => {
       await open(page, "/settings", "Settings");

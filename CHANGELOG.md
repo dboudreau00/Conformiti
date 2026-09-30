@@ -11,6 +11,80 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+A security release from an audit that held every document to the code before
+a partner's security review. Eleven places where the code fell short of what
+the documents promised are fixed, each with a test that fails on 0.9.5ma, and
+the documents now say what the product does.
+
+**On upgrade.** No migration. Sealing and exporting an evidence package are
+limited to `THROTTLE_PACKAGE_WORK` (6 a minute) per account, a limit that was
+documented but never applied. The Django admin shows the audit trail
+read-only and no longer deletes a workspace. On an installation serving
+several organisations, the `signing` block of `/api/health/` names no key and
+says `per_workspace`. Audit entries now record the client's address as
+`NUM_PROXIES` says: set it as INSTALL.md describes if a TLS terminator sits in
+front of the shipped nginx.
+
+### Fixed
+
+- **An authenticator secret the encryption key could not read accepted a code
+  anyone could compute.** The unreadable secret read as an empty key, and the
+  codes of an empty key are public, so an account whose ring had been lost or
+  mistyped kept a second factor in name only. Every code is now refused while
+  the secret cannot be read; backup codes still work.
+- **With `BEHIND_TLS=true`, the Docker stack never finished starting.** The
+  image's healthcheck calls `/api/health/` over plain HTTP inside the
+  container, and the TLS redirect answered it with a 301, so the backend was
+  never healthy and the worker, beat and nginx never started. The health
+  endpoint now answers plain HTTP; everything else still redirects.
+- **The Django admin could delete audit entries**, one at a time or with
+  "Delete selected", and delete a workspace, which takes its trail with it.
+  The trail is read-only there, as in the API, and a workspace is archived,
+  not deleted.
+- **A password set on the Django admin's password page ended no session and
+  left no trace.** The hook meant to do both sat in a method that page never
+  calls. It now revokes every session of the account, refuses its earlier
+  access tokens and writes the event.
+- **The package-work rate limit was never applied.** Sealing and exporting
+  hash every pinned file, and `THROTTLE_PACKAGE_WORK` was meant to bound them,
+  but the throttle read its scope from an attribute the view never set, which
+  lets every request through. It now applies, per account, to both.
+- **The audit trail recorded the proxy, not the client, behind a TLS
+  terminator.** It took the last `X-Forwarded-For` entry whatever
+  `NUM_PROXIES` said, so with a terminator in front of the shipped nginx every
+  entry carried the terminator's address. It now finds the client exactly as
+  the rate limits do.
+- **Turning the authenticator app on or off, and regenerating backup codes,
+  wrote nothing to the trail**, although adding and removing a passkey did.
+  Each is now recorded.
+- **A sign-in refused by the rate limit never reached the trail**, because
+  the refusal comes before the code that records every other attempt. It is
+  now recorded once per client a minute, so a flood of refusals is not a
+  flood of writes.
+- **Sign-ins to the Django admin, and what was saved there, were not in the
+  trail.** Both are now, with the same fields as the API's entries (the field
+  names of a saved form, never its values).
+- **Settings › About and `/api/health/` showed a fingerprint no package
+  carried.** Each workspace signs with a key derived for it, and both showed
+  the installation's root key, which signs nothing; the Packages screen told
+  operators to hand that fingerprint to auditors. About now shows the key of
+  your workspace (`/api/signing-keys/current/`), and health names the key when
+  the installation serves one organisation.
+
+### Documentation
+
+- Every document was held to the code: 262 corrections across the README,
+  SECURITY.md, INSTALL.md, `.env.example`, the architecture and executive
+  summary, the roadmap, the user guides and the test and contributing guides.
+  They state limits plainly where the code has them (what the audit trail and
+  the Django admin cover, what a backup holds, which settings the Docker stack
+  ignores), and no longer promise per-workspace single sign-on.
+- The six review records are one document, [REVIEWS.md](REVIEWS.md), with
+  every finding's status at this release re-checked against the code.
+  SECURITY.md lists every review and what kind it was.
+
 ## [0.9.5ma], 2026-09-29
 
 Two fixes from an independent review of 0.9.5m.
@@ -411,10 +485,9 @@ change, no API change.
 - **Sidebar labels match the pages they open.** Responsibility is
   "Responsibility matrix", Groups is "Champion groups", and the page that the
   menu calls Settings no longer calls itself Account.
-- **The sidebar folds.** Twenty-five control libraries and the paid overlay
-  push it to thirty-three entries, past the height of a laptop screen, so
-  sections collapse and remember it, and the section holding the current page
-  is always open. The compact navigation labels its icons.
+- **The sidebar folds.** A long sidebar ran past the height of a laptop
+  screen, so sections collapse and remember it, and the section holding the
+  current page is always open. The compact navigation labels its icons.
 - **The dashboard, the analytics and the calendar can be retried** after a
   failure, instead of needing a full browser reload.
 - Analytics sorts frameworks worst first and pages them, rather than listing
@@ -441,7 +514,7 @@ change, no API change.
 A sixth review, three findings, two of them defects in fixes 0.9.5h shipped
 the same day. All three are fixed here with a test apiece. Nothing to do on
 upgrade: no migration, no configuration. Details in
-[REVIEW_095I.md](REVIEW_095I.md).
+[REVIEWS.md](REVIEWS.md).
 
 ### Fixed
 
@@ -474,7 +547,7 @@ A security release, closing a fifth independent review. It found fourteen
 things; thirteen are fixed here with a test apiece and one is deferred with
 its reasoning written down. Details, including the two places where the
 reviewer's suggested fix would have reintroduced an older defect, are in
-[REVIEW_095H.md](REVIEW_095H.md). One behaviour change is worth knowing about
+[REVIEWS.md](REVIEWS.md). One behaviour change is worth knowing about
 before you upgrade, and it is the third item below.
 
 ### Fixed
@@ -563,7 +636,7 @@ before you upgrade, and it is the third item below.
   and clone detection, the same machine as signing in; anything less would be
   a new way around the check rather than a fix for it. Enrolling a first
   passkey issues backup codes, and an administrator's MFA reset remains the
-  recovery path. REVIEW_095H.md carries the reasoning.
+  recovery path. REVIEWS.md carries the reasoning.
 
 ## [0.9.5g], 2026-09-18
 
@@ -596,7 +669,7 @@ They run correctly under compose, which sets the variable; use `0.9.5g` or
 A security release, closing a fourth independent review. It found fourteen
 things; all fourteen were real, and all fourteen are fixed here with a test
 apiece. Details, including what was deliberately not done, are in
-[REVIEW_095F.md](REVIEW_095F.md).
+[REVIEWS.md](REVIEWS.md).
 
 Four changes are visible before you read the list. Turning on the authenticator
 app now asks for your password, as adding a passkey already did. Your email
@@ -811,8 +884,9 @@ the image or the checkout; there is no migration.
   queries, the control, category and framework behind every link. On SQLite
   Django expands that forward-key prefetch into one OR clause per related
   row, and SQLite refuses an expression deeper than 1000, so a page of
-  policies mapped into many libraries (a Pro seed pack lands thousands of
-  links) failed for exactly the installations with the most content.
+  policies mapped into many libraries (thousands of links on an installation
+  with many frameworks loaded) failed for exactly the installations with the
+  most content.
   PostgreSQL ran the same query in one very wide statement. The links are
   now prefetched with their control, category and framework joined in: one
   query on every backend, and a regression test with 1,200 links on one
@@ -823,7 +897,7 @@ the image or the checkout; there is no migration.
 A security release, closing a third independent review. It found nine things;
 all nine were real, and all nine are fixed here with a test apiece. Details,
 including what was deliberately not done, are in
-[REVIEW_095.md](REVIEW_095.md).
+[REVIEWS.md](REVIEWS.md).
 
 Two changes need a word before you upgrade. Chat webhook URLs are no longer
 returned by the API to anyone, so the settings form shows whether a channel is
@@ -979,7 +1053,7 @@ untouched.
 ## [0.9.4], 2026-09-08
 
 The eleven findings the adversarial review left open. Nothing is outstanding
-from it now; [REVIEW_090.md](REVIEW_090.md) carries the whole set with its
+from it now; [REVIEWS.md](REVIEWS.md) carries the whole set with its
 status.
 
 ### Fixed: security
@@ -1127,7 +1201,7 @@ Administrators with an authenticator enrolled now need their code to reach
 ## [0.9.2], 2026-09-07
 
 The rest of the adversarial review's confirmed findings. Twenty-one more are
-fixed here; [REVIEW_090.md](REVIEW_090.md) now carries the whole set with its
+fixed here; [REVIEWS.md](REVIEWS.md) now carries the whole set with its
 status, and names the twelve still open.
 
 ### Fixed: security
@@ -1190,7 +1264,7 @@ status, and names the twelve still open.
 ### Known and open
 
 Twelve findings remain, listed with their status in
-[REVIEW_090.md](REVIEW_090.md). The significant ones: the signature covers
+[REVIEWS.md](REVIEWS.md). The significant ones: the signature covers
 `manifest.json` only, so the auditor's conclusions sit outside it; one signing
 key still serves every workspace; the Django admin login bypasses MFA, the
 login throttle and the archived-workspace refusal; the Auditor role still
@@ -1205,7 +1279,7 @@ A full adversarial review of the 0.9.0 tree, and the fixes it earned. Sixteen
 independent reviewers attacked the product across separate dimensions; every
 candidate finding was then attacked by three more with different lenses, and
 only those that survived are recorded. The complete set (including what is
-still open) is in [REVIEW_090.md](REVIEW_090.md).
+still open) is in [REVIEWS.md](REVIEWS.md).
 
 ### Fixed: security
 
@@ -1251,7 +1325,7 @@ still open) is in [REVIEW_090.md](REVIEW_090.md).
 
 ### Known and open
 
-`REVIEW_090.md` records 50 confirmed findings; the nine above are fixed. The
+`REVIEWS.md` records 50 confirmed findings; the nine above are fixed. The
 rest are open and ordered by severity: the largest remaining themes are the
 Ed25519 signature covering only `manifest.json` rather than the whole bundle,
 one signing key shared across workspaces, single sign-on resolving accounts
@@ -1826,7 +1900,7 @@ test has been performed.
 ## [0.2.0], 2026-09-03
 
 The first release built to be *shipped* rather than evaluated: a full security
-and correctness review ([REVIEW.md](REVIEW.md)), an automated test suite and
+and correctness review ([REVIEWS.md](REVIEWS.md)), an automated test suite and
 CI, a one-command install that is production-safe by default, current
 dependencies, and a redesigned interface with four theme packs.
 

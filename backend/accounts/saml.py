@@ -305,7 +305,7 @@ def complete(request, flow):
     # Required, not merely checked when present. The HTTP-POST binding says a
     # signed response carries Destination; treating an absent one as "fine"
     # meant a response captured at one service could be replayed at another
-    # (REVIEW_095.md, S-6).
+    # (REVIEWS.md (0.9.5 review), S-6).
     destination = root.get("Destination")
     if not destination:
         raise OidcError("token", "the response does not say where it was meant to go")

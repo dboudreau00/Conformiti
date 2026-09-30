@@ -52,11 +52,13 @@ To look around a worked example instead, put `SEED_DEMO_DATA=true` in `.env`
 `--demo` with the scripted variant below. That seeds five accounts sharing one
 password, generated on first boot and printed once
 (`docker compose logs backend | grep "Sign in as"`, or set `DEMO_PASSWORD` in
-`.env` beforehand). Note it when you see it: the log keeps it only until the
-backend container is recreated, which `docker compose up` does after any
-change to `.env`. It is off by default: an installation carrying those
-accounts says so on its own sign-in page, which is not a thing a real
-deployment should publish.
+`.env` beforehand). `DEMO_PASSWORD` is not checked against the password
+policy, and the demo `admin` is a superuser, so leave it unset to get a strong
+generated one on any machine others can reach. Note the password when you
+see it: the log keeps it only until the backend container is recreated, which
+`docker compose up` does after any change to `.env`. It is off by default: an
+installation carrying those accounts says so on its own sign-in page, which is
+not a thing a real deployment should publish.
 
 Keep settings like these in `.env`. Compose reads that file on every start
 and hands it to the application containers; a variable exported in your
@@ -80,8 +82,10 @@ What happens on first boot:
    `beat` schedules the daily review scan (06:00 by default), the readiness
    snapshot, the digests, the hourly malware-scanner check and the weekly
    blacklist pruning; the worker runs them.
-5. nginx serves the built SPA, proxies `/api/` and `/admin/`, and serves
-   uploads and static files from shared volumes.
+5. nginx serves the built SPA and static files, and proxies `/api/` and
+   `/admin/`. It sends an uploaded file only when the API answers with an
+   `X-Accel-Redirect` after checking the caller's permission; the media volume
+   has no public location.
 
 The API is also published on the host's loopback, `127.0.0.1:8000`, for
 debugging (`CONFORMITI_API_PORT` to move it); the LAN only sees nginx on port
@@ -230,20 +234,32 @@ pulls what it pushed and boots it before the run is allowed to pass.
    NUM_PROXIES=2              # the terminator AND the shipped nginx
    SECURE_HSTS_SECONDS=31536000
    EMAIL_PROVIDER=smtp        # + EMAIL_HOST / EMAIL_HOST_USER / EMAIL_HOST_PASSWORD
+   COMPLIANCE_TEAM_EMAIL=grc-team@example.com   # where reminders and scanner alerts go
+   DEFAULT_FROM_EMAIL=grc@example.com           # the sender address
    POSTGRES_PASSWORD=<something long>
    REDIS_PASSWORD=<letters and digits>
    ```
+   `COMPLIANCE_TEAM_EMAIL` defaults to `DEFAULT_FROM_EMAIL`, which defaults to
+   `compliance@example.com`, so until they are set the installation's
+   reminders and alerts, the malware-scanner ones included, go to an address
+   nobody reads. A workspace can name its own reminder address under
+   *Settings › Role & access › Workspaces*, which then takes precedence; the
+   scanner alert belongs to no workspace and always uses
+   `COMPLIANCE_TEAM_EMAIL`.
+
    `DJANGO_ALLOWED_HOSTS` is your public host name(s), comma-separated; the
    Docker stack adds its own internal names (`localhost`, `127.0.0.1` and
    `backend`) itself, so you need not list those, and its healthcheck keeps
-   working whatever you write here.
+   working whatever you write here (it calls `/api/health/`, which also
+   answers plain HTTP once `BEHIND_TLS` redirects everything else).
 
    `NUM_PROXIES` is how many hops back along `X-Forwarded-For` the client's
    address is. The default of 1 is the shipped nginx on its own. Put a TLS
    terminator in front of it, which is the next step, and there are two:
    leaving it at 1 makes the terminator's address every visitor's address, so
-   they share one rate-limit bucket and a single unauthenticated caller can
-   spend the installation's login budget for everybody. Two is right whether
+   they share one rate-limit bucket, a single unauthenticated caller can spend
+   the installation's login budget for everybody, and the audit trail records
+   the terminator instead of the client. Two is right whether
    your terminator appends to `X-Forwarded-For` or replaces it: the shipped
    nginx appends the address it received the request from, the terminator's,
    so the client's is two entries from the end either way. The stack warns at
@@ -268,6 +284,26 @@ pulls what it pushed and boots it before the run is allowed to pass.
    whatever the client sent; all of them do by default. Conformiti only
    believes that header once `BEHIND_TLS=true` says a terminator exists, so
    one that forwards the client's value instead will redirect in a loop.
+
+   Make port 8080 reachable only from the terminator. Either block it for
+   every other source at a firewall in front of the host (a ufw rule does not
+   hold, because Docker publishes ports around it: use the `DOCKER-USER`
+   chain or a network firewall), or, with the terminator on the same host,
+   publish nginx on the loopback only from a compose file of your own, named
+   on every command or once in `COMPOSE_FILE`, like the one in *Without a
+   build*:
+   ```yaml
+   services:
+     frontend:
+       ports: !override
+         - "127.0.0.1:${CONFORMITI_PORT:-8080}:80"
+   ```
+   `!override` replaces the published port; a plain `ports:` list would add a
+   second one beside it. Left open, a client that reaches nginx directly can
+   write its own `X-Forwarded-For` and `X-Forwarded-Proto`: with
+   `NUM_PROXIES=2` that moves it to a fresh rate-limit bucket on every
+   request, and with `BEHIND_TLS=true` Django treats its plain-http request
+   as secure.
 3. Create your own administrator, and retire the demo data if you loaded it:
    ```bash
    docker compose exec backend python manage.py createsuperuser
@@ -301,8 +337,15 @@ pulls what it pushed and boots it before the run is allowed to pass.
 5. Put `scripts/backup.sh` on cron and copy its output off the machine. It
    takes the database dump and the evidence, secrets and tree volumes in one
    go; `scripts/restore.sh <directory>` brings an installation back, here or
-   on another machine. CI runs both on every push. On the published images,
-   the restore stays on them only with `COMPOSE_FILE` and
+   on another machine. CI runs both on every push to `main` and on every pull
+   request. The backup is not encrypted, and `secrets.tgz` holds the Django
+   secret key, the field-encryption key ring and the package-signing key
+   beside a database dump whose encrypted fields that ring opens. Anyone
+   holding a backup can sign tokens and packages as this installation. The
+   script writes the files 600 in a 700 directory. Encrypt them (for example
+   with age or gpg, or on an encrypted store) before they leave the machine,
+   and keep them only where the installation's own secrets may go. On the
+   published images, the restore stays on them only with `COMPOSE_FILE` and
    `CONFORMITI_VERSION` (the backup's release) in `.env`, and none exported
    in the shell that runs it (an exported value overrides `.env`), as
    *Without a build* shows: the script takes no `-f` files, without `COMPOSE_FILE` it
@@ -321,14 +364,25 @@ Optional. Nothing changes until all three of the first keys are set.
    `openid email profile`. Okta, Entra ID, Google Workspace, Keycloak and
    Authentik all work; anything that publishes
    `/.well-known/openid-configuration` should.
-2. Add to `.env` and restart:
+2. Add to `.env` and apply it with `docker compose up -d` (with the same two
+   `-f` files, or `COMPOSE_FILE`, on the published images).
+   `docker compose restart` keeps the environment the containers were
+   created with and does not read a changed `.env`:
    ```ini
    OIDC_ISSUER=https://login.example.com      # exactly the issuer the provider publishes
    OIDC_CLIENT_ID=...
    OIDC_CLIENT_SECRET=...
    OIDC_LABEL=Sign in with Okta               # the button text
-   OIDC_ALLOWED_DOMAINS=example.com           # who may sign in through it
+   OIDC_ALLOWED_DOMAINS=example.com           # email domains that may link or be provisioned
    ```
+   Leave `OIDC_ALLOWED_DOMAINS` empty and every email domain the provider
+   vouches for is accepted. With `OIDC_AUTO_PROVISION=true` (step 4) that
+   gives an account to anyone the provider will sign in, which for Google
+   (one issuer for every Google account) is anyone with a Google account, so
+   always set the list when provisioning. The list is checked when an
+   identity is first linked by email or provisioned. An identity already
+   linked, including one linked with `link_oidc_identity`, signs in without
+   it.
 3. On a person's first SSO sign-in, a verified email that matches exactly one
    local account links it. Administrator accounts (superuser, staff, or any
    role that can manage users) are never linked this way, and a linked user
@@ -356,13 +410,19 @@ For providers that insist on SAML. Same rules as OIDC, same account linking.
    `https://grc.example.com/api/auth/saml/acs/`, HTTP-POST binding, NameID
    format email address, and have it send an `email` attribute (plus
    `givenName`/`sn` if you want names filled in).
-2. Add to `.env` and restart:
+2. Add to `.env` and apply it with `docker compose up -d`, not `restart`
+   (see the OIDC step above):
    ```ini
    SAML_IDP_ENTITY_ID=https://idp.example.com/metadata     # exactly as the provider publishes it
    SAML_IDP_SSO_URL=https://idp.example.com/sso/saml       # its HTTP-Redirect sign-on URL
    SAML_IDP_CERT_FILE=/app/secrets/idp.pem                 # its signing certificate (PEM)
    SAML_LABEL=Sign in with SAML
    ```
+   Put the certificate in the `secrets` volume first, readable by the
+   application user (it is a public certificate, so mode 644 is fine), for
+   example `docker compose cp idp.pem backend:/app/secrets/idp.pem`; the
+   worker and beat read the same volume. If the file cannot be read, every
+   application container refuses to start.
    Paste the certificate into `SAML_IDP_CERT` instead if you prefer; either
    way it is the only thing the app trusts: responses signed by anything
    else are refused. When the provider rotates its certificate, replace it
@@ -370,8 +430,9 @@ For providers that insist on SAML. Same rules as OIDC, same account linking.
 3. Linking, provisioning and the domain allow-list follow the `OIDC_*`
    settings unless a `SAML_*` twin overrides them (`SAML_ALLOWED_DOMAINS`,
    `SAML_AUTO_PROVISION`, `SAML_DEFAULT_ROLE`, `SAML_LINK_BY_EMAIL`).
-   `manage.py link_oidc_identity --issuer <entity id>` pre-links an account
-   to its SAML NameID.
+   `manage.py link_oidc_identity <username> <NameID> --issuer <entity id>`
+   pre-links an account to its SAML NameID (add `--allow-privileged` for an
+   administrator).
 
 SAML needs TLS: the provider posts back cross-site, and the cookie that
 carries the sign-in state is `SameSite=None; Secure`. Over plain http on a
@@ -387,6 +448,9 @@ not say a second factor was used (OIDC `amr`, SAML `AuthnContextClassRef`):
 | `if_enrolled` (default) | a person with a local authenticator is asked for its code before the tokens are issued; one without is let in |
 | `required` | the provider must assert a second factor, or the person must have a local authenticator; otherwise the sign-in is refused with a message telling them to enrol one by signing in with their password first |
 | `off` | trust the provider |
+
+Accounts created by auto-provisioning have no password, so under `required`
+they can sign in only while the provider asserts a second factor.
 
 `SSO_MFA_ASSERTIONS` is the list of values that count as an asserted second
 factor; the default covers the usual OIDC `amr` values and SAML context
@@ -434,9 +498,11 @@ browser's origin when that origin is listed in `CSRF_TRUSTED_ORIGINS` or
 PUBLIC_URL=https://grc.example.com
 ORGANISATION_NAME=Acme Ltd
 ```
-Emails go out through whichever `EMAIL_PROVIDER` is configured; with
-`console` (the default) the link is printed to the server log and shown
-once on screen instead.
+Emails go out through whichever `EMAIL_PROVIDER` is configured. Whatever the
+provider, the link is also shown once on screen to the person who sent it.
+With `console` (the Docker stack's default) the email, link included, is
+printed to the server log instead of being sent, so treat that log as holding
+live links.
 
 ### Optional: scan uploaded evidence for malware
 
@@ -463,12 +529,15 @@ administrators. Signatures arrive after files do, so re-scan what is stored:
 ```bash
 docker compose exec backend python manage.py scan_evidence --probe      # is clamd answering?
 docker compose exec backend python manage.py scan_evidence              # files not scanned in 30 days
-docker compose exec backend python manage.py scan_evidence --all        # everything
+docker compose exec backend python manage.py scan_evidence --all        # the current file of every document
 ```
 
-A file that now matches is quarantined: kept on disk, refused on every
-route, badged in the document list, and in the audit trail. Exit code 1 on
-an infection or an unreachable scanner, so cron can alert on it. A monthly
+A document whose current file now matches is quarantined: kept on disk,
+refused on every route (its archived versions included), badged in the
+document list, and in the audit trail. Archived versions, form templates and
+meeting minutes are scanned when they are uploaded and are not re-scanned.
+Exit code 1 on an infection or an unreachable scanner, so cron can alert on
+it. A monthly
 line in the host's crontab is enough (use your checkout's path; `-T`
 because cron gives the command no terminal):
 
@@ -478,14 +547,18 @@ because cron gives the command no terminal):
 
 ### Package signing
 
-Every sealed package manifest is signed with an Ed25519 key kept in a file
-the compose stack generates on first use in the `secrets` volume
-(`/app/secrets/package_signing_key`, 0600). Nothing to configure; **back the
-volume up** with the database. The public key and its fingerprint are under
-*Settings › About* and at `GET /api/signing-keys/`. Hand the fingerprint to
-your auditors out of band so they can tell your key from a forger's. To use
-a key you manage elsewhere, set `SIGNING_KEY` (PEM, or a base64 32-byte
-seed). To rotate:
+Every sealed package manifest is signed with an Ed25519 key. The installation
+key lives in a file the compose stack generates on first use in the `secrets`
+volume (`/app/secrets/package_signing_key`, 0600), and each workspace signs
+with its own key derived from it, so each organisation has its own
+fingerprint and the file is the one secret to protect. Nothing to configure;
+**back the volume up** with the database. A workspace's current and retired
+public keys and their fingerprints are at `GET /api/signing-keys/` (add
+`?workspace=<slug>` on an installation with more than one workspace), and
+*Settings › About* shows the fingerprint of the key that signs the workspace
+you are signed in to. Hand that fingerprint to your auditors out of band so
+they can tell your key from a forger's. To use a key you manage elsewhere, set `SIGNING_KEY` (PEM, or a
+base64 32-byte seed). To rotate:
 
 ```bash
 docker compose exec backend python manage.py rotate_signing_key --label FY27
@@ -508,11 +581,11 @@ PUBLIC_URL=https://grc.example.com        # so each post links back
 # NOTIFY_EVENTS=package.sealed,pbc.returned,scanner.down   # default: everything
 ```
 
-An administrator can send a test message from *Settings › Notifications* and
-see the last deliveries there. Digest emails need no configuration beyond a
-working `EMAIL_PROVIDER`: each person switches theirs on under the same
-section; the worker sends them at `REVIEW_SCAN_HOUR` + 20 minutes, or run
-`manage.py send_digests` from cron.
+An administrator can send a test message from *Settings › Notifications*; a
+superuser also sees the last deliveries there. Digest emails need no
+configuration beyond a working `EMAIL_PROVIDER`: each person switches theirs
+on under the same section; the worker sends them at `REVIEW_SCAN_HOUR` + 20
+minutes, or run `manage.py send_digests` from cron.
 
 Since 0.9.5 each workspace can carry its own Slack and Teams webhooks, set
 by a superuser under *Settings › Role & access › Workspaces*. A workspace
@@ -528,8 +601,9 @@ Since 0.9.0 every row belongs to a workspace; a fresh install and every
 upgraded one start with a single workspace, `default`. To host a second
 organisation, sign in as a superuser, open *Settings › Role & access* and
 create it (the built-in roles are seeded, and the framework library unless
-you untick it), switch to it and add its people under *Users*. A workspace can
-only be created there; once it exists, seed and populate it from the shell:
+you untick it), switch to it and add its people under *Users*. The Django
+admin can also add a workspace, but that route seeds no roles or frameworks,
+so create it there; once it exists, seed and populate it from the shell:
 
 ```bash
 docker compose exec backend python manage.py seed_frameworks --with-folders --workspace acme
@@ -537,9 +611,12 @@ docker compose exec backend python manage.py bootstrap_demo --workspace acme
 ```
 
 Scheduled jobs walk every active workspace. `SSO_WORKSPACE` names the one
-an auto-provisioned single-sign-on account joins. A workspace is archived
-rather than deleted: its people are refused at sign-in and it drops out of
-every job, and its rows stay where an operator can find them.
+workspace single sign-on serves: an auto-provisioned account joins it, an
+email match is looked for only there, and a person whose account belongs to
+any other workspace is refused at SSO sign-in and signs in with a password.
+A workspace is archived rather than deleted: its people are refused at
+sign-in and it drops out of every job, and its rows stay where an operator
+can find them.
 
 **Upgrading to 0.9.0** runs ten migrations that add the column, file every
 existing row under *Default* and make the column required. Take a backup
@@ -550,22 +627,31 @@ first, as always.
 Since 0.6.1 the SPA's tokens travel as HttpOnly cookies (`AUTH_TRANSPORT=cookie`),
 with `__Host-` / `__Secure-` prefixes over https. Upgrading from 0.6.0 or
 earlier signs everyone out once. Set `AUTH_TRANSPORT=header` to keep tokens in
-`localStorage` as before. API clients using a Bearer header are unaffected.
+`localStorage` as before, knowing that any script running in the page can then
+read both tokens, the refresh token (7 days by default, `JWT_REFRESH_DAYS`)
+included; cookie mode keeps them out of script's reach. API clients using a
+Bearer header are unaffected.
 
-**From 0.9.5i, signing in with cookies is CSRF-checked.** The check used to
+**From 0.9.5f, signing in with cookies is CSRF-checked.** The check used to
 run inside cookie authentication, which meant it only ever guarded a request
 that already had a session, and the endpoints that hand out the cookies have
 none by definition: a cross-site form post could sign a visitor's browser into
 someone else's account. `/api/auth/token/`, `/api/auth/token/refresh/` and
-`/api/auth/oidc/redeem/` now require `X-CSRFToken`, matching the readable
-`csrftoken` cookie. The interface already worked this way. A script does this:
+`/api/auth/oidc/redeem/` now require `X-CSRFToken`, matching the readable CSRF
+cookie (`__Host-csrftoken` over https, `csrftoken` over plain http). Over
+https the check also wants an `Origin` (or `Referer`) header naming this site
+or an entry of `CSRF_TRUSTED_ORIGINS`. A browser sends one on its own; a
+script has to add it. The interface already worked this way. A script does
+this:
 
 ```bash
 # 1. /api/auth/config/ sets the cookie, and says which transport is live.
 curl -sc jar https://grc.example.com/api/auth/config/ >/dev/null
 token=$(awk '$6 ~ /csrftoken$/ {print $7}' jar | tail -1)
-# 2. Sign in with it. The token rotates here, so read the jar again afterwards.
+# 2. Sign in with it, naming the site. The token rotates here, so read the jar
+#    again afterwards.
 curl -sb jar -c jar -H "X-CSRFToken: ${token}" \
+     -H 'Origin: https://grc.example.com' \
      -H 'Content-Type: application/json' \
      -d '{"username":"…","password":"…"}' \
      https://grc.example.com/api/auth/token/
@@ -629,8 +715,15 @@ installer then creates `.env` with a generated secret key, builds `.venv`,
 installs backend and frontend
 dependencies, applies migrations, seeds the control libraries, and starts the
 API on **:8000** and the Vite dev server on **:5173** (`CONFORMITI_DEV_API_PORT`
-and `CONFORMITI_DEV_PORT` move them: see *Moving the ports*). Every step is
-exit-code checked; a failing step stops the installer.
+and `CONFORMITI_DEV_PORT` move them: see *Moving the ports*). A failing step
+stops the installer, with one exception on Windows: a failure to write the
+folder tree on disk (`generate_folder_tree`) is ignored there.
+
+This path runs with `DJANGO_DEBUG=true` from `.env.example`. Django then
+serves uploaded files at `/media/` with no access check and no audit row, the
+browsable API is on, and a Django admin session also signs in to the API. Both
+servers listen on this machine only. Keep real evidence for an installation
+from §1 or §3.
 
 No account exists yet. Create your first one (in a second terminal while the
 servers run), then open **http://localhost:5173**. Its password must pass the
@@ -771,7 +864,9 @@ Then set, in `.env`:
   (`python3 -c "import secrets; print(secrets.token_urlsafe(50))"`);
 - `DJANGO_FIELD_ENCRYPTION_KEY_FILE=/srv/conformiti/backend/.field-encryption-key`,
   before the first `manage.py` command. The file is generated there at mode
-  0600 and holds the key that encrypts enrolled authenticators at rest.
+  0600 and holds the key that encrypts, at rest, the authenticator-app (TOTP)
+  secrets, a stored Jira token and each workspace's own Slack and Teams
+  webhook addresses.
   Without it that key is derived from `DJANGO_SECRET_KEY`, which ties the two
   together (see *Backups on bare metal* below);
 - `DJANGO_ALLOWED_HOSTS` (your public host name(s)), `CSRF_TRUSTED_ORIGINS`,
@@ -798,10 +893,15 @@ Then set, in `.env`:
   `http://localhost`). With `DJANGO_DEBUG=false` it defaults to on, which
   means secure cookies and every http request redirected to https. Remove
   the line, or set `true`, once TLS is in front;
+- `SECURE_HSTS_SECONDS=31536000` once https works, as in §1's *Going to
+  production*. Nothing else on this host sends `Strict-Transport-Security`
+  (the nginx template does not), and the API adds `includeSubDomains` to it
+  unless `SECURE_HSTS_INCLUDE_SUBDOMAINS=false`;
 - `NUM_PROXIES`, the number of proxies in front of gunicorn, which is what
-  the rate limits use to find the client's address: `1` when this host's
-  nginx faces the clients and terminates TLS itself, `2` when a separate TLS
-  terminator or load balancer sits in front of that nginx. Unset means 1,
+  the rate limits and the audit trail use to find the client's address: `1`
+  when this host's nginx faces the clients and terminates TLS itself, `2`
+  when a separate TLS terminator or load balancer sits in front of that
+  nginx. Unset means 1,
   and with `BEHIND_TLS` on the API warns at boot until you set it;
 - nothing for `MEDIA_INTERNAL` behind nginx. With `DJANGO_DEBUG=false` it is
   on: the API checks access, writes the audit row and hands the download to
@@ -823,8 +923,11 @@ python manage.py generate_folder_tree    # the evidence tree on disk, at COMPLIA
 python manage.py createsuperuser         # the password must pass the policy in §1
 python manage.py collectstatic --noinput
 mkdir -p media                           # MEDIA_ROOT; nothing creates it before the first upload
-gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
+gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3 --worker-class gthread --threads 4 --timeout 90
 ```
+
+The worker settings match the Docker image: a malware scan holds a worker for
+its duration, and the nginx template gives the API 90 seconds.
 
 `generate_folder_tree` is what the Docker stack and the installers run after
 seeding. With the default `COMPLIANCE_TREE_ROOT` (`compliance-data/` at the
@@ -850,7 +953,7 @@ After=network.target
 [Service]
 User=conformiti
 WorkingDirectory=/srv/conformiti/backend
-ExecStart=/srv/conformiti/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
+ExecStart=/srv/conformiti/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3 --worker-class gthread --threads 4 --timeout 90
 Restart=on-failure
 
 [Install]
@@ -905,6 +1008,19 @@ Or, with no broker, schedule the jobs in the `conformiti` user's crontab
 30 3 * * 0 cd /srv/conformiti/backend && ../.venv/bin/python manage.py flushexpiredtokens
 ```
 
+These lines send the review, vendor and auditor-request reminders, record the
+readiness snapshot, send the digests and prune expired tokens. They post no
+daily Slack or Teams summary, and nothing in them replaces the worker's hourly
+check of the malware scanner, which emails the compliance inbox when clamd
+stops answering. With scanning on, add a probe that fails loudly (cron mails a
+command's output to `MAILTO` or the crontab's owner, where the host can send
+mail) and the monthly re-scan, which neither the worker nor these lines run:
+
+```
+17 * * * * cd /srv/conformiti/backend && ../.venv/bin/python manage.py scan_evidence --probe >/dev/null
+15 3 1 * * cd /srv/conformiti/backend && ../.venv/bin/python manage.py scan_evidence --stale 30
+```
+
 Build the SPA once (`cd /srv/conformiti/frontend && npm ci && npm run build`)
 and serve it with nginx, taking the shipped `frontend/nginx.conf` as the
 template. It proxies `/api/` and `/admin/`, serves `/static/`, and sends
@@ -926,16 +1042,21 @@ written for the Docker stack, so change these for this host:
   slash included: `/srv/conformiti/backend/media/` unless you set
   `MEDIA_ROOT`. Keep both locations `internal`. A wrong alias turns every
   download and preview into a 404;
+- in the `/api/` and `/admin/` locations,
+  `proxy_set_header X-Forwarded-Proto $scheme;` in place of the
+  `$forwarded_proto` line whenever this nginx faces the clients itself, over
+  TLS or over plain http. The template passes on the header it received,
+  which is right only behind a terminator that sets it. gunicorn believes
+  that header from an nginx on the same host (its `forwarded_allow_ips`
+  default is `127.0.0.1` and `::1`) whatever `BEHIND_TLS` says, so left as
+  it is, a client's own `X-Forwarded-Proto: https` reaches Django as a
+  secure request. With a separate terminator in front of this nginx, keep
+  the header as it is;
 - if this nginx terminates TLS itself (the case `NUM_PROXIES=1` above
   describes): the template's `listen 80;` gives way to a 443 listener with
   your certificate, plus a second `server` block on port 80 that only
-  redirects to https (both shown below), and in the `/api/` and `/admin/`
-  locations `proxy_set_header X-Forwarded-Proto $scheme;` replaces the
-  `$forwarded_proto` line. The template passes on the header it received,
-  which is right only behind a terminator that sets it, and with
-  `BEHIND_TLS` on the API believes that header. With a separate terminator
-  in front of this nginx instead, keep `listen 80;` and the header as they
-  are.
+  redirects to https (both shown below). With a separate terminator in front
+  of this nginx instead, keep `listen 80;`.
 
 ```nginx
 server {
@@ -977,7 +1098,7 @@ and copy them off the machine:
 | The evidence files | `MEDIA_ROOT`: `/srv/conformiti/backend/media/` | a database without them is a list of files you no longer have |
 | The folder tree on disk | `COMPLIANCE_TREE_ROOT`: `/srv/conformiti/compliance-data/` | the evidence tree generated from the control libraries |
 | The package-signing key | `/srv/conformiti/backend/.package-signing-key`, and each `.package-signing-key.retired-*` beside it (`SIGNING_KEY_FILE` moves them) | signatures already issued stay valid without it, but you cannot sign as the same identity again |
-| The field-encryption key | the file `DJANGO_FIELD_ENCRYPTION_KEY_FILE` names: `/srv/conformiti/backend/.field-encryption-key` | without it enrolled authenticators cannot be read (backup codes still work) and a stored Jira token must be entered again |
+| The field-encryption key | the file `DJANGO_FIELD_ENCRYPTION_KEY_FILE` names: `/srv/conformiti/backend/.field-encryption-key` | without it authenticator-app codes cannot be checked (backup codes and passkeys still work), and a stored Jira token and each workspace's own Slack and Teams webhook addresses must be entered again |
 | `.env` | `/srv/conformiti/.env` | `DJANGO_SECRET_KEY` and the passwords |
 
 For example, as root from cron. `tar` names any path that does not exist,
@@ -988,11 +1109,20 @@ installation that skipped the `mkdir -p media` above and has had no upload
 yet (create it, as the `conformiti` user):
 
 ```bash
-mkdir -p /var/backups/conformiti
+umask 077
+mkdir -p /var/backups/conformiti && chmod 700 /var/backups/conformiti
 sudo -u postgres pg_dump -Fc compliance > /var/backups/conformiti/db-$(date +%F).dump
 cd /srv/conformiti && tar -czf /var/backups/conformiti/files-$(date +%F).tgz \
     .env backend/media compliance-data backend/.field-encryption-key backend/.package-signing-key*
 ```
+
+The files archive holds `.env` (the secret key and the database password) and
+both key files, and the dump holds the fields that key opens. Keep the
+directory readable by root alone (the `umask` above is what makes the two
+files 600), keep the two archives apart if you want encryption at rest to
+mean anything against a stolen backup, and encrypt them before they leave the
+machine. Cron does not carry your shell's `umask`: run the commands from a
+script that sets it.
 
 In a crontab line itself, write each `%` as `\%`: cron reads a bare one as
 the end of the command.
@@ -1007,8 +1137,9 @@ recipe carries it readable by everyone), and start the services again.
 **The field-encryption key and `DJANGO_SECRET_KEY`.** With
 `DJANGO_FIELD_ENCRYPTION_KEY_FILE` unset and a real `DJANGO_SECRET_KEY`, the
 key ring is derived from `DJANGO_SECRET_KEY`. Changing that key then makes
-every enrolled authenticator unreadable. Move the ring to a file before you
-ever rotate it:
+every value the ring encrypts unreadable: the authenticator-app secrets, a
+stored Jira token and each workspace's own Slack and Teams webhook addresses.
+Move the ring to a file before you ever rotate it:
 
 1. Write a file owned by `conformiti` at mode 0600 whose first line is a new
    key (`python3 -c "import secrets; print(secrets.token_urlsafe(32))"`) and
@@ -1029,13 +1160,13 @@ ever rotate it:
 |---|---|
 | The backend log says `DJANGO_SECRET_KEY must be set…` | Docker: the stack reads `CONFORMITI_SECRET_KEY`, never `DJANGO_SECRET_KEY` or `DJANGO_DEBUG`, and this means `CONFORMITI_SECRET_KEY` is set to something shorter than 32 characters. Delete the line (the container generates and keeps its own key) or set a longer one. Bare metal: `DJANGO_DEBUG=false` with the placeholder key from `.env.example` and no `DJANGO_SECRET_KEY_FILE`; set a real key. |
 | The app loads but every request is `400 Bad Request` | The hostname you browse with isn't in `DJANGO_ALLOWED_HOSTS`. |
-| Admin login form reloads silently over plain HTTP | `BEHIND_TLS=true` (secure cookies) on an HTTP deployment. Set it to `false` until TLS is in front. |
+| `/admin/` is redirected to `https://`, where nothing answers (plain HTTP deployment) | `BEHIND_TLS=true` with debug off (the Docker default) redirects every request that reaches Django to https and marks its cookies Secure. Set it to `false` until TLS is in front. |
 | Every `/api/` request answers `301` to `https://` (bare metal, plain http) | With `DJANGO_DEBUG=false`, `BEHIND_TLS` is on unless `.env` says otherwise. Set `BEHIND_TLS=false` until TLS is in front (§3). |
 | Downloads and previews arrive empty (bare metal) | `MEDIA_INTERNAL` is on and the web server in front is not nginx, so nothing acts on the API's `X-Accel-Redirect`. Set `MEDIA_INTERNAL=false` (§3). Behind nginx, a download that is a 404 means the `/protected-media/` alias does not point at `MEDIA_ROOT`. |
 | `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up, or the credentials differ between the `db` and `backend` services. The usual cause is `POSTGRES_PASSWORD` changed in `.env` after the first boot: the database volume keeps the password it was created with. Put the old value back, or change it in the database as §1 *Going to production* step 1 shows, then `docker compose up -d` (with the same `-f` files you started with). |
 | Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser` (the password must pass the policy in §1), or seed the sample data with `manage.py bootstrap_demo`. Or the web app runs on a port or host name missing from `CSRF_TRUSTED_ORIGINS` in `.env` (see *Moving the ports*). |
 | `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
-| Uploads rejected as too large | Raise `MAX_UPLOAD_MB` in `.env` **and** `client_max_body_size` in `frontend/nginx.conf`. nginx's configuration is built into the frontend image: after the edit, a source build needs `docker compose up -d --build`, and the published images need the edited file mounted (*Without a build*, above). `frontend/nginx.conf` is a tracked file, so the edit has to be set aside for each upgrade's `git checkout` ([README, Upgrading](README.md#upgrading)). Bare metal: edit your own copy and reload nginx. |
+| Uploads rejected as too large | Raise `MAX_UPLOAD_MB` in `.env` **and** `client_max_body_size` in `frontend/nginx.conf`. With malware scanning on, a file larger than `CLAMAV_MAX_MB` (40 by default) is refused as not fully inspected whatever `MAX_UPLOAD_MB` says; raise it too, and clamd's `StreamMaxLength` and `MaxFileSize` with it (`docker/clamd.conf` in the Docker stack). nginx's configuration is built into the frontend image: after the edit, a source build needs `docker compose up -d --build`, and the published images need the edited file mounted (*Without a build*, above). `frontend/nginx.conf` is a tracked file, so the edit has to be set aside for each upgrade's `git checkout` ([README, Upgrading](README.md#upgrading)). Bare metal: edit your own copy and reload nginx. |
 | Port in use | Docker needs host ports 8080 (`CONFORMITI_PORT`) and `127.0.0.1:8000` (`CONFORMITI_API_PORT`); the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move: see *Moving the ports* below. |
 
 <details>
@@ -1114,8 +1245,14 @@ Almost always `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` or
 `CORS_ALLOWED_ORIGINS` not listing the hostname you are actually using,
 including scheme and port. `DJANGO_ALLOWED_HOSTS` takes host names only; the
 two origin lists take `scheme://host:port` and matter mostly behind a proxy
-(*Moving the ports* explains when). The backend log names the header it
-rejected. Behind a proxy, confirm it forwards `Host` and `X-Forwarded-Proto`.
+(*Moving the ports* explains when). The sign-in page names a refused origin
+itself (the server does not trust the address you opened it from), and the
+response carries Django's reason (`Origin checking failed - ...`, ending
+`does not match any trusted origins`); the backend log records only
+`Forbidden: /api/auth/token/`. A host name missing from
+`DJANGO_ALLOWED_HOSTS` is named in the backend log
+(`Invalid HTTP_HOST header`). Behind a proxy, confirm it forwards `Host` and
+`X-Forwarded-Proto`.
 </details>
 
 <details>
@@ -1155,25 +1292,43 @@ yesterday's mail, which is correct and often mistaken for a failure.
 
 An account with no workspace cannot make API requests. A superuser created by
 `createsuperuser` lands in the first active workspace automatically; anyone
-else in that position is refused with 403 by design. Assign the account a
-workspace under *Settings › Role & access*, or re-run the migration if it did
-not complete.
+else in that position is refused with 403 by design. Nothing in the interface
+or the Django admin moves an account into a workspace: the 0.9.0 migration
+files every account that existed then under *Default*, and an account created
+since belongs to the workspace it was created in. If the upgrade did not
+complete, run `manage.py migrate` again (`manage.py showmigrations accounts`
+shows what is left). An account that still has none can be attached from
+`manage.py shell`, with the slug of the workspace it belongs in:
+
+```python
+from accounts.models import User, Workspace
+User.objects.filter(username="name").update(
+    workspace=Workspace.objects.get(slug="default"))
+```
 </details>
 
 <details>
 <summary><strong>A file is stuck in quarantine</strong></summary>
 
-The re-scan sweep quarantines a stored file when updated definitions match it.
-That is intended, and the file is not deleted. Check the scanner status row and
-the notification; if it is a false positive the file can be released, and the
-release is an audit-log entry with your name on it.
+The re-scan sweep (`manage.py scan_evidence`, which runs only when you or your
+cron run it) quarantines a stored file when updated definitions match it. That
+is intended, and the file is not deleted. Check the scanner status row and the
+notification. There is no release button. A later `scan_evidence` run that
+finds the file clean releases it (a false positive withdrawn upstream;
+`--all` re-checks it at once, the default run only after 30 days), and the
+audit trail records that as a system entry with no person named. Uploading a
+new version in its place, which takes edit access, also ends the quarantine:
+the audit trail records the upload under that person's name, but no separate
+release entry, and the quarantined bytes are not kept as an archived version.
 </details>
 
 <details>
 <summary><strong>A PDF renders blank</strong></summary>
 
-Do not add a `sandbox` attribute to the PDF frame: Chromium disables plugins
-and renders blank. PDFs are drawn by pdf.js onto canvases; the viewer must
-fetch through the API client and render from a blob, never point a frame at the
-media URL.
+No frame or browser plugin is involved: pdf.js draws PDFs onto canvases in the
+page, from bytes the viewer fetches through the API client, with PDF scripting
+off. The viewer shows the reason pdf.js gave; check the browser console as
+well. A Content-Security-Policy stricter than the shipped one is one cause: the
+viewer needs `worker-src 'self'` for the pdf.js worker and `'wasm-unsafe-eval'`
+in `script-src` for its image decoders, as `frontend/nginx.conf` sets.
 </details>

@@ -41,7 +41,8 @@
   year-over-year diff and a manifest that names its predecessor), backup
   codes owned by the account so passkey-only people have them, a watch on
   the malware scanner with re-scan and quarantine, and cookie transport as
-  the default with `__Host-`/`__Secure-` prefixes.
+  the default, with `__Host-`/`__Secure-` prefixes whenever the cookies are
+  Secure (behind TLS).
 - **0.7.0**: detached Ed25519 signatures over every sealed manifest, from a
   key kept in a file outside the database, with the public key published,
   a standard-library verifier in the bundle, and key rotation.
@@ -55,26 +56,35 @@
 - **0.9.1 to 0.9.4** closed the findings of an adversarial review of 0.9.0,
   all fifty of them: ORM-level workspace scoping, a bundle-wide signature
   and a per-workspace signing key, MFA on the admin site, the auditor role
-  confined to its engagement by a deny-by-default permission, one-time TOTP
-  and backup codes, a row lock on sealing, no third-party assets.
-- **0.9.5** closed the second independent review: reminders that cannot
-  be sent twice or lost, the review clock reset on cadence changes, sessions
+  refused everything outside its engagement by a deny-by-default permission
+  (bar the audit trail and the access reviews, which it reads by design, see
+  [REVIEWS.md](REVIEWS.md)), one-time TOTP and backup codes, a row lock on
+  sealing, no third-party assets.
+- **0.9.5** closed the second independent review: reminders claimed before
+  they are sent (so two schedulers cannot both send one) and retried the next
+  day when a send fails, the review clock reset on cadence changes, sessions
   revoked on an administrator's password reset, access-review revocations
   applied on completion, the readiness score on the dashboard and in the
   history, controls added to a package from the page, a document search,
-  workspace-scoped chat channels, Redis with a password and an eviction
-  policy that cannot drop the queue, a separate scheduler, and a backup and
-  restore that CI performs on every push.
+  workspace-scoped chat channels, Redis behind an optional password
+  (`REDIS_PASSWORD`; none by default, and the service publishes no port) with
+  an eviction policy that cannot drop the queue, a separate scheduler, and a
+  backup and restore that CI performs on every push to main and every pull
+  request.
 
 - **0.9.5b** closed a third independent review: chat webhook URLs are never
   returned by the API and are encrypted at rest, a webhook may only address a
   host Slack or Teams issues them on and its address is checked and pinned
-  before every post, redirects are refused, macro-enabled Office is refused as
-  evidence, a questionnaire link without `PUBLIC_URL` is refused rather than
-  guessed, a SAML response must name its destination and its recipient,
-  signing out revokes the refresh token, the signing-key directory no longer
-  confirms which organisations exist, and the demo dataset is no longer seeded
-  by default.
+  before every post (through an egress proxy, the proxy connects), redirects
+  are refused, macro-enabled Office is refused as evidence, a questionnaire
+  link without `PUBLIC_URL` is refused rather than guessed, a SAML response
+  must name its destination and its recipient, signing out revokes the refresh
+  token, the signing-key directory no longer lists the organisations on a
+  server and answers a name it does not know exactly as it answers one that
+  has never signed, and the demo dataset is no longer seeded by default.
+- **0.9.5c to 0.9.5ma** are maintenance revisions. 0.9.5f, 0.9.5h and 0.9.5i
+  closed the fourth, fifth and sixth independent reviews
+  ([REVIEWS.md](REVIEWS.md)); [CHANGELOG.md](CHANGELOG.md) has each revision.
 
 ## Beyond 0.9.5
 

@@ -2,8 +2,9 @@
 
 Playwright tests that drive the **built** application in a real browser: sign
 in, load every screen, exercise the control register, the folder tree, the risk
-register, an access review, the audit trail and the theme system, then sign
-out.
+register, an access review, the audit trail, passkeys, evidence packages and
+their request list, vendors and the public questionnaire, and the theme
+system, then sign out.
 
 They live outside `frontend/` on purpose, so Playwright never enters the
 application's dependency tree or its `npm audit`.
@@ -19,15 +20,22 @@ npm test
 
 That is the whole setup. Playwright starts everything it needs:
 
-1. deletes `e2e/.e2e-db.sqlite3` and `e2e/.e2e-media`, then migrates, seeds the
-   three control libraries and loads the demo dataset into them (your own
-   development database and uploads are never touched);
+1. deletes `e2e/.e2e-db.sqlite3`, `e2e/.e2e-media` and `e2e/.e2e-tree`, then
+   migrates, seeds the three control libraries and loads the demo dataset into
+   them (your own development database and uploads are never touched);
 2. starts Django on `127.0.0.1:8001`;
 3. runs `npm run build` in `frontend/` and serves the result with
    `vite preview` on `127.0.0.1:4173`, proxying `/api` and `/media` to Django.
 
 Every run starts from an empty database, so a second run behaves exactly like
 the first.
+
+The backend runs with DEBUG on, non-Secure cookies, and the sign-in, MFA,
+anonymous and questionnaire throttles raised to 1000 a minute, so the suite
+does not test those limits. It uses the header transport unless
+`E2E_TRANSPORT=cookie` is set; `E2E_TRANSPORT=cookie npm test` (in PowerShell,
+set `$env:E2E_TRANSPORT = "cookie"` first) runs it the way a default
+installation signs in, and CI runs both.
 
 Prerequisites: the repo-root `.venv` (created by `install.sh` / `install.ps1`)
 and `frontend/node_modules`.
@@ -72,9 +80,10 @@ There is no switch that turns the check off.
 
 ## In CI
 
-The `e2e` job in `.github/workflows/ci.yml` runs the suite on every push and
-pull request, with the browser binary cached by Playwright version. On failure
-it uploads the HTML report and the traces; open one with:
+The `e2e` job in `.github/workflows/ci.yml` runs the suite twice (once per
+authentication transport) on every push to `main` and every pull request, with
+the browser binary cached by Playwright version. On failure it uploads the
+HTML report and the traces; open one with:
 
 ```bash
 npx playwright show-trace path/to/trace.zip
@@ -84,16 +93,24 @@ npx playwright show-trace path/to/trace.zip
 
 ```
 e2e/
-  playwright.config.js  servers, projects, the hermetic database reset
-  fixtures.js           the console-error fixture, personas, navigation helpers
+  playwright.config.js    servers, projects, the hermetic database reset
+  fixtures.js             console-error fixture, personas, navigation helpers
+  shots.mjs               runs the screenshot project (npm run shots)
   tests/
-    auth.setup.js       signs in once; the other projects reuse the session
-    auth.spec.js        sign-in, sign-out, token revocation, every persona
-    shell.spec.js       every route renders; navigation; the notification tray
-    workspace.spec.js   dashboard, calendar, review queue, documents, risks
-    controls.spec.js    the 217-control register: tabs, filters, search, export
-    governance.spec.js  audit trail, access reviews, users, meetings, groups
-    downloads.spec.js   a download or export that fails says why on screen
-    settings.spec.js    profile, theme packs, accent packs, MFA enrolment
-    screenshots.spec.js opt-in: regenerates the README screenshots
+    auth.setup.js         signs in once; the other projects reuse the session
+    auth.spec.js          sign-in, sign-out, token revocation, every persona
+    shell.spec.js         every route renders; navigation; the notification tray
+    workspace.spec.js     dashboard, calendar, review queue, documents, risks
+    controls.spec.js      217-control register: tabs, filters, search, export
+    governance.spec.js    audit trail, access reviews, users, meetings, groups
+    downloads.spec.js     a download or export that fails says why on screen
+    settings.spec.js      profile, theme packs, accent packs, MFA enrolment
+    laptop.spec.js        a 1366 by 768 laptop: wide tables stay on screen
+    packages.spec.js      evidence packages: digest, export, auditor, samples
+    passkeys.spec.js      passkey enrolment and sign-in (virtual authenticator)
+    pbc.spec.js           the PBC request list: organisation, auditor, assignee
+    questionnaire.spec.js the vendor questionnaire, answered by link
+    vendors.spec.js       vendor register, assurance, responsibility matrix
+    viewer.spec.js        the in-browser document viewer
+    screenshots.spec.js   opt-in: regenerates the README screenshots
 ```

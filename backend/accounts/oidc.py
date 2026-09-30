@@ -428,9 +428,9 @@ def _unique_username(base):
 def sso_workspace():
     """The one workspace this installation's identity provider serves.
 
-    One IdP per installation is the current design (see SSO_WORKSPACE); until
-    that changes, every SSO decision -- linking, matching and provisioning --
-    has to happen inside this workspace, or a single provider signs people
+    One IdP per installation is the design (see SSO_WORKSPACE), so every SSO
+    decision -- linking, matching and provisioning -- has to happen inside
+    this workspace, or a single provider signs people
     into whichever tenant happens to hold a matching row.
     """
     from .models import Workspace

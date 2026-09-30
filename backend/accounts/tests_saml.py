@@ -292,7 +292,7 @@ class SamlFlowTests(APITestBase):
     def test_a_response_that_names_no_destination_is_refused(self):
         """0.9.5 checked Destination only when it was there, so a response
         captured at one service provider could be replayed at another by
-        dropping the attribute (REVIEW_095.md, S-6). The POST binding
+        dropping the attribute (REVIEWS.md (0.9.5 review), S-6). The POST binding
         requires it."""
         def no_destination(idp):
             idp.destination = ""

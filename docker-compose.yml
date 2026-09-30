@@ -2,15 +2,21 @@
 #
 #   docker compose up -d --build        # then open http://localhost:8080
 #
-# No .env is required: the defaults below are production-safe (DEBUG off, a
-# strong secret key generated on first boot and persisted in the `secrets`
-# volume, Redis-backed rate limits, API/admin reachable from the network only
-# through nginx; the API is also published on the host's own loopback,
-# 127.0.0.1:8000 or CONFORMITI_API_PORT, for debugging on that machine).
-# Most keys in .env override these defaults (see .env.example), but DEBUG and
-# the signing key do not, on purpose (see the note on DJANGO_DEBUG below), and
-# DJANGO_ALLOWED_HOSTS adds your host names to the stack's own instead of
-# replacing them (see the note beside it). The
+# No .env is required: the defaults below suit a trial on a network you trust
+# (DEBUG off, a strong secret key generated on first boot and persisted in the
+# `secrets` volume, Redis-backed rate limits, API/admin reachable from the
+# network only through nginx; the API is also published on the host's own
+# loopback, 127.0.0.1:8000 or CONFORMITI_API_PORT, for debugging on that
+# machine). They are not production settings: the stack serves plain HTTP,
+# prints email to its log, and uses the database password `compliance` and a
+# Redis with no password until .env says otherwise (INSTALL.md, Going to
+# production).
+# Most keys in .env override these defaults (see .env.example), but DEBUG, the
+# secret key, the field-encryption key and malware scanning are set here with
+# CONFORMITI_* names instead of their DJANGO_ and CLAMAV_ ones, on purpose (see
+# the note on DJANGO_DEBUG below), and DJANGO_ALLOWED_HOSTS adds your host
+# names to the stack's own instead of replacing them (see the note beside it).
+# The
 # demo dataset is NOT seeded: set SEED_DEMO_DATA=true for the guided tour. Its
 # sign-in password is generated on first boot and printed once (docker compose
 # logs backend), and an installation carrying it says so on its sign-in page
@@ -30,7 +36,8 @@ x-backend-env: &backend-env
   DJANGO_SECRET_KEY: ${CONFORMITI_SECRET_KEY:-}
   DJANGO_SECRET_KEY_FILE: /app/secrets/django_secret_key
   # Same indirection for the field-encryption ring that protects the TOTP
-  # secret and the Jira token at rest. Leave CONFORMITI_FIELD_ENCRYPTION_KEY
+  # secret, the Jira token and the Slack and Teams webhook URLs at rest. Leave
+  # CONFORMITI_FIELD_ENCRYPTION_KEY
   # unset (recommended) and the container generates one on first boot and
   # persists it in the `secrets` volume. Back that volume up: losing the
   # ring makes enrolled authenticators unreadable (backup codes still work).

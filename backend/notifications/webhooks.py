@@ -18,7 +18,7 @@ Teams actually issues webhooks on, it must resolve to a public address, the
 connection is pinned to that address, and a redirect is refused rather than
 followed. Until 0.9.5b this was a check that the URL began with ``https://``,
 which let a stored URL point the server at anything on its own network
-(REVIEW_095.md, S-2).
+(REVIEWS.md (0.9.5 review), S-2).
 """
 import json
 import logging

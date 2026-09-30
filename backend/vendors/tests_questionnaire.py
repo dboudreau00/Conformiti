@@ -227,7 +227,7 @@ class VendorSideTests(APITestBase):
         """The token in the link is a bearer credential. Until 0.9.5b the host
         it pointed at fell back to the request's own Origin header, which is
         chosen by whoever sent the request, so a spoofed one put an
-        attacker's host in the vendor's email (REVIEW_095.md, S-5). An unset
+        attacker's host in the vendor's email (REVIEWS.md (0.9.5 review), S-5). An unset
         PUBLIC_URL is the shipped default, so this had to fail closed."""
         live = QuestionnaireInvite.objects.filter(
             vendor=self.vendor, revoked_at__isnull=True).count()

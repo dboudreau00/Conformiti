@@ -90,9 +90,10 @@ if not DEBUG and (SECRET_KEY.strip().lower() in _PLACEHOLDER_KEYS or len(SECRET_
     )
 
 # --- Field encryption (secrets at rest) -------------------------------------
-# Two columns hold secrets the application must be able to read back, so they
-# cannot be hashed: the TOTP secret and the Jira API token. They are encrypted
-# with AES-256-GCM instead (see config/fieldcrypto.py).
+# Four columns hold secrets the application must be able to read back, so they
+# cannot be hashed: the TOTP secret, the Jira API token and each workspace's
+# Slack and Teams webhook URLs. They are encrypted with AES-256-GCM instead
+# (see config/fieldcrypto.py).
 #
 # Keys are a RING, newest first: the first key encrypts, every key decrypts, so
 # a key can be rotated without downtime (manage.py rotate_field_keys).
@@ -355,8 +356,9 @@ CLAMAV_CONNECT_TIMEOUT = env_int("CLAMAV_CONNECT_TIMEOUT", 3)
 CLAMAV_MAX_BYTES = env_int("CLAMAV_MAX_MB", 40) * 1024 * 1024
 
 # --- Evidence packages (the auditor workspace) ------------------------------
-# How long a package may be issued to an external auditor for. The grant is
-# checked on every request, so shortening this affects live grants too.
+# How long a package may be issued to an external auditor for. Each grant
+# stores its own expiry when it is issued, so changing these does not change a
+# grant that is already live.
 ATTESTATION_GRANT_DAYS = env_int("ATTESTATION_GRANT_DAYS", 45)
 ATTESTATION_GRANT_MAX_DAYS = env_int("ATTESTATION_GRANT_MAX_DAYS", 180)
 
@@ -402,8 +404,9 @@ if len(READINESS_BANDS) != 3 or sorted(READINESS_BANDS) != READINESS_BANDS      
         f"e.g. '40,70,90' (got {os.getenv('READINESS_BANDS')!r}). A malformed value "
         "would otherwise take the whole control register down on first read."
     )
-# Evidence newer than this many days is fully fresh; past its review date by
-# more than this, it scores zero.
+# A control's freshness score turns on the next review date of its best
+# approved evidence: full credit while that is at least this many days away,
+# less as it comes due, and none once it is more than this many days overdue.
 READINESS_FRESH_DAYS = env_int("READINESS_FRESH_DAYS", 30)
 # Fallback retest interval when a control does not set its own.
 CONTROL_TEST_INTERVAL_DAYS = env_int("CONTROL_TEST_INTERVAL_DAYS", 365)
@@ -651,6 +654,12 @@ if BEHIND_TLS:
     # terminator's https would die here. Your terminator must SET the header
     # rather than forward the client's; every one of them does by default.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# The health endpoint answers plain HTTP even when the rest redirects to
+# https. The image's own HEALTHCHECK and load balancers call it on the internal
+# hop, where it has no X-Forwarded-Proto; redirected, the backend was never
+# healthy with BEHIND_TLS on, and compose never started the worker, beat or
+# nginx (fixed in 0.9.5mb). It carries no credentials and sets no cookie.
+SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
 if not DEBUG:
     SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", BEHIND_TLS)
     SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", BEHIND_TLS)
@@ -728,7 +737,7 @@ OIDC_ALLOWED_DOMAINS = [
 ]
 OIDC_AUTO_PROVISION = env_bool("OIDC_AUTO_PROVISION", False)
 # Which workspace an auto-provisioned SSO account joins (0.9.0). One IdP
-# per installation for now; multi-workspace SSO mapping is a later item.
+# per installation, by design: SSO is not mapped per workspace.
 SSO_WORKSPACE = os.getenv("SSO_WORKSPACE", "default").strip() or "default"
 OIDC_DEFAULT_ROLE = os.getenv("OIDC_DEFAULT_ROLE", "Viewer").strip() or "Viewer"
 OIDC_LINK_BY_EMAIL = env_bool("OIDC_LINK_BY_EMAIL", True)

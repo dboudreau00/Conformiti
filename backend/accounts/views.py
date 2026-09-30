@@ -298,6 +298,10 @@ class MfaVerifyView(APIView):
         codes = None
         if request.user.backup_codes_remaining == 0:
             codes = request.user.issue_backup_codes()
+        from audit.events import record_auth_event
+
+        record_auth_event(request, request.user, "mfa",
+                          "authenticator app enrolled" + ("; backup codes issued" if codes else ""))
         return Response({"enabled": True, "backup_codes": codes,
                          "backup_codes_remaining": request.user.backup_codes_remaining})
 
@@ -316,8 +320,14 @@ class MfaDisableView(APIView):
         if device:
             device.delete()
         # With no second factor left, backup codes have nothing to back up.
-        if not request.user.passkeys.exists():
+        codes_gone = not request.user.passkeys.exists()
+        if codes_gone:
             request.user.backup_codes.all().delete()
+        from audit.events import record_auth_event
+
+        record_auth_event(request, request.user, "mfa",
+                          ("authenticator app removed" if device else "authenticator app off (none enrolled)")
+                          + ("; backup codes deleted" if codes_gone else ""))
         return Response({"enabled": False})
 
 
@@ -334,4 +344,8 @@ class MfaBackupCodesView(APIView):
             return Response({"detail": "Confirm your password, or a code from a factor you still have.",
                              "code": "reauth_required"}, status=403)
         codes = request.user.issue_backup_codes()
+        from audit.events import record_auth_event
+
+        record_auth_event(request, request.user, "mfa",
+                          "backup codes regenerated (the previous set no longer works)")
         return Response({"backup_codes": codes})

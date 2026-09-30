@@ -112,7 +112,8 @@ register.
 
 ### 5 · Documents 🖱
 Expand *SOC 2 → CC6 → CC6.1* with the keyboard (arrow keys, Enter). Upload a
-file (name, cadence Quarterly, any small file) ✓ it appears with a review badge.
+file (name, cadence Quarterly, any small PDF, image or text file) ✓ it appears
+with a review badge.
 **Rename**, **Version** (v2), **Reviewed** (date moves out), **Map** (link a
 control). **Manage access** → grant the *Viewer* role or the user `val` view on
 this folder. Create a subfolder; delete it (framework folders cannot be deleted).
@@ -120,7 +121,9 @@ this folder. Create a subfolder; delete it (framework folders cannot be deleted)
 ### 6 · Role-based access 🖱
 Sign out; sign in as `val`. ✓ Only granted folders appear, no upload form, no
 "Mark reviewed", no risk creation. Try `/api/folders/` in the browser → only
-those folders. Sign back in as `mia`.
+those folders. `val` still reads the programme-wide records (risks, vendors,
+controls, meetings, the user directory) through the API: the Viewer role
+narrows documents, not the rest of the programme. Sign back in as `mia`.
 
 ### 7 · Risks 🖱
 ✓ `3 live · 1 overdue · 2 high/critical · 1 closed`. Open a row → change
@@ -134,7 +137,7 @@ status, owner, plan; add a note. **Import CSV/XLSX** with
 while rows are pending). Sign in as `aria` → ✓ read-only: no start/complete,
 decisions shown as badges.
 
-### 9 · Meetings · Groups · Jira 🖱
+### 9 · Meetings · Groups · Jira 🖱 (as `admin`)
 Meetings: ✓ Security Steering Committee on track, Risk Review behind; record
 minutes → the cadence meter moves. Groups: add a champion. Jira: configure
 with a real Atlassian site if you have one; otherwise ✓ a clear "not
@@ -182,8 +185,11 @@ account's sign-in first).
 1. `.env`: `DJANGO_ALLOWED_HOSTS` (your public host name(s); the Docker
    stack adds its own internal names itself), the two origin variables,
    `PUBLIC_URL`, `BEHIND_TLS=true` and `NUM_PROXIES=2` behind a TLS
-   terminator, a real `EMAIL_PROVIDER`, a strong `POSTGRES_PASSWORD`. The
-   database was created on first boot with the default password
+   terminator, `SECURE_HSTS_SECONDS=31536000` once TLS works end to end (HSTS
+   is off unless it is set), a real `EMAIL_PROVIDER`, a strong
+   `POSTGRES_PASSWORD` and a `REDIS_PASSWORD` (letters and digits; Redis holds
+   the job queue and the rate-limit counters and has no password by default).
+   The database was created on first boot with the default password
    (`compliance`), and `POSTGRES_PASSWORD` only applies to a new database
    volume, so change it in the database first, then in `.env`, then recreate:
    `docker compose exec db psql -U compliance -c "ALTER USER compliance PASSWORD 'something-long'"`
@@ -198,7 +204,9 @@ account's sign-in first).
    across restarts even while `.env` still says
    `SEED_DEMO_DATA=true` (the backend logs `Demo data not seeded` instead);
    set it to `false` anyway, so `.env` says what the installation does.
-4. `curl -s http://localhost:8080/api/health/` → `"demo_accounts":false`.
+4. `curl -s https://grc.example.com/api/health/` (your public address, through
+   the TLS terminator) → `"demo_accounts":false`. Once `BEHIND_TLS=true` is
+   set, plain `http://localhost:8080` answers with a redirect and no body.
 5. Put `scripts/backup.sh` on cron and copy its output off the machine.
    `scripts/restore.sh <directory>` brings an installation back, here or
    elsewhere; CI runs both on every push. On the published images, set
@@ -206,5 +214,12 @@ account's sign-in first).
    first: the script takes no `-f` files, so without them the restore
    rebuilds the stack from source or runs `latest`
    ([INSTALL.md](INSTALL.md), *Without a build*).
+6. If the installation will hold evidence you did not create, turn on malware
+   scanning: `CONFORMITI_SCANNING=true` in `.env` and
+   `docker compose --profile scanning up -d`. It is off by default, and
+   without it uploads get only the file-type checks (extension, macros, legacy
+   Office). With it on, an upload is refused while the scanner cannot be
+   reached ([INSTALL.md](INSTALL.md), *Optional: scan uploaded evidence for
+   malware*).
 
 Residual risks to weigh: [SECURITY.md](SECURITY.md#residual-risks-to-weigh-for-production).

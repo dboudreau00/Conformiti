@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .pbc_views import PbcItemViewSet, PbcRequestViewSet
 from .views import (
+    CurrentSigningKeyView,
     EvidencePackageViewSet,
     PackageControlViewSet,
     PackageEvidenceViewSet,
@@ -23,4 +24,6 @@ router.register("pbc-items", PbcItemViewSet, basename="pbc-item")
 urlpatterns = [
     # The package-signing public keys, for anyone comparing a bundle's key.
     path("signing-keys/", SigningKeysView.as_view(), name="signing_keys"),
+    # The key that signs the signed-in person's workspace, for Settings > About.
+    path("signing-keys/current/", CurrentSigningKeyView.as_view(), name="signing_key_current"),
 ] + router.urls

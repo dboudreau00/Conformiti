@@ -65,6 +65,13 @@ def matched_counter(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=AL
     code = (code or "").strip().replace(" ", "")
     if not (code.isdigit() and len(code) == digits):
         return None
+    # An empty key is not a secret: anyone can compute its codes. It is what a
+    # secret the field-encryption ring cannot decrypt reads as.
+    try:
+        if not _b32decode(secret or ""):
+            return None
+    except (ValueError, TypeError):
+        return None
     counter = int(at // period)
     found = None
     for drift in range(-window, window + 1):

@@ -83,7 +83,7 @@ def public_base(request):
     ``PUBLIC_URL`` decides it. The token in that link is a bearer credential,
     so the host it points at cannot be taken from the request: an ``Origin``
     header is chosen by whoever sent the request, and a mailed link to an
-    attacker's copy of the sign-in page is the whole attack (REVIEW_095.md,
+    attacker's copy of the sign-in page is the whole attack (REVIEWS.md (0.9.5 review),
     S-5). Off DEBUG, an unset PUBLIC_URL is refused rather than guessed.
 
     In DEBUG the fallback survives, because a developer moves between

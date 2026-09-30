@@ -12,7 +12,7 @@ formula from the CSV guard.
 M-2 lives in ``attestations.tests_pbc`` beside the list it changes, L-1 in
 ``attestations.tests_review_fixes``, L-5 in ``documents.tests``, and L-6 in
 ``vendors.tests_questionnaire``. L-3 is a shell script and L-8 is deferred;
-REVIEW_095H.md says why.
+REVIEWS.md (0.9.5h review) says why.
 """
 from datetime import timedelta
 from unittest import mock

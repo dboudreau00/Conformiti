@@ -2,7 +2,7 @@
 
 Two callers depend on this: the Jira client, which has been through it since
 0.9.2, and the chat webhooks, which had their own weaker copy until 0.9.5b
-(REVIEW_095.md, S-2). Tested here on its own so a change to it cannot be
+(REVIEWS.md (0.9.5 review), S-2). Tested here on its own so a change to it cannot be
 judged only by whether those two suites still pass.
 """
 import urllib.request

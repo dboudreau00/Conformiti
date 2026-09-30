@@ -46,17 +46,19 @@ Run the same gates CI runs:
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
-which is shorthand for these, except `npm audit`, which only CI runs. Each
-block starts at the repository root and runs top to bottom:
+which is shorthand for these, except `node ../tools/jscheck.mjs src` (run from
+`frontend/`) and `npm audit`, which only CI runs. Each block starts at the
+repository root and runs top to bottom:
 
 ```bash
-python3 tools/validate.py             # static wiring/contract checks; any bare python 3 will do
+python3 tools/validate.py             # static wiring/contract checks; any bare Python 3.11+ will do
 cd backend
 ../.venv/bin/python manage.py check
 ../.venv/bin/python manage.py makemigrations --check --dry-run
 ../.venv/bin/python manage.py test    # the long one; ends with "Ran N tests" and OK
 cd ../frontend
 npm run build
+node ../tools/jscheck.mjs src         # every source file parses, no undeclared name
 npm audit --audit-level=high
 ```
 
@@ -68,6 +70,7 @@ cd backend
 ..\.venv\Scripts\python.exe manage.py test
 cd ..\frontend
 npm.cmd run build
+node ..\tools\jscheck.mjs src
 npm.cmd audit --audit-level=high
 ```
 
@@ -92,15 +95,23 @@ Rules of thumb:
 
 ```
 backend/            Django project (config/) + apps
-  accounts/         users, roles, RBAC, MFA, logout, demo-data retirement
+  accounts/         users, roles, RBAC, workspaces (tenancy), MFA, passkeys,
+                    OIDC and SAML sign-in, sessions, demo-data retirement
   compliance/       frameworks, controls, evidence links, seeding, CSV export
   documents/        folders, grants, documents, versions, upload validation
   governance/       risks (+ CSV/XLSX import), access reviews, meetings, groups
-  notifications/    review-reminder scan, email transports, in-app feed
+  attestations/     evidence packages, sealing, Ed25519 package signing,
+                    PBC request lists, auditor grants
+  vendors/          vendor register, assurance reports, responsibility matrix,
+                    questionnaires (public endpoints keyed by a link token)
+  notifications/    review, vendor and PBC reminder scans, digests, email
+                    transports, Slack and Teams webhooks, in-app feed
   audit/            audit-trail middleware, auth events, read-only API
   analytics/        dashboard summary + readiness snapshots
   calendar_app/     calendar events + merged feed
   integrations/     Jira client (SSRF-hardened)
+  config/           settings, field encryption, outbound request guard,
+                    CSV formula safety, health endpoint
   testutils.py      shared test fixtures
 frontend/src/
   styles/index.css  theme tokens (4 theme packs, 4 accent packs) + Tailwind
@@ -124,6 +135,9 @@ Bump `backend/config/version.py`, `frontend/package.json` and
 `e2e/package.json`, and both version fields in `frontend/package-lock.json`
 and in `e2e/package-lock.json` (the top-level one and `packages[""]`, by hand
 or with `npm install --package-lock-only` in that directory), update the
-README badge, add the CHANGELOG entry, tag `vX.Y.Z`, and publish a GitHub
+README badge, add the CHANGELOG entry, tag `v` followed by the version exactly
+as `version.py` writes it (for example `v0.9.5m`), and publish a GitHub
 release. `tools/validate.py` refuses a build where these disagree. CI must be
-green.
+green. Pushing the tag runs `.github/workflows/packages.yml`, which refuses a
+tag that disagrees with `version.py` and publishes both images to ghcr.io
+under the version, the commit and `latest`, with provenance and an SBOM.

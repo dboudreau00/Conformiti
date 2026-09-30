@@ -13,17 +13,28 @@
   change). The local development path below uses 8000 as well, so stop one
   before starting the other, or move one of them (the local API moves with
   `CONFORMITI_DEV_API_PORT`, which is separate from `CONFORMITI_API_PORT`).
-- Outbound internet once, to pull base images and build.
+- Outbound internet to pull base images and build, and again wherever the
+  installation uses it: `scripts/backup.sh` and `scripts/restore.sh` run an
+  `alpine:3.20` container (pulled on first use), the optional malware scanner
+  downloads its signatures at first start and keeps updating them, and email
+  (SMTP, a mailbox or SES), S3 storage, Jira, Slack or Teams webhooks and
+  single sign-on each call the service you configure. With none of those
+  configured and the images already pulled, the running stack needs no
+  outbound access.
 - **git**, to clone the repository and check out the newest release tag
   (`main` is the development line), and **curl** if you use
   `./install.sh --docker` (it waits for the stack with it; `install.ps1`
   needs nothing extra).
 - Nothing else. No `.env` is required.
 
-For production add: a DNS name, a TLS-terminating proxy in front of port 8080
-(then `BEHIND_TLS=true`), a real `EMAIL_PROVIDER` (SMTP, a mailbox account, or
-SES) so review reminders reach owners, and a backup of the database and of the
-`media`, `secrets` and `tree` volumes. `scripts/backup.sh` takes all four. The
+For production add: a DNS name; a TLS-terminating proxy in front of port 8080
+that sets `X-Forwarded-Proto: https` itself (then `BEHIND_TLS=true` and
+`NUM_PROXIES=2` in `.env`, and `SECURE_HSTS_SECONDS` once TLS works);
+`PUBLIC_URL` set to the https address people reach (vendor questionnaire links
+are built from it); a real `EMAIL_PROVIDER` (SMTP, a mailbox account, or SES)
+so review reminders reach owners; a strong `POSTGRES_PASSWORD` and a
+`REDIS_PASSWORD`; and a backup of the database and of the `media`, `secrets`
+and `tree` volumes. `scripts/backup.sh` takes all four. The
 `secrets` volume holds the Django secret key, the field-encryption ring and the
 package signing key, and a restore without it loses all three.
 

@@ -1,6 +1,6 @@
 """Regression tests for the findings left open after 0.9.3.
 
-Each class names the defect it closes. See REVIEW_090.md.
+Each class names the defect it closes. See REVIEWS.md (0.9.0 review).
 """
 from django.conf import settings
 from django.test import TestCase, override_settings

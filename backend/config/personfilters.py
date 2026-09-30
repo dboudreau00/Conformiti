@@ -16,8 +16,9 @@ for everyone who uses it: the interface filters by an id it was already given.
 
 Only the collections an auditor can reach need this, but it is applied to
 every person-valued filter on those collections rather than to the ones a
-reviewer happened to name, and ``accounts/tests_auditor_surface.py`` walks
-them so the next collection added to that list cannot quietly reintroduce it.
+reviewer happened to name, and ``EveryAuditorReadableFilterTests`` in
+``accounts/tests_review_095i.py`` walks them so the next collection added to
+that list cannot quietly reintroduce it.
 """
 import django_filters as filters
 

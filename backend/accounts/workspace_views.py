@@ -22,7 +22,7 @@ from .models import MAX_WEBHOOK_URL_LENGTH, Workspace, validate_webhook_url
 # enough to name it on screen. Its mailbox, its chat channels and its
 # headcount are the operator's business. Before 0.9.5b the whole record went
 # to every member, external auditors included, chat webhooks and all
-# (REVIEW_095.md, S-1).
+# (REVIEWS.md (0.9.5 review), S-1).
 PUBLIC_FIELDS = ("id", "name", "slug", "is_active", "created_at", "can_switch")
 
 

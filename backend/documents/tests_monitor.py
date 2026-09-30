@@ -202,7 +202,7 @@ class PackageQuarantineTests(ClamdMixin, PackageTestBase):
         c = self.client_for(self.auditor)
         self.assertEqual(c.get(f"/api/package-evidence/{item.pk}/file/").status_code, 403)
         self.assertEqual(c.get(f"/api/package-evidence/{item.pk}/preview/").status_code, 403)
-        # The export still runs; the manifest is a record, not a delivery of the bytes.
+        # A PBC line's attached file is refused the same way.
         line = self.manager_client.post("/api/pbc-requests/", {"package": self.package.pk, "title": "x"},
                                         format="json").data
         pbc = self.manager_client.post("/api/pbc-items/", {"request": line["id"], "document": self.doc.pk},

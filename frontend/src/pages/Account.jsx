@@ -1332,6 +1332,25 @@ function AboutSection() {
     };
   }, [auditor]);
 
+  // The key that signs this workspace's packages. /health/ answers with no
+  // workspace, so on an installation serving several organisations it names
+  // no key; this asks as the signed-in person. An auditor is refused it and
+  // keeps the health figures, as does anyone if the call fails.
+  const [workspaceKey, setWorkspaceKey] = useState(null);
+  useEffect(() => {
+    if (auditor) return undefined;
+    let alive = true;
+    api.get("/signing-keys/current/")
+      .then((r) => {
+        if (alive) setWorkspaceKey(r.data);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [auditor]);
+  const signingKey = workspaceKey || health?.signing;
+
   const scanning = health?.scanning;
   const scannerLabel = !scanning || !scanning.enabled
     ? "Off"
@@ -1343,10 +1362,11 @@ function AboutSection() {
     ["Frameworks", auditor ? "-" : frameworks ? `${frameworks.length} loaded` : "…"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
     ["Malware scanning", scannerLabel],
-    ["Package signing", health?.signing?.key_id
-      ? `Ed25519 · key ${health.signing.key_id}`
-      : health?.signing?.enabled === false ? "Off" : "No key configured"],
-    ...(health?.signing?.fingerprint ? [["Signing key fingerprint", `sha256:${health.signing.fingerprint}`]] : []),
+    ["Package signing", signingKey?.key_id
+      ? `Ed25519 · key ${signingKey.key_id}`
+      : signingKey?.enabled === false ? "Off"
+        : signingKey?.per_workspace ? "One key per workspace" : "No key configured"],
+    ...(signingKey?.fingerprint ? [["Signing key fingerprint", `sha256:${signingKey.fingerprint}`]] : []),
     ["Licence", "MIT"],
   ];
 

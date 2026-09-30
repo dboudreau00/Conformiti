@@ -9,12 +9,12 @@
 | `documents` | `Folder` (self-parent tree with cycle guard), `FolderPermission`, `Document` (+ scan verdict / quarantine), `DocumentVersion`, `FormTemplate`, upload validation, clamd client (`clamav.py`), scanning boundary (`scanning.py`) and the scanner watch + re-scan sweep (`monitor.py`, `manage.py scan_evidence`, `ScannerStatus`) |
 | `governance` | `Risk` + `RiskNote` (+ CSV/XLSX importer), `AccessReview` + snapshot items, `MeetingSeries` + minutes, `ChampionGroup` + members |
 | `vendors` | `Vendor` (tier, posture, computed risk rating), `VendorAssessment` (reports, AOCs, questionnaires, filed documents), `SharedResponsibility` (per-vendor matrix) + the CSV/XLSX recogniser (`matrix.py`), `QuestionnaireInvite` + the public token endpoints (`questionnaire.py`, `public_views.py`) |
-| `attestations` | `EvidencePackage` → `PackageControl` → `PackageEvidence` / `PackageSample` snapshots, `PackageGrant` (the folder-permission bypass, `access.py`), manifest + bundle, `PbcRequest` / `PbcItem` (the auditor's request list, `pbc_views.py`), roll-forward + year-over-year diff (`rollforward.py`), detached Ed25519 manifest signatures from a file-held key + `SigningKey` registry (`signing.py`, `manage.py rotate_signing_key`), stdlib verifier shipped in every bundle (`verifier.py`) |
+| `attestations` | `EvidencePackage` → `PackageControl` → `PackageEvidence` / `PackageSample` snapshots, `PackageGrant` (the first of two folder-permission bypasses, `access.py`), manifest + bundle, `PbcRequest` / `PbcItem` (the auditor's request list, `pbc_views.py`; the second bypass, also in `access.py`), roll-forward + year-over-year diff (`rollforward.py`), detached Ed25519 signatures over the manifest and the bundle's `SHA256SUMS`, each workspace signing with a key derived from one installation key held in a file (`SIGNING_KEY_FILE`) or the environment (`SIGNING_KEY`), never in the database, + `SigningKey` registry of the public keys (`signing.py`, `manage.py rotate_signing_key`; `SIGNING_ENABLED=false` seals unsigned), stdlib verifier shipped in every bundle (`verifier.py`) |
 | `notifications` | review/vendor/PBC reminder scans + scanner watch (Celery tasks / management commands), email transports (console, SMTP, mailbox, SES), derived per-user in-app feed + receipts, per-person digest emails (`send_digests`), Slack/Teams incoming webhooks with a delivery log (`webhooks.py`, `WebhookDelivery`) |
 | `audit` | `AuditLog`, request middleware (mutations with field names), explicit auth events, read-only viewer API |
 | `analytics` | dashboard summary endpoint, `ReadinessSnapshot` history + trend |
 | `calendar_app` | `CalendarEvent` + merged review/audit/task feed |
-| `integrations` | Jira Cloud client (https-only, public-IP pinned, no redirects) |
+| `integrations` | Jira client (https only, any public host, the resolved address checked and the connection pinned to it, redirects refused; through an egress proxy the proxy resolves and connects) |
 | `config` | settings, URLs, health endpoint, version, CSV sanitiser, field encryption (`fieldcrypto.py`), and the one safe way to make an outbound request (`outbound.py`: host allow-lists, address checks, a pinned connection, refused redirects, proxies honoured) |
 
 ## Data model (essentials)
@@ -33,7 +33,8 @@ Risk 1─* RiskNote                AccessReview 1─* AccessReviewItem (snapshot
 MeetingSeries 1─* MeetingMinute  ChampionGroup 1─* GroupMember
 CalendarEvent → optional Document / Control / assignee
 AuditLog → optional User          ReadinessSnapshot (one per day, per workspace)
-NotificationReceipt (user, key)   MfaDevice 1─* MfaBackupCode
+NotificationReceipt (user, key)   User 1─1 MfaDevice, User 1─* MfaBackupCode,
+                                  User 1─* WebAuthnCredential
 JiraIntegration (one per workspace), JiraBoard
 ```
 
@@ -58,13 +59,23 @@ active. The active workspace is a context variable:
   built at import time (`queryset = Model.objects.all()` on a viewset) is
   scoped the moment DRF calls `.all()`. Pinning never widens.
 - No active workspace means no filter: right for migrations,
-  `createsuperuser` and jobs that walk every workspace; an API request
-  with nowhere to go is refused (403). `tenancy.unscoped()` is the
-  explicit escape hatch.
+  `createsuperuser` and jobs that walk every workspace. A signed-in
+  account with no workspace is refused (403). An unauthenticated request
+  has no workspace either, so the endpoints that serve one (sign-in and
+  refresh, single sign-on, the vendor questionnaire link, the published
+  signing keys, health) run with no filter and confine themselves: sign-in
+  to the account it authenticates, the questionnaire to the workspace of
+  the invitation its token names, the signing keys to `?workspace=`, health
+  to installation-level flags that name no tenant. `tenancy.unscoped()` is
+  the explicit escape hatch.
 
 Not tenant-scoped: `Workspace` itself, per-person authentication state
-(passkeys, TOTP, backup codes, SSO identities), the signing-key registry,
-the scanner status row, notification receipts and webhook deliveries.
+(passkeys and their challenges, TOTP, backup codes, SSO identities, issued
+and revoked refresh tokens), the SAML replay record, the signing-key
+registry (its workspace column is filtered explicitly), the scanner status
+row, notification receipts and webhook deliveries. An audit entry for an
+event that belongs to no workspace carries none and is shown to
+superusers only.
 
 ## RBAC resolution
 
@@ -76,25 +87,58 @@ the scanner status row, notification receipts and webhook deliveries.
 4. the highest `FolderPermission` for the user or their role on this folder
    **or any ancestor** (inheritance)
 
-Auditor roles are then capped at `view`. Documents inherit their folder's
-access; a document owner may always *edit* their own document, but deleting
-requires `manage` on the folder. Restructuring the tree (re-parenting) requires
+An external auditor holds none of the role's capability flags, whatever the
+role stores, so rules 1 and 2 never apply to one, and is then capped at
+`view`. Documents inherit their folder's access; a document owner may edit
+their own document (an external auditor never may), but deleting requires
+`manage` on the folder. Restructuring the tree (re-parenting) requires
 `manage` on the folder and `edit` on the destination; the generated framework
-folders are immutable through the API.
+folders cannot be moved, renamed or deleted through the API.
+
+Folder access is bypassed in exactly two places, both in
+`attestations/access.py`. An external auditor with a live grant reads the
+evidence pinned into the package issued to them. A package's request list,
+with the documents attached in answer, is readable by whoever can read the
+package and, for each line, by the person it is assigned to (an external
+auditor reads it only through the grant). Evidence can be pinned or attached
+only by someone who can already see its folder.
 
 `documents.access.accessible_folder_ids(user)` resolves the same rules in a
-handful of queries and scopes every list, tree, feed, evidence count and
-analytics figure.
+handful of queries and scopes every folder and document list, the tree, the
+calendar feed, the register's evidence counts and the dashboard's document
+figures. The dashboard's control, evidence-coverage, risk and readiness
+figures are organisation-wide counts that name nothing, shown to every
+member of the workspace except an external auditor.
 
 ## Authentication
 
-- `POST /api/auth/token/` → access (60 min) + refresh (7 d). Accounts with a
-  second factor get `{"mfa_required": true, "factors": {...}, "passkey"?: {...}}`
-  until an `otp` (authenticator/backup code) or a `passkey` assertion is
-  supplied; passkey challenges live in `WebAuthnChallenge` rows that answer once.
+- `POST /api/auth/token/` checks the password first. An account with a
+  second factor gets `{"mfa_required": true, "factors": {...}, "passkey"?: {...}}`
+  until an `otp` (authenticator or backup code) or a `passkey` assertion is
+  supplied; passkey challenges live in `WebAuthnChallenge` rows that answer
+  once. Only then are an access token (60 min, `JWT_ACCESS_MINUTES`) and a
+  refresh token (7 d, `JWT_REFRESH_DAYS`) minted.
+- `AUTH_TRANSPORT=cookie` (the default) answers `{"authenticated": true}` and
+  sets both tokens as HttpOnly, SameSite=Lax cookies, the refresh cookie only
+  on `/api/auth/token/`, named `__Host-conformiti_access` and
+  `__Secure-conformiti_refresh` when the cookies are Secure
+  (`AUTH_COOKIE_SECURE`, which follows `BEHIND_TLS`). An unsafe request
+  authenticated by the cookie, and the login, refresh and sign-out endpoints
+  themselves, must carry Django's CSRF token. `AUTH_TRANSPORT=header` returns
+  the tokens in the body for the client to send as `Authorization: Bearer`,
+  which both modes accept.
 - `POST /api/auth/token/refresh/` rotates the refresh token and blacklists the
-  old one; `POST /api/auth/logout/` blacklists the current one.
-- Session auth remains for the Django admin and (in DEBUG) the browsable API.
+  old one.
+- The SPA signs out with `POST /api/auth/token/clear/`, which revokes every
+  refresh token the account holds and expires the cookies; `POST
+  /api/auth/logout/` blacklists the refresh token in its body. An access
+  token already issued stays valid until it expires. A password change, a
+  password set by an administrator and an MFA reset also refuse every access
+  token issued before them (`sessions_valid_from`).
+- Single sign-on (OIDC, SAML) ends in a one-time ticket redeemed at
+  `POST /api/auth/oidc/redeem/`, with the same second-factor step.
+- Session auth remains for the Django admin (which also asks for the second
+  factor) and, in DEBUG, the browsable API.
 - Login, failed login (with reason) and logout are audit events.
 
 ## Review-alert flow
@@ -104,24 +148,35 @@ Document.last_reviewed + cadence ─▶ next_review_date
         │
    daily scan at REVIEW_SCAN_HOUR (Celery beat), or cron: send_review_reminders
         │
-   for each lead in REVIEW_ALERT_LEAD_DAYS (30,14,7,1) not yet sent:
+   per document, the nearest lead in REVIEW_ALERT_LEAD_DAYS (30,14,7,1) it has
+   newly entered (one email per document per run, to owner + compliance mailbox):
         └▶ email_service.send_templated_email()
               ├─ EMAIL_PROVIDER=ses     → boto3
               ├─ EMAIL_PROVIDER=mailbox → SMTP (+ IMAP Sent copy)
               ├─ EMAIL_PROVIDER=smtp    → Django SMTP backend
               └─ EMAIL_PROVIDER=console → stdout
         │
-   record lead in Document.reminders_sent  (dedupe); overdue → one notice + status=expired
+   claim lead in Document.reminders_sent before sending (dedupe; a failed send
+   hands it back for the next run); overdue → one notice + status=expired
 ```
 
 ## Audit trail
 
 `audit.middleware.AuditLogMiddleware` reads the top-level field names of a
-JSON/form body *before* the view runs (values are never recorded; password,
-token and code keys are dropped), then, after a successful mutating response,
-writes `{user, action, object_type, object_id, "METHOD /path fields=a,b", ip}`.
-`/api/auth/*`, `/api/notifications/*` and `/api/health/` are excluded; auth
-events are written explicitly by `audit.events`.
+JSON/form body *before* the view runs (values are never recorded; the names
+password, current_password, new_password, api_token, otp, code and secret are
+dropped), then, after an authenticated mutating request under `/api/` answers
+below 400, writes `{user, action, object_type, object_id,
+"METHOD /path fields=a,b", ip}`. `/api/auth/*`, `/api/notifications/*` and
+`/api/health/` are excluded; sign-in, failed sign-in and sign-out, passkey
+enrolment, removal and refusals, MFA resets, evidence downloads, package
+reads and exports, and malware detections and quarantines are written
+explicitly by `audit.events` and the scanner. The middleware sees `/api/`
+only: changes made in the Django admin site are kept in Django's own admin
+history, and the trail receives only a password set there and a refused
+second factor at its sign-in. The trail is read through `GET /api/audit-log/`
+by administrators, view-all managers and the Auditor role, and that endpoint
+has no write surface.
 
 ## Frontend
 
@@ -131,9 +186,12 @@ and routes; every page is a `PanelTransition` panel built from the primitives
 in `components/ui` and `components/charts`. Styling is Tailwind over the token
 system in `styles/index.css`: a theme pack (`data-theme`) and an accent pack or
 custom colour (`data-accent`) on `<html>`, applied before first paint by
-`public/theme-init.js` and managed by `theme.js`. The axios client attaches the
-access token, refreshes once on 401 (storing the rotated refresh token) and
-revokes on sign-out.
+`public/theme-init.js` and managed by `theme.js`. The axios client sends
+`X-Workspace` when a superuser has chosen a workspace. In cookie mode (the
+default) the browser carries the HttpOnly cookies and the client adds Django's
+CSRF token to unsafe requests; in header mode it attaches the access token
+from localStorage. Either way it refreshes once on a 401 (in header mode
+storing the rotated refresh token) and revokes on sign-out.
 
 ## Deployment topology (compose)
 
@@ -142,11 +200,21 @@ browser ─▶ nginx (frontend, :8080) ─┬─▶ gunicorn (backend, :8000) �
                                     │        ▲                     └─▶ Redis (cache + broker)
                                     │        healthcheck /api/health/, and the host's
                                     │        127.0.0.1:8000 for debugging (skips nginx)
-                                    ├─ /static, /media from shared volumes
+                                    ├─ /static from the shared volume; evidence only
+                                    │   by X-Accel-Redirect from the API (internal
+                                    │   /protected-media/), never by URL
                                     └─ CSP, security headers, 32 MB body cap
 celery beat (the schedule) ─▶ Redis ─▶ celery worker ─▶ PostgreSQL / email
-volumes: pgdata · media · static · secrets (DJANGO_SECRET_KEY_FILE) · tree
+volumes: pgdata · media · static · secrets (the Django secret key, which also
+         signs the tokens, the field-encryption key ring and the package-signing
+         key; protect and back up as one) · tree · clamdb (scanning profile only)
 ```
+
+Outbound connections are made by the API and the worker alike, and only to
+what is configured: mail (SMTP, the mailbox account or SES), Slack and Teams
+incoming webhooks, and clamd on port 3310 (the optional `scanning` profile).
+The API alone calls Jira and the single sign-on provider. Webhook, Jira and
+provider calls are HTTPS through `config/outbound.py`; mail and clamd are not.
 
 Inside its container gunicorn listens on 0.0.0.0:8000 so nginx can reach it
 over the compose network; the host publishes that port on 127.0.0.1 only

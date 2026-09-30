@@ -1,4 +1,4 @@
-"""The third-party review of 0.9.5, fixed in 0.9.5b (REVIEW_095.md).
+"""The third-party review of 0.9.5, fixed in 0.9.5b (REVIEWS.md (0.9.5 review)).
 
 S-1 webhook URLs readable by every role · S-2 the host allow-list and the
 redirect-following request · S-3 encryption at rest · S-5 the mailed link's

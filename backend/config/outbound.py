@@ -9,7 +9,7 @@ can point at any of them.
 
 This module is the single implementation of the defence. It was the Jira
 client's private code until 0.9.5b, when the per-workspace chat webhooks added
-a second caller that had gone without it (see REVIEW_095.md, S-2).
+a second caller that had gone without it (see REVIEWS.md (0.9.5 review), S-2).
 
 What a caller gets
 ------------------

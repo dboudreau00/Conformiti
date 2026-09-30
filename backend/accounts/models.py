@@ -60,7 +60,7 @@ class Workspace(models.Model):
     # Encrypted at rest for the same reason the TOTP secret and the Jira token
     # are: whoever holds an incoming-webhook URL can post into the channel as
     # the app, and a database dump or a restored backup should not hand that
-    # over (REVIEW_095.md, S-3).
+    # over (REVIEWS.md (0.9.5 review), S-3).
     slack_webhook_url = EncryptedCharField(
         max_length=MAX_WEBHOOK_COLUMN, blank=True, aad_from="id",
         help_text="This organisation's Slack incoming webhook. On an installation with "
@@ -441,6 +441,10 @@ class MfaDevice(models.Model):
         from . import mfa as mfa_lib
 
         code = (code or "").strip()
+        # A secret the key ring cannot decrypt reads as "". Refused here as
+        # well as in matched_counter: an empty key's codes are public.
+        if not self.secret:
+            return False
         step = mfa_lib.matched_counter(self.secret, code)
         if step is None:
             return False
