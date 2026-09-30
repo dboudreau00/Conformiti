@@ -11,7 +11,7 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5ma], 2026-09-29
 
 Two fixes from an independent review of 0.9.5m.
 
