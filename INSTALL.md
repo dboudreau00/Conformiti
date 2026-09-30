@@ -290,9 +290,12 @@ pulls what it pushed and boots it before the run is allowed to pass.
    in §1: if it does not, no account is created, the backend log says why,
    and the stack boots without one. Give `DJANGO_SUPERUSER_EMAIL` a real
    address: left unset it is `admin@localhost`. Earlier releases used
-   `admin@example.com`, the demo administrator's address, and an account
-   named `admin` with that address is counted as a demo account until its
-   email changes.
+   `admin@example.com`, the demo administrator's address. An upgrade replaces
+   it with `admin@localhost` on a superuser that has a demo account's
+   username (`admin` in practice) and no first or last name (accounts
+   migration 0014), so that account is not mistaken for the demo. An `admin`
+   with a name and an `@example.com` address is still counted as the demo
+   administrator until its email changes.
 4. Confirm: `curl -s https://grc.example.com/api/health/` returns
    `{"status":"ok","version":"<your version>","database":"ok","demo_accounts":false,…}`.
 5. Put `scripts/backup.sh` on cron and copy its output off the machine. It

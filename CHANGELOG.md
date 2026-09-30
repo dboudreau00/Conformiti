@@ -11,6 +11,32 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+Two fixes from an independent review of 0.9.5m.
+
+**On upgrade.** One migration, `accounts` 0014, which changes one email
+address on an installation from before 0.9.5l (the first item below).
+
+### Fixed
+
+- **An administrator made before 0.9.5l with the default address could be
+  retired as demo data.** The entrypoint's old fallback address was
+  `admin@example.com`, and the account belonged to no workspace until
+  migration 0013 filed it in one, which is where the demo checks look: a
+  superuser `admin` with an `@example.com` address counts as the demo
+  administrator. The boot banner then advised `remove_demo_data`, which
+  deactivates that account, takes the owner off its controls and deletes the
+  readiness history from before today. Migration 0014 gives a superuser with
+  a demo account's username (`admin` in practice), that address and no first
+  or last name the address `createsuperuser` now falls back to,
+  `admin@localhost`. The seeded demo administrator, who has a name, and every
+  other account are left alone.
+- **The sign-in page said "This installation has no accounts yet" whenever
+  no account could sign in**, including when accounts exist and every one is
+  deactivated. It now says no account can sign in, and offers creating an
+  administrator or reactivating one on the server.
+
 ## [0.9.5m], 2026-09-24
 
 The control register in the standard's own order, and two small things an

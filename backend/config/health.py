@@ -31,11 +31,12 @@ def demo_accounts_present():
 def first_admin_needed():
     """True while no active account exists anywhere on the installation.
 
-    The sign-in page uses it to explain how the first administrator is
-    created (on the server, with createsuperuser), because nobody can sign in
-    to create one. Counted across every workspace, whatever the request or
-    caller has active: one person able to sign in anywhere means the page has
-    nothing to explain.
+    The sign-in page uses it to say that nobody can sign in and how to fix
+    that on the server (createsuperuser, or reactivating an account), whether
+    the installation is empty or every account is switched off. The name is
+    the API's and stays. Counted across every workspace, whatever the request
+    or caller has active: one person able to sign in anywhere means the page
+    has nothing to explain.
     """
     from accounts import tenancy
 

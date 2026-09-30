@@ -37,9 +37,9 @@ const CREATE_ADMIN = [
   ["Docker", "docker compose exec backend python manage.py createsuperuser"],
 ];
 
-// The list's accessible name follows the hint it sits under: the first
-// administrator on an empty installation, or an administrator of the
-// operator's own beside the seeded demo accounts (whose admin already is one).
+// The list's accessible name follows the hint it sits under: an administrator
+// when no account can sign in, or an administrator of the operator's own
+// beside the seeded demo accounts (whose admin already is one).
 function CreateAdminCommands({ label }) {
   return (
     <ul className="mt-2 space-y-1.5 text-left text-2xs text-faint" aria-label={label}>
@@ -415,10 +415,10 @@ export default function Login({ onDone }) {
               // anyone signs in to never shows it.
               <div className="mt-4 text-xs text-muted">
                 <p className="text-center">
-                  This installation has no accounts yet.
-                  <span className="block text-2xs text-faint">Create the first administrator on the server, then sign in here.</span>
+                  No account can sign in on this installation.
+                  <span className="block text-2xs text-faint">Create an administrator on the server, or reactivate an existing account there, then sign in here.</span>
                 </p>
-                <CreateAdminCommands label="Create the first administrator" />
+                <CreateAdminCommands label="Create an administrator" />
               </div>
             ) : null}
             {!mfaStep && health?.first_admin_needed !== true ? (

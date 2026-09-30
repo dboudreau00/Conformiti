@@ -260,6 +260,109 @@ class WorkspacelessSuperuserMigrationTests(APITestBase):
         self.assertEqual(_workspace_of(placed), beta.pk)
 
 
+def _run_migration_0014():
+    """accounts migration 0014's data step, against the live registry."""
+    import importlib
+    from types import SimpleNamespace
+
+    from django.apps import apps
+    from django.db import connection
+
+    module = importlib.import_module("accounts.migrations.0014_own_address_for_fallback_administrator")
+    module.rewrite(apps, SimpleNamespace(connection=connection))
+
+
+def _legacy_admin(username="admin", **extra):
+    """The administrator the entrypoint made before 0.9.5l when no address was
+    set: no name, the demo administrator's address. Migration 0013 has filed
+    it in a workspace, which is where the demo checks look."""
+    extra.setdefault("email", "admin@example.com")
+    extra.setdefault("first_name", "")
+    extra.setdefault("last_name", "")
+    superuser = extra.pop("superuser", True)
+    return make_user(username, superuser=superuser, **extra)
+
+
+def _email_of(user):
+    with tenancy.unscoped():
+        return User.objects.get(pk=user.pk).email
+
+
+class FallbackAdministratorAddressTests(APITestBase):
+    """An installation from before 0.9.5l whose administrator was made with
+    the old fallback address was taken for the demo once migration 0013 filed
+    it in a workspace. The boot banner told the operator to run
+    remove_demo_data, which deactivates that account, takes the owner off its
+    controls and deletes the readiness history from before today."""
+
+    def test_the_old_fallback_address_is_replaced_and_the_demo_no_longer_claims_it(self):
+        from datetime import timedelta
+
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        from analytics.models import ReadinessSnapshot
+        from compliance.models import Control
+        from config.health import demo_accounts_present
+
+        legacy = _legacy_admin()
+        Control.objects.filter(pk=self.tree.c1.pk).update(owner=legacy)
+        ReadinessSnapshot.objects.create(date=timezone.localdate() - timedelta(days=30))
+        self.assertTrue(demo_accounts_present(), "the defect this migration repairs")
+
+        _run_migration_0014()
+
+        self.assertEqual(_email_of(legacy), "admin@localhost")
+        self.assertFalse(demo_accounts_present())
+        call_command("remove_demo_data", verbosity=0, stdout=io.StringIO())
+        with tenancy.unscoped():
+            self.assertTrue(User.objects.get(pk=legacy.pk).is_active)
+        self.assertEqual(Control.objects.get(pk=self.tree.c1.pk).owner_id, legacy.pk)
+        self.assertTrue(ReadinessSnapshot.objects.filter(
+            date__lt=timezone.localdate() - timedelta(days=1)).exists())
+
+    def test_the_seeded_demo_administrator_and_other_accounts_are_left_alone(self):
+        cases = {
+            "the seeded demo administrator": dict(first_name="Ada", last_name="Admin"),
+            "only a first name": dict(first_name="Ada"),
+            "another address": dict(email="admin@corp.example"),
+            "not a superuser": dict(superuser=False),
+            "another username": dict(username="root"),
+        }
+        for label, extra in cases.items():
+            with self.subTest(label):
+                user = _legacy_admin(**extra)
+                before = _email_of(user)
+                _run_migration_0014()
+                self.assertEqual(_email_of(user), before)
+                with tenancy.unscoped():
+                    User.objects.filter(pk=user.pk).delete()
+
+    def test_any_demo_username_counts_not_only_admin(self):
+        # DJANGO_SUPERUSER_USERNAME could have been set to any of them.
+        for username in ("mia", "owen", "aria", "val"):
+            with self.subTest(username):
+                with tenancy.unscoped():
+                    User.objects.filter(username=username).delete()
+                legacy = _legacy_admin(username)
+                _run_migration_0014()
+                self.assertEqual(_email_of(legacy), "admin@localhost")
+
+    def test_the_address_matches_in_any_case_and_a_second_run_changes_nothing(self):
+        legacy = _legacy_admin(email="Admin@Example.COM")
+        _run_migration_0014()
+        self.assertEqual(_email_of(legacy), "admin@localhost")
+        _run_migration_0014()
+        self.assertEqual(_email_of(legacy), "admin@localhost")
+
+    def test_an_installation_with_no_such_account_is_untouched(self):
+        with tenancy.unscoped():
+            before = list(User.objects.order_by("pk").values_list("pk", "email"))
+        _run_migration_0014()
+        with tenancy.unscoped():
+            self.assertEqual(list(User.objects.order_by("pk").values_list("pk", "email")), before)
+
+
 def _posix_bash():
     """A bash that runs a script in this process's environment, or None.
     On Windows, System32's bash.exe starts WSL instead."""
