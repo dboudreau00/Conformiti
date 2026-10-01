@@ -362,8 +362,9 @@ export default function AuditLog({ me }) {
           <p className="flex items-start gap-2 text-xs leading-snug text-muted">
             <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" strokeWidth={2} aria-hidden="true" />
             <span>
-              Immutable record of every change and sign-in made through the API: who did what, to which record,
-              from where. Entries are written server-side and cannot be edited or deleted from the app.
+              Read-only record of every change and sign-in, in the app and in the Django admin: who did what,
+              to which record, from where. Entries are written server-side, and nobody can edit or delete one
+              from either.
             </span>
           </p>
         </StackItem>

@@ -59,7 +59,7 @@ export const NAV_LOOKUP = {
   "/packages": { title: "Audit packages", caption: "Evidence sealed and issued to an external auditor" },
   "/vendors": { title: "Vendors", caption: "Third-party risk, assurance on file and shared responsibility" },
   "/responsibilities": { title: "Responsibility matrix", caption: "Who is responsible, accountable, consulted and informed per control" },
-  "/audit-log": { title: "Audit log", caption: "Immutable record of every change and sign-in" },
+  "/audit-log": { title: "Audit log", caption: "Read-only record of every change and sign-in" },
   "/meetings": { title: "Meetings", caption: "Governance forum cadence and minutes" },
   "/groups": { title: "Champion groups", caption: "Inter-departmental compliance ownership" },
   "/risks": { title: "Risk register", caption: "Open, mitigating and accepted risk treatment" },

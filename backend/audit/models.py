@@ -1,4 +1,4 @@
-"""Immutable audit trail of mutating actions -- important for compliance evidence."""
+"""Read-only audit trail of mutating actions -- important for compliance evidence."""
 from django.conf import settings
 from django.db import models
 
