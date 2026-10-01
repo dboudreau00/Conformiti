@@ -51,7 +51,7 @@ is named by the release that closed it, as the code comments cite it, so the
 | 0.9.5j, code review | internal | 155 upheld of 161 reported | [CHANGELOG.md](CHANGELOG.md) | 0.9.5k |
 | 0.9.5l, post-release install check | internal, run with automated agents | 2 | [CHANGELOG.md](CHANGELOG.md) | 0.9.5m |
 | 0.9.5m, release review | **independent** | 3 (one bug, two suggestions), all closed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5ma |
-| 0.9.5ma, documentation audit | internal, run with automated agents | every document held to the code; 19 code defects fixed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5mb (11); the other 8 unreleased |
+| 0.9.5ma, documentation audit | internal, run with automated agents | every document held to the code; 19 code defects fixed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5mb (11), 0.9.5mc (8) |
 
 The independent reviews up to 0.9.5h are the substantial ones. The 0.9.0
 review attacked tenancy, authentication, single sign-on, file ingest,

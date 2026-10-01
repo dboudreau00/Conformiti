@@ -11,7 +11,7 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5mc], 2026-10-01
 
 The rest of what the 0.9.5ma documentation audit found. Eight places where
 the code still fell short of the documents are fixed, each with a test that
@@ -81,6 +81,8 @@ accounts that already exist are not affected.
   account cannot have yet.
 - `docs/ARCHITECTURE.md` described the audit trail as blind to the Django
   admin, which stopped being true in 0.9.5mb.
+- The Audit log page says read-only rather than immutable, as the documents
+  have since 0.9.5mb, and that it covers the Django admin too.
 
 ## [0.9.5mb], 2026-09-30
 
