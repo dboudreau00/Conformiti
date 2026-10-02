@@ -1,4 +1,5 @@
-// Navigation model shared by the sidebar, the top bar and the validator.
+// Navigation model shared by the shell (top bar, side menu, mobile sheet) and
+// the validator.
 // `badge` names a live counter supplied by the shell (see App.jsx).
 export const NAV_SECTIONS = [
   {
@@ -66,3 +67,36 @@ export const NAV_LOOKUP = {
   "/jira": { title: "Jira boards", caption: "Remediation work linked to controls" },
   "/settings": { title: "Settings", caption: "Profile, appearance, security, notifications and access" },
 };
+
+// Where the shell draws each section that navSections(me) returns:
+//   workspace   the tabs in the top bar
+//   governance  the Governance panel in the top bar
+//   account     the user menu, except the items an add-on appends to it
+//               (their ids carry the add-on's reserved prefix)
+//   anything else, and those appended items, the left side menu
+// It reads navSections at call time, never NAV_SECTIONS, and decides from the
+// section ids alone, never from a flag on `me`, so an add-on that wraps
+// navSections lands in the right place and a section the core does not define
+// needs no change here. A side menu with no items is simply absent.
+const isOverlayItem = (item) => String(item.id).startsWith("pro-");
+
+export function shellNav(me) {
+  const sections = navSections(me);
+  const items = (id) => sections.find((s) => s.id === id)?.items ?? [];
+  const account = items("account");
+  const side = sections.filter((s) => !["workspace", "governance", "account", "pro-account"].includes(s.id));
+  const foot = [...account.filter(isOverlayItem), ...items("pro-account")];
+  return {
+    tabs: items("workspace"),
+    governance: items("governance"),
+    account: account.filter((item) => !isOverlayItem(item)),
+    side: side.filter((s) => s.items.length > 0),
+    foot,
+  };
+}
+
+/** The caption under a page's title, read at call time because an add-on
+ *  merges its own entries (and may override one) after this file has run. */
+export function navCaption(path) {
+  return NAV_LOOKUP[path]?.caption ?? "";
+}

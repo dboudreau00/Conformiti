@@ -1,4 +1,4 @@
-import { test, expect, DEMO, signIn, COOKIE_MODE, forgetSession } from "../fixtures.js";
+import { test, expect, DEMO, signIn, signOut, accountButton, COOKIE_MODE, forgetSession } from "../fixtures.js";
 
 test.describe("authentication", () => {
   test("a wrong password is refused and the user stays on the login page", async ({ page }) => {
@@ -25,8 +25,10 @@ test.describe("authentication", () => {
 
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByText("Ada Admin").first()).toBeVisible();
+    // Sign out is in the account menu, whose button names the person and the role.
+    await expect(accountButton(page)).toHaveAccessibleName(/Ada Admin/);
 
-    await page.getByRole("button", { name: "Sign out" }).first().click();
+    await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
     // The session must be gone, not merely navigated away from.
@@ -52,7 +54,7 @@ test.describe("authentication", () => {
     const refresh = await page.evaluate(() => localStorage.getItem("refresh"));
     expect(access).toBeTruthy();
 
-    await page.getByRole("button", { name: "Sign out" }).first().click();
+    await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
     // Sign-out revokes server-side: the refresh token must no longer mint
@@ -70,7 +72,7 @@ test.describe("authentication", () => {
       // may not: they land on the packages issued to them instead.
       const landing = persona === "auditor" ? "Audit packages" : "Dashboard";
       await expect(page.getByRole("heading", { name: landing })).toBeVisible();
-      await page.getByRole("button", { name: "Sign out" }).first().click();
+      await signOut(page);
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     }
   });

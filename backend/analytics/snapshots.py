@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 TREND_MONTHS = 6
 
 
-def _measure():
+def _measure(scored=None):
     from compliance.scoring import programme_score
 
     by_status = {row["status"]: row["n"] for row in Control.objects.values("status").annotate(n=Count("id"))}
@@ -31,19 +31,29 @@ def _measure():
         "evidence_links": ControlEvidence.objects.count(),
         "documents_overdue": Document.objects.filter(next_review_date__lt=today).count(),
         "risks_open": Risk.objects.filter(status__in=[Risk.Status.OPEN, Risk.Status.MITIGATING]).count(),
-        "score": programme_score()["score"],
+        "score": (scored if scored is not None else programme_score())["score"],
     }
 
 
-def record_today(force=False):
+def record_today(force=False, scored=None):
     """Create (or, with force, refresh) today's snapshot. Idempotent; never
-    raises — a read replica or a locked table must not break the dashboard."""
+    raises — a read replica or a locked table must not break the dashboard.
+
+    ``scored`` is a ``programme_score()`` result the caller already holds: the
+    summary scores the programme for its own figures, and measuring again here
+    scored every control twice per request. A row that exists is not measured
+    at all unless ``force`` asks for it."""
     today = timezone.localdate()
     try:
         with transaction.atomic():
-            snap, created = ReadinessSnapshot.objects.get_or_create(date=today, defaults=_measure())
+            snap = ReadinessSnapshot.objects.filter(date=today).first()
+            created = snap is None
+            if created:
+                # get_or_create still decides a race for the day's row.
+                snap, created = ReadinessSnapshot.objects.get_or_create(
+                    date=today, defaults=_measure(scored))
             if not created and force:
-                for k, v in _measure().items():
+                for k, v in _measure(scored).items():
                     setattr(snap, k, v)
                 snap.save()
             return snap

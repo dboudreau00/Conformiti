@@ -101,17 +101,76 @@ export async function ready(page) {
 }
 
 /**
- * The page title in the top bar. Several screens repeat their title as a panel
- * heading further down, so an unscoped getByRole("heading") is ambiguous.
+ * The page title: the <h1> a page opens with, which the shell draws as the
+ * first thing inside <main> (the top bar carries no heading). Several screens
+ * repeat their title as a panel heading further down, so an unscoped
+ * getByRole("heading") is ambiguous.
  */
 export function topHeading(page, name) {
-  return page.getByRole("banner").getByRole("heading", { name, exact: true, level: 1 });
+  return page.getByRole("main").getByRole("heading", { name, exact: true, level: 1 });
 }
 
-/** A sidebar link, addressed by route. Link text carries a live badge count
- *  ("Controls 44"), so matching on the label alone is brittle. */
-export function navLink(page, path) {
-  return page.getByRole("navigation", { name: "Primary", exact: true }).locator(`a[href="${path}"]`);
+/** The pages the Governance menu holds, in the order it lists them. Mirrors
+ *  the "governance" section of frontend/src/nav.js. */
+export const GOVERNANCE_ROUTES = [
+  "/users", "/user-audit", "/packages", "/vendors", "/responsibilities",
+  "/audit-log", "/meetings", "/groups", "/risks", "/jira",
+];
+
+/** The primary navigation landmark: the logo, the Workspace tabs and the
+ *  Governance menu live in it. */
+export function primaryNav(page) {
+  return page.getByRole("navigation", { name: "Primary", exact: true });
+}
+
+// The three menu buttons in the top bar. Their accessible names carry state
+// (the page you are on, the pack and accent in use, the person's name), so
+// each is matched by what it starts with.
+export function governanceButton(page) {
+  return page.getByRole("button", { name: /^Governance\b/ });
+}
+export function accountButton(page) {
+  return page.getByRole("button", { name: /^Account:/ });
+}
+export function appearanceButton(page) {
+  // The colon matters: the Settings page has an "Appearance" section button too.
+  return page.getByRole("button", { name: /^Appearance:/ });
+}
+/** The search button, which Ctrl K or Cmd K does the same as. */
+export function searchButton(page) {
+  return page.getByRole("button", { name: "Jump to a control, document or person" });
+}
+
+/** Open a menu from its button and wait until it says it is open; a menu that
+ *  is already open is left alone, so a helper can be called twice in a row. */
+export async function openMenu(button) {
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+}
+
+/**
+ * A link in the top bar, addressed by route, opened to first if it lives in a
+ * menu: the four Workspace tabs are always on the bar, the ten Governance pages
+ * are in the Governance menu and /settings is in the account menu. Link text
+ * carries a live badge count ("Controls 44"), so matching on the label alone
+ * is brittle. "/" is the Dashboard tab, not the logo (which links to "/" too).
+ *
+ * Async because opening a menu is: `await (await navLink(page, p)).click()`.
+ */
+export async function navLink(page, path) {
+  if (path === "/settings") {
+    await openMenu(accountButton(page));
+    return page.getByRole("menuitem", { name: "Settings", exact: true });
+  }
+  if (GOVERNANCE_ROUTES.includes(path)) await openMenu(governanceButton(page));
+  const links = primaryNav(page).locator(`a[href="${path}"]`);
+  return path === "/" ? links.filter({ hasNotText: "Home" }) : links;
+}
+
+/** Sign out through the account menu. */
+export async function signOut(page) {
+  await openMenu(accountButton(page));
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
 }
 
 /** Open a page and wait for it to settle. */

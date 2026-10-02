@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import api, { cookieMode, isAuthed, loadAuthConfig, logout, session } from "./api/client.js";
-import ErrorBoundary from "./components/ErrorBoundary.jsx";
-import { MobileNav, Sidebar } from "./components/layout/Sidebar.jsx";
+import ErrorBoundary, { ChromeFallback } from "./components/ErrorBoundary.jsx";
+import { SideMenu } from "./components/layout/SideMenu.jsx";
+import { SkipLink } from "./components/layout/SkipLink.jsx";
 import { TopBar } from "./components/layout/TopBar.jsx";
 import { ShellContext } from "./shell.js";
 import Login from "./pages/Login.jsx";
@@ -69,7 +70,7 @@ function Protected({ me, setMe }) {
     api.get("/health/").then((r) => setHealth(r.data)).catch(() => {});
   }, [me]);
 
-  // Sidebar badges: controls in progress, live risks, open access reviews.
+  // Nav badges: controls in progress, live risks, open access reviews.
   const refreshCounts = useCallback(() => {
     if (!me) return;
     if (me?.capabilities?.auditor) return;  // refused, and rightly
@@ -101,11 +102,15 @@ function Protected({ me, setMe }) {
 
   return (
     <ShellContext.Provider value={{ me, health, counts, refreshCounts }}>
-      <div className="flex min-h-screen w-full bg-bg">
-        <Sidebar onSignOut={signOut} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar />
-          <MobileNav onSignOut={signOut} />
+      <div className="min-h-screen w-full bg-bg">
+        <SkipLink />
+        <ErrorBoundary fallback={<ChromeFallback />}>
+          <TopBar onSignOut={signOut} />
+        </ErrorBoundary>
+        <div className="flex items-start">
+          <ErrorBoundary fallback={null}>
+            <SideMenu />
+          </ErrorBoundary>
           <div className="min-w-0 flex-1">
             <ErrorBoundary>
               <AnimatePresence mode="wait" initial={false}>

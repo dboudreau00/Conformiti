@@ -11,6 +11,87 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+A top bar in place of the sidebar, and a dashboard that reads as a schedule
+and a map of the programme. No stored data, permission or setting changed.
+
+**On upgrade.** No migration and no new setting. One new read-only endpoint,
+`GET /api/controls/atlas/`, answers whoever may read the control register, in
+their own workspace, and refuses an external auditor as the register does. Each
+entry of `frameworks` in `GET /api/analytics/summary/` gains `id`,
+`with_evidence`, `score` (the framework's own readiness score, null when
+nothing in it is applicable) and `bands` (`ready`, `nearly`, `at_risk`,
+`not_started`); every field that was there keeps its name and meaning. Scripts
+that drive the interface will find the page title as the `<h1>` inside
+`<main>` instead of in the bar, the Governance pages behind the Governance
+menu, and Settings and Sign out in the account menu.
+
+### Added
+
+- **A lead schedule on the dashboard.** One row per framework: its controls
+  and how many are not applicable, then applicable, implemented, in progress
+  and not started controls, evidence linked, and readiness. A framework's
+  readiness is its own score out of 100, the mean score of its applicable
+  controls, not the share implemented. The total row quotes the programme's
+  own figures instead of adding rounded rows, so its evidence figure matches
+  the evidence coverage card and its readiness matches the headline score.
+- **A coverage atlas on the dashboard.** Every control is one square, grouped
+  by framework and drawn in register order, filled by status (never by colour
+  alone: implemented solid, in progress half filled, not started an empty
+  outline, not applicable hatched). Point at a square, or move to it with the
+  arrow keys, and every control that answers the same crosswalk theme, in any
+  framework, lights up while the rest dim. Select one to pin it and open its
+  place card: status, readiness score and band, the controls it also answers
+  (six listed, then a count) and a link to the control. Escape lets go. The
+  field is one Tab stop. Above 600 controls it draws the four largest
+  frameworks and offers a chip for each of the others.
+- **Search from anywhere.** **Ctrl K** (**Cmd K** on a Mac) or the search
+  field in the bar opens a palette over controls, documents and people. It asks
+  only the list endpoints the pages already use, so it shows nothing your role
+  may not list: an auditor is offered documents only.
+- **Skip to content**, the first Tab stop on every page.
+
+### Changed
+
+- **One top bar replaces the sidebar.** The Workspace tabs (Dashboard,
+  Analytics, Controls with its badge, Documents) sit in the bar beside a
+  **Governance** menu that opens the ten governance pages, two columns with an
+  icon, a live count where there is one and a line each. On one of those pages
+  the bar names it. On the right: search, an **Appearance** menu (the four
+  theme packs with a swatch and a line each, and the four accents, where the
+  bar had loose accent dots), the demo and version label, the notification bell
+  and the account menu with Settings and Sign out. The page's title and caption
+  open the page instead of sitting in the bar. Under 768 pixels the tabs fold
+  into a **Menu** button that lists every section. Every menu shares one
+  keyboard model: arrow keys, Escape to close, focus handed back to its
+  button. A left side menu appears only when the navigation holds sections
+  beyond Workspace, Governance and Account; a standard installation has none.
+- **The dashboard is rearranged.** The readiness panel sits beside the lead
+  schedule, the atlas runs the full width below them, then Needs attention
+  (reviews overdue, risk posture, evidence coverage and documents) and the
+  compliance calendar beside the reviews coming up. Every figure the old
+  dashboard showed is still on it: the Frameworks card became the schedule and
+  the Documents card became a cell of Needs attention. A panel that cannot load
+  says so and offers a retry, and a refused or slow atlas leaves the rest of
+  the page standing.
+
+### Fixed
+
+- **The dashboard summary scored the whole programme twice per request.**
+  Recording the day's snapshot measured again what the summary had just
+  computed. It now reuses the first pass, and a day that already has its
+  snapshot is not measured at all. Each framework's counts and the evidence
+  figure are one grouped query apiece rather than a query per framework, so
+  the cost no longer grows with the number of frameworks installed.
+- **The dashboard asked for more than it showed.** It read the whole
+  `/api/frameworks/` list (the costliest request on the page, a few hundred
+  queries) and a page of `/api/documents/` only for a framework count and a
+  document total the summary already carries. Besides the calendar's own feed
+  it now asks for the summary, the upcoming reviews and the atlas, which is one
+  response in a fixed number of queries however many controls there are (about
+  30 KiB for the three shipped libraries).
+
 ## [0.9.5mc], 2026-10-01
 
 The rest of what the 0.9.5ma documentation audit found. Eight places where

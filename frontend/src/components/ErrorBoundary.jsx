@@ -5,6 +5,8 @@ import { Panel } from "./ui/Panel.jsx";
 /**
  * Catches render errors below it and shows a recoverable card instead of a
  * white screen. State-corruption from one page can't take down the shell.
+ * The bar and the side menu use it too, with a `fallback` of their own, so
+ * a crash in the chrome costs that piece and not the page under it.
  */
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -22,6 +24,7 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (!this.state.error) return this.props.children;
+    if (this.props.fallback !== undefined) return this.props.fallback;
     return (
       <div className="mx-auto w-full max-w-[720px] px-6 py-10">
         <Panel className="p-5">
@@ -37,4 +40,14 @@ export default class ErrorBoundary extends Component {
       </div>
     );
   }
+}
+
+/** What the top bar shows if it cannot be drawn: the way out and nothing else. */
+export function ChromeFallback() {
+  return (
+    <header className="flex h-[60px] items-center justify-between gap-3 border-b border-line bg-surface px-4 text-[13px] text-muted">
+      <span>The navigation could not be drawn.</span>
+      <Button size="sm" onClick={() => window.location.reload()}>Reload</Button>
+    </header>
+  );
 }

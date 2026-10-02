@@ -13,6 +13,7 @@ import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components
 import { FolderTree } from "../components/documents/FolderTree.jsx";
 import { cn } from "../utils/cn.js";
 import { errorText, loadFailReason as failReason } from "../utils/a11y.js";
+import { useDeepLink } from "../utils/deepLink.js";
 import { DOC_STATUS, dueLabel, dueTone, toneVar } from "../utils/tone.js";
 
 const CADENCE = [
@@ -514,6 +515,11 @@ export default function Documents({ me }) {
   const [searchErr, setSearchErr] = useState(null);
   const [searchTry, setSearchTry] = useState(0);
   const searchReq = useRef(0);
+  // A link from the search box or a dashboard card arrives as ?search=<name>.
+  useDeepLink((params) => {
+    const text = params.get("search");
+    if (text !== null) setQuery(text);
+  });
   useEffect(() => {
     const q = query.trim();
     setSearchErr(null);

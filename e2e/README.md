@@ -70,8 +70,14 @@ There is no switch that turns the check off.
 - Import `test` and `expect` from `../fixtures.js`, never from
   `@playwright/test`: that is where the console-error fixture lives.
 - Use `open(page, "/risks", "Risk register")` to navigate: it waits for the
-  top-bar `<h1>`. Several screens repeat their title as a panel `<h2>`, so an
-  unscoped `getByRole("heading")` is ambiguous.
+  page's `<h1>`, the title at the top of `<main>`. Several screens repeat their
+  title as a panel `<h2>`, so an unscoped `getByRole("heading")` is ambiguous.
+- The top bar keeps most of the navigation in menus. Use `await navLink(page, "/risks")`
+  to get a link by route: it opens the Governance menu first for a Governance
+  page, the account menu for `/settings`, and returns the link. `signOut(page)`
+  does the same for Sign out. Matching a menu button by its name is by prefix
+  (`governanceButton`, `accountButton`, `appearanceButton`), because the name
+  carries state such as the page you are on.
 - Prefer roles and accessible names over CSS. Where a name is missing, that is
   usually worth fixing in the application instead.
 - Watch for text that Tailwind uppercases: the DOM says `login` while the
@@ -99,13 +105,18 @@ e2e/
   tests/
     auth.setup.js         signs in once; the other projects reuse the session
     auth.spec.js          sign-in, sign-out, token revocation, every persona
-    shell.spec.js         every route renders; navigation; the notification tray
-    workspace.spec.js     dashboard, calendar, review queue, documents, risks
+    shell.spec.js         every route renders; the top bar, its Governance, account and
+                          Appearance menus; the auditor's bar; the notification tray
+    search.spec.js        the Ctrl K palette: results by role, Enter lands on the record
+    workspace.spec.js     dashboard (lead schedule, coverage atlas, calendar, review
+                          queue), documents, risks
     controls.spec.js      217-control register: tabs, filters, search, export
     governance.spec.js    audit trail, access reviews, users, meetings, groups
     downloads.spec.js     a download or export that fails says why on screen
     settings.spec.js      profile, theme packs, accent packs, MFA enrolment
-    laptop.spec.js        a 1366 by 768 laptop: wide tables stay on screen
+    laptop.spec.js        a 1366 by 768 laptop and a 1024 wide window: tables, the
+                          dashboard and the top bar stay on screen
+    phone.spec.js         a 390 by 844 phone: the Menu sheet, menus that fit the screen
     packages.spec.js      evidence packages: digest, export, auditor, samples
     passkeys.spec.js      passkey enrolment and sign-in (virtual authenticator)
     pbc.spec.js           the PBC request list: organisation, auditor, assignee

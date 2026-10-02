@@ -30,7 +30,7 @@ function firstField(root) {
   return Array.from(root.querySelectorAll(FOCUSABLE)).find((n) => !n.disabled) || null;
 }
 
-export function Dialog({ open, title, description, onClose, children, size = "md", className, closeOnOverlay = true }) {
+export function Dialog({ open, title, description, onClose, children, size = "md", className, closeOnOverlay = true, placement = "center" }) {
   const titleId = useId();
   const descId = useId();
   const frame = useRef(null);
@@ -107,7 +107,7 @@ export function Dialog({ open, title, description, onClose, children, size = "md
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+          className={cn("fixed inset-0 z-50 flex justify-center bg-ink/40 p-4", placement === "top" ? "items-start overflow-y-auto pt-[10vh]" : "items-center")}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

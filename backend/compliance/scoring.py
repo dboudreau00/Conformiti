@@ -128,9 +128,14 @@ def programme_score(queryset=None):
     no test and an open risk scored well under the bar in the register and
     counted as ready on the dashboard. The two now agree.
 
-    Returns ``{"score", "applicable", "bands": {band: n}}``; ``score`` is
-    None when nothing is applicable.
+    Returns ``{"score", "applicable", "bands": {band: n}, "by_framework"}``;
+    ``score`` is None when nothing is applicable. ``by_framework`` is the same
+    three figures per framework id, from the same pass: every control is
+    visited once however it is grouped, so the lead schedule's rows cost
+    nothing extra. A framework with nothing applicable has no entry.
     """
+    from django.db.models import F
+
     from documents.models import Folder
 
     from .models import Control
@@ -138,9 +143,11 @@ def programme_score(queryset=None):
     qs = queryset if queryset is not None else Control.objects.all()
     qs = annotate(qs.exclude(status="not_applicable"), None,
                   visible=set(Folder.objects.values_list("id", flat=True)))
+    qs = qs.annotate(fw_id=F("category__framework_id"))
     counts = {"ready": 0, "nearly": 0, "at_risk": 0, "not_started": 0}
     total = 0
     n = 0
+    per_framework = {}
     for control in qs:
         result = score_control(control)
         if result["score"] is None:
@@ -148,7 +155,20 @@ def programme_score(queryset=None):
         total += result["score"]
         n += 1
         counts[result["band"]] = counts.get(result["band"], 0) + 1
-    return {"score": round(total / n) if n else None, "applicable": n, "bands": counts}
+        fw = per_framework.setdefault(
+            control.fw_id, {"total": 0, "n": 0, "bands": dict.fromkeys(counts, 0)})
+        fw["total"] += result["score"]
+        fw["n"] += 1
+        fw["bands"][result["band"]] = fw["bands"].get(result["band"], 0) + 1
+    return {
+        "score": round(total / n) if n else None,
+        "applicable": n,
+        "bands": counts,
+        "by_framework": {
+            fw_id: {"score": round(fw["total"] / fw["n"]), "applicable": fw["n"], "bands": fw["bands"]}
+            for fw_id, fw in per_framework.items()
+        },
+    }
 
 
 def _implementation(control, weight):

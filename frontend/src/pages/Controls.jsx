@@ -12,6 +12,7 @@ import { usePage } from "../components/ui/ShowMore.jsx";
 import { useShell } from "../shell.js";
 import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
+import { useDeepLink } from "../utils/deepLink.js";
 import { CONTROL_STATUS, READINESS_BAND } from "../utils/tone.js";
 
 const STATUS_KEYS = Object.keys(CONTROL_STATUS);
@@ -21,10 +22,14 @@ export default function Controls({ me }) {
   const { refreshCounts } = useShell();
 
   const [frameworks, setFrameworks] = useState(null); // null until loaded
-  const [framework, setFramework] = useState("all");
+  const [wantedFramework, setFramework] = useState("all");
   const [status, setStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [controls, setControls] = useState([]);
+  // The framework `controls` was last fetched for, and a reference that a link
+  // asked to open once its register has arrived.
+  const [loadedFor, setLoadedFor] = useState(null);
+  const [openRef, setOpenRef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [expanded, setExpanded] = useState(null);
@@ -42,6 +47,27 @@ export default function Controls({ me }) {
 
   const canManage = !!me?.capabilities?.manage_frameworks;
   const canLink = canManage || !!me?.capabilities?.manage_documents;
+
+  // A link names a framework by key. One that is not in this workspace (retired,
+  // mistyped) shows every framework instead of asking the API for a register
+  // that does not exist.
+  const framework =
+    frameworks && wantedFramework !== "all" && !frameworks.some((f) => f.key === wantedFramework) ? "all" : wantedFramework;
+
+  // ?framework=<key> picks that framework's tab and ?search=<text> fills the
+  // search box, on arrival and whenever a link lands here again. A link
+  // replaces the view (the status filter goes back to every status, so the
+  // control it names is not hidden by an earlier choice), and a reference
+  // that matches exactly one control opens that control.
+  useDeepLink((params) => {
+    const key = params.get("framework");
+    const text = params.get("search");
+    if (key === null && text === null) return;
+    setFramework(key || "all");
+    setQuery(text ?? "");
+    setStatus("all");
+    setOpenRef(text && text.trim() ? text.trim().toLowerCase() : null);
+  });
 
   // ---- data ----------------------------------------------------------------
   useEffect(() => {
@@ -72,7 +98,9 @@ export default function Controls({ me }) {
     setExpanded(null);
     Promise.all(keys.map((k) => api.get(`/frameworks/${k}/controls/`)))
       .then((rs) => {
-        if (alive) setControls(rs.flatMap((r) => r.data.results || r.data));
+        if (!alive) return;
+        setControls(rs.flatMap((r) => r.data.results || r.data));
+        setLoadedFor(framework);
       })
       .catch((e) => {
         if (!alive) return;
@@ -87,6 +115,15 @@ export default function Controls({ me }) {
       alive = false;
     };
   }, [framework, frameworks, attempt]);
+
+  // Opens the control a link named, once the register it belongs to is here.
+  // A reference that is in several frameworks, or in none, opens nothing.
+  useEffect(() => {
+    if (openRef === null || loading || loadedFor !== framework) return;
+    const hits = controls.filter((c) => String(c.control_id).toLowerCase() === openRef);
+    if (hits.length === 1) setExpanded(hits[0].id);
+    setOpenRef(null);
+  }, [openRef, loading, loadedFor, framework, controls]);
 
   // Owner pick-list: only needed by users who can reassign controls.
   useEffect(() => {

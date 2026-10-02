@@ -171,6 +171,65 @@ body {
   .link { @apply inline-flex items-center gap-1 text-xs font-medium text-accent transition-opacity duration-150 ease-out hover:opacity-80; }
 }
 
+/* ==========================================================================
+   DASHBOARD LAYOUT
+   Each row answers to the width of the page it is drawn in, not of the window.
+   A 1280px window with a menu down the left side leaves the page about 1040px,
+   and a window width cannot tell that from a window with no menu. Below 1040px
+   the readiness card sits above the schedule; below 1190px the atlas keeps its
+   selected-control card underneath and the calendar and review queue stack.
+   The schedule's columns, in turn, answer to the width of the schedule itself.
+   ========================================================================== */
+.dash { container-type: inline-size; }
+.dash-lead { display: grid; gap: 1rem; }
+.dash-cells { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
+.dash-atlas { display: grid; gap: 1.25rem; }
+.dash-atlas-side { max-width: 640px; }
+
+@container (min-width: 520px) {
+  .dash-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (min-width: 1040px) {
+  .dash-lead { grid-template-columns: clamp(284px, 30%, 320px) minmax(0, 1fr); }
+  .dash-cells { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container (min-width: 1190px) {
+  .dash-atlas { grid-template-columns: minmax(0, 1fr) minmax(260px, 300px); }
+  .dash-atlas-side { max-width: none; }
+  .dash-span-8 { grid-column: span 8 / span 8; }
+  .dash-span-4 { grid-column: span 4 / span 4; }
+}
+
+/* The readiness card is a narrow column beside the schedule and on a phone. On
+   a row of its own (640px up to where it goes beside the schedule) it becomes
+   a band: score, trend and bands side by side. */
+@container (640px <= width < 1040px) {
+  .dash-lead > .dash-ready {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 1.4fr) minmax(220px, 1fr);
+    column-gap: 2rem;
+    align-items: center;
+  }
+  .dash-lead > .dash-ready > * { margin-top: 0; }
+  .dash-lead > .dash-ready > :only-child { grid-column: 1 / -1; }
+}
+
+/* The schedule's columns answer to the width of the schedule's own panel:
+   compact numeric columns until it is 860px wide. The framework column takes
+   what the six numeric ones leave, never less than 216px; below that the table
+   scrolls inside its panel rather than squeeze the name or clip a number. */
+.sched-panel { container-type: inline-size; }
+.sched {
+  --sc-pad: 0.5rem; --sc-min: 708px;
+  --sc-1: 84px; --sc-2: 92px; --sc-3: 76px; --sc-4: 76px; --sc-5: 78px; --sc-6: 86px;
+}
+@container (min-width: 860px) {
+  .sched {
+    --sc-pad: 0.75rem; --sc-min: 832px;
+    --sc-1: 104px; --sc-2: 112px; --sc-3: 96px; --sc-4: 96px; --sc-5: 100px; --sc-6: 108px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

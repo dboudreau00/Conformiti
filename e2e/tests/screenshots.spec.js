@@ -55,8 +55,16 @@ test("login", async ({ page, context }) => {
   await shot(page, "login");
 });
 
+// The dashboard draws its coverage atlas from a request of its own, so the
+// capture waits for the squares rather than for a fixed time alone.
+test("dashboard", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("group", { name: /controls grouped by framework/ }).getByRole("button").first()).toBeVisible();
+  await settle(page, 1500);
+  await shot(page, "dashboard");
+});
+
 const SIMPLE = [
-  ["/", "dashboard", 1500],
   ["/analytics", "analytics", 1200],
   ["/users", "users", 1200],
   ["/user-audit", "access-reviews", 1200],
@@ -110,8 +118,9 @@ test("viewer", async ({ page }) => {
 test("controls", async ({ page }) => {
   await page.goto("/controls");
   await settle(page, 1600);
-  // Scoped to the register: the top bar's theme picker is also an
-  // aria-expanded control, and an unscoped .first() opened that instead.
+  // Scoped to the register: the Governance, Appearance, notification and
+  // account buttons in the top bar are aria-expanded controls too, and an
+  // unscoped .first() opened one of those instead.
   const row = page.getByRole("main").locator("[aria-expanded]").first();
   if (await row.count()) {
     await row.click().catch(() => {});
@@ -159,8 +168,8 @@ test("settings", async ({ page }) => {
 });
 
 // The workspace switcher lives at the foot of Role & access, so this one is
-// captured where it sits rather than from the top of the page — the sidebar
-// and the top bar are both sticky, so the chrome stays in frame.
+// captured where it sits rather than from the top of the page. The top bar is
+// sticky, so it stays in frame.
 test("workspaces", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/settings");

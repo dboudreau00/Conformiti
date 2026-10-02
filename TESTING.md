@@ -53,24 +53,76 @@ links: 22 across 20 controls. Meetings: Security Steering Committee 3/4,
 Risk Review 1/2.
 
 ### 1 · Sign-in and shell
-- Sign in as `admin`. **Expect:** Dashboard; sidebar badges *Controls* (in
-  progress count), *Risks* 3, *User audit* 1 (the seeded quarterly access
-  review, still open with `val` pending).
+- Sign in as `admin`. **Expect:** Dashboard, its title at the top of the page
+  and one bar above it: the tabs *Dashboard*, *Analytics*, *Controls* (a badge
+  with the in-progress count) and *Documents*, then *Governance*. Open
+  *Governance*. **Expect:** a two-column panel of the ten pages (Users, User
+  audit, Audit packages, Vendors, Responsibility matrix, Audit log, Meetings,
+  Champion groups, Risks, Jira) with the badges *Risks* 3 and *User audit* 1
+  (the seeded quarterly access review, still open with `val` pending). The
+  arrow keys step through the pages and **Esc** closes the panel and returns
+  focus to its button. Open one: the button now reads *Governance* and that
+  page's name.
 - Enter a wrong password repeatedly. **Expect:** *Too many attempts* (HTTP 429)
   on the ninth sign-in request from your address inside one minute, counting
   the successful one above. The limit is `THROTTLE_LOGIN`, 8 a minute per
   client address, not per account. Wait a minute.
-- Top bar: switch theme packs and accents. **Expect:** instant recolour,
-  persisted on reload, applied to the login page too.
+- Top bar → **Appearance**: switch theme packs and accents. **Expect:** instant
+  recolour, persisted on reload, applied to the login page too.
+- Account menu (your initials, top right). **Expect:** your name and role,
+  *Settings* and *Sign out*.
+- **Ctrl K** (**Cmd K** on a Mac), or the search field. Type `CC6.1`. **Expect:**
+  a *Controls* group with `CC6.1`. Type `owen`: a *People* group with Owen
+  Owner. Type `zzzz`: *Nothing matches*. **Up**, **Down**, **Enter** and **Esc**
+  work. As `aria`: no *Controls* or *People* group, and no request to
+  `/api/controls/` or `/api/users/` (an auditor is refused both).
+- Keyboard: on a fresh page load the first **Tab** shows *Skip to content*;
+  **Enter** moves focus to the page without changing the address.
+- Widths. **Expect:** at 1366 by 768 and 1024 by 768 nothing scrolls sideways
+  and no label overlaps another; under 768 pixels the tabs are replaced by a
+  *Menu* button that opens a sheet listing Workspace, Governance and Account;
+  at 1180 pixels or narrower the search field is an icon.
 
 ### 2 · Dashboard
-**Expect:** *Readiness score* out of 100, and beneath it the share of
-controls marked implemented, matching *Overall readiness* on *Analytics*;
-Frameworks **3**; Documents **9**; Reviews overdue **1**; Risk posture *3 open
-· 1 overdue*; Evidence coverage *20/217*. Calendar: the overdue *Incident
-Response Plan* is red; filter chips narrow by type; clicking a day lists its
-items. "Reviews coming up" lists the eight documents due within 120 days, most
-urgent first, with **Mark reviewed**.
+**Expect:** the title *Dashboard* at the top of the page, not in the bar.
+*Readiness score* out of 100, and beneath it the share of controls marked
+implemented, matching *Overall readiness* on *Analytics*, the six-month trend
+and the four readiness bands.
+
+**Lead schedule**, beside it: three framework rows in name order and a *Total*
+row (a single rule above it, a double rule below); the panel header says
+3 frameworks.
+
+| Row | Under the name: controls, not applicable | Applicable | Implemented | In progress | Not started | Evidence linked |
+|---|---|---|---|---|---|---|
+| ISO/IEC 27001 | 93, 3 | 90 | 27 | 19 | 44 | 7 |
+| PCI DSS | 63, 3 | 60 | 17 | 13 | 30 | 6 |
+| SOC 2 | 61, 2 | 59 | 18 | 12 | 29 | 7 |
+| Total | 217, 8 | 209 | 62 | 44 | 103 | 20 |
+
+*Readiness* is a score out of 100 on each row, not a percentage implemented,
+and the *Total* row's *Readiness* equals the *Readiness score* above. *Evidence
+linked* in the *Total* row equals the **20** in *Evidence coverage*.
+
+**Coverage atlas**, full width: **217** squares in three groups (ISO/IEC 27001
+93, PCI DSS 63, SOC 2 61); the legend counts *Implemented* 62, *In progress*
+44, *Not started* 103, *Not applicable* 8. In progress is half filled and not
+applicable is hatched. Point at `CC6.1` in the SOC 2 group (each square's
+tooltip gives its reference, title and status). **Expect:** 12 other controls
+light up with an accent ring across all three groups, including `A.5.15` and
+`7.1`, and the rest dim; no lines are drawn. Select it (click, or **Enter**).
+**Expect:** the light stays, and a place card shows `CC6.1`, SOC 2, *Not
+started*, a readiness score and band, and *Also answers* with six partners
+listed and "and 6 more". **Esc** clears the card and the light. **Tab** into
+the atlas: it is one Tab stop, the arrow keys move inside it, and **Shift+Tab**
+returns to the same square.
+
+**Needs attention**: Reviews overdue **1** (4 due in the next 30 days), Risk
+posture *3 open · 1 overdue*, Evidence coverage *20/217* (22 links), Documents
+**9** on file (9 approved). Calendar: the overdue *Incident Response Plan* is
+red; filter chips narrow by type; clicking a day lists its items. "Reviews
+coming up" lists the eight documents due within 120 days, most urgent first,
+with **Mark reviewed**.
 
 ### 3 · Analytics
 **Expect:** three framework bars; donut centres **217** and **9**; review load
@@ -86,8 +138,9 @@ log gains an `update` on `documents`.
 **Expect:** segmented control *All frameworks 217 · SOC 2 61 · ISO 27001 93 ·
 PCI DSS 63*; status chips with counts. Search `CC6.1`, expand → objective,
 selects (as admin), linked evidence *Access Control Policy* with **Unlink**,
-attach form. Set a control to *Implemented* → Dashboard's implemented count and
-the sidebar badge update. **Export CSV** → `controls.csv` opens in a spreadsheet.
+attach form. Set a control to *Implemented* → the Dashboard's lead schedule
+follows, that control's square in the atlas fills solid, and the badge on the
+*Controls* tab moves if the control was or became *In progress*. **Export CSV** → `controls.csv` opens in a spreadsheet.
 
 ### 6 · Documents
 Expand *SOC 2 → CC6 → CC6.1* using only the keyboard (Tab to the tree, arrows,
@@ -101,8 +154,10 @@ edit; remove one. Create subfolder "Q3 scans"; delete it. Try to upload
 As `val`: tree shows only granted folders; no upload/actions unless granted
 edit; Risks has no *New risk*/*Import*; Calendar events can't be created
 (`POST /api/calendar/` → 403); `GET /api/folder-permissions/` returns only
-manageable grants (none). As `aria`: Audit log and User audit readable, every
-write control absent.
+manageable grants (none). As `aria`: the bar offers one tab, *Documents*, and
+*Governance* lists only *Audit packages*, *User audit* and *Audit log*; the
+Dashboard link lands on *Audit packages*; Audit log and User audit readable,
+every write control absent.
 
 ### 8 · Risks
 As `mia`: chips *3 live · 1 overdue · 2 high/critical · 1 closed*. Open the IR
@@ -175,7 +230,9 @@ start, which is what a real deployment gets.
 
 ### 17 · Themes and reduced motion
 Repeat the Dashboard and Documents checks in **Obsidian** and **Audit Ledger**:
-no unreadable text, no white flashes. With the OS "reduce motion" setting on,
+no unreadable text, no white flashes, and on the Dashboard the lit ring, the
+dimmed squares, the half-filled and hatched statuses and the double rule under
+the schedule's *Total* stay distinguishable. With the OS "reduce motion" setting on,
 panels appear without animation.
 
 ## Reset to a clean slate

@@ -49,7 +49,14 @@ class AnalyticsSummaryView(APIView):
     permission_classes = [IsAuthenticated, NotExternalAuditor]
 
     def get(self, request):
+        from compliance.scoring import programme_score
+
         today = timezone.localdate()
+
+        # Scored once, up front: the headline, the bands and every framework's
+        # row of the lead schedule come out of this one pass, and the snapshot
+        # below reuses it instead of scoring every control a second time.
+        scored = programme_score()
 
         # --- Controls (organisation-wide) -----------------------------------
         control_status = _counts_by(Control.objects.all(), "status", CONTROL_STATUSES)
@@ -58,10 +65,16 @@ class AnalyticsSummaryView(APIView):
         applicable_all = total_controls - control_status["not_applicable"]
 
         # Evidence coverage (organisation-wide aggregates only — counts, no titles,
-        # consistent with the org-wide control figures above).
-        controls_with_evidence = (
-            Control.objects.annotate(n=Count("evidence_links")).filter(n__gt=0).count()
-        )
+        # consistent with the org-wide control figures above). Grouped by
+        # framework in one query; the programme figure is their sum, so the
+        # schedule's column foots to the dashboard's coverage card.
+        evidence_by_framework = {
+            row["category__framework_id"]: row["n"]
+            for row in (Control.objects.filter(evidence_links__isnull=False)
+                        .values("category__framework_id")
+                        .annotate(n=Count("id", distinct=True)))
+        }
+        controls_with_evidence = sum(evidence_by_framework.values())
         evidence_links_total = ControlEvidence.objects.count()
 
         # Risk posture (org-wide aggregate, like the control figures).
@@ -75,16 +88,26 @@ class AnalyticsSummaryView(APIView):
             "accepted": Risk.objects.filter(status=Risk.Status.ACCEPTED).count(),
         }
 
+        # One grouped query for every framework's status counts, so the cost of
+        # this block does not grow with the number of frameworks installed.
+        status_by_framework = {}
+        for row in Control.objects.values("category__framework_id", "status").annotate(n=Count("id")):
+            status_by_framework.setdefault(row["category__framework_id"], {})[row["status"]] = row["n"]
+
         frameworks = []
-        for fw in Framework.objects.all().order_by("name"):
-            fq = Control.objects.filter(category__framework=fw)
-            by_status = _counts_by(fq, "status", CONTROL_STATUSES)
+        for fw in Framework.objects.all().order_by("name", "key", "id"):
+            by_status = {k: status_by_framework.get(fw.id, {}).get(k, 0) for k in CONTROL_STATUSES}
             total = sum(by_status.values())
             implemented = by_status["implemented"]
             # Applicable = everything except explicitly N/A.
             applicable = total - by_status["not_applicable"]
             pct = round(implemented / applicable * 100) if applicable else 0
+            # `score` is the framework's own readiness (the mean score of its
+            # applicable controls, as the headline is for the programme); `pct`
+            # stays the implemented share. Null when nothing is applicable.
+            fw_scored = scored["by_framework"].get(fw.id)
             frameworks.append({
+                "id": fw.id,
                 "key": fw.key,
                 "name": fw.name,
                 "version": getattr(fw, "version", ""),
@@ -93,10 +116,14 @@ class AnalyticsSummaryView(APIView):
                 "applicable": applicable,
                 "pct": pct,
                 "by_status": by_status,
+                "with_evidence": evidence_by_framework.get(fw.id, 0),
+                "score": fw_scored["score"] if fw_scored else None,
+                "bands": fw_scored["bands"] if fw_scored else
+                {"ready": 0, "nearly": 0, "at_risk": 0, "not_started": 0},
             })
 
         # --- Readiness history -----------------------------------------------
-        record_today()  # idempotent: first hit of the day records a point
+        record_today(scored=scored)  # idempotent: first hit of the day records a point
         history = trend()
         # `pct` is the share of applicable controls marked implemented — the
         # figure this endpoint has always reported and the one the trend
@@ -105,9 +132,6 @@ class AnalyticsSummaryView(APIView):
         # open risks. A control marked implemented with none of the rest used
         # to count as ready here and score poorly one page over; the dashboard
         # now leads with the score and shows the share beside it.
-        from compliance.scoring import programme_score
-
-        scored = programme_score()
         readiness = {
             "pct": round(control_status["implemented"] / applicable_all * 100) if applicable_all else 0,
             "implemented": control_status["implemented"],

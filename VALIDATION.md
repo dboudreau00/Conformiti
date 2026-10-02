@@ -20,7 +20,7 @@ anything is installed. Exits non-zero on any error. Twenty checks:
 | 2 | App wiring: all 11 local apps installed and routed; every app with models ships `migrations/0001_initial.py`; **no install path runs `makemigrations`** |
 | 3 | Every DRF ViewSet is registered in a router |
 | 4 | JSX/JS structural validity (full tag-tree parse) |
-| 5 | Shell wiring: every page imported and routed in `App.jsx`, every `nav.js` link has a Route and a title/caption, every page is a `PanelTransition` page |
+| 5 | Shell wiring: every page imported and routed in `App.jsx`, every `nav.js` link has a Route and a title/caption (which `PanelTransition` draws as the page's heading), every page is a `PanelTransition` page |
 | 6 | Every frontend API call (`api.*`, `fetchAll`, `downloadFile`) resolves to a registered backend route prefix |
 | 7 | All frontend relative imports resolve |
 | 8 | Theme system: four theme packs and four accent packs, every token present, no hard-coded colours in pages (warning) |

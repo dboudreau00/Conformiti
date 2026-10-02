@@ -13,7 +13,7 @@ from documents.access import accessible_folder_ids
 from documents.models import Document
 from documents.serializers import person_name
 from . import scoring
-from .models import Control, ControlEvidence, ControlMapping, Framework
+from .models import Control, ControlCategory, ControlEvidence, ControlMapping, Framework
 from .serializers import (
     ControlEvidenceSerializer,
     ControlMappingSerializer,
@@ -125,6 +125,76 @@ class ControlViewSet(viewsets.ModelViewSet):
                 readiness["band_label"], c.last_tested_on or "", c.objective,
             ]))
         return response
+
+    @action(detail=False, methods=["get"])
+    def atlas(self, request):
+        """Every control as one small record, with the crosswalk beside it, for
+        the dashboard's coverage atlas.
+
+        The register pages by fifty and the crosswalk nests every control in
+        every theme, so drawing the whole programme from them is dozens of
+        requests. This is one, and its queries do not grow with the controls.
+
+        Everything is keyed by id: ``control_id`` is only unique within its
+        category and a framework key only within its workspace. Controls come
+        in register order and categories in territory order, so the order of
+        the arrays is the layout. ``score`` and ``band`` are the caller's, the
+        same the register shows for the row (the evidence behind a score counts
+        only the folders the caller can see); the programme figure on the
+        dashboard counts every folder. ``themes`` lists only themes that join
+        two or more controls, as ids: the controls sharing a theme with one are
+        its crosswalk partners, worked out by the reader, so no edge list.
+        """
+        categories = (
+            ControlCategory.objects.select_related("framework")
+            .order_by("framework__name", "framework__key", "framework_id", "order", "key", "id")
+        )
+        frameworks = {}
+        for cat in categories:
+            fw = cat.framework
+            entry = frameworks.setdefault(fw.pk, {
+                "id": fw.pk, "key": fw.key, "name": fw.name, "version": fw.version, "categories": [],
+            })
+            entry["categories"].append({"id": cat.pk, "key": cat.key, "name": cat.name})
+
+        # Only what the score reads: the register's heavier joins (objective,
+        # owner and tester names) are not wanted here.
+        queryset = scoring.annotate(
+            Control.objects.only(
+                "id", "control_id", "title", "status", "owner", "last_tested_on",
+                "test_interval_days", "category",
+            ),
+            request.user,
+        ).order_by(*CONTROL_ORDER)
+        controls = []
+        for control in queryset:
+            result = scoring.score_control(control)
+            controls.append({
+                "id": control.pk,
+                "ref": control.control_id,
+                "title": control.title,
+                "category": control.category_id,
+                "status": control.status,
+                "score": result["score"],
+                "band": result["band"],
+            })
+
+        # The mapping is read through ControlMapping, which is scoped to the
+        # workspace; the auto-created join table is not, so a member that is
+        # not one of this workspace's controls is dropped here.
+        place = {c["id"]: i for i, c in enumerate(controls)}
+        members, names = {}, {}
+        rows = ControlMapping.objects.order_by("theme", "id").values_list("id", "theme", "controls")
+        for mapping_id, theme, control_id in rows:
+            if control_id in place:
+                names[mapping_id] = theme
+                members.setdefault(mapping_id, []).append(control_id)
+        themes = [
+            {"id": mapping_id, "theme": names[mapping_id], "controls": sorted(ids, key=place.__getitem__)}
+            for mapping_id, ids in members.items()
+            if len(ids) > 1
+        ]
+        return Response({"frameworks": list(frameworks.values()), "controls": controls, "themes": themes})
 
 
 class ControlMappingViewSet(viewsets.ReadOnlyModelViewSet):

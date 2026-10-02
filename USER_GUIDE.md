@@ -85,15 +85,46 @@ page by anyone with *manage* on that folder.
 
 ## 3. The shell
 
-- **Sidebar**: Workspace (Dashboard, Analytics, Controls, Documents),
-  Governance (Users, User audit, Audit packages, Vendors, Responsibility
-  matrix, Audit log, Meetings, Champion groups, Risks, Jira) and Account
-  (Settings); live badges show controls in progress, open risks and open
-  access reviews. An auditor sees only Documents, Audit packages, User audit,
-  Audit log and Settings.
-- **Top bar**: page title, the **theme pack** picker (Audit Ledger, Nimbus,
-  Ledger Dark, Obsidian), four **accent** dots, a version/demo label and the
-  **notification bell**. Theme and accent are remembered per browser.
+One bar runs across the top of every page, and nothing runs down the side.
+The page's own title and a line about it open the page, under the bar.
+
+- **Workspace tabs**: Dashboard, Analytics, Controls and Documents. The page
+  you are on has an accent underline. A live badge on Controls counts the
+  controls in progress.
+- **Governance**: a menu holding the ten governance pages (Users, User audit,
+  Audit packages, Vendors, Responsibility matrix, Audit log, Meetings,
+  Champion groups, Risks, Jira), two to a row, each with its icon, a line on
+  what it is for and, where there is one, a live badge (open access reviews,
+  open risks). When you are on one of those pages the button also names it,
+  so the bar still says where you are with the menu closed.
+- **Search**: press **Ctrl K** (**Cmd K** on a Mac) or select the search
+  field. Type two or more characters and the palette lists the controls,
+  documents and people that match, up to six of each, the best match first.
+  **Up** and **Down** move, **Enter** goes to the page that holds the result,
+  **Esc** closes. It asks only for what your role may list, so an auditor is
+  offered documents and nothing else, and people appear only for accounts that
+  can read the user directory.
+- **Appearance**: the four **theme packs** (Audit Ledger, Nimbus, Ledger Dark,
+  Obsidian), each with a swatch and a line describing it, and four **accent**
+  colours. Choosing one recolours the page at once and the menu stays open so
+  a pack and an accent can be tried together. Theme and accent are remembered
+  per browser; a custom accent colour and **Reset** are on the Settings page.
+- **Notification bell** and the **account menu**: your name and role, the
+  workspace you are working in where it is not the installation's default (a
+  superuser who has switched into another organisation's workspace is always
+  told), **Settings** and **Sign out**. The bar also carries a demo and
+  version label where there is room for it.
+- **Keyboard and narrow screens**: **Skip to content** is the first Tab stop on
+  every page. Every menu opens with **Enter** or **Space** on its button (the
+  Appearance and account menus also with an arrow key), moves with the arrow
+  keys, closes with **Esc** and hands focus back to its button. Under 768
+  pixels the tabs fold into one **Menu** button that opens a sheet listing
+  every section, and at 1180 pixels or narrower the search field is an icon.
+- **A left side menu** appears only when the navigation holds sections the core
+  does not define, which an add-on can contribute. It collapses to an icon
+  rail, and without such sections there is none.
+- **An auditor** sees one tab, Documents, a Governance menu of Audit packages,
+  User audit and Audit log, and Settings in the account menu.
 - **Notifications** are computed for *you*: documents and risks you own that
   are due or overdue, tasks assigned to you, meeting cadences you own that are
   behind; managers get org-wide digests; administrators and auditors see open
@@ -102,13 +133,63 @@ page by anyone with *manage* on that folder.
 ## 4. Pages
 
 ### Dashboard
-Readiness score (out of 100, the mean of the applicable controls' scores)
+**Readiness score** (out of 100, the mean of the applicable controls' scores)
 with the share of controls marked implemented, the monthly trend line and
-the readiness bands (Ready, Nearly there, At risk, Not ready); frameworks,
-documents and overdue-review cards; evidence coverage; risk posture; the
-compliance calendar (filter by Review / Audit / Task / Other, click a day for
-details, arrows for other months); and "Reviews coming up" with **Mark
-reviewed** (managers and owners with edit access).
+the readiness bands (Ready, Nearly there, At risk, Not ready), beside the
+**lead schedule**. Under them, the **coverage atlas**, then **Needs
+attention**, the compliance calendar and "Reviews coming up". A panel that
+cannot be loaded says so and offers a retry, and the rest of the page still
+shows.
+
+**Lead schedule.** One row per framework: its name and version, how many
+controls it has and how many of those are marked not applicable, then
+*Applicable*, *Implemented*, *In progress*, *Not started*, *Evidence linked*
+and *Readiness*. A framework's *Readiness* is its own score out of 100, the
+mean score of its applicable controls as the headline is for the whole
+programme. It is not the share marked implemented. The **Total** row is
+footed to the programme: it quotes the dashboard's own figures rather than
+adding rounded rows, so *Evidence linked* matches the evidence coverage
+figure and *Readiness* matches the readiness score. A framework's name opens
+the Controls page. With more than six frameworks the schedule shows six and a
+**Show all** button.
+
+**Coverage atlas.** Every control is one small square, grouped into one
+territory per framework in the schedule's order and, inside each, in the
+register's order. The fill is the status: implemented solid, in progress half
+filled, not started an empty outline, not applicable hatched, so the four read
+apart without colour, and the legend counts each. Controls that answer the
+same crosswalk theme are partners: point at a square, or move to it with the
+arrow keys, and every partner in any framework lights up with an accent ring
+while the rest dim a little. There are no lines between squares.
+
+- **Select** a square (click, or **Enter**) to pin the light and open its place
+  card: the reference, title, framework and status, the control's readiness
+  score and band, **Also answers** (the partners, up to six listed and then
+  "and N more") and **Open control**, which goes to the Controls page. Select a
+  listed partner to move the pin to it. **Esc**, or **Clear**, lets go.
+- **From the keyboard** the whole field is one Tab stop. The arrow keys move
+  inside it, **Home** and **End** go to the start and end of a framework,
+  **Page Up** and **Page Down** to the neighbouring framework, and **Ctrl
+  Home** and **Ctrl End** to the first and last control. Each square is named
+  with its reference, title and status.
+- **A large programme** shrinks the squares to a floor of nine pixels. Above
+  600 controls the atlas draws the four frameworks with the most applicable
+  controls and offers a chip per framework to draw the others, or **Draw all**.
+- **The place card's score** is the one the register shows you, which counts
+  only evidence in folders you can see. The schedule and the headline count
+  every folder, so for someone with narrow folder access the two can differ.
+
+**Needs attention** has four cells. *Reviews overdue* gives the count, how many
+fall due in the next 30 days and a link to the review queue. *Risk posture*
+gives open, mitigating and accepted risks and how many are overdue. *Evidence
+coverage* gives the share of controls with at least one document linked, as a
+bar, and the number of links. *Documents* gives how many are on file and how
+many are approved, in review and expired. A figure whose source could not be
+loaded shows a dash, not a zero.
+
+The compliance calendar (filter by Review / Audit / Task / Other, click a day
+for details, arrows for other months) and "Reviews coming up" with **Mark
+reviewed** (managers and owners with edit access) close the page.
 
 ### Analytics
 Framework readiness bars, control and document status donuts, review load for

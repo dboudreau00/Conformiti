@@ -87,7 +87,14 @@ Rules of thumb:
   `frontend/src/styles/index.css` (`text-ink`, `bg-surface`, `toneVar(...)`)
   so every theme pack keeps working.
 - **Accessibility is not optional:** interactive elements are buttons or carry
-  role + keyboard handlers; inputs have labels.
+  role + keyboard handlers; inputs have labels. Menus and popovers are the one
+  `Popover` in `components/ui`, which brings Esc, focus return and the arrow
+  keys with it; do not write another.
+- **A new page is wired in `nav.js`.** An entry in `NAV_SECTIONS` (its section
+  decides where the shell draws it: the tabs, the Governance menu or the account
+  menu) and one in `NAV_LOOKUP`, whose title and caption `PanelTransition` draws
+  as the page's `<h1>`. Keep `navSections` a function and `NAV_LOOKUP` a plain
+  object: an add-on extends both.
 - **Control text is paraphrased.** Do not paste normative ISO/PCI text into the
   seed data: it is copyrighted.
 
@@ -116,9 +123,12 @@ backend/            Django project (config/) + apps
 frontend/src/
   styles/index.css  theme tokens (4 theme packs, 4 accent packs) + Tailwind
   theme.js          theme/accent state, useTheme()
-  components/ui     Panel, Badge, Button, Meter, SegmentedControl, StatCard
+  components/ui     Panel, Badge, Button, Meter, SegmentedControl, StatCard,
+                    Popover (the one menu primitive)
   components/charts Donut, BarChart, TrendLine
-  components/layout Sidebar, TopBar, PanelTransition
+  components/layout TopBar and its menus, SideMenu, MobileMenu, PanelTransition
+  components/dashboard LeadSchedule, CoverageAtlas, NeedsAttention, calendar,
+                    review queue
   pages/            one file per route
 tools/validate.py   dependency-free static validator (20 checks)
 ```

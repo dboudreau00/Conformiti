@@ -46,7 +46,7 @@ const CAP_LABELS = {
 };
 
 // What the account is called in the profile card and the Role & access panel,
-// the same fallback as the sidebar's. The first administrator comes from
+// the same fallback as the user menu's. The first administrator comes from
 // manage.py createsuperuser with no role, and "No role" read as an account
 // without permissions when it holds all of them.
 const roleLabel = (me) => me?.role_detail?.name || (me?.is_superuser ? "Superuser" : "No role");

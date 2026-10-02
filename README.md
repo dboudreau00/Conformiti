@@ -14,7 +14,7 @@
 
 [Install](#quick-install) · [What it does](#what-you-get) · [Audit packages](#handing-evidence-to-an-auditor) · [Architecture](#architecture) · [Configuration](#configuration) · [Operations](#operations-runbook) · [conformiti.app](https://conformiti.app)
 
-<img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard: readiness, evidence coverage, risk posture, compliance calendar" width="900">
+<img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard: readiness, the lead schedule, the coverage atlas, what needs attention and the compliance calendar" width="900">
 
 </div>
 
@@ -191,9 +191,10 @@ in the six weeks before fieldwork. Three things reliably break:
 Readiness is *measured*, not drawn. Every applicable control is scored from its
 implementation status, owner, evidence, the freshness of that evidence and
 testing, less a penalty for open risks. The dashboard leads with that score and
-shows the implemented share (**implemented ÷ applicable**) beside it and for
-each framework. The programme's figures are snapshotted daily. Nobody types a
-percentage into this system.
+shows the implemented share (**implemented ÷ applicable**) beside it. Its lead
+schedule gives each framework its own score and its controls by status, footed
+to the programme. The programme's figures are snapshotted daily. Nobody types
+a percentage into this system.
 
 There is no telemetry, no phone-home, no licence server, and no seat meter in
 the code. It is MIT, and it is meant to be run by the organisation that uses
@@ -272,6 +273,14 @@ it.
   from the denominator. The audit trail records who changed the control's
   status and when, but not the new value, and there is no field for a
   justification: keep the reasoning in a document linked to the control.
+- **A lead schedule and a coverage atlas on the dashboard.** The schedule has
+  one row per framework (applicable, implemented, in progress and not started
+  controls, evidence linked, and the framework's own readiness score) and a
+  total that foots to the headline. Below it, every control is one square,
+  grouped by framework. Point at a square, or move to it with the arrow keys,
+  and every control that answers the same crosswalk theme lights up in every
+  framework; select one to pin it and read what else it answers. No lines
+  between squares, and status is never colour alone.
 
 ### Documents and evidence
 
@@ -478,9 +487,18 @@ list, fetch or even reference another's rows.
 
 ### Interface and identity
 
+One top bar carries the whole interface: the Workspace tabs (Dashboard,
+Analytics, Controls, Documents), a **Governance** menu holding the ten
+governance pages, search across controls, documents and people (**Ctrl K**, or
+**Cmd K** on a Mac), an **Appearance** menu, the notification bell and the
+account menu with Settings and Sign out. Each page names itself at its own top.
+Under 768 pixels the tabs fold into a **Menu** button that lists every
+section.
+
 Four theme packs (Audit Ledger, Nimbus, Ledger Dark, Obsidian), four accent
 packs and a custom accent colour, applied before first paint and remembered per
-browser. Keyboard-accessible throughout.
+browser. Keyboard-accessible throughout: a *Skip to content* link first, and
+every menu opens, moves and closes from the keyboard.
 
 The mark is a shield split along its centreline with one check struck across
 it, in four colourways with **fixed meanings**: **Governance Blue** is the
@@ -1267,10 +1285,13 @@ excluded; auth events are written explicitly by `audit.events`.
 
 ### Frontend
 
-A React SPA on Vite. `App.jsx` mounts the shell (`Sidebar`, `TopBar`,
+A React SPA on Vite. `App.jsx` mounts the shell (one `TopBar` with its
+Governance, Appearance and account menus and the search palette, a `SideMenu`
+drawn only for navigation sections the core does not define, and
 `ShellContext` with the signed-in user, health record and live badge counts)
-and the routes; every page is a `PanelTransition` panel built from the
-primitives in `components/ui` and `components/charts`. Styling is Tailwind over
+and the routes; every page is a `PanelTransition` panel, which also draws the
+page's title, built from the primitives in `components/ui` (menus and popovers
+are the one `Popover`) and `components/charts`. Styling is Tailwind over
 the token system in `styles/index.css`: a theme pack (`data-theme`) and an
 accent pack or custom colour (`data-accent`) on `<html>`, applied before first
 paint by `public/theme-init.js`. In header mode the axios client attaches the
@@ -1290,7 +1311,7 @@ writing the same audit-trail entries.
 
 | Endpoint | Purpose |
 |---|---|
-| `/api/frameworks/` · `/api/controls/` | The libraries, statuses, owners, the crosswalk, CSV export |
+| `/api/frameworks/` · `/api/controls/` | The libraries, statuses, owners, the crosswalk, CSV export; `/api/controls/atlas/` (read-only) is every control with its score and the crosswalk themes, for the dashboard's coverage atlas |
 | `/api/folders/` · `/api/documents/` | The evidence tree, uploads, versions, review marking, permission grants |
 | `/api/documents/{id}/preview/` | Grant-gated, audited render for the in-browser viewer |
 | `/api/risks/` · `/api/risk-notes/` | The register, the note trail, the CSV/XLSX importer |
@@ -1301,7 +1322,7 @@ writing the same audit-trail entries.
 | `/api/pbc-requests/` · `/api/pbc-items/` | The auditor's request list: provide, accept, return, withdraw, export |
 | `/api/signing-keys/` | Published Ed25519 public keys and fingerprints |
 | `/api/workspaces/` | List, create, patch, `current` |
-| `/api/audit-log/` · `/api/notifications/` · `/api/analytics/summary/` | The read-only trail, the derived feed with receipts, the dashboard summary |
+| `/api/audit-log/` · `/api/notifications/` · `/api/analytics/summary/` | The read-only trail, the derived feed with receipts, the dashboard summary (with each framework's counts, evidence linked and readiness score) |
 | `/api/health/` | Status, version, database, demo accounts, whether a first administrator is needed, the scanner, the signing key |
 
 Every other route needs a signed-in account. These answer without one:

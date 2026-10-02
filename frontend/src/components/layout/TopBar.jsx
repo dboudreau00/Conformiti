@@ -1,159 +1,136 @@
-import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { NAV_LOOKUP } from "../../nav.js";
-import { useShell } from "../../shell.js";
-import { ACCENT_PACKS, THEME_PACKS, accentHex, useTheme } from "../../theme.js";
-import { cn } from "../../utils/cn.js";
-import { Label } from "../ui/Panel.jsx";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { SearchIcon } from "lucide-react";
 import NotificationBell from "../NotificationBell.jsx";
+import { useShell, useShellNav } from "../../shell.js";
+import { cn } from "../../utils/cn.js";
+import { ConformitiLogo } from "../brand/ConformitiLogo.jsx";
+import { AppearanceMenu } from "./AppearanceMenu.jsx";
+import { GovernanceMenu } from "./GovernanceMenu.jsx";
+import { MobileMenu } from "./MobileMenu.jsx";
+import { NavCount, TAB_CLASS } from "./NavParts.jsx";
+import { SearchPalette } from "./SearchPalette.jsx";
+import { UserMenu, workspaceNote } from "./UserMenu.jsx";
 
-export const POP = {
-  initial: { opacity: 0, y: -6, scale: 0.98 },
-  animate: { opacity: 1, y: 0, scale: 1 },
-  exit: { opacity: 0, y: -4, scale: 0.98 },
-  transition: { duration: 0.16, ease: [0.23, 1, 0.32, 1] },
-};
+// The shortcut a person's own keyboard calls it.
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
 
-export function TopBar() {
+/** The one bar: the product, the Workspace tabs and Governance on the left;
+ * search, appearance, the demo and version chip, the bell and the person on
+ * the right. The page's title is not here, it opens the page (PanelTransition).
+ *
+ * Primary is the landmark an add-on finds its logo through. Its first child
+ * is the link holding the mark: a white-label painter hides the first thing
+ * in that link which draws the mark and puts the customer's own in front. */
+export function TopBar({ onSignOut }) {
   const { pathname } = useLocation();
-  const { health } = useShell();
-  const { theme, accent, setTheme, setAccent } = useTheme();
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef(null);
-  const meta = NAV_LOOKUP[pathname] ?? { title: "Conformiti", caption: "" };
-  const activeTheme = THEME_PACKS.find((t) => t.id === theme) ?? THEME_PACKS[2];
-  const customAccent = accent.startsWith("#");
+  const { me, health, counts } = useShell();
+  const { tabs, governance } = useShellNav();
+  const [searching, setSearching] = useState(false);
+  const note = workspaceNote(me);
 
   useEffect(() => {
-    function onDown(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false);
-    }
-    function onKey(e) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearching((was) => !was);
+      }
     };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => setOpen(false), [pathname]);
-
   return (
-    <header className="sticky top-0 z-30 flex h-[60px] items-center gap-4 border-b border-line bg-surface/85 px-6 backdrop-blur-xl transition-colors duration-300 ease-out">
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={pathname}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-          >
-            <h1 className="truncate text-[17px] font-semibold tracking-[-0.015em] text-ink">{meta.title}</h1>
-            <p className="truncate text-xs text-muted">{meta.caption}</p>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* Theme pack picker */}
-      <div className="relative" ref={menuRef}>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-haspopup="menu"
-          className="flex h-8 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 text-[13px] text-ink transition-colors duration-150 ease-out hover:border-line-strong hover:bg-surface-2"
-        >
-          <span className="flex h-4 w-4 overflow-hidden rounded-[4px] ring-1 ring-line-strong" aria-hidden="true">
-            <span className="h-full w-1/2" style={{ background: activeTheme.swatch[0] }} />
-            <span className="h-full w-1/2" style={{ background: activeTheme.swatch[1] }} />
-          </span>
-          <span className="hidden font-medium sm:inline">{activeTheme.name}</span>
-          <ChevronDownIcon className={cn("h-3.5 w-3.5 text-muted transition-transform duration-150 ease-out", open && "rotate-180")} strokeWidth={2} aria-hidden="true" />
-        </button>
-        <AnimatePresence>
-          {open ? (
-            <motion.div {...POP} role="menu" className="absolute right-0 top-[calc(100%+8px)] w-[268px] origin-top-right overflow-hidden rounded-xl border border-line bg-surface shadow-pop">
-              <div className="border-b border-line px-3 py-2">
-                <Label>Theme pack</Label>
-              </div>
-              <ul className="p-1.5">
-                {THEME_PACKS.map((pack) => (
-                  <li key={pack.id}>
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={pack.id === theme}
-                      onClick={() => setTheme(pack.id)}
-                      className={cn(
-                        "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors duration-150 ease-out",
-                        pack.id === theme ? "bg-accent/10" : "hover:bg-surface-2"
-                      )}
-                    >
-                      <span className="flex h-7 w-7 shrink-0 overflow-hidden rounded-md ring-1 ring-line-strong" aria-hidden="true">
-                        <span className="h-full w-1/2" style={{ background: pack.swatch[0] }} />
-                        <span className="h-full w-1/2" style={{ background: pack.swatch[1] }} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13px] font-medium text-ink">{pack.name}</span>
-                        <span className="block truncate text-2xs text-muted">{pack.blurb}</span>
-                      </span>
-                      {pack.id === theme ? <CheckIcon className="h-4 w-4 shrink-0 text-accent" strokeWidth={2.5} aria-hidden="true" /> : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
-
-      {/* Accent pack */}
-      <div className="flex items-center gap-1.5" role="radiogroup" aria-label="Accent colour">
-        {ACCENT_PACKS.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            role="radio"
-            aria-checked={a.id === accent}
-            aria-label={a.name}
-            title={a.name}
-            onClick={() => setAccent(a.id)}
-            className="relative flex h-6 w-6 items-center justify-center rounded-full transition-transform duration-150 ease-out hover:scale-110"
-          >
-            <span className="h-4 w-4 rounded-full" style={{ background: a.hex }} />
-            {a.id === accent ? (
-              <motion.span
-                layoutId="accent-ring"
-                className="absolute inset-0 rounded-full ring-2 ring-accent ring-offset-2 ring-offset-surface"
-                transition={{ type: "spring", stiffness: 500, damping: 34 }}
-                aria-hidden="true"
-              />
+    <>
+      <header className="sticky top-0 z-30 flex h-[60px] items-center gap-2.5 border-b border-line bg-surface/85 pl-3 pr-3 backdrop-blur-xl transition-colors duration-300 ease-out min-[1061px]:pl-[18px] min-[1061px]:pr-4">
+        <nav aria-label="Primary" className="flex h-full min-w-0 items-center gap-2">
+          <Link to="/" className="flex shrink-0 items-center rounded-lg">
+            <span aria-hidden="true" className="flex">
+              <ConformitiLogo size={32} className="max-[939px]:[&>div]:hidden" />
+            </span>
+            <span className="sr-only">Home</span>
+          </Link>
+          <MobileMenu />
+          <ul className="hidden h-full min-w-0 items-center md:flex">
+            {tabs.map((item) => {
+              const active = pathname === item.path;
+              return (
+                <li key={item.id} className="flex h-full">
+                  <Link to={item.path} aria-current={active ? "page" : undefined} className={TAB_CLASS}>
+                    <span>{item.label}</span>
+                    <NavCount kind={item.badge} value={item.badge ? counts[item.badge] : undefined} />
+                  </Link>
+                </li>
+              );
+            })}
+            {governance.length ? (
+              <li className="flex h-full min-w-0">
+                <GovernanceMenu />
+              </li>
             ) : null}
+          </ul>
+        </nav>
+
+        <div className="flex flex-1 items-center justify-end gap-1.5">
+          <button
+            type="button"
+            onClick={() => setSearching(true)}
+            aria-haspopup="dialog"
+            aria-keyshortcuts="Control+K Meta+K"
+            title={`Search (${MAC ? "Cmd" : "Ctrl"} K)`}
+            className={cn(
+              "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-muted",
+              "transition-colors duration-150 ease-out hover:border-line-strong hover:bg-surface-2 hover:text-ink",
+              "min-[1181px]:mx-1 min-[1181px]:w-[150px] min-[1181px]:min-w-[150px] min-[1181px]:max-w-[360px] min-[1181px]:flex-1 min-[1181px]:justify-start min-[1181px]:gap-2 min-[1181px]:px-2.5 min-[1181px]:text-left"
+            )}
+          >
+            <SearchIcon className="h-[15px] w-[15px] shrink-0" strokeWidth={1.75} aria-hidden="true" />
+            <span className="sr-only min-[1181px]:not-sr-only min-[1181px]:min-w-0 min-[1181px]:flex-1 min-[1181px]:truncate min-[1181px]:text-[12.5px]">
+              Jump to a control, document or person
+            </span>
+            <kbd className="hidden shrink-0 rounded-md border border-line-strong bg-surface-2 px-1.5 font-mono text-[10px] font-medium leading-4 text-muted min-[1181px]:inline-block" aria-hidden="true">
+              {MAC ? "Cmd K" : "Ctrl K"}
+            </kbd>
           </button>
-        ))}
-        {customAccent ? (
-          <span className="relative flex h-6 w-6 items-center justify-center rounded-full" title="Custom accent" aria-label="Custom accent">
-            <span className="h-4 w-4 rounded-full" style={{ background: accentHex(accent) }} />
-            <span className="absolute inset-0 rounded-full ring-2 ring-accent ring-offset-2 ring-offset-surface" aria-hidden="true" />
-          </span>
-        ) : null}
-      </div>
 
-      {/* Label uppercases its text; the version keeps its own case, since a
-          release is named by a lower-case revision letter (0.9.5k) and
-          "V0.9.5K" matched neither /api/health/ nor the tags. */}
-      <Label className="hidden rounded-md border border-line px-2 py-1 lg:inline-block">
-        {health?.demo_accounts ? (health?.version ? "Demo data · " : "Demo data") : null}
-        {health?.version ? <span className="normal-case">{"v" + health.version}</span> : null}
-      </Label>
+          <AppearanceMenu />
 
-      <NotificationBell />
-    </header>
+          {note ? (
+            <span
+              className={cn(
+                "hidden max-w-[150px] shrink-0 truncate rounded-md border px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.06em] min-[1181px]:block",
+                note.switched ? "border-warning/40 text-warning" : "border-line text-muted"
+              )}
+              title={note.title}
+              data-testid="workspace-name"
+            >
+              {note.text}
+            </span>
+          ) : null}
+
+          {/* The version keeps its own case: a release is named by a lower-case
+              revision letter (0.9.5k), and "V0.9.5K" matched neither
+              /api/health/ nor the tags. */}
+          {health?.demo_accounts || health?.version ? (
+            <span className="hidden h-[34px] shrink-0 flex-col justify-center rounded-md border border-line px-2.5 font-mono text-[10px] uppercase leading-[13px] tracking-[0.06em] text-muted min-[941px]:flex">
+              {health?.demo_accounts ? (
+                <span>
+                  Demo data
+                  {health?.version ? <span className="sr-only">, </span> : null}
+                </span>
+              ) : null}
+              {health?.version ? <span className="normal-case tracking-[0.04em]">{"v" + health.version}</span> : null}
+            </span>
+          ) : null}
+
+          <NotificationBell />
+          <UserMenu onSignOut={onSignOut} />
+        </div>
+      </header>
+      {/* Outside the header on purpose: its backdrop blur makes it the
+          containing block for anything fixed inside it, and the dialog's
+          overlay must cover the viewport, not a 60px strip. */}
+      <SearchPalette open={searching} onClose={() => setSearching(false)} />
+    </>
   );
 }

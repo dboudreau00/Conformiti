@@ -5,14 +5,14 @@
 | App | Responsibility |
 |---|---|
 | `accounts` | Custom `User`, `Role` (capability flags), RBAC permission classes, TOTP MFA + backup codes, passkeys (`webauthn.py` protocol + `passkeys.py` glue, `WebAuthnCredential`/`WebAuthnChallenge`), OIDC + SAML single sign-on, sign-out (token revocation), demo-data retirement, blacklist pruning task |
-| `compliance` | `Framework`, `ControlCategory`, `Control`, `ControlMapping` (crosswalk), `ControlEvidence` (evidence ↔ control links), seed + on-disk folder tree, controls CSV export |
+| `compliance` | `Framework`, `ControlCategory`, `Control`, `ControlMapping` (crosswalk), `ControlEvidence` (evidence ↔ control links), seed + on-disk folder tree, controls CSV export, the read-only atlas of every control and its crosswalk themes (`GET /api/controls/atlas/`) |
 | `documents` | `Folder` (self-parent tree with cycle guard), `FolderPermission`, `Document` (+ scan verdict / quarantine), `DocumentVersion`, `FormTemplate`, upload validation, clamd client (`clamav.py`), scanning boundary (`scanning.py`) and the scanner watch + re-scan sweep (`monitor.py`, `manage.py scan_evidence`, `ScannerStatus`) |
 | `governance` | `Risk` + `RiskNote` (+ CSV/XLSX importer), `AccessReview` + snapshot items, `MeetingSeries` + minutes, `ChampionGroup` + members |
 | `vendors` | `Vendor` (tier, posture, computed risk rating), `VendorAssessment` (reports, AOCs, questionnaires, filed documents), `SharedResponsibility` (per-vendor matrix) + the CSV/XLSX recogniser (`matrix.py`), `QuestionnaireInvite` + the public token endpoints (`questionnaire.py`, `public_views.py`) |
 | `attestations` | `EvidencePackage` → `PackageControl` → `PackageEvidence` / `PackageSample` snapshots, `PackageGrant` (the first of two folder-permission bypasses, `access.py`), manifest + bundle, `PbcRequest` / `PbcItem` (the auditor's request list, `pbc_views.py`; the second bypass, also in `access.py`), roll-forward + year-over-year diff (`rollforward.py`), detached Ed25519 signatures over the manifest and the bundle's `SHA256SUMS`, each workspace signing with a key derived from one installation key held in a file (`SIGNING_KEY_FILE`) or the environment (`SIGNING_KEY`), never in the database, + `SigningKey` registry of the public keys (`signing.py`, `manage.py rotate_signing_key`; `SIGNING_ENABLED=false` seals unsigned), stdlib verifier shipped in every bundle (`verifier.py`) |
 | `notifications` | review/vendor/PBC reminder scans + scanner watch (Celery tasks / management commands), email transports (console, SMTP, mailbox, SES), derived per-user in-app feed + receipts, per-person digest emails (`send_digests`), Slack/Teams incoming webhooks with a delivery log (`webhooks.py`, `WebhookDelivery`) |
 | `audit` | `AuditLog`, request middleware (mutations with field names), explicit auth events, read-only viewer API |
-| `analytics` | dashboard summary endpoint, `ReadinessSnapshot` history + trend |
+| `analytics` | dashboard summary endpoint (readiness, the evidence figures and each framework's counts, evidence linked and score), `ReadinessSnapshot` history + trend |
 | `calendar_app` | `CalendarEvent` + merged review/audit/task feed |
 | `integrations` | Jira client (https only, any public host, the resolved address checked and the connection pinned to it, redirects refused; through an egress proxy the proxy resolves and connects) |
 | `config` | settings, URLs, health endpoint, version, CSV sanitiser, field encryption (`fieldcrypto.py`), and the one safe way to make an outbound request (`outbound.py`: host allow-lists, address checks, a pinned connection, refused redirects, proxies honoured) |
@@ -108,7 +108,15 @@ handful of queries and scopes every folder and document list, the tree, the
 calendar feed, the register's evidence counts and the dashboard's document
 figures. The dashboard's control, evidence-coverage, risk and readiness
 figures are organisation-wide counts that name nothing, shown to every
-member of the workspace except an external auditor.
+member of the workspace except an external auditor. The dashboard's coverage
+atlas is a read of the control library instead, `GET /api/controls/atlas/`,
+under the register's own permissions and workspace scope (an external auditor
+is refused). It names controls, and its per-control score and band are the
+caller's own, as the register shows them: the evidence behind a score counts
+only the folders the caller can see, where the headline counts every folder.
+It is one response in a fixed number of queries, however many controls there
+are, with the crosswalk as themes listing control ids and every record keyed by
+its numeric id, because a control reference is not unique across frameworks.
 
 ## Authentication
 
@@ -182,10 +190,40 @@ has no write surface.
 
 ## Frontend
 
-React 19 SPA (Vite 8). `App.jsx` mounts the shell (`Sidebar`, `TopBar`,
-`ShellContext` with the signed-in user, health record and live badge counts)
-and routes; every page is a `PanelTransition` panel built from the primitives
-in `components/ui` and `components/charts`. Styling is Tailwind over the token
+React 19 SPA (Vite 8). `App.jsx` mounts the shell and routes. The shell is
+one sticky `TopBar` (`components/layout`): the Workspace tabs, a
+`GovernanceMenu`, a `SearchPalette` opened by Ctrl K or Cmd K, an
+`AppearanceMenu`, the notification bell and a `UserMenu`; a `SideMenu`; and,
+under 768px, a `MobileMenu` sheet in place of the tabs and the side menu. The
+bar, the side menu and the routes each sit in their own `ErrorBoundary`, so a
+fault in the chrome leaves the page working. `ShellContext` carries the
+signed-in user, health record and live badge counts.
+
+`nav.js` is the one model of what a person may see. `navSections(me)` returns
+the sections (the external auditor's reduced set included) and `shellNav(me)`
+places them by section id when it renders: `workspace` into the tabs,
+`governance` into the Governance menu, `account` into the account menu, and
+every other section into the side menu, which is drawn only when it has items,
+so a core installation and an external auditor have none. It reads section ids
+and never a flag on the signed-in user, so an add-on that wraps `navSections`
+and `NAV_LOOKUP` has its sections placed with no change in the core. The page
+title and caption come from `NAV_LOOKUP` and are drawn by `PanelTransition` as
+the page's `<h1>`.
+
+Menus and popovers (Governance, Appearance, the bell, the account menu, the
+phone sheet) are one primitive, `components/ui/Popover.jsx`: a press outside or
+Escape closes, focus moves in and returns to the trigger, and menus take the
+arrow keys. The palette searches only through the list endpoints the pages
+themselves use (`/controls/`, `/documents/` and `/users/` with `?search=`). It
+does not ask an external auditor for the two the API refuses, and a 403 from
+either simply leaves that group out, so it never shows what the API would not.
+
+The dashboard reads `/analytics/summary/` and the upcoming reviews, and
+requests `/controls/atlas/` on its own, so a slow or refused atlas leaves the
+rest of the page standing.
+
+Every page is a `PanelTransition` panel built from the primitives in
+`components/ui` and `components/charts`. Styling is Tailwind over the token
 system in `styles/index.css`: a theme pack (`data-theme`) and an accent pack or
 custom colour (`data-accent`) on `<html>`, applied before first paint by
 `public/theme-init.js` and managed by `theme.js`. The axios client sends

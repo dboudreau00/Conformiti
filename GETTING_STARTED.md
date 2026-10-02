@@ -71,14 +71,26 @@ fifteen minutes; the backend suite is most of it.
 ## Part B: Sign in (1 min)
 
 🖱 Sign in as `mia`, using the demo password from Part A. The sign-in page
-mentions the demo accounts only while they exist. ✓ The Dashboard loads;
-the sidebar shows Workspace and Governance sections with live badges (controls
-in progress, open risks).
+mentions the demo accounts only while they exist. ✓ The Dashboard loads. One
+bar runs across the top: the Workspace tabs (Dashboard, Analytics, Controls,
+Documents) with a live badge on Controls (controls in progress), and a
+**Governance** menu that holds the ten governance pages and shows its own badges
+(open access reviews, open risks) when you open it. Search, **Appearance**,
+the notification bell and your account menu are on the right; Settings and
+Sign out are in the account menu.
+
+🖱 Press **Ctrl K** (**Cmd K** on a Mac) and type `CC6.1`. ✓ The palette lists
+that control under *Controls*; type `owen` instead and it lists the person.
+**Enter** opens the page that holds the result, **Esc** closes the palette.
 
 Demo accounts, all sharing that one password: `admin` (superuser) · `mia` (Compliance
 Manager) · `owen` (Control Owner) · `aria` (Auditor) · `val` (Viewer).
 
 ## Part C: Every function
+
+Dashboard, Analytics, Controls and Documents are tabs in the top bar. Risks,
+User audit, Meetings, Champion groups, Jira, Users and the Audit log are in
+the **Governance** menu.
 
 ### 1 · Dashboard 🖱
 ✓ "Readiness score" out of 100 (the mean score of the applicable controls:
@@ -87,16 +99,25 @@ risks), the share of controls marked implemented beneath it, a trend line
 with one point per month (the demo back-fills five months; an installation
 without it shows the note *History builds from daily snapshots* until a
 second month is recorded) and a bar of readiness bands (Ready, Nearly there,
-At risk, Not ready). ✓ Frameworks / Documents /
-Reviews overdue cards, Evidence coverage, Risk posture. ✓ The compliance
-calendar with Review/Audit/Task/Other filters; click a day to list its items.
-✓ "Reviews coming up" with **Mark reviewed** (managers/owners only).
+At risk, Not ready). ✓ Beside it the **lead schedule**: a row for each of
+the three frameworks with its controls by status, *Evidence linked* and
+*Readiness* (that framework's own score), and a **Total** row whose
+*Readiness* is the headline score. ✓ Under it the **coverage atlas**: 217
+squares in three groups, one per framework. Point at a square, or Tab into
+the atlas and use the arrow keys: every control that answers the same
+crosswalk theme lights up in all three groups and the rest dim. Press
+**Enter** to pin it and read its place card (status, readiness score,
+*Also answers*, **Open control**); **Esc** lets go. ✓ **Needs attention**:
+Reviews overdue, Risk posture, Evidence coverage and Documents. ✓ The
+compliance calendar with Review/Audit/Task/Other filters; click a day to
+list its items. ✓ "Reviews coming up" with **Mark reviewed** (managers/owners
+only).
 
 ### 2 · Theme packs 🖱
-Top bar → theme picker → try **Audit Ledger**, **Nimbus**, **Ledger Dark**,
-**Obsidian**; click the accent dots. ✓ Every surface, chart and badge recolours
-instantly and the choice survives a reload. Settings → Appearance also offers a
-custom accent colour.
+Top bar → **Appearance** → try **Audit Ledger**, **Nimbus**, **Ledger Dark**,
+**Obsidian**, then pick an accent. ✓ Every surface, chart and badge
+recolours instantly and the choice survives a reload. Account menu → Settings
+→ Appearance also offers a custom accent colour.
 
 ### 3 · Analytics 🖱
 ✓ Framework readiness bars (SOC 2, ISO 27001, PCI DSS), control and document
@@ -119,7 +140,7 @@ control). **Manage access** → grant the *Viewer* role or the user `val` view o
 this folder. Create a subfolder; delete it (framework folders cannot be deleted).
 
 ### 6 · Role-based access 🖱
-Sign out; sign in as `val`. ✓ Only granted folders appear, no upload form, no
+Sign out (account menu, top right); sign in as `val`. ✓ Only granted folders appear, no upload form, no
 "Mark reviewed", no risk creation. Try `/api/folders/` in the browser → only
 those folders. `val` still reads the programme-wide records (risks, vendors,
 controls, meetings, the user directory) through the API: the Viewer role
@@ -151,7 +172,7 @@ yourself or strip the last administrator.
 ### 11 · Two-factor auth 🖱
 Settings → Security → **Enable two-factor**: add the key to an authenticator,
 confirm the code, download the backup codes. Sign out and in → ✓ a code is
-required; a backup code works once. As `admin`, Users → **Reset 2FA**.
+required; a backup code works once. As `admin`, Governance → Users → **Reset 2FA**.
 
 ### 12 · Notifications 🖱
 The bell shows what *you* own or are responsible for (overdue documents and

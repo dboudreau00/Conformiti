@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { PlusIcon, XIcon } from "lucide-react";
+import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import api, { fetchAll, passwordMinLength } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -11,6 +11,7 @@ import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components
 import { BLANK_USER_FORM, NewUserForm } from "../components/users/NewUserForm.jsx";
 import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
+import { useDeepLink } from "../utils/deepLink.js";
 
 const CAP_LABELS = [
   ["can_manage_users", "users"],
@@ -71,6 +72,7 @@ export default function Users({ me }) {
   const [form, setForm] = useState(BLANK_USER_FORM);
   const [formErr, setFormErr] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
 
   const isAdmin = !!me?.capabilities?.manage_users;
 
@@ -95,6 +97,12 @@ export default function Users({ me }) {
         if (e?.response?.status !== 403) setRolesErr(errorText(e, "Couldn't load roles."));
       });
   }, []);
+
+  // The search box links here as ?search=<username>.
+  useDeepLink((params) => {
+    const text = params.get("search");
+    if (text !== null) setQuery(text);
+  });
 
   const ok = (text) => setBanner({ kind: "ok", text });
   const fail = (e, fallback) => setBanner({ kind: "err", text: errorText(e, fallback) });
@@ -238,6 +246,10 @@ export default function Users({ me }) {
   const active = users.filter((u) => u.is_active).length;
   const superusers = users.filter((u) => u.is_superuser).length;
   const mfaOn = users.filter((u) => u.mfa_enabled).length;
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? users.filter((u) => [u.username, u.full_name, u.email, u.job_title].some((v) => v && String(v).toLowerCase().includes(needle)))
+    : users;
 
   return (
     <PanelTransition>
@@ -319,10 +331,31 @@ export default function Users({ me }) {
                 </Button>
               </div>
             </PanelHeader>
+            {users.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
+                <div className="relative min-w-[240px] flex-1">
+                  <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" strokeWidth={2} aria-hidden="true" />
+                  <input
+                    type="search"
+                    className="input input-sm pl-8"
+                    value={query}
+                    placeholder="Search by username, name, email or job title"
+                    aria-label="Search users"
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </div>
+                {needle ? <Label role="status">{shown.length} of {total} shown</Label> : null}
+                {query ? (
+                  <Button size="sm" variant="ghost" onClick={() => setQuery("")}>Clear</Button>
+                ) : null}
+              </div>
+            ) : null}
             {loading ? (
               <Loading>Loading users…</Loading>
             ) : users.length === 0 ? (
               <Empty title="No users yet">Create the first account with New user.</Empty>
+            ) : shown.length === 0 ? (
+              <Empty title="No users match">Try a shorter word: the search matches usernames, names, email addresses and job titles.</Empty>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1080px] border-collapse text-[13px]">
@@ -336,7 +369,7 @@ export default function Users({ me }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {users.map((u, i) => (
+                    {shown.map((u, i) => (
                       <UserRow
                         key={u.id}
                         index={i}

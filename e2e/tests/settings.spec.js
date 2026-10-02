@@ -1,4 +1,4 @@
-import { test, expect, open, expectBrowserError, DEMO } from "../fixtures.js";
+import { test, expect, open, expectBrowserError, appearanceButton, DEMO } from "../fixtures.js";
 
 const SECTIONS = ["Profile", "Appearance", "Security", "Notifications", "Role & access", "About"];
 
@@ -113,7 +113,7 @@ test.describe("appearance", () => {
   });
 
   test("the top bar theme menu offers the same packs", async ({ page }) => {
-    await page.getByRole("banner").locator('button[aria-haspopup="menu"]').click();
+    await appearanceButton(page).click();
     await expect(page.getByRole("menuitemradio", { name: /Obsidian/ })).toBeVisible();
     await page.getByRole("menuitemradio", { name: /Nimbus/ }).click();
     await page.waitForTimeout(150);

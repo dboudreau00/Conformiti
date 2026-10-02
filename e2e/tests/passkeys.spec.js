@@ -1,4 +1,4 @@
-import { test, expect, DEMO, expectBrowserError } from "../fixtures.js";
+import { test, expect, DEMO, expectBrowserError, signOut } from "../fixtures.js";
 
 // WebAuthn refuses an IP address as a relying-party id, so this spec alone
 // drives the built SPA at localhost rather than 127.0.0.1 (the server is told
@@ -53,7 +53,7 @@ test.describe("passkeys", () => {
       await expect(page.getByText(/Passkey enrolled/)).toBeVisible();
 
       // Sign out, sign in: the password alone is now a challenge.
-      await page.getByRole("button", { name: "Sign out" }).first().click();
+      await signOut(page);
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
       await signInAt(page, DEMO.owner);
       await expect(page.getByRole("heading", { name: "Two-factor authentication" })).toBeVisible();
