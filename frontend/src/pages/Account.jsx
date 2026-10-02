@@ -1454,7 +1454,9 @@ export default function Account({ me, onUpdate }) {
     <PanelTransition>
       <Stack className="grid grid-cols-12 gap-4">
         <StackItem className="col-span-12 lg:col-span-3">
-          <Panel as="aside" className="overflow-hidden">
+          {/* Sticky below the 60px top bar, so a long section never scrolls the
+              section list out of reach. */}
+          <Panel as="aside" className="overflow-hidden lg:sticky lg:top-[76px]">
             <div className="flex items-center gap-3 border-b border-line px-4 py-4">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-[15px] font-semibold text-accent-ink" aria-hidden="true">
                 {initial}
