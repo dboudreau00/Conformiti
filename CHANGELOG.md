@@ -11,7 +11,7 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5md], 2026-10-02
 
 A top bar in place of the sidebar, and a dashboard that reads as a schedule
 and a map of the programme. No stored data, permission or setting changed.
@@ -75,6 +75,8 @@ menu, and Settings and Sign out in the account menu.
   the Documents card became a cell of Needs attention. A panel that cannot load
   says so and offers a retry, and a refused or slow atlas leaves the rest of
   the page standing.
+- **The Settings section list stays in view** while a long section scrolls,
+  where before it scrolled away with the page and left the column empty.
 
 ### Fixed
 
