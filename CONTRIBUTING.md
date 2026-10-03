@@ -59,7 +59,7 @@ cd backend
 cd ../frontend
 npm run build
 node ../tools/jscheck.mjs src         # every source file parses, no undeclared name
-npm audit --audit-level=high
+npm audit --omit=dev --audit-level=high   # the shipped dependencies; CI also reports the full audit
 ```
 
 ```powershell

@@ -284,7 +284,9 @@ point of view.
   hashes, so an image built later can resolve newer releases; a published
   image keeps the versions it was built with. The frontend (React 19, React
   Router 7, Vite 8) is locked by `package-lock.json`, and CI fails on an
-  `npm audit` finding of high severity or above. CI runs no vulnerability
+  `npm audit` finding of high severity or above in the dependencies the
+  built app ships; findings in the build tools (Tailwind, Vite and their
+  dependencies) are reported without failing. CI runs no vulnerability
   scan of the Python dependencies or the images; Dependabot proposes updates
   for both. Base images are referenced by tag, not by digest. CI runs on
   every push to main and on every pull request.

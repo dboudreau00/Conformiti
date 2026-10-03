@@ -74,7 +74,9 @@ job below. What it covers:
 
 ## 3. Frontend and containers
 
-- `npm run build` (Vite 8) must succeed; `npm audit --audit-level=high` clean.
+- `npm run build` (Vite 8) must succeed; `npm audit --omit=dev --audit-level=high`
+  clean on the shipped dependencies. The full audit, build tools included, is
+  reported without failing.
 - `node ../tools/jscheck.mjs src` (from `frontend/`): every source file parses
   and uses no undeclared name, which a Vite build does not catch.
 - Both installers run on a fresh checkout (Windows PowerShell 5.1, PowerShell

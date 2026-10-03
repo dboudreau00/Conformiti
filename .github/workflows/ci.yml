@@ -97,8 +97,17 @@ jobs:
       - name: Every source file parses and uses no undeclared name
         run: node ../tools/jscheck.mjs src
         working-directory: frontend
-      - run: npm audit --audit-level=high
+      # Blocks on what ships: the runtime dependencies inside the built app.
+      # The build tools (Tailwind, Vite and what they pull in) run only on a
+      # developer's machine or in CI, against this repository's own files,
+      # so their advisories are reported without failing the job.
+      - name: npm audit of the shipped dependencies
+        run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
+      - name: npm audit of the build tools (report only)
+        run: npm audit --audit-level=high
+        working-directory: frontend
+        continue-on-error: true
 
   # Runs the installers on a clean runner. It guards against two defects that
   # stop every run of install.ps1: a variable that PowerShell's

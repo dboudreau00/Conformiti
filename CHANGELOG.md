@@ -24,6 +24,12 @@ words. Eight model and view docstrings that sat after the first statement now
 sit where Python reads them. Unused imports are removed, and the roadmap lists
 the maintenance revisions up to 0.9.5md.
 
+**CI audit.** The front-end job now fails on high-severity advisories in the
+dependencies the built app ships (`npm audit --omit=dev`) and reports the
+build tools' advisories without failing. GHSA-vfj7-8cjw-p6xm, in `braces`, has
+no fixed release and reaches this project only through Tailwind's build-time
+file watcher and glob matching, which read nothing but this repository.
+
 ## [0.9.5md], 2026-10-02
 
 A top bar in place of the sidebar, and a dashboard that reads as a schedule
