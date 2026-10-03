@@ -1,16 +1,15 @@
-"""What an external auditor can reach, enumerated rather than assumed.
+"""What an external auditor can reach, enumerated.
 
-The shipped "Auditor" role is described as "sees only granted folders", and
-until 0.9.4 it was a full reader of the whole programme: every permission
-class in the product granted reads to *any* authenticated account, and an
-auditor is an authenticated account. The risk register, the vendor file, the
-control library, the user directory and the shared calendar were all open to
-someone the organisation had invited to look at one engagement.
+The shipped "Auditor" role is described as "sees only granted folders". Read
+permission classes that grant reads to any authenticated account would open
+the risk register, the vendor file, the control library, the user directory
+and the shared calendar to someone the organisation invited to look at one
+engagement, because an auditor is an authenticated account.
 
-The fix is deny-by-default, and this suite is what keeps it that way. It walks
-the DRF routers of every installed app rather than a list written by hand, so
-a viewset added later cannot quietly land on the auditor's side of the line:
-an unclassified prefix fails here before it ships.
+Access is deny-by-default, and this suite keeps it that way. It walks the DRF
+routers of every installed app instead of a hand-written list, so a viewset
+added later cannot quietly land on the auditor's side of the line: an
+unclassified prefix fails here before it ships.
 """
 import importlib
 
@@ -19,9 +18,9 @@ from django.conf import settings
 
 from testutils import APITestBase
 
-# Reachable by an external auditor, and why. Contents are still scoped -- an
+# Reachable by an external auditor, and why. Contents are still scoped: an
 # auditor sees the packages issued to them and the folders granted with them,
-# which is a different question from whether the route answers at all.
+# which is a separate question from whether the route answers at all.
 ALLOWED = {
     "evidence-packages": "the engagement itself",
     "package-controls": "the workpaper rows they conclude on",
@@ -101,7 +100,7 @@ class AuditorSurfaceTests(APITestBase):
         self.client_ = self.client_for(self.auditor)
 
     def test_every_registered_collection_is_classified(self):
-        """A new viewset has to be a decision, not an accident."""
+        """Every viewset must be classified explicitly."""
         unclassified = registered_prefixes() - set(ALLOWED) - set(DENIED)
         self.assertEqual(unclassified, set(), (
             "These collections are registered but nobody has decided whether an "
@@ -129,11 +128,11 @@ class AuditorSurfaceTests(APITestBase):
                 self.assertEqual(manager.get(f"/api/{prefix}/").status_code, 200, prefix)
 
     def test_a_reachable_collection_still_answers_with_only_what_it_should(self):
-        """Reaching a route and reading everything on it are two questions.
+        """Reaching a route does not mean reading everything on it.
         "workspaces" is on the allowed list so the auditor can see whose
-        engagement they are on, and until 0.9.5b that answer also carried the
+        engagement they are on, but the answer must not carry the
         organisation's Slack and Teams webhook URLs, which are credentials
-        (REVIEWS.md (0.9.5 review), S-1). Being listed here is not a licence to disclose."""
+        (REVIEWS.md (0.9.5 review), S-1)."""
         from accounts.models import Workspace
 
         workspace = Workspace.objects.get(pk=self.auditor.workspace_id)
@@ -161,12 +160,12 @@ class AuditorSurfaceTests(APITestBase):
 class AuditorActionSurfaceTests(APITestBase):
     """The list route is not the whole collection.
 
-    ``permission_classes`` on an ``@action`` REPLACES the viewset's, it does
-    not add to it, so one decorator can reopen a collection this suite has
-    already classified as denied and the walk above will still pass: it only
-    ever asked the list prefix. That is how the Jira issues proxy handed an
-    issued external auditor the organisation's remediation backlog, board by
-    sequential board, with the stored API token doing the fetching (0.9.5f).
+    ``permission_classes`` on an ``@action`` replaces the viewset's instead of
+    adding to it, so one decorator can reopen a collection this suite has
+    classified as denied while the walk above still passes, because it only
+    asks the list prefix. The Jira issues proxy is the example: it would hand
+    an external auditor the organisation's remediation backlog, board by
+    board, with the stored API token doing the fetching.
     """
 
     def setUp(self):
@@ -194,15 +193,16 @@ class AuditorActionSurfaceTests(APITestBase):
                     open_to_auditor.add((prefix, extra.url_path))
         self.assertEqual(open_to_auditor, set(SELF_SERVICE_ACTIONS), (
             "An @action on a denied collection is reachable by an external auditor. "
-            "Setting permission_classes on an action REPLACES the viewset's pair rather "
-            "than adding to it, so NotExternalAuditor never runs. Drop them and inherit, "
+            "Setting permission_classes on an action replaces the viewset's pair instead "
+            "of adding to it, so NotExternalAuditor never runs. Drop them and inherit, "
             "or, if the route really is self-service, add it to SELF_SERVICE_ACTIONS in "
             "accounts/tests_auditor_surface.py with the reason."
         ))
 
     def test_the_jira_backlog_is_refused_board_by_board(self):
-        """The concrete case: board ids are sequential and the queryset is
-        pinned to the workspace, so trying 1, 2, 3 was the whole attack."""
+        """Board ids are sequential and the queryset is pinned to the
+        workspace, so an auditor could otherwise try 1, 2, 3 and read each
+        board."""
         from integrations.models import JiraBoard
 
         board = JiraBoard.objects.create(board_id=1, name="Security backlog", added_by=self.manager)

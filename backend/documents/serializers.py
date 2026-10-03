@@ -16,8 +16,7 @@ from .uploads import validate_upload
 
 def person_name(user):
     """Full name, or the username for an account that has none (every account
-    createsuperuser makes, whose documents otherwise showed no owner at all).
-    The same rule as User.__str__; "" for nobody."""
+    createsuperuser makes). The same rule as User.__str__; "" for nobody."""
     return (user.get_full_name() or user.get_username()) if user else ""
 
 
@@ -27,7 +26,7 @@ class PersonNameField(serializers.ReadOnlyField):
 
     It reads the whole row (source "*") and follows the relation itself.
     With the relation as its source, DRF would answer null for an empty one
-    without asking the field, where these names have always been ""."""
+    without asking the field, whereas these names are ""."""
 
     def __init__(self, relation, **kwargs):
         self.relation = relation
@@ -93,7 +92,7 @@ class FolderSerializer(serializers.ModelSerializer):
         return value
 
     def validate_parent(self, parent):
-        # A folder can't be moved under itself or any of its descendants —
+        # A folder can't be moved under itself or any of its descendants:
         # that would corrupt the tree and hang every access check on it.
         if self.instance is not None and parent is not None:
             if parent.pk == self.instance.pk or self.instance.would_cycle(parent):
@@ -127,7 +126,7 @@ class DocumentSerializer(serializers.ModelSerializer):
     days_until_review = serializers.IntegerField(read_only=True)
     satisfies = serializers.SerializerMethodField()
     # Uploadable, never readable. Serializing the storage URL would publish a
-    # second route to the bytes that no permission check stands in front of --
+    # second route to the bytes that no permission check stands in front of,
     # and upload paths are derived predictably from the folder tree, so the
     # value is a working locator for anyone who sees it. Read through
     # `download_url`, which the API authorises and records.

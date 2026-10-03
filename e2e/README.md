@@ -52,10 +52,10 @@ and `frontend/node_modules`.
 ## What makes a test fail
 
 Beyond its own assertions, **any console error, uncaught exception or failed
-request fails the test**. That is not decoration: two real 0.2.0 defects (the
-audit-log filter listing every action once per row, and four screens silently
-reading only the first page of a paginated endpoint) first showed up as
-console noise during a screenshot run.
+request fails the test**. This catches real defects: the audit-log filter
+listing every action once per row, and four screens reading only the first
+page of a paginated endpoint, first showed up as console noise during a
+screenshot run.
 
 A test that deliberately provokes an error response says so by pattern:
 

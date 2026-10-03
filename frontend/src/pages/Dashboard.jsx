@@ -17,8 +17,8 @@ import { loadFailReason } from "../utils/a11y.js";
 import { CONTROL_STATUS } from "../utils/tone.js";
 
 /** Everything the page loads up front. The summary already names every
- * framework, counts its controls and totals the documents, so the framework
- * list and the document page that used to be read for those are gone. The
+ * framework, counts its controls and totals the documents, so neither the
+ * framework list nor the document list is fetched for those. The
  * calendar fetches its own feed for the visible month, mark-reviewed lives in
  * the review queue, and the atlas is requested beside these rather than after
  * them: it is the largest response and must not hold the rest back. */
@@ -68,8 +68,8 @@ export default function Dashboard({ me }) {
 
   // Waits for `me`. The dashboard reads the whole programme, which an external
   // auditor may not: the shell sends them to /packages instead, but only once
-  // it knows who they are. Firing on mount put two 403s on their console every
-  // time they signed in -- and would have loaded a screen they cannot fill.
+  // it knows who they are. Firing on mount would put two 403s on their console
+  // at every sign-in and load a screen they cannot fill.
   useEffect(() => {
     if (!me) return;
     load();

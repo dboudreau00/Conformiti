@@ -1,12 +1,12 @@
 """
 Where an upload gets scanned, and what happens when it cannot be.
 
-**Scanning happens after authorization, never during validation.** DRF runs
+**Scanning happens after authorisation, never during validation.** DRF runs
 ``serializer.is_valid()`` before ``perform_create``, so a hook in
 ``validate_upload`` would scan a file for a caller who has not yet been shown
-to have edit rights on the folder — handing anyone with an account an oracle
-("which of my payloads does their signature set catch?") and a way to saturate
-the scanner with 32 MB uploads that fail closed into org-wide 503s.
+to have edit rights on the folder. That would hand anyone with an account an
+oracle ("which of my payloads does their signature set catch?") and a way to
+saturate the scanner with 32 MB uploads that fail closed into org-wide 503s.
 
 **Enabled means fail-closed.** There is deliberately no fail-open switch: an
 "is evidence scanned?" answer that depends on whether the scanner happened to
@@ -91,9 +91,8 @@ def scan_or_raise(uploaded, request=None):
 def _record(request, uploaded, signature):
     """Write the detection to the audit trail.
 
-    Deliberately its own row rather than a log line: "we refused a malicious
-    upload, from whom, when" is exactly the sort of thing this product exists
-    to be able to answer later.
+    A row of its own rather than a log line, so that "which malicious upload
+    was refused, from whom, and when" can be answered from the audit trail.
     """
     from audit.middleware import _client_ip
     from audit.models import AuditLog

@@ -99,7 +99,7 @@ def _read_csv(data):
     except csv.Error:
         dialect = csv.excel
     # A single oversized cell makes csv raise csv.Error ("field larger than
-    # field limit"), which is NOT a ValueError — surface it as one so the view
+    # field limit"), which is not a ValueError. Surface it as one so the view
     # returns a clean 400 instead of a 500.
     rows = []
     try:
@@ -119,11 +119,11 @@ MAX_COLS = 512
 
 
 def _bounded_read(zf, name):
-    """Read one archive member with a hard ceiling on the DECOMPRESSED size.
+    """Read one archive member with a hard ceiling on the decompressed size.
 
     ZipExtFile.read(n) passes n to the decompressor as max_length, so nothing
-    larger than the ceiling is ever allocated -- unlike zf.read(name), which
-    trusts the header and expands whatever is actually inside."""
+    larger than the ceiling is ever allocated, unlike zf.read(name), which
+    trusts the header and expands whatever is inside."""
     with zf.open(name) as fh:
         raw = fh.read(MAX_UNZIPPED_BYTES + 1)
     if len(raw) > MAX_UNZIPPED_BYTES:
@@ -163,7 +163,7 @@ def _read_xlsx(data):
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         raise ValueError("Not a valid .xlsx file.")
-    # A cheap early-out only: file_size is what the archive CLAIMS, so it is
+    # A cheap early-out only: file_size is what the archive claims, so it is
     # not a bound. The real ceiling is enforced per member by _bounded_read.
     if sum(i.file_size for i in zf.infolist()) > MAX_UNZIPPED_BYTES:
         raise ValueError("Spreadsheet is too large to import.")
@@ -174,8 +174,8 @@ def _read_xlsx(data):
     if not sheet_names:
         raise ValueError("No worksheet found in the .xlsx file.")
 
-    # Malformed XML inside an otherwise-valid zip raises ET.ParseError (a
-    # SyntaxError subclass, not ValueError) — convert it so the view returns a
+    # Malformed XML inside an otherwise valid zip raises ET.ParseError (a
+    # SyntaxError subclass, not ValueError). Convert it so the view returns a
     # clean 400 rather than a 500.
     try:
         shared = []

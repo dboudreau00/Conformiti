@@ -2,9 +2,9 @@
 Time-based one-time passwords (TOTP, RFC 6238) and recovery codes.
 
 Implemented on the standard library alone (hmac/hashlib/base64/struct) so MFA
-adds no dependency and works with any authenticator app — Google Authenticator,
-Authy, 1Password, Microsoft Authenticator, etc. Correctness is covered by the
-RFC 4226 / 6238 test vectors in tests (see tools/validate.py check 13).
+adds no dependency and works with any authenticator app (Google Authenticator,
+Authy, 1Password, Microsoft Authenticator and others). Correctness is covered by
+the RFC 4226 / 6238 test vectors in tests (see tools/validate.py check 13).
 """
 import base64
 import hashlib
@@ -55,8 +55,8 @@ def matched_counter(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=AL
     """The time step a submitted code matches, or None if none does.
 
     Constant-time, allowing +/- `window` steps of clock drift (so a code valid
-    in the adjacent 30s window still passes). The step is returned rather than
-    a bare yes so the caller can refuse a code it has already accepted: a TOTP
+    in the adjacent 30s window still passes). The step is returned instead of
+    a boolean so the caller can refuse a code it has already accepted: a TOTP
     is valid for its whole window, and with nothing recorded an intercepted
     code works again until it expires (see ``MfaDevice.verify``).
     """
@@ -82,12 +82,12 @@ def matched_counter(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=AL
 
 
 def verify(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=ALGO, window=1):
-    """Does the code match at all? Replay is the caller's business."""
+    """True if the code matches. Replay protection is the caller's job."""
     return matched_counter(secret, code, at, period, digits, algo, window) is not None
 
 
 def otpauth_uri(secret, account, issuer="Conformiti"):
-    """The otpauth:// URI an authenticator scans (or you paste in manually)."""
+    """The otpauth:// URI an authenticator scans or accepts pasted in."""
     label = quote(f"{issuer}:{account}")
     params = urlencode({
         "secret": secret, "issuer": issuer,

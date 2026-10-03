@@ -9,7 +9,7 @@ METHOD_ACTION = {"POST": "create", "PUT": "update", "PATCH": "update", "DELETE":
 
 # Paths whose writes are per-user UI state, not compliance events, or which
 # carry credentials. They are never written to the trail by this middleware
-# (authentication events are recorded explicitly — see audit/events.py).
+# (authentication events are recorded explicitly, see audit/events.py).
 SKIP_PREFIXES = ("/api/auth/", "/api/notifications/", "/api/health/")
 
 # Request-body keys that must never appear in the trail, even as field names
@@ -20,8 +20,8 @@ MAX_BODY_CAPTURE = 64 * 1024   # bytes: bigger bodies (uploads) are not inspecte
 MAX_DETAIL = 255               # AuditLog.detail column width
 
 # The Django admin writes to the same tables the API does, so its saves are
-# recorded too (from 0.9.5mb). Sign-in is recorded by the admin's own form,
-# and a password set on the admin's password page as its own event.
+# recorded too. Sign-in is recorded by the admin's own form, and a password
+# set on the admin's password page as its own event.
 ADMIN_PREFIX = "/admin/"
 ADMIN_FORM_NOISE = {"csrfmiddlewaretoken", "password1", "password2"}
 
@@ -50,12 +50,12 @@ def _client_ip(request):
     The address NUM_PROXIES hops back along X-Forwarded-For, chosen exactly as
     the rate limits choose it (DRF's get_ident): each proxy in front appends
     the address it received from, so the client is that many entries from the
-    right, and entries further left are whatever the client sent. It used to be
-    the rightmost entry whatever NUM_PROXIES said, which behind a terminator in
-    front of the shipped nginx recorded the terminator for every client (fixed
-    in 0.9.5mb). The value is validated because a header-controlled, malformed
-    IP would otherwise make the AuditLog insert fail on databases with a real
-    inet type (e.g. Postgres), silently dropping the entry."""
+    right, and entries further left are whatever the client sent. Taking the
+    rightmost entry regardless of NUM_PROXIES would record the terminator for
+    every client behind one in front of the shipped nginx. The value is
+    validated because a header-controlled, malformed IP would otherwise make
+    the AuditLog insert fail on databases with a real inet type (e.g.
+    Postgres), dropping the entry."""
     from rest_framework.settings import api_settings
 
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
@@ -95,7 +95,7 @@ def _summarise_body(request):
                     keys = list(payload.keys())
         elif ctype in ("application/x-www-form-urlencoded", "multipart/form-data"):
             keys = list(request.POST.keys()) + list(request.FILES.keys())
-    except Exception:  # malformed body — the view will reject it; nothing to record
+    except Exception:  # malformed body: the view will reject it, so there is nothing to record
         return ""
     keys = [k for k in keys if k not in SENSITIVE_KEYS][:20]
     return ",".join(keys)

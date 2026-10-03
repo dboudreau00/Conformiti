@@ -1,12 +1,12 @@
 """
 Standard-mailbox mailer (IMAP / POP3 + SMTP), built entirely on the Python
-standard library -- no third-party packages required.
+standard library, so no third-party packages are required.
 
 Why both IMAP/POP3 *and* SMTP?
 --------------------------------
 IMAP and POP3 are mailbox-*access* protocols: they let you connect to and read
-an existing mailbox. They cannot send mail. Actually delivering a message is
-always an SMTP operation. A "standard mailbox account" (Gmail, Microsoft 365,
+an existing mailbox. They cannot send mail. Delivering a message is always an
+SMTP operation. A "standard mailbox account" (Gmail, Microsoft 365,
 Fastmail, a cPanel mailbox, ...) therefore exposes two endpoints:
 
     * IMAP/POP3  -> connect to the mailbox (used here to verify credentials and,
@@ -16,8 +16,6 @@ Fastmail, a cPanel mailbox, ...) therefore exposes two endpoints:
 This module drives both. ``EMAIL_PROVIDER=mailbox`` routes review reminders
 through here. Point the settings at your provider's IMAP/POP3 + SMTP hosts and
 the platform will mail document owners using nothing but a normal inbox.
-
-Everything below uses imaplib / poplib / smtplib from the stdlib.
 """
 import imaplib
 import logging
@@ -113,8 +111,8 @@ def send_mailbox_email(subject, html_body, text_body, to_addresses, from_address
             append_to_sent(msg)
         except Exception:
             # Filing the sent copy is best-effort; delivery already succeeded.
-            # Log it, though — a silently failing Sent folder looks identical to
-            # a working one, and operators rely on it as the audit copy.
+            # Log it: a failing Sent folder otherwise looks identical to a
+            # working one, and operators rely on it as the audit copy.
             logger.warning(
                 "Reminder delivered but could not be filed in the '%s' IMAP folder.",
                 settings.MAILBOX_SENT_FOLDER or "Sent", exc_info=True,
@@ -123,7 +121,7 @@ def send_mailbox_email(subject, html_body, text_body, to_addresses, from_address
 
 
 # --------------------------------------------------------------------------- #
-# Mailbox connection (IMAP / POP3) -- verification and Sent-folder filing
+# Mailbox connection (IMAP / POP3): verification and Sent-folder filing
 # --------------------------------------------------------------------------- #
 def _tls_context():
     """A verifying TLS context.

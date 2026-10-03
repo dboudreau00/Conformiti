@@ -25,9 +25,8 @@ class AdminPasswordResetTests(APITestBase):
             f"/api/users/{self.owner.pk}/", {"password": "Brand-New-Passw0rd!"}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
 
-        # And now it is not: the hijacked session the reset was meant to end
-        # ends with it. The person's own change already did this; the
-        # administrator's path did not.
+        # And now it is not: the reset ends the session, as the person's own
+        # password change does.
         again = APIClient().post("/api/auth/token/refresh/", {"refresh": refresh}, format="json")
         self.assertEqual(again.status_code, 401)
         self.assertEqual(APIClient().post("/api/auth/token/",

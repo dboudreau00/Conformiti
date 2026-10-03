@@ -1,7 +1,7 @@
 /**
- * The auditor's request list ("prepared by client") for one package -- or,
- * with `mine`, every line assigned to the signed-in person across packages,
- * which is how a control owner with no package access answers what they were
+ * The auditor's request list ("prepared by client") for one package or, with
+ * `mine`, every line assigned to the signed-in person across packages, which
+ * is how a control owner with no package access answers what they were
  * asked for.
  *
  * Which buttons appear is decided by the server (`can` on each line), so the

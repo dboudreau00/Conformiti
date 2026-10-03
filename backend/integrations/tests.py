@@ -50,7 +50,7 @@ class JiraIssueRowTests(APITestBase):
     def setUp(self):
         super().setUp()
         a = self.client_for(self.admin)
-        # Trailing slash on purpose -- it must not survive into the links.
+        # Trailing slash on purpose: it must not survive into the links.
         a.patch("/api/integrations/jira/config/", {
             "base_url": "https://team.atlassian.net/", "email": "a@b.co",
             "api_token": "tok", "enabled": True,
@@ -121,9 +121,8 @@ class JiraTokenAtRestTests(APITestBase):
     def test_a_blank_patch_keeps_the_stored_token(self):
         """A later PATCH that does not carry a token keeps the saved one.
 
-        The stored bytes DO change -- every save re-encrypts under a fresh
-        nonce, which is correct and mildly beneficial. What must not change is
-        the value.
+        The stored bytes DO change, because every save re-encrypts under a
+        fresh nonce. What must not change is the value.
         """
         a = self.client_for(self.admin)
         a.patch("/api/integrations/jira/config/", {"api_token": "keep-me"}, format="json")

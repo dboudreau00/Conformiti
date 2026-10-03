@@ -179,22 +179,22 @@ refused under `RemoteSigned` as well.
 ## Why this exists
 
 Most compliance programmes are held together by a control matrix in Excel, a
-folder of policies nobody has opened since the last audit, and a heroic effort
+folder of policies nobody has opened since the last audit, and a scramble
 in the six weeks before fieldwork. Three things reliably break:
 
 | The question | What usually happens | What Conformiti does |
 |---|---|---|
 | *"Where is the evidence for CC6.1?"* | Somebody greps a shared drive | Evidence lives in a tree **generated from the control libraries**; every document declares which controls it satisfies, and every control lists its documents |
-| *"When was this policy last reviewed?"* | 2023, and nobody noticed | Every document carries a cadence and a next-review date; owners are emailed as the review approaches (30 / 14 / 7 / 1 days by default) and once when overdue, never twice for the same window |
+| *"When was this policy last reviewed?"* | Nobody can say without opening the file | Every document carries a cadence and a next-review date; owners are emailed as the review approaches (30 / 14 / 7 / 1 days by default) and once when overdue, never twice for the same window |
 | *"Just give the auditor read access to the drive"* | Access that outlives the engagement | A **sealed, signed package** issued to named auditors for a fixed window: their online access ends on its own, and the bundle they may export verifies offline |
 
-Readiness is *measured*, not drawn. Every applicable control is scored from its
+Readiness is calculated. Every applicable control is scored from its
 implementation status, owner, evidence, the freshness of that evidence and
 testing, less a penalty for open risks. The dashboard leads with that score and
 shows the implemented share (**implemented ÷ applicable**) beside it. Its lead
 schedule gives each framework its own score and its controls by status, footed
-to the programme. The programme's figures are snapshotted daily. Nobody types
-a percentage into this system.
+to the programme. The programme's figures are snapshotted daily. No percentage is
+entered by hand.
 
 There is no telemetry, no phone-home, no licence server, and no seat meter in
 the code. It is MIT, and it is meant to be run by the organisation that uses
@@ -311,9 +311,9 @@ it.
 
 #### Open in browser
 
-Downloading evidence in order to look at it is how copies of your policies end
-up in Downloads folders on laptops you do not control. The viewer renders in
-place, and it is deliberately conservative:
+Downloading evidence to read it leaves copies of your policies in Downloads
+folders on laptops you do not control. The viewer renders in place and is
+deliberately conservative:
 
 | Type | How it is rendered |
 |---|---|
@@ -334,7 +334,7 @@ or `localhost`, so over plain HTTP the digest is not offered.
   **assurance on file** (SOC 2 reports, ISO certificates, PCI AOCs, pen tests,
   DPAs, a copy of their own responsibility matrix) with expiry tracking.
   Posture and risk rating are **computed** from what is on file and how close
-  it is to lapsing, not typed into a dropdown in 2024 and forgotten.
+  it is to lapsing.
 - **The questionnaire, sent to the vendor.** One click emails their contact a
   personal, time-boxed link (14 days by default, 90 maximum, one live link per
   vendor, revocable). They answer in a browser with **no account**; the token is
@@ -353,7 +353,7 @@ or `localhost`, so over plain HTTP the digest is not offered.
 - **RACI matrix** per control for people *and* vendors, with the control owner
   as implied Accountable and a vendor's matrix as implied Responsible. The API
   refuses a second Accountable on a control, and the controls with none are
-  counted and shown. That count is the point.
+  counted and shown, so missing accountability is visible.
 - **Onboarding prompts** in the notification tray when a vendor has no matrix,
   a report is about to lapse, or a review falls due, plus a **bridge-letter
   reminder**, in the tray and by email, when a SOC report has lapsed with
@@ -364,7 +364,7 @@ or `localhost`, so over plain HTTP the digest is not offered.
 - **Risk register**: likelihood × impact on the 5×5 grid auditors expect,
   with treatment, owner, due date, optional linked control and Jira key, and a
   note trail anyone with access can add to. CSV/XLSX import that recognises
-  the column names and word scales people actually use (Title/Risk,
+  the column names and word scales people use (Title/Risk,
   Likelihood/Probability, Impact/Severity, *High*, *Likely*, *Almost
   certain*…) and skips duplicates by title. CSV export that round-trips.
 - **User access reviews**: snapshot every account as it stands (role, last
@@ -446,7 +446,7 @@ list, fetch or even reference another's rows.
   auditor-request scans, the daily chat summary, readiness snapshots. Digests
   are computed in the person's own workspace.
 - A single-organisation install has one workspace called *Default* holding
-  everything it already had, and never notices.
+  everything it already had, so nothing changes for it.
 - **Not tenant-scoped, deliberately:** the workspace list itself, per-person
   authentication state (passkeys, TOTP, backup codes, SSO identities), the
   signing-key registry, the scanner status row, notification receipts and
@@ -477,7 +477,7 @@ list, fetch or even reference another's rows.
   quarantined; and a **daily summary** of what is outstanding. Slack receives
   Block Kit, Teams an Adaptive Card, and every delivery is logged. A webhook
   URL is a credential, so it is stored encrypted, never returned by the API,
-  and may only address a host those services actually issue webhooks on.
+  and may only address a host those services issue webhooks on.
   Its host is checked against the allow-list before every post, it is resolved
   and the connection pinned to a public address, and redirects are refused.
   When the server's egress goes through an HTTPS proxy (`HTTPS_PROXY`), the
@@ -607,8 +607,7 @@ Operating effectiveness is tested on sampled items, so the package holds them.
 The organisation states the population while the package is a draft and may
 list items; those are sealed into the manifest with the artefact supporting
 each one. After sealing, the auditor adds their own selections and records
-**pass, exception or not tested** per item, with an exception note that is
-required, not optional. The bundle carries the whole workpaper as
+**pass, exception or not tested** per item, with a required exception note. The bundle carries the whole workpaper as
 `samples.csv`.
 
 ### Roll-forward
@@ -661,7 +660,7 @@ access still sees and answers the lines assigned to them.**
 | 6 | Configure `EMAIL_PROVIDER`, then send yourself a test: `manage.py test_mailbox --to you@example.com` | Reminders are half the product. It sends a sample review reminder through whichever provider is configured, with the template and transport real reminders use, and with `mailbox` checks the account's sign-in first |
 | 7 | Enrol a second factor on every account with a management capability | TOTP or passkeys; backup codes belong to the account |
 | 8 | Back up the **secrets** volume | It holds the secret key (the file `DJANGO_SECRET_KEY_FILE` names), the field-encryption ring *and* the package signing key, whether you started with plain `docker compose` or the install script: neither writes a key into `.env` |
-| 9 | Restore from a backup once, into a scratch environment | An untested backup is a finding in most frameworks and a disaster in all of them. On the same host, restore into a second checkout whose `.env` sets its own `COMPOSE_PROJECT_NAME`, `CONFORMITI_PORT` and `CONFORMITI_API_PORT`: two checkouts in folders of the same name are one Compose project and share its volumes |
+| 9 | Restore from a backup once, into a scratch environment | An untested backup is a finding in most frameworks. On the same host, restore into a second checkout whose `.env` sets its own `COMPOSE_PROJECT_NAME`, `CONFORMITI_PORT` and `CONFORMITI_API_PORT`: two checkouts in folders of the same name are one Compose project and share its volumes |
 
 ---
 
@@ -746,10 +745,9 @@ volumes: pgdata · media · static · secrets · tree  (clamdb with the scanning
 ```
 
 > **Never add `Content-Disposition` in an `X-Accel` location.** nginx passes
-> the upstream header through, so adding one produces *two*, and browsers
-> refuse the response. The API owns that header. This is called out because it
-> was a real bug between 0.3.0 and 0.5.0; if you customise `nginx.conf`, do not
-> reintroduce it. The file is built into the frontend image: a source build
+> the upstream header through, so adding one produces two, and browsers
+> refuse the response. The API owns that header. If you customise
+> `nginx.conf`, leave that header to the API. The file is built into the frontend image: a source build
 > picks up an edit with `docker compose up -d --build`, and the published
 > images need the edited file mounted
 > ([INSTALL.md](INSTALL.md#without-a-build-the-published-images)).
@@ -812,7 +810,7 @@ documented in [`.env.example`](.env.example). The ones that matter most:
 |---|---|
 | `SIGNING_KEY_FILE` / `SIGNING_KEY` | Where the Ed25519 package-signing key lives. In compose: `/app/secrets/package_signing_key`. Rotate with `manage.py rotate_signing_key` |
 | `CLAMAV_*` | Point at a clamd instance to scan uploads. Scanning fails closed. Celery beat probes clamd every hour and sends one alert when it stops answering and one when it is back (there is no cron equivalent: `scan_evidence` exits 1 when clamd is unreachable, which a cron job can alert on). Stored files are re-scanned only by `manage.py scan_evidence`, which you schedule yourself on every path ([INSTALL.md](INSTALL.md#watching-the-malware-scanner) gives a cron line). On the Docker stack, turn scanning on with `CONFORMITI_SCANNING=true` and the `scanning` profile; `CLAMAV_ENABLED` in `.env` is ignored there |
-| `SLACK_WEBHOOK_URL`, `TEAMS_WEBHOOK_URL` | Installation-wide incoming webhooks. A webhook URL is a credential, so it may only address a host Slack or Teams actually issues them on (`WEBHOOK_ALLOWED_HOSTS_SLACK` / `_TEAMS` to change), its address is checked before every post and a redirect is refused. Each workspace can carry its own under *Settings › Role & access* (Workspace), never readable back through the API; with more than one workspace the installation-wide pair is held back unless `WEBHOOKS_SHARED_ACROSS_WORKSPACES=true` |
+| `SLACK_WEBHOOK_URL`, `TEAMS_WEBHOOK_URL` | Installation-wide incoming webhooks. A webhook URL is a credential, so it may only address a host Slack or Teams issues them on (`WEBHOOK_ALLOWED_HOSTS_SLACK` / `_TEAMS` to change), its address is checked before every post and a redirect is refused. Each workspace can carry its own under *Settings › Role & access* (Workspace), never readable back through the API; with more than one workspace the installation-wide pair is held back unless `WEBHOOKS_SHARED_ACROSS_WORKSPACES=true` |
 | `REDIS_PASSWORD` | Compose only: puts AUTH on the queue, result store and cache. Letters and digits |
 
 ---
@@ -915,7 +913,7 @@ One script, run from the checkout while the Docker stack is up. (It drives
 the compose containers, so on bare metal it does not apply: see
 [INSTALL.md, Backups on bare metal](INSTALL.md#backups-on-bare-metal).) It
 writes the database dump (`db.sql.gz`), the evidence files (`media.tgz`: a
-database without these is a manifest of things you no longer have), the
+restored database without these points at files that are gone), the
 secrets volume (`secrets.tgz`: the Django secret key, the field-encryption
 ring that protects enrolled TOTP authenticators, the Jira API token and each
 workspace's Slack and Teams webhook URLs, and the package signing key) and the

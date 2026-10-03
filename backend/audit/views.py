@@ -2,8 +2,8 @@
 
 The log itself is written server-side by AuditLogMiddleware; this only exposes
 it to the people who review it: administrators, auditors, and managers with
-view-all. There is deliberately no write/update/delete surface — the trail is
-immutable evidence.
+view-all. There is no write, update or delete surface: the trail is immutable
+evidence.
 """
 import django_filters as filters
 from rest_framework import viewsets
@@ -75,10 +75,10 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     def facets(self, request):
         """Distinct values for the viewer's filter dropdowns.
 
-        ``.order_by()`` with no arguments is essential: the model's Meta
-        ordering (-timestamp) is otherwise added to the SELECT behind DISTINCT,
+        ``.order_by()`` with no arguments is required: otherwise the model's
+        Meta ordering (-timestamp) is added to the SELECT behind DISTINCT,
         which makes every row distinct and returns the same action once per
-        entry — duplicating every option in the filter dropdowns."""
+        entry, duplicating every option in the filter dropdowns."""
         base = AuditLog.objects.order_by()
         actions = sorted(set(base.values_list("action", flat=True).distinct()))
         types = sorted({t for t in base.values_list("object_type", flat=True).distinct() if t})

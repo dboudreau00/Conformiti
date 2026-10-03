@@ -1,7 +1,5 @@
 """The questionnaire sent to the vendor: issuing the link, what the link can
 and cannot do, submission into a pending assessment, and the feed."""
-import re
-
 from django.core import mail
 from django.test import override_settings
 from django.utils import timezone
@@ -62,7 +60,7 @@ class SendTests(APITestBase):
         self.assertAlmostEqual(window.days, 29, delta=1)
 
     def test_the_audit_entry_counts_the_days_in_words(self):
-        """The entry read '1 day(s)' and '30 day(s)' in the Audit log."""
+        """The entry must read '1 day' and '30 days', not '1 day(s)'."""
         v = _vendor()
         self.send(v, email="a@b.example", days=1)
         self.send(v, email="a@b.example", days=30)
@@ -122,7 +120,7 @@ class VendorSideTests(APITestBase):
         self.assertNotIn("owner", r.data)
         self.invite.refresh_from_db()
         self.assertIsNotNone(self.invite.opened_at)
-        # An unknown token is a 404, not a hint.
+        # An unknown token answers 404 and gives nothing else away.
         self.assertEqual(self.anon.get("/api/questionnaire/nope/").status_code, 404)
         self.assertEqual(self.anon.get(f"/api/questionnaire/{self.token[:-1]}x/").status_code, 404)
 
@@ -224,11 +222,11 @@ class VendorSideTests(APITestBase):
         self.assertEqual(codes, [200, 200, 200, 429])
 
     def test_without_public_url_the_send_is_refused_rather_than_guessed(self):
-        """The token in the link is a bearer credential. Until 0.9.5b the host
-        it pointed at fell back to the request's own Origin header, which is
-        chosen by whoever sent the request, so a spoofed one put an
-        attacker's host in the vendor's email (REVIEWS.md (0.9.5 review), S-5). An unset
-        PUBLIC_URL is the shipped default, so this had to fail closed."""
+        """The token in the link is a bearer credential. The host it points at
+        must not fall back to the request's own Origin header, which is chosen
+        by whoever sent the request: a spoofed one would put an attacker's
+        host in the vendor's email (REVIEWS.md (0.9.5 review), S-5). An unset
+        PUBLIC_URL is the shipped default, so this must fail closed."""
         live = QuestionnaireInvite.objects.filter(
             vendor=self.vendor, revoked_at__isnull=True).count()
         with override_settings(PUBLIC_URL=""):
@@ -247,10 +245,11 @@ class VendorSideTests(APITestBase):
 @override_settings(EMAIL_PROVIDER="console", ORGANISATION_NAME="Acme Ltd",
                    PUBLIC_URL="https://grc.acme.example")
 class OneLiveLinkTests(APITestBase):
-    """Low 10: "one live link per vendor" was enforced by revoking whatever
-    was visible and then inserting -- a read-modify-write with nothing to
-    lock. Two sends arriving together each revoked what they could see and
-    each created a link, leaving two answerable at once."""
+    """Low 10: "one live link per vendor" is enforced by revoking whatever is
+    visible and then inserting, a read-modify-write with nothing to lock
+    unless the vendor row is held. Two sends arriving together would each
+    revoke what they could see and each create a link, leaving two
+    answerable at once."""
 
     def send(self, vendor, **body):
         return self.client_for(self.manager).post(
@@ -289,11 +288,11 @@ class OneLiveLinkTests(APITestBase):
 @override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local",
                    ORGANISATION_NAME="Acme Ltd", PUBLIC_URL="https://grc.acme.example")
 class DeadLinkDisclosureTests(APITestBase):
-    """L-6, 0.9.5h. PUT and submit call ``_require_live``; GET did not. After
-    a link expired, was revoked or was submitted, the unauthenticated page
-    still returned the vendor's name, the organisation's name, the sender,
-    the address it was sent to and the private message that went with it. The
-    draft answers were cleared; the metadata was not."""
+    """L-6, 0.9.5h. PUT and submit call ``_require_live``, and GET must not
+    leak what they refuse. After a link expires, is revoked or is submitted,
+    the unauthenticated page must not return the vendor's name, the
+    organisation's name, the sender, the address it was sent to or the private
+    message that went with it, as well as clearing the draft answers."""
 
     def setUp(self):
         super().setUp()
@@ -306,8 +305,8 @@ class DeadLinkDisclosureTests(APITestBase):
         self.anon = APIClient()
 
     def kill(self, how):
-        """`status` is computed from the timestamps, so it is made dead the
-        way the product makes it dead."""
+        """`status` is computed from the timestamps, so the link is killed the
+        way the product kills it."""
         if how == "expired":
             self.invite.expires_at = timezone.now() - timezone.timedelta(days=1)
             self.invite.save(update_fields=["expires_at"])

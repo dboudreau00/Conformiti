@@ -6,9 +6,9 @@ Two rules run through everything here:
 * every read of a package, its rows or its bytes goes through
   ``access.readable_packages``; there is no second path;
 * every write is refused unless the package is still a draft, checked at the
-  *view*, not in a serializer. ``AccessReviewItemSerializer`` guards its
-  read-only rule in ``validate()``, which ``@action`` endpoints skip entirely;
-  this app does not copy that.
+  *view*, not in a serializer. ``@action`` endpoints skip serializer
+  ``validate()``, so a rule kept there (as ``AccessReviewItemSerializer`` keeps
+  its read-only rule) does not cover them.
 """
 import tempfile
 
@@ -28,7 +28,6 @@ from compliance.models import Control
 from documents import monitor
 from notifications import webhooks
 from documents.downloads import serve_stored_file
-from documents.models import Document
 
 from . import access, bundle, rollforward, signing
 from .manifest import canonical_bytes, sha256_hex
@@ -47,8 +46,8 @@ MIN_ASSERTION = 40
 
 class CanAssemble(BasePermission):
     """Write access to packages. Reads are filtered by the queryset instead, so
-    a user with no packages gets an empty 200 rather than a 403 -- the sidebar
-    shows the nav item to everyone."""
+    a user with no packages gets an empty 200 rather than a 403, because the
+    sidebar shows the nav item to everyone."""
 
     def has_permission(self, request, view):
         if request.method in ("GET", "HEAD", "OPTIONS"):
@@ -70,7 +69,7 @@ def lock_open(package):
     Sealing snapshots what is pinned at that instant; pinning changes it.
     Checking `is_open` and then acting on the answer is a race: evidence
     pinned between the seal's check and its snapshot lands inside the package
-    but outside the manifest the auditor verifies -- the one thing a signed
+    but outside the manifest the auditor verifies, which is what a signed
     manifest exists to rule out. Every write that changes what the manifest
     would say goes through here, so they queue behind each other instead of
     interleaving.
@@ -86,11 +85,10 @@ class PackageWorkThrottle(UserRateThrottle):
     """THROTTLE_PACKAGE_WORK, per account, for the routes that hash every
     pinned file (seal and export).
 
-    UserRateThrottle so ``scope`` binds directly to the rate. It was a
-    ScopedRateThrottle until 0.9.5mb, which reads its scope from a view
-    ``throttle_scope`` attribute and lets every request through without one,
-    so the documented limit was never applied (the trap config/urls.py
-    describes for the login throttle)."""
+    A UserRateThrottle so ``scope`` binds directly to the rate. A
+    ScopedRateThrottle reads its scope from a view ``throttle_scope``
+    attribute and lets every request through without one, so the limit would
+    never apply (see the note in config/urls.py on the login throttle)."""
     scope = "package_work"
 
 
@@ -307,8 +305,8 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def signature(self, request, pk=None):
         """The detached signature and the key that made it, for anyone who
-        can read the package -- the auditor fetches this to compare with
-        the bundle they hold."""
+        can read the package. The auditor fetches this to compare with the
+        bundle they hold."""
         package = self.get_object()
         if not package.manifest_signature:
             return Response({"signed": False, "algorithm": signing.ALGORITHM,
@@ -409,8 +407,8 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
 class SigningKeysView(APIView):
     """The installation's package-signing public keys: the current one and
-    every retired one. Public on purpose -- a public key is for publishing,
-    and an auditor comparing a bundle's key with this list is the point."""
+    every retired one. Public on purpose: an auditor compares a bundle's key
+    with this list, so it must be readable without an account."""
     authentication_classes = []
     permission_classes = [AllowAny]
 
@@ -436,28 +434,25 @@ class SigningKeysView(APIView):
                     {"detail": "This installation serves several organisations. "
                                "Name the one whose keys you want: ?workspace=<slug>."},
                     status=status.HTTP_400_BAD_REQUEST)
-            # Resolved to the one organisation rather than left as None.
-            # Scoping to None is unscoped, and the query below used to fall
-            # back to every key on the server: on an installation with one
-            # active workspace and any number of archived ones, that answered
-            # an unauthenticated caller with the archived organisations'
-            # slugs (0.9.5f).
+            # Resolve to the one organisation rather than leaving None:
+            # scoping to None is unscoped, so the query below would return
+            # every key on the server, including the slugs of archived
+            # organisations, to an unauthenticated caller (0.9.5f).
             workspace = active.first()
         else:
             workspace = Workspace.objects.filter(slug=slug).first()
 
         # A slug nobody recognises is answered exactly as one that exists but
         # has never signed anything: the same status, the same shape, an empty
-        # list. Answering 400 for the unknown one and 200 for the known one
-        # left presence readable one request at a time, unauthenticated, which
-        # is the disclosure S-8 was about.
+        # list. A 400 for the unknown slug and a 200 for a known one would let
+        # an unauthenticated caller read which organisations exist, one
+        # request at a time (S-8).
         #
-        # This narrows that oracle; it does not close it. An organisation that
-        # has published a key still answers differently from one that has not,
-        # which is what publishing a key means. Closing it entirely would mean
-        # authenticating the endpoint, and then an auditor could not check a
-        # bundle's signature without an account on the server it came from,
-        # which is the property the whole scheme is for (0.9.5f).
+        # This narrows that oracle without closing it: an organisation that
+        # has published a key still answers differently from one that has not.
+        # Closing it would mean authenticating the endpoint, and then an
+        # auditor could not check a bundle's signature without an account on
+        # the server it came from, which defeats the scheme (0.9.5f).
         if slug and workspace is None:
             return Response({"algorithm": signing.ALGORITHM, "enabled": False,
                              "workspace": slug, "current": None, "keys": []})
@@ -522,15 +517,13 @@ class PackageControlViewSet(viewsets.ModelViewSet):
         touching_conclusions = bool(auditor_fields & set(data))
         touching_response = "management_response" in data
 
-        # Everything a package snapshots into its signed manifest -- control
-        # text, status, owner -- is anything that is neither a conclusion nor
-        # the management response.
+        # Anything that is neither a conclusion nor the management response is
+        # snapshot data (control text, status, owner) in the signed manifest.
         snapshot_fields = set(data) - auditor_fields - {"management_response"}
 
-        # Authorise the WHOLE request before writing any of it. These checks
-        # used to live inside three branches that each saved, so a PATCH could
-        # commit one field and then be refused for another, and a snapshot
-        # field smuggled alongside a conclusion never met assert_open.
+        # Authorise the WHOLE request before writing any of it, so a PATCH
+        # cannot commit one field and then be refused for another, and a
+        # snapshot field sent alongside a conclusion still meets assert_open.
         if touching_conclusions and access.live_grant(user, row.package) is None:
             raise PermissionDenied(
                 "Only the auditor this package was issued to can record a conclusion."
@@ -568,12 +561,7 @@ class PackageControlViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def promote(self, request, pk=None):
-        """Turn an exception into a tracked risk.
-
-        Makes ``Risk.Type.AUDIT_FINDING`` reachable from the product for the
-        first time, and is the one action here that removes work rather than
-        recording it.
-        """
+        """Turn an exception into a tracked ``Risk.Type.AUDIT_FINDING`` risk."""
         from governance.models import Risk
 
         row = self.get_object()
@@ -669,9 +657,9 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         touching_item = bool(self.ITEM_FIELDS & set(data))
         if package.status == EvidencePackage.Status.WITHDRAWN:
             assert_open(package)
-        # A body carrying neither a result nor an item field reached save()
-        # without meeting any check; anyone who could read the package could
-        # rewrite its sampling rows.
+        # A body carrying neither a result nor an item field would reach save()
+        # unchecked, letting anyone who can read the package rewrite its
+        # sampling rows.
         if not (touching_result or touching_item) and not access.can_assemble(user):
             raise PermissionDenied("You cannot change this package.")
         extra = {}
@@ -746,7 +734,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You cannot change this package.")
         assert_open(row.package_control.package)
-        # What a row points AT is fixed once pinned. Re-pointing skipped the
+        # What a row points AT is fixed once pinned. Re-pointing would skip the
         # folder-permission check that pinning performs, and moving a row to
         # another control could add evidence to an already-sealed package.
         data = serializer.validated_data
@@ -889,7 +877,7 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
             path="/packages", severity="info")
 
     def perform_destroy(self, instance):
-        """Revoking is a fact, not an absence: the row stays, marked revoked."""
+        """Revoke by marking the row; it is kept as the record of the grant."""
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You need the frameworks capability to revoke access.")
         if instance.revoked_at is not None:

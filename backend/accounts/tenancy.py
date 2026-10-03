@@ -49,9 +49,8 @@ HEADER = "HTTP_X_WORKSPACE"
 class UnscopedRead(RuntimeError):
     """A tenant queryset was about to run without its workspace condition.
 
-    Raised rather than returned quietly: the alternative is answering with
-    every organisation's rows, and a loud failure in one report beats a silent
-    disclosure in all of them.
+    Raised so the query fails instead of answering with every organisation's
+    rows.
     """
 
 # Holds an int (workspace id), a _RequestResolver, or None.
@@ -276,10 +275,10 @@ class TenantQuerySet(models.QuerySet):
             return self  # nothing active: migrations, createsuperuser, jobs that walk every workspace
         if self.query.is_sliced or self.query.combinator:
             # A LIMIT or a UNION is already fixed, so the workspace condition
-            # can no longer be added -- and returning quietly would hand back
-            # every organisation's rows. Managers pin before anything can be
-            # sliced, so getting here means the queryset was built with no
-            # workspace active and is being read inside one.
+            # can no longer be added, and returning the queryset as it is
+            # would hand back every organisation's rows. Managers pin before
+            # anything can be sliced, so getting here means the queryset was
+            # built with no workspace active and is being read inside one.
             raise UnscopedRead(
                 "This queryset was built with no workspace active and cannot be "
                 "scoped now that one is. Build it inside the workspace, or read "
@@ -336,11 +335,12 @@ class TenantUserManager(UserManager.from_queryset(TenantQuerySet)):
         that should keep a password the product refuses everywhere else.
 
         The account is attached to the workspace a superuser with none would
-        land in anyway: the first one not archived, else Default. Left with
-        none, it could sign in to /admin/ and was then treated as anonymous,
-        because the session's user lookup is pinned to the workspace the
-        request resolves to and a row with no workspace matches none. A
-        workspace given explicitly, or one active around the call, still wins.
+        land in anyway: the first one not archived, else Default. With no
+        workspace it could sign in to /admin/ and then be treated as
+        anonymous, because the session's user lookup is pinned to the
+        workspace the request resolves to and a row with no workspace matches
+        none. A workspace given explicitly, or one active around the call,
+        takes precedence.
         """
         if password is not None:
             from django.contrib.auth.password_validation import validate_password

@@ -5,8 +5,8 @@ from .models import Document, DocumentVersion, Folder, FolderPermission, FormTem
 # The admin stores a file exactly as it is sent: none of the checks the API
 # runs on an upload (size, extension, macro and OLE2 content, the malware
 # scanner) run there. So it takes no file at all, and the scanner's verdict is
-# not the admin's to change either: clearing quarantined_at served a file the
-# scanner had matched. Files arrive through the API, where the checks are.
+# not the admin's to change either: clearing quarantined_at would serve a file
+# the scanner had matched. Files arrive through the API, where the checks are.
 FILE_FIELDS = ("file",)
 SCAN_FIELDS = ("scan_status", "scan_signature", "scanned_at", "quarantined_at")
 

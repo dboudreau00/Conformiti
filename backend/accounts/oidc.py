@@ -1,31 +1,31 @@
 """
 Single sign-on over OpenID Connect (authorization code + PKCE).
 
-The provider is configured from the environment only -- never from a database
+The provider is configured from the environment only, never from a database
 row an administrator could create. A settable "trusted issuer" would let
 anyone with the users capability point the app at an identity provider they
-control and mint themselves any account; keeping it in the environment keeps
+control and mint themselves any account. Keeping it in the environment keeps
 it with the person who deploys the software.
 
-What the flow does, in order:
+The flow, in order:
 
-1. ``begin``     -- discover the provider, generate ``state``, ``nonce`` and a
-                    PKCE verifier, park them in the Django session, redirect.
-2. ``complete``  -- check ``state``, exchange the code (no redirects, https,
-                    bounded body), verify the ID token's signature against the
-                    provider's JWKS, its issuer, audience, expiry and ``nonce``,
-                    then map the identity to a local user.
-3. ``redeem``    -- the SPA turns a one-time ticket into the same tokens a
-                    password login produces, in whichever transport is live.
+1. ``begin``     discovers the provider, generates ``state``, ``nonce`` and a
+                 PKCE verifier, parks them in the Django session and redirects.
+2. ``complete``  checks ``state``, exchanges the code (https, no redirects,
+                 bounded body), verifies the ID token's signature against the
+                 provider's JWKS, its issuer, audience, expiry and ``nonce``,
+                 then maps the identity to a local user.
+3. ``redeem``    the SPA turns a one-time ticket into the same tokens a
+                 password login produces, in whichever transport is live.
 
 Mapping rules, in order of trust:
 
 * an identity already linked (issuer + subject) signs in as that user;
 * otherwise a verified email that matches exactly one local account links
-  it -- unless that account is a superuser or staff, which must always use
+  it, unless that account is a superuser or staff, which must always use
   their password (an IdP admin must not be able to become the app admin);
 * otherwise, if ``OIDC_AUTO_PROVISION`` is on and the domain is allowed, a
-  new account is created with ``OIDC_DEFAULT_ROLE`` -- which is refused if
+  new account is created with ``OIDC_DEFAULT_ROLE``, which is refused if
   that role can manage users;
 * otherwise the sign-in is declined, and the reason is in the audit trail.
 
@@ -164,11 +164,10 @@ def _http(url, data=None, headers=None):
     The issuer is the operator's own setting. The token and userinfo endpoints
     are not: they come out of the discovery document, which is the provider's
     answer, so a provider that is hostile or has been interfered with chooses
-    where this process connects next. That is the shape of every request this
-    product makes to a URL it did not write, and since 0.9.5b they all go
-    through ``config.outbound``: the host must resolve to a public address,
-    the connection is pinned to the address that was checked, and a redirect
-    is refused rather than followed. This one did not (0.9.5f).
+    where this process connects next. Every request this product makes to a
+    URL it did not write goes through ``config.outbound``: the host must
+    resolve to a public address, the connection is pinned to the address that
+    was checked, and a redirect is refused rather than followed.
 
     Patched wholesale in tests.
     """
@@ -253,8 +252,8 @@ def _same(a, b):
 
 def _privileged(user):
     """Accounts the email match must never bind: the platform's own
-    administrators by any route -- superuser, staff, or a role that manages
-    users (that role can create a superuser-equivalent in one request)."""
+    administrators by any route (superuser, staff, or a role that manages
+    users, which can create a superuser-equivalent in one request)."""
     return bool(user.is_superuser or user.is_staff or user.can_manage_users)
 
 
@@ -325,8 +324,9 @@ def begin(request, next_path="/"):
 
 
 def mfa_asserted(claims):
-    """Did the provider say a second factor was used? OIDC puts it in ``amr``
-    (and sometimes ``acr``); the accepted values are SSO_MFA_ASSERTIONS."""
+    """True if the provider says a second factor was used. OIDC puts it in
+    ``amr`` (and sometimes ``acr``); the accepted values are
+    SSO_MFA_ASSERTIONS."""
     accepted = set(getattr(settings, "SSO_MFA_ASSERTIONS", []) or [])
     amr = claims.get("amr") or []
     if isinstance(amr, str):
@@ -409,9 +409,10 @@ def _names(claims):
 
 
 def _unique_username(base):
-    """`username` is unique across the INSTALLATION (AbstractUser), so the
-    probe has to be too. Run workspace-pinned it happily returns a name that
-    is already taken next door, and create_user dies on the constraint."""
+    """`username` is unique across the whole installation (AbstractUser), so
+    the probe has to be too. Run inside a workspace it could return a name
+    already taken in another one, and create_user would fail on the
+    constraint."""
     from . import tenancy
 
     User = get_user_model()
@@ -429,9 +430,9 @@ def sso_workspace():
     """The one workspace this installation's identity provider serves.
 
     One IdP per installation is the design (see SSO_WORKSPACE), so every SSO
-    decision -- linking, matching and provisioning -- has to happen inside
-    this workspace, or a single provider signs people
-    into whichever tenant happens to hold a matching row.
+    decision (linking, matching and provisioning) has to happen inside this
+    workspace. Otherwise a single provider would sign people into whichever
+    tenant holds a matching row.
     """
     from .models import Workspace
 
@@ -451,9 +452,9 @@ def resolve_user(claims, cfg):
     email = str(claims.get("email") or "").strip().lower()[:254]
 
     # A provider may spell its issuer with a trailing "/" (Entra ID's SAML
-    # entity id and Auth0's issuer do) and link_oidc_identity stores it
-    # without one, so a link made by hand never matched those providers. Both
-    # spellings are one identity, and two accounts holding it is refused.
+    # entity id and Auth0's issuer do) while link_oidc_identity stores it
+    # without one. Both spellings are one identity, and two accounts holding
+    # it is refused.
     matches = list(OidcIdentity.objects.select_related("user__role")
                    .filter(issuer__in={issuer, issuer.rstrip("/")}, subject=subject))
     if len({m.user_id for m in matches}) > 1:
@@ -462,9 +463,9 @@ def resolve_user(claims, cfg):
     if identity is not None:
         if not identity.user.is_active:
             raise OidcError("inactive")
-        # Re-checked on every sign-in, not just when the link was made: a
-        # user promoted to administrator since then must go back to their
-        # password until an operator re-affirms the link.
+        # Re-checked on every sign-in: a user promoted to administrator
+        # since the link was made must go back to their password until an
+        # operator re-affirms the link.
         if _privileged(identity.user) and not identity.privileged_ok:
             raise OidcError("privileged", f"{identity.user.get_username()} is privileged and the "
                                           "link was not made with --allow-privileged")
@@ -472,8 +473,8 @@ def resolve_user(claims, cfg):
         if email and identity.email != email:
             identity.email = email
         # OidcIdentity is installation-wide, so a link made before the
-        # workspace existed -- or against another tenant entirely -- would
-        # otherwise still sign this person in here.
+        # workspace existed, or against another tenant, would otherwise
+        # still sign this person in here.
         if identity.user.workspace_id and identity.user.workspace_id != sso_workspace().pk:
             raise OidcError("workspace",
                             f"{identity.user.get_username()} belongs to another workspace")
@@ -514,7 +515,7 @@ def resolve_user(claims, cfg):
 
         workspace = sso_workspace()
         given, family = _names(claims)
-        # Computed OUTSIDE the tenant scope: usernames are installation-wide.
+        # Computed outside the tenant scope: usernames are installation-wide.
         username = _unique_username(email)
         with tenancy.scoped(workspace):
             role = Role.objects.filter(name__iexact=cfg.default_role).first()
@@ -528,8 +529,8 @@ def resolve_user(claims, cfg):
                     role=role, is_staff=False, is_superuser=False,
                 )
             except IntegrityError:
-                # Lost a race for the name: a clean refusal with an audit row
-                # beats a 500 out of the sign-in path.
+                # Lost a race for the name: refuse cleanly with an audit row
+                # rather than return a 500 from the sign-in path.
                 raise OidcError("denied", "could not allocate a username")
         user.set_unusable_password()
         user.save(update_fields=["password"])

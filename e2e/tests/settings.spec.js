@@ -128,15 +128,14 @@ test.describe("multi-factor authentication", () => {
     await page.waitForLoadState("networkidle");
 
     // The block renders a loading placeholder first; without this wait the
-    // Enable button is simply absent and the test skips itself into silence.
+    // Enable button is absent and the test skips itself without saying why.
     await expect(page.getByText("Authenticator app").first()).toBeVisible();
     const enable = page.getByRole("button", { name: "Enable", exact: true });
     await expect(enable).toBeVisible();
 
-    // Enrolling a factor takes the same proof removing one does (0.9.5f):
-    // a session somebody else is holding must not be able to make their
-    // authenticator the one this account needs. Adding a passkey has asked
-    // since 0.9.5; the authenticator app asked for nothing.
+    // Enrolling a factor takes the same proof removing one does: a session
+    // somebody else is holding must not be able to make their authenticator
+    // the one this account needs.
     await expect(page.locator("#mfa-enable-password")).toBeVisible();
     await page.locator("#mfa-enable-password").fill(DEMO.admin.password);
     await enable.click();

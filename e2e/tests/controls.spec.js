@@ -8,10 +8,10 @@ test.describe("control register", () => {
   });
 
   test("shows every seeded control, not just the first page", async ({ page }) => {
-    // 217 controls across three frameworks arrive over five paginated pages.
-    // Reading only the first was a real 0.2.0 defect on four screens. The
-    // register renders a hundred rows at a time since 0.9.5d, so the second
-    // number is what arrived and the first is what is on screen: both matter.
+    // 217 controls across three frameworks arrive over five paginated pages;
+    // reading only the first page is a defect this test guards against. The
+    // register renders a hundred rows at a time, so the second number is what
+    // arrived and the first is what is on screen: both matter.
     await expect(page.getByText(/SHOWING 100 OF 217/i)).toBeVisible();
     await expect(page.getByRole("tab", { name: /All frameworks/i })).toBeVisible();
 
@@ -66,7 +66,7 @@ test.describe("control register", () => {
   });
 
   test("every control carries a readiness score and band", async ({ page }) => {
-    // The register's whole point in 0.3.0: a graded figure, not a tick box.
+    // The register shows a graded figure, not a tick box.
     await expect(page.getByText("Readiness", { exact: true })).toBeVisible();
     const search = page.getByRole("searchbox", { name: /search controls/i });
     await search.fill("A.5.1");

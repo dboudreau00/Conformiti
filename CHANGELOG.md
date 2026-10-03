@@ -11,6 +11,19 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+Plainer wording throughout. No behaviour, stored data, permission or setting
+changed.
+
+**Changed.** Code comments and docstrings say why the code is the way it is
+instead of retelling earlier fixes, and keep every review finding they cite.
+Documents, interface hints, email templates and test messages drop filler,
+dashes and emoji; GETTING_STARTED names its terminal and browser steps in
+words. Eight model and view docstrings that sat after the first statement now
+sit where Python reads them. Unused imports are removed, and the roadmap lists
+the maintenance revisions up to 0.9.5md.
+
 ## [0.9.5md], 2026-10-02
 
 A top bar in place of the sidebar, and a dashboard that reads as a schedule

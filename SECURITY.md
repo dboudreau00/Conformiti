@@ -277,8 +277,8 @@ point of view.
   Scanning happens *after* the folder permission check, so an unauthorised
   caller can neither use it as a signature-set oracle nor tie the scanner up.
   When it is enabled it fails **closed**: if the scanner cannot be reached the
-  upload is refused, because "is evidence scanned?" must not depend on whether
-  the daemon happened to answer. There is deliberately no fail-open switch.
+  upload is refused, because whether evidence is scanned must not depend on
+  whether the daemon happened to answer. There is deliberately no fail-open switch.
 - **Supply chain:** Python dependencies are minimum versions on current,
   supported majors (Django held to the 5.2 LTS line), with no lock file or
   hashes, so an image built later can resolve newer releases; a published
@@ -386,7 +386,7 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   `__Host-conformiti_access` (host-bound, `Path=/`, no `Domain`, so a sibling
   subdomain cannot plant one), the refresh cookie `__Secure-conformiti_refresh`
   on its narrow `/api/auth/token/` path, and the CSRF cookie
-  `__Host-csrftoken`. Be clear about the size of the win: XSS can still act as
+  `__Host-csrftoken`. The gain is limited: XSS can still act as
   the user while the page is open, because the browser attaches the cookie for
   it. What it can no longer do is *exfiltrate* a credential that keeps working
   after the tab closes. Same-origin deployments only, which is what the
@@ -526,12 +526,12 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   in the product and sits beside the first in `attestations/access.py`.
 - **Office preview parses untrusted files on the server.** Word and Excel
   previews go through `zipfile` and `xml.etree` with hard ceilings (40 MB
-  unzipped as declared, 12 MB per part as actually read, 400,000 tags per
+  unzipped as declared, 12 MB per part as read, 400,000 tags per
   part, 3,000 blocks, 12 sheets of 1,000×64 cells, 512 KB of text) and
   Python's expat, which does not resolve external entities. The parsing is
   bounded and stdlib-only rather than sandboxed; if you accept uploads from
-  people you do not control, keep malware scanning on, and note that the
-  preview endpoint runs in the API process.
+  people you do not control, keep malware scanning on. The preview endpoint
+  runs in the API process.
 - **Malware scanning is off unless you turn it on.** Without the scanning
   profile, files are typed, size-capped and served as attachments, but not
   scanned. Turn it on if you accept files from people you do not control.
@@ -540,8 +540,7 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   (`POST /api/vendors/<id>/matrix/parse/`) read the uploaded file with
   `upload.read()` and never write it to storage, so there is nothing to serve
   back. Both need the frameworks capability and go through the same parser,
-  bounded by a 2 MB cap, a zip-bomb guard and stdlib XML parsing. Stated here
-  rather than silently skipped.
+  bounded by a 2 MB cap, a zip-bomb guard and stdlib XML parsing.
 - **The user directory is readable by every signed-in member of the same
   workspace** (`GET /api/users/`), because owner and assignee pickers need
   it. Each row carries the username, name, email, job title, role and

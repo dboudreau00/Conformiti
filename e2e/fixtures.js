@@ -9,7 +9,7 @@ export const DEMO = {
 };
 
 // Noise that is not the application's fault and would otherwise make every
-// test flaky. Keep this list short and justified — it is the only way a real
+// test flaky. Keep this list short and justified: it is the only way a real
 // console error can hide.
 const IGNORED = [
   /favicon\.ico/i,
@@ -21,16 +21,16 @@ const IGNORED = [
  * The project test object. Identical to Playwright's, plus: any console error
  * or uncaught page exception fails the test.
  *
- * This is not decoration. Two real defects in 0.2.0 — duplicate audit-log
- * facets and four pages silently reading only the first page of a paginated
- * endpoint — surfaced first as console noise during a screenshot run.
+ * It catches real defects: duplicate audit-log facets and four pages
+ * reading only the first page of a paginated endpoint first showed up as
+ * console noise during a screenshot run.
  */
 const ALLOWED = new WeakMap();
 
 /**
  * Let one test tolerate a specific browser error. Chrome logs a console error
  * for every non-2xx response, so a test that deliberately exercises a refusal
- * path must say so — by pattern, never by switching the check off.
+ * path must say so, by pattern, never by switching the check off.
  */
 export function expectBrowserError(page, pattern) {
   ALLOWED.set(page, [...(ALLOWED.get(page) || []), pattern]);
@@ -49,7 +49,7 @@ export const test = base.extend({
     page.on("pageerror", (err) => problems.push(`pageerror: ${err.message}`));
     page.on("requestfailed", (req) => {
       const failure = req.failure()?.errorText || "";
-      const text = `${req.method()} ${req.url()} — ${failure}`;
+      const text = `${req.method()} ${req.url()}: ${failure}`;
       if (IGNORED.some((re) => re.test(req.url()) || re.test(failure)) || allowed(text)) return;
       problems.push(`requestfailed: ${text}`);
     });
@@ -89,7 +89,7 @@ export async function forgetSession(page) {
 }
 
 /** The caller's access token, or null in cookie mode where script cannot read
- *  it -- which is the entire point of that mode. */
+ *  it, which is the point of that mode. */
 export function accessToken(page) {
   return COOKIE_MODE ? Promise.resolve(null)
                      : page.evaluate(() => localStorage.getItem("access"));

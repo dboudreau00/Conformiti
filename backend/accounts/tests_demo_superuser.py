@@ -1,10 +1,10 @@
 """The demo seed's advice on a first boot that also creates DJANGO_SUPERUSER_*.
 
 backend/entrypoint.sh seeds the demo before it creates the DJANGO_SUPERUSER_*
-account, so the seed used to tell the operator to run createsuperuser a few
-log lines before the container made that account itself, and the boot banner
-after it then said only remove_demo_data. The entrypoint now passes
---superuser-follows in that case, and the seed leaves the advice to the banner.
+account, so the seed must not tell the operator to run createsuperuser a few
+log lines before the container makes that account itself. The entrypoint
+passes --superuser-follows in that case, and the seed leaves the advice to the
+boot banner.
 """
 import os
 import shutil

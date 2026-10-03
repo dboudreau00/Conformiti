@@ -1,10 +1,10 @@
 """
 Slack and Microsoft Teams, by incoming webhook.
 
-The tray only helps people who open the app. For the moments that matter --
-a package sealed or issued, the auditor returning an answer, a vendor's
-questionnaire coming back, the scanner going quiet, a file quarantined --
-the same fact is posted to a channel, when one is configured.
+The tray only helps people who open the app. For the events that need prompt
+attention (a package sealed or issued, the auditor returning an answer, a
+vendor's questionnaire coming back, the scanner going quiet, a file
+quarantined) the same fact is posted to a channel, when one is configured.
 
 Deliberately small: two operator-configured https URLs (``SLACK_WEBHOOK_URL``,
 ``TEAMS_WEBHOOK_URL``), an allow-list of events (``NOTIFY_EVENTS``), one
@@ -14,11 +14,11 @@ seal on a chat outage, and every attempt is recorded in ``WebhookDelivery``
 so "did Slack get it?" has an answer. Nothing is ever *read* from these URLs.
 
 Every POST goes through ``config.outbound``: the host must be one Slack or
-Teams actually issues webhooks on, it must resolve to a public address, the
-connection is pinned to that address, and a redirect is refused rather than
-followed. Until 0.9.5b this was a check that the URL began with ``https://``,
-which let a stored URL point the server at anything on its own network
-(REVIEWS.md (0.9.5 review), S-2).
+Teams issues webhooks on, it must resolve to a public address, the connection
+is pinned to that address, and a redirect is refused rather than followed. A
+check that the URL merely begins with ``https://`` would let a stored URL
+point the server at anything on its own network (REVIEWS.md (0.9.5 review),
+S-2).
 """
 import json
 import logging
@@ -99,14 +99,14 @@ def channels():
 
     An event raised inside a workspace goes to that workspace's own channels.
     On an installation with several organisations it goes *nowhere else*:
-    one channel for the installation used to receive every tenant's sealed
+    one channel for the installation would receive every tenant's sealed
     packages, auditor requests and returned questionnaires with the tenant's
-    name prefixed — a disclosure to every other tenant reading it. Set
-    ``WEBHOOKS_SHARED_ACROSS_WORKSPACES=true`` to restore that on purpose.
+    name prefixed, which discloses them to every other tenant reading it. Set
+    ``WEBHOOKS_SHARED_ACROSS_WORKSPACES=true`` to share one on purpose.
 
     With one workspace, or with no workspace active (an installation-level
     event such as the scanner going down), the operator's channels apply, so
-    a single-organisation deployment behaves exactly as before.
+    a single-organisation deployment needs no per-workspace setup.
     """
     from accounts import tenancy
 

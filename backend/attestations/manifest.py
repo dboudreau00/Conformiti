@@ -1,10 +1,10 @@
 """
-The manifest: the one artefact an audit package is *about*.
+The manifest: the artefact whose digest identifies an audit package.
 
-Deliberately Django-free — stdlib only, plain dicts in, plain dict out. That is
-not tidiness: the manifest's digest is the package's identity, so the code that
-produces it must be reproducible years later, testable without a database, and
-verifiable by ``tools/validate.py`` with nothing on the path but this directory.
+Django-free by design: stdlib only, plain dicts in, plain dict out. The
+manifest's digest is the package's identity, so the code that produces it must
+be reproducible years later, testable without a database, and verifiable by
+``tools/validate.py`` with nothing on the path but this directory.
 
 Canonical form is sorted keys, no whitespace, ASCII-escaped, LF-terminated. Any
 two runs over the same inputs must produce byte-identical output, or the digest
@@ -17,7 +17,7 @@ import re
 
 # 2 (0.4.1): each control carries its stated population and the sample items
 # listed before sealing. A version-1 manifest still verifies with verify.py;
-# it simply has no "population"/"samples" keys.
+# it has no "population"/"samples" keys.
 # 3 (0.6.1): the package names its predecessor ("prior": id, name, sealed_at
 # and manifest digest) when it was rolled forward, so a chain of engagements
 # is verifiable end to end. Absent when there is none. Older manifests still
@@ -56,7 +56,7 @@ def safe_member_name(document_name, storage_name, ordinal):
 
     The stem comes from the human document name, the extension from the STORED
     basename. ``documents/uploads.py::validate_upload`` blocks .html/.svg/.js on
-    the *uploaded* filename, but ``Document.name`` is free text — so taking the
+    the *uploaded* filename, but ``Document.name`` is free text, so taking the
     extension from the display name would let a validated PDF land in the
     auditor's extracted tree as ``index.html``.
 
@@ -78,7 +78,7 @@ def build_manifest(package, controls):
     """Assemble the manifest from plain dictionaries.
 
     ``package`` and ``controls`` carry only values already snapshotted onto the
-    package rows — never a live ``User``, ``Document`` or ``Control``. A rename
+    package rows, never a live ``User``, ``Document`` or ``Control``. A rename
     or a deleted account after sealing must not change the digest.
     """
     payload = {

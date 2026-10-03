@@ -5,7 +5,7 @@ import io
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
-from governance.models import AccessReview, AccessReviewItem, Risk
+from governance.models import AccessReviewItem, Risk
 from governance.risk_import import normalize, parse_upload
 from testutils import APITestBase
 
@@ -149,9 +149,9 @@ class RiskRegisterTests(APITestBase):
 
 
 class NamelessAccountExportTests(APITestBase):
-    """createsuperuser asks for no first or last name, and both CSV exports
-    left such a person's column blank. They carry the username now; a full
-    name still wins and nobody is still blank."""
+    """createsuperuser asks for no first or last name, so both CSV exports
+    must carry the username in such a person's column. A full name still
+    wins, and an empty value stays blank."""
 
     def setUp(self):
         super().setUp()

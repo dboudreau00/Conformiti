@@ -1,7 +1,7 @@
-"""Workspaces (0.9.0): one installation, several organisations, each seeing
-only its own. The suite's fixtures live in the Default workspace (the test
-runner activates it); these tests add a second organisation, Beta, and
-check that nothing crosses the line in either direction."""
+"""Workspaces: one installation, several organisations, each seeing only its
+own. The suite's fixtures live in the Default workspace (the test runner
+activates it); these tests add a second organisation, Beta, and check that
+nothing crosses the line in either direction."""
 from contextlib import redirect_stdout
 from io import StringIO
 
@@ -107,10 +107,10 @@ class ManagerScopingTests(TwoWorkspaces):
             entry = AuditLog.objects.create(action="probe", object_type="test")
             about_bea = AuditLog.objects.create(action="probe", object_type="test", user=self.b_admin)
         self.assertIsNone(entry.workspace_id)  # nullable models may have none
-        # Since 0.9.2 an entry belongs to the workspace the action HAPPENED
-        # in, not to the actor: a superuser switched into another tenant is
-        # acting on that tenant, and its administrators have to see it. With
-        # nothing active and nothing passed, there is no workspace to record.
+        # An entry belongs to the workspace the action happened in, not to
+        # the actor: a superuser switched into another tenant is acting on
+        # that tenant, and its administrators have to see it. With nothing
+        # active and nothing passed, there is no workspace to record.
         self.assertIsNone(about_bea.workspace_id)
         with tenancy.scoped(self.beta):
             in_beta = AuditLog.objects.create(action="probe", object_type="test", user=self.admin)

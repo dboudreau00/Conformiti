@@ -25,7 +25,6 @@ from .models import (
 )
 from .serializers import (
     QuestionnaireInviteSerializer,
-    SharedResponsibilitySerializer,
     VendorAssessmentSerializer,
     VendorDetailSerializer,
     VendorSerializer,
@@ -113,7 +112,7 @@ class VendorViewSet(viewsets.ModelViewSet):
     def matrix(self, request, pk=None):
         """The in-browser grid: every control in scope with this vendor's
         stated responsibility and statements, blank where nothing has been
-        said yet -- so the prompt-through-the-controls flow has somewhere to go."""
+        said yet, so the prompt-through-the-controls flow has somewhere to go."""
         vendor = self.get_object()
         stated = {r.control_id: r for r in SharedResponsibility.objects.filter(vendor=vendor)}
         rows, done = [], 0
@@ -232,7 +231,7 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="matrix/export")
     def matrix_export(self, request, pk=None):
-        """The matrix as CSV -- in our layout, or with ``?layout=vendor`` in the
+        """The matrix as CSV, in our layout or, with ``?layout=vendor``, in the
         column layout of the file the vendor last sent, so it can go back to
         them looking like their own document with our side filled in."""
         from config.csvsafe import csv_safe

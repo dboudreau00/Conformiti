@@ -322,8 +322,8 @@ export default function DocumentViewer({
   const [downloadError, setDownloadError] = useState("");
   const closeRef = useRef(null);
   // The latest onClose, read by Escape. Every caller passes an inline arrow,
-  // so depending on onClose itself re-ran the effect below on each parent
-  // render and pulled focus back to the close button mid-read.
+  // so depending on onClose itself would re-run the effect below on each parent
+  // render and pull focus back to the close button mid-read.
   const onCloseRef = useRef(onClose);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;

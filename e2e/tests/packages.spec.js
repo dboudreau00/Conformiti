@@ -8,7 +8,7 @@ test.describe("audit packages", () => {
 
     // The digest is the whole point of sealing: it has to be on screen, with
     // the signature made by the installation's key (the seed signs), or the
-    // honest note that there is none.
+    // note that there is none.
     const digest = page.getByText(/^[0-9a-f]{64}$/);
     await expect(digest).toBeVisible();
     await expect(page.getByText(/Ed25519, signing key|carries no signature/i)).toBeVisible();

@@ -30,9 +30,9 @@ def can_assemble(user):
 def readable_packages(user):
     """Every package this user may read the metadata, rows AND bytes of.
 
-    Read-of-metadata and read-of-bytes are deliberately the same set. Splitting
-    them would be false comfort: the evidence index already names every
-    document, and an index the caller cannot open is itself a disclosure.
+    Read-of-metadata and read-of-bytes are deliberately the same set: the
+    evidence index already names every document, so an index the caller cannot
+    open is itself a disclosure.
 
     Deliberately NOT keyed on ``can_manage_documents``. The shipped "Control
     Owner" role is exactly that flag and confers no cross-folder document read
@@ -50,9 +50,8 @@ def readable_packages(user):
         return EvidencePackage.objects.filter(created_by=user)
     if not (user.is_active and user.is_auditor):
         # A grant is issued to an active account holding the Auditor role,
-        # and reading under it ends with either: demoting the account out of
-        # the role used to leave every package issued to it readable until
-        # the grant expired, although live_grant() refused it at once.
+        # and reading under it ends with either. This matches live_grant(),
+        # so demoting the account cuts off reads at once, not at expiry.
         return EvidencePackage.objects.none()
     return EvidencePackage.objects.filter(
         pk__in=PackageGrant.objects.filter(
@@ -107,14 +106,14 @@ def assert_pinnable(user, document):
 def readable_pbc_requests(user):
     """The auditor's request list, as far as this user may see it.
 
-    Two routes in, and this is the second folder-permission bypass in the
-    product: whoever can read a package reads its request list and every
-    document attached in answer -- for the issued auditor, under the same
-    live grant as the pinned evidence -- and the person a line is ASSIGNED to
-    sees that line, its attachments and the package's name, even with no
-    package access at all, because a control owner has to be able to answer
-    what they were asked for. An assignee is chosen by the organisation, so
-    naming someone on a line is itself a disclosure decision.
+    There are two routes in, and this is the second folder-permission bypass
+    in the product. Whoever can read a package reads its request list and every
+    document attached in answer (for the issued auditor, under the same live
+    grant as the pinned evidence). The person a line is ASSIGNED to sees that
+    line, its attachments and the package's name, even with no package access,
+    because a control owner has to be able to answer what they were asked for.
+    An assignee is chosen by the organisation, so naming someone on a line is
+    itself a disclosure decision.
     """
     from django.db.models import Q
 
@@ -123,10 +122,10 @@ def readable_pbc_requests(user):
     if not (user and user.is_authenticated):
         return PbcRequest.objects.none()
     if user.is_auditor:
-        # An external auditor reads the request list through their GRANT and
-        # nothing else. The assignee arm exists for the organisation's own
-        # people; left open to an auditor it outlived revocation and expiry,
-        # and they could put themselves on a line to keep it.
+        # An external auditor reads the request list through their GRANT only.
+        # The assignee arm is for the organisation's own people; for an
+        # auditor it would outlive revocation and expiry, and they could put
+        # themselves on a line to keep access.
         return PbcRequest.objects.filter(package__in=readable_packages(user)).distinct()
     return PbcRequest.objects.filter(
         Q(package__in=readable_packages(user)) | Q(assignee=user)

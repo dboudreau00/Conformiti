@@ -64,7 +64,7 @@ class AnalyticsSummaryView(APIView):
         owned_controls = Control.objects.filter(owner__isnull=False).count()
         applicable_all = total_controls - control_status["not_applicable"]
 
-        # Evidence coverage (organisation-wide aggregates only — counts, no titles,
+        # Evidence coverage (organisation-wide aggregates only: counts, no titles,
         # consistent with the org-wide control figures above). Grouped by
         # framework in one query; the programme figure is their sum, so the
         # schedule's column foots to the dashboard's coverage card.
@@ -125,13 +125,13 @@ class AnalyticsSummaryView(APIView):
         # --- Readiness history -----------------------------------------------
         record_today(scored=scored)  # idempotent: first hit of the day records a point
         history = trend()
-        # `pct` is the share of applicable controls marked implemented — the
-        # figure this endpoint has always reported and the one the trend
-        # history is made of. `score` is what the register scores a control
-        # on: implementation, an owner, evidence, its freshness, a test, less
-        # open risks. A control marked implemented with none of the rest used
-        # to count as ready here and score poorly one page over; the dashboard
-        # now leads with the score and shows the share beside it.
+        # `pct` is the share of applicable controls marked implemented, the
+        # figure the trend history is made of. `score` is what the register
+        # scores a control on: implementation, an owner, evidence, its
+        # freshness, a test, less open risks. A control marked implemented
+        # with none of the rest counts as ready in `pct` but scores poorly in
+        # the register, so the dashboard leads with the score and shows the
+        # share beside it.
         readiness = {
             "pct": round(control_status["implemented"] / applicable_all * 100) if applicable_all else 0,
             "implemented": control_status["implemented"],

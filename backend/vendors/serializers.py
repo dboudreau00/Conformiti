@@ -122,8 +122,8 @@ class VendorSerializer(serializers.ModelSerializer):
     def get_risk_rating(self, obj):
         return obj.risk_rating()
 
-    # The view annotates these; the fallbacks keep the serializer honest when
-    # it is handed a bare instance (a management command, a test).
+    # The view annotates these; the fallbacks cover a bare instance (a
+    # management command, a test).
     def get_assessment_count(self, obj):
         n = getattr(obj, "n_assessments", None)
         return n if n is not None else obj.assessments.count()

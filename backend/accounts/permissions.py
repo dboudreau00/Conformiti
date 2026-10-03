@@ -13,9 +13,9 @@ class NotExternalAuditor(BasePermission):
     Pair it with any permission that grants read to *any* authenticated
     account. An external auditor holds an account on the client's
     installation, but their remit is the package issued to them, its request
-    list, and the folders granted with it -- the rest of the programme (the
-    risk register, the vendor file, the user directory, the control library,
-    every other client's business) is the organisation's own.
+    list, and the folders granted with it. The rest of the programme (the
+    risk register, the vendor file, the user directory, the control library)
+    belongs to the organisation.
 
     Deny by default: ``tests_auditor_surface.py`` walks the router and fails
     if a new collection appears that an auditor can read and nobody decided
@@ -30,8 +30,8 @@ class NotExternalAuditor(BasePermission):
 class _CapabilityPermission(BasePermission):
     """Grant read to any authenticated user; require a capability to write.
 
-    "Any authenticated user" excludes the external auditor -- see
-    ``NotExternalAuditor``. A subclass that is part of an audit sets
+    "Any authenticated user" excludes the external auditor (see
+    ``NotExternalAuditor``). A subclass that is part of an audit sets
     ``allow_auditor``.
     """
     capability = None  # set in subclass

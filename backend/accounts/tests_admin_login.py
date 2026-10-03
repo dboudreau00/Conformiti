@@ -1,8 +1,7 @@
 """The Django admin is part of the product's attack surface.
 
 Django's own admin login asks for a password and nothing else, and the session
-it creates used to authenticate the whole API as well. Both are closed; these
-tests hold them closed.
+it creates must not authenticate the whole API. These tests cover both.
 """
 from django.core.cache import cache
 from django.test import Client, override_settings

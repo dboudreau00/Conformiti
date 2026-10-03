@@ -1,4 +1,4 @@
-"""Workspaces: the organisations an installation serves (0.9.0).
+"""Workspaces: the organisations an installation serves.
 
 Everyone may read their own; a superuser sees them all, creates new ones
 and switches between them by sending ``X-Workspace: <slug>`` (the SPA
@@ -20,8 +20,8 @@ from .models import MAX_WEBHOOK_URL_LENGTH, Workspace, validate_webhook_url
 
 # What everyone signed in may read about the organisation they belong to:
 # enough to name it on screen. Its mailbox, its chat channels and its
-# headcount are the operator's business. Before 0.9.5b the whole record went
-# to every member, external auditors included, chat webhooks and all
+# headcount are the operator's business: sending the whole record to every
+# member, external auditors included, would expose the chat webhooks
 # (REVIEWS.md (0.9.5 review), S-1).
 PUBLIC_FIELDS = ("id", "name", "slug", "is_active", "created_at", "can_switch")
 

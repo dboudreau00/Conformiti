@@ -84,9 +84,10 @@ class RaiseAndEditTests(PbcBase):
 
 class AssigneeDisclosureTests(PbcBase):
     """M-2, 0.9.5h. /api/users/ is denied to an auditor because it is the
-    staff directory. `assignee` was a writable foreign key onto every account
-    in the workspace and the reply carried `assignee_name`, so an auditor with
-    a live grant read that directory one sequential pk at a time."""
+    staff directory. `assignee` is a writable foreign key onto every account
+    in the workspace and the reply carries `assignee_name`, so without a guard
+    an auditor with a live grant could read that directory one sequential pk
+    at a time."""
 
     def test_an_auditor_cannot_name_anybody(self):
         r = self.raise_line(self.auditor_client, assignee=self.owner.pk)
@@ -99,9 +100,8 @@ class AssigneeDisclosureTests(PbcBase):
         """The refusal must not say which pks are people.
 
         The message echoes the pk the caller sent, which tells them nothing
-        they did not already know; what matters is that the code and the
-        wording are identical either way, so the reply cannot be used to
-        enumerate."""
+        new. The code and the wording must be identical either way, so the
+        reply cannot be used to enumerate."""
         real = self.raise_line(self.auditor_client, assignee=self.owner.pk)
         unknown = self.raise_line(self.auditor_client, assignee=999999)
         self.assertEqual(real.status_code, unknown.status_code)
@@ -132,8 +132,8 @@ class AnswerTests(PbcBase):
     def setUp(self):
         super().setUp()
         # The auditor raises the line and names nobody: the staff list is the
-        # organisation's, and an auditor naming a person was how the directory
-        # they are refused at /api/users/ could be read one pk at a time
+        # organisation's, and an auditor naming a person could read the
+        # directory they are refused at /api/users/ one pk at a time
         # (0.9.5h, M-2). The organisation routes it, which is the next line.
         raised = self.raise_line(
             self.auditor_client,

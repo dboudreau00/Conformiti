@@ -27,7 +27,7 @@ def _iso(value):
 
 
 def control_payload(row):
-    """One control row as the manifest sees it — snapshot values only."""
+    """One control row as the manifest sees it (snapshot values only)."""
     return {
         "ordinal": row.ordinal,
         "framework_key": row.framework_key,
@@ -62,7 +62,7 @@ def control_payload(row):
 
 def sample_payload(row):
     """One sampled item as the manifest sees it. Results are workpaper data
-    written after sealing, so at seal they read 'pending' -- like the
+    written after sealing, so at seal they read 'pending', like the
     conclusions beside them."""
     return {
         "ordinal": row.ordinal,
@@ -148,9 +148,9 @@ def package_payload(package):
 def assign_paths(package):
     """Give every row its ordinal and bundle path. Called once, at seal.
 
-    Doing it at seal rather than at export is what lets the manifest name a
-    file before the bundle exists — and lets the bundle be regenerated later
-    without changing the digest.
+    Assigning at seal rather than at export lets the manifest name a file
+    before the bundle exists, and lets the bundle be regenerated later without
+    changing the digest.
     """
     for c_index, control in enumerate(package.controls.all().order_by("control_ref", "pk"), start=1):
         control.ordinal = c_index
@@ -219,7 +219,7 @@ def controls_csv(package):
 
 def samples_csv(package):
     """One row per sampled item: what was tested, against which artefact,
-    with what result, by whom -- the operating-effectiveness workpaper."""
+    with what result, by whom: the operating-effectiveness workpaper."""
     from .models import PackageSample
 
     header = [
@@ -353,7 +353,7 @@ def readme_text(package, digest, summary):
         "     sha256sum -c SHA256SUMS",
         "",
         "3. Optional, if your policy allows running a script received from a",
-        "   client -- it is read-only, stdlib-only, and extracts nothing:",
+        "   client (it is read-only, stdlib-only, and extracts nothing):",
         "     python3 verify.py .",
         "",
         *(_signature_lines(package)),
@@ -402,7 +402,7 @@ def _signature_lines(package):
         "The key is in signing-key.pub and the signature in manifest.sig.",
         "SHA256SUMS carries its own signature (SHA256SUMS.sig, key in",
         "sums-key.pub) made when this bundle was exported. That one covers",
-        "every file listed in it -- including controls.csv and samples.csv,",
+        "every file listed in it, including controls.csv and samples.csv,",
         "which hold the conclusions recorded after the seal.",
         "verify.py checks it with nothing installed; openssl agrees:",
         "     base64 -d manifest.sig > manifest.sig.bin",
@@ -436,13 +436,12 @@ def write_bundle(package, fh):
             zf.writestr(info, data)
             members[name] = mf.sha256_hex(data)
 
-        # Evidence first: writing streams the bytes and gives us the digests
+        # Evidence first: writing streams the bytes and gives the digests
         # every later member reports on.
-        # The export is the one byte route that never asked. Every other one
-        # calls monitor.refuse_if_quarantined first, so a file the scanner
-        # matched after sealing would have been handed to the external auditor
-        # inside the ZIP. Refuse the whole export and name the file: the
-        # organisation has to deal with it before the bundle leaves.
+        # Every byte route calls monitor.refuse_if_quarantined, so the export
+        # does too: a file the scanner matched after sealing must not reach the
+        # external auditor inside the ZIP. The whole export is refused and the
+        # file named, so the organisation deals with it before the bundle leaves.
         from documents import monitor as _monitor
 
         for row in rows:
@@ -529,11 +528,11 @@ def write_bundle(package, fh):
         ).encode("utf-8")
         zf.writestr(zipfile.ZipInfo("SHA256SUMS", date_time=stamp), checksums)
 
-        # ...and then sign SHA256SUMS, which is what puts the rest of the
-        # bundle inside a signature. The manifest signature is made at seal and
-        # covers only manifest.json; the workpaper the auditor actually reads
-        # -- controls.csv, samples.csv, trail.csv -- is written now, after
-        # their conclusions were recorded, so it needs its own.
+        # Sign SHA256SUMS, which puts the rest of the bundle inside a
+        # signature. The manifest signature is made at seal and covers only
+        # manifest.json; the workpaper the auditor reads (controls.csv,
+        # samples.csv, trail.csv) is written now, after their conclusions were
+        # recorded, so it needs its own.
         from . import signing
 
         sums_signature = signing.sign_bytes(checksums)

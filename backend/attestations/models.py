@@ -1,17 +1,16 @@
 """
 Evidence packages: what was disclosed to an auditor, when, and by whom.
 
-The audit ritual this replaces is a folder grant. Someone gives the external
-auditor VIEW on a framework root, the auditor reads whatever lands there for
-the next six months, and somebody is supposed to remember to take it away. The
-package is the narrow version of that: a named person gets a fixed, sealed,
-time-boxed list of artefacts, every read is recorded, and withdrawal is one
-click rather than an act of memory.
+A package replaces the usual folder grant, where an external auditor is given
+VIEW on a framework root, reads whatever lands there for months, and someone
+has to remember to remove the access. A named person instead gets a fixed,
+sealed, time-boxed list of artefacts, every read is recorded, and withdrawal
+is a single action.
 
 Everything an auditor is shown is a SNAPSHOT taken when the item was pinned.
-Controls get renamed, documents get new versions, people leave. None of that may
-change what a sealed package says was handed over — so each row carries its own
-copy of the values, exactly as ``governance.AccessReviewItem`` already does.
+Controls are renamed, documents get new versions and people leave, and none of
+that may change what a sealed package says was handed over. Each row therefore
+carries its own copy of the values, as ``governance.AccessReviewItem`` does.
 """
 from django.conf import settings
 from django.db import models
@@ -96,8 +95,7 @@ class EvidencePackage(TenantModel):
     withdrawn_at = models.DateTimeField(null=True, blank=True)
     withdrawn_reason = models.CharField(max_length=255, blank=True)
 
-    # Year-over-year roll-forward is a 0.3.1 feature, but the column ships now:
-    # retrofitting it means a second migration against tables people already hold.
+    # The package this one was rolled forward from (see rollforward.py).
     prior_package = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="successors",
     )
@@ -129,8 +127,8 @@ class EvidencePackage(TenantModel):
 class PackageControl(TenantModel):
     """One control's workpaper row.
 
-    A control with no evidence still gets a row — that row is often the most
-    audit-relevant thing in the package.
+    A control with no evidence still gets a row, because the gap is often the
+    most audit-relevant fact in the package.
     """
 
     class Conclusion(models.TextChoices):
@@ -178,8 +176,7 @@ class PackageControl(TenantModel):
     concluded_by_name = models.CharField(max_length=200, blank=True)
     concluded_at = models.DateTimeField(null=True, blank=True)
 
-    # --- the client's answer, so a disagreement lands inside the record
-    # rather than in an email thread nobody keeps.
+    # --- the client's answer, so a disagreement is recorded with the package.
     management_response = models.TextField(blank=True)
     responded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -220,14 +217,14 @@ class PackageControl(TenantModel):
 
 class PackageSample(TenantModel):
     """One sampled item on a control's workpaper row: the unit a Type II
-    operating-effectiveness test is actually performed on.
+    operating-effectiveness test is performed on.
 
     Items listed while the package is a draft are sealed into the manifest
     (identifier, what it is, where in the population it came from, which
     pinned artefact supports it). After sealing only the issued auditor adds
-    items — their own selections — and records the result per item. The
-    result is workpaper data, mutable by the auditor alone, exactly like a
-    conclusion; the organisation never touches it.
+    items (their own selections) and records the result per item. The result
+    is workpaper data, mutable by the auditor alone like a conclusion; the
+    organisation never touches it.
     """
 
     class Result(models.TextChoices):
@@ -295,8 +292,8 @@ class PackageEvidence(TenantModel):
     document_name = models.CharField(max_length=255)
     pinned_version = models.PositiveIntegerField(default=1)
     # Forensic only: superuser-visible, never serialized to anyone else, never
-    # in a manifest, a CSV or a bundle. Publishing it would hand back the
-    # unauthenticated storage path the 0.3.0 media work just closed.
+    # in a manifest, a CSV or a bundle. Publishing it would expose the storage
+    # path that the authenticated media route keeps private.
     storage_name = models.CharField(max_length=255, blank=True)
     storage_path = models.CharField(max_length=500, blank=True)
     size_bytes = models.BigIntegerField(default=0)
@@ -335,12 +332,11 @@ class PackageEvidence(TenantModel):
 class PackageGrant(TenantModel):
     """The entire folder-permission bypass is scoped by this row.
 
-    Per user, never per role: the Auditor role must not silently pick up every
-    package that is ever sealed. ``SET_NULL`` plus the name snapshots because
-    deleting the auditor's account must not erase the record of who was given
-    access, by whom, and when — the same discipline ``AccessReviewItem`` applies.
-    Withdrawal sets ``revoked_at`` rather than deleting: it is a fact, not an
-    absence.
+    Per user, never per role: the Auditor role must not pick up every package
+    that is ever sealed. ``SET_NULL`` plus the name snapshots keep the record
+    of who was given access, by whom, and when after the auditor's account is
+    deleted, as ``AccessReviewItem`` does. Withdrawal sets ``revoked_at``
+    rather than deleting, so the grant stays on record.
     """
 
     package = models.ForeignKey(EvidencePackage, on_delete=models.CASCADE, related_name="grants")
@@ -417,7 +413,7 @@ class PbcRequest(TenantModel):
     emailed. The organisation assigns it, chases it (reminders go to the
     assignee), and answers it by attaching documents; the auditor accepts the
     answer or returns it with a note. Nothing here changes the sealed
-    manifest -- a request answered after sealing is a supplementary
+    manifest: a request answered after sealing is a supplementary
     disclosure, read under the same grant and recorded the same way.
     """
 

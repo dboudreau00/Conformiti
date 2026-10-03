@@ -9,8 +9,8 @@ document to someone else's server, and a client-side converter that emits HTML
 means a crafted document can inject markup into the application's origin.
 
 So this module does neither. Office files are parsed here, with the standard
-library, into a small structured vocabulary -- headings, paragraphs with bold
-and italic runs, lists, tables, sheets of cells -- and the front end renders
+library, into a small structured vocabulary (headings, paragraphs with bold
+and italic runs, lists, tables, sheets of cells), and the front end renders
 that vocabulary itself. There is no HTML in the pipeline to sanitise because
 none is produced. Fidelity is deliberately modest; the download button is
 always beside the preview for anything that matters.
@@ -102,9 +102,9 @@ def _open_zip(data):
 
 def _read_xml(zf, member):
     """Parse one part, bounded twice: the bytes are read in chunks up to a
-    ceiling the zip header cannot talk us past, and a part with an absurd
-    number of tags is refused before ElementTree builds a tree out of it --
-    a few megabytes of ``<w:p/>`` expand to a tree many times their size."""
+    ceiling the zip header cannot override, and a part with an absurd number
+    of tags is refused before ElementTree builds a tree out of it, because a
+    few megabytes of ``<w:p/>`` expand to a tree many times their size."""
     try:
         with zf.open(member) as fh:
             raw = fh.read(MAX_PART_BYTES + 1)

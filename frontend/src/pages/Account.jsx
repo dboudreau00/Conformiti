@@ -101,8 +101,8 @@ function Notice({ msg, className }) {
 /* ---------- Profile ---------- */
 
 // Email is not here on purpose: it is what an identity provider matches on,
-// so it is an administrator's field rather than a preference. The server
-// stopped accepting it from this page in 0.9.5f.
+// so it is an administrator's field rather than a preference. The server does
+// not accept it from this page.
 const pickProfile = (u) => ({
   first_name: u?.first_name || "",
   last_name: u?.last_name || "",
@@ -581,7 +581,7 @@ function MfaBlock() {
       {/* Enrolling the first factor asks for the same proof removing one does:
           a session somebody else is holding must not be able to make their
           authenticator the one this account needs. An account with nothing to
-          prove with yet -- no password, no factor -- may leave it empty. */}
+          prove with yet (no password, no factor) may leave it empty. */}
       {status && !status.enabled && !status.second_factor && !setup ? (
         <div className="mt-4 max-w-[640px]">
           <Field id="mfa-enable-password" label="Confirm your password to add an authenticator">
@@ -673,10 +673,10 @@ function MfaBlock() {
 
 /** Passkeys and security keys as a second factor. Enrolling one is a browser
  * ceremony (the server issues a challenge, the authenticator signs it).
- * Adding and removing both take proof the account is yours -- the password,
- * or a code from a factor you still hold, which is what an account signed in
- * through an identity provider has instead -- so a hijacked session can
- * neither strip a factor nor quietly plant the attacker's own key and keep
+ * Adding and removing both take proof the account is yours: the password,
+ * or a code from a factor you still hold (which is what an account signed in
+ * through an identity provider has instead), so a hijacked session can
+ * neither strip a factor nor plant the attacker's own key and keep
  * the account. A key the server has flagged as possibly cloned is shown
  * as such and can only be removed. */
 function PasskeysBlock() {
@@ -1120,8 +1120,8 @@ function WorkspacesBlock({ me }) {
   useEffect(() => { load(); }, [superuser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function switchTo(slug) {
-    // Always send the slug. Blanking it for "default" meant a superuser whose
-    // own workspace was something else silently stayed where they were.
+    // Always send the slug. Blanking it for "default" would leave a superuser
+    // whose own workspace is something else in the workspace they were in.
     chooseWorkspace(slug);
     window.location.assign("/");
   }
@@ -1149,7 +1149,7 @@ function WorkspacesBlock({ me }) {
     setBusy(true);
     setMsg(null);
     try {
-      // Only send a webhook the operator actually typed. An empty box means
+      // Only send a webhook the operator typed. An empty box means
       // "leave it as it is", not "delete it": the boxes are always empty on
       // load, so sending them would wipe a configured channel on every save
       // of the reminder address.

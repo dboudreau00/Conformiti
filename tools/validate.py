@@ -61,9 +61,9 @@ def apps_with_models():
     out = []
     for app in LOCAL_APPS:
         p = os.path.join(BACKEND, app, "models.py")
-        # Model bases: plain models.Model, the tenant base (0.9.0) and the
-        # swapped user model. Matching only "models.Model" silently dropped
-        # seven apps out of this check when the tenancy refactor landed.
+        # Model bases: plain models.Model, the tenant base and the swapped user
+        # model. Matching only "models.Model" would skip every app whose models
+        # use the tenant base.
         if os.path.exists(p) and re.search(
                 r"class \w+\(.*(?:models\.Model|TenantModel|AbstractUser)", read(p)):
             out.append(app)
@@ -126,9 +126,9 @@ def _strip_js(s):
     SP = set("([{,:;=?&|!+-*/%<~^\n") | {""}
 
     # A quote opens a string when what precedes it is an operator, a bracket
-    # or one of these words. Without the words, `return "-";` read as JSX text
-    # rather than a string: the opening quote was passed through and the
-    # closing one, preceded by `-` (an operator), opened a string that ate the
+    # or one of these words. Without the words, `return "-";` would read as JSX
+    # text rather than a string: the opening quote is passed through and the
+    # closing one, preceded by `-` (an operator), opens a string that eats the
     # rest of the file. The guard exists for apostrophes in JSX prose
     # ("Couldn't"), so it has to stay, but it has to know a keyword too.
     KEYWORDS = {"return", "typeof", "case", "in", "of", "new", "delete",
@@ -445,8 +445,9 @@ def check_deploy():
     # The backup holds the signing key, the encryption ring and the
     # package-signing key. Its tars are written by a container running as
     # root, so the mode has to be set in there: a chmod afterwards, from the
-    # operator who invoked the script, fails on every Linux host, and 0.9.5h
-    # hid that failure with `|| true` while printing "mode 600" (0.9.5i).
+    # operator who invoked the script, fails on every Linux host, and hiding
+    # that failure with `|| true` would print "mode 600" for a file that is not
+    # (0.9.5i).
     backup = read(os.path.join(ROOT, "scripts", "backup.sh"))
     if backup:
         if re.search(r"^\s*chmod[^\n]*\|\|\s*true", backup, re.M):
@@ -608,7 +609,7 @@ def check_compose_debug_isolation():
     dc = read(path)
     # Every secret the stack accepts must go through a CONFORMITI_* name that a
     # development .env never contains. Adding a secret here without adding it to
-    # this list is how the class of bug comes back.
+    # this list breaks that rule.
     for leaky in ("${DJANGO_DEBUG", "${DJANGO_SECRET_KEY:", "${DJANGO_FIELD_ENCRYPTION_KEY:"):
         if leaky in dc:
             err("compose", f"docker-compose.yml interpolates {leaky}...}} from .env; "
@@ -737,10 +738,9 @@ def check_version_lock():
     sources["frontend/package-lock.json packages[\"\"]"] = (
         (lock.get("packages") or {}).get("", {}).get("version"))
 
-    # The browser-test harness in e2e/ is versioned with the release too: it
-    # said 0.9.4 and its lock file 0.3.0 at 0.9.5k, three versions for one
-    # release. Same two lock fields; `npm install --package-lock-only` in e2e/
-    # rewrites both.
+    # The browser-test harness in e2e/ is versioned with the release too, so a
+    # release carries one version. Same two lock fields; `npm install
+    # --package-lock-only` in e2e/ rewrites both.
     e2e_path = os.path.join(ROOT, "e2e", "package.json")
     e2e = json.load(open(e2e_path, encoding="utf-8")) if os.path.exists(e2e_path) else {}
     sources["e2e/package.json"] = e2e.get("version")

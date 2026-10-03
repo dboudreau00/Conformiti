@@ -2,10 +2,9 @@
 Passkeys (WebAuthn) as a second factor, fully offline: a fake authenticator
 built on ``cryptography`` answers the browser's side of both ceremonies.
 
-The tests that matter most are the counter ones. The 0.3.0 design for this
-feature disabled a cloned key AND dropped the account to password-only; that
-fail-open is what kept it off the roadmap, and ``CloneTests`` pins the fixed
-behaviour: the key is refused, the factor stays required.
+The counter tests are the most important. A cloned key must be refused without
+dropping the account to password-only, and ``CloneTests`` pins that: the key is
+refused and the factor stays required.
 """
 import hashlib
 import json
@@ -116,7 +115,7 @@ class PasskeyTestBase(APITestBase):
         auth = authenticator or FakeAuthenticator()
         c = self.client_for(user)
         # Enrolment is a change to the account's factors, so it takes the
-        # password -- the same proof removing a key takes.
+        # password, the same proof removing a key takes.
         opts = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json")
         self.assertEqual(opts.status_code, 200, opts.data)
         r = c.post("/api/auth/webauthn/register/", {
@@ -354,9 +353,9 @@ class EnrolAndLoginTests(PasskeyTestBase):
                 self.assertEqual(r.data["code"], "limit")
 
     def test_enrolling_a_passkey_takes_the_account_password(self):
-        """A hijacked session could add the attacker's own key and keep the
-        account for good: removing a factor asked for the password, adding one
-        asked for nothing."""
+        """Adding a factor takes the same proof as removing one. Otherwise a
+        hijacked session could add the attacker's own key and keep the
+        account for good."""
         c = self.client_for(self.owner)
         r = c.post("/api/auth/webauthn/register/options/")
         self.assertEqual(r.status_code, 403, r.data)
@@ -456,7 +455,7 @@ class CloneTests(PasskeyTestBase):
         self.assertIn("2 to 2", row.suspect_reason)
         self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="passkey refused (clone)").exists())
 
-        # The account still demands a second factor -- the password alone is
+        # The account still demands a second factor: the password alone is
         # a challenge with nothing usable on offer, never a sign-in.
         r = self.challenge("owen")
         # The codes issued with the key are the way back in; the key is not.

@@ -51,7 +51,7 @@ test.describe("PBC request list", () => {
     await expect(mine).toBeVisible();
     const openLine = mine.locator('li[data-reference="PBC-03"]');
     await expect(openLine.getByText(/SOC 2 Type II fieldwork/)).toBeVisible();
-    // 0.9.5: the note is asked for in a dialog of the page's own, not a
+    // The note is asked for in a dialog of the page's own, not a
     // browser prompt, so the whole answer stays visible and can be corrected.
     await openLine.getByRole("button", { name: "Mark provided" }).click();
     const ask = page.getByRole("dialog", { name: "Mark PBC-03 provided" });

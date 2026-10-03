@@ -8,8 +8,8 @@ Who may do what, in one place:
 * edit the line (title, due date, assignee, control): the organisation, or
   the auditor for lines they raised while still open;
 * answer it (attach documents, mark provided): the organisation, or the
-  assignee -- who may be a control owner with no package access at all, and
-  who therefore sees exactly their own lines and nothing else of the package;
+  assignee, who may be a control owner with no package access at all and
+  therefore sees exactly their own lines and nothing else of the package;
 * accept or return an answer: the issued auditor, or the organisation when it
   is closing a line it transcribed from the auditor's email;
 * read an attached document: anyone who can read the package, plus the
@@ -59,10 +59,9 @@ def _side(user, package):
 class PbcRequestFilter(filters.FilterSet):
     """``assignee`` as a number, so the filter cannot be asked who exists.
 
-    M-2 closed this on the write path in 0.9.5h and left it open here, which
-    is the same shape one door along: an auditor may GET this collection, and
-    a ModelChoiceFilter answers 400 for an id that is nobody and 200 for an id
-    that is somebody (0.9.5i, L-1)."""
+    The write path narrows ``assignee`` the same way (M-2). An auditor may
+    GET this collection, and a ModelChoiceFilter would answer 400 for an id
+    that is nobody and 200 for an id that is somebody (0.9.5i, L-1)."""
 
     assignee = person("assignee_id")
 
@@ -308,7 +307,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": f"This request is {req.get_status_display().lower()}."})
         if document is None:
             raise ValidationError({"document": "A document is required."})
-        # You cannot hand over what you cannot see -- the same rule as pinning.
+        # You cannot hand over what you cannot see: the same rule as pinning.
         if document.folder_id not in accessible_folder_ids(user):
             raise PermissionDenied("You can only attach documents from folders you can already see.")
         if req.items.filter(document=document).exists():

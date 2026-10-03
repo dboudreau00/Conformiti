@@ -121,8 +121,7 @@ def record_evidence_read(request, document, version=None):
     """Record that someone read the bytes of a stored document.
 
     Reading evidence is the act an auditor most needs to be able to reconstruct
-    afterwards -- "who saw this file, and when" -- and until the download went
-    through the API there was nothing to record it. Failures are swallowed: a
+    afterwards ("who saw this file, and when"). Failures are swallowed: a
     logging problem must not stop an authorised download.
     """
     try:
@@ -144,10 +143,10 @@ PACKAGE_ACTIONS = {"create", "update", "delete", "seal", "withdraw", "export", "
 def record_package_event(request, package, action, detail):
     """Record an act on an evidence package.
 
-    Disclosure is the thing this feature exists to make accountable, so the
-    export and read events are written BEFORE the bytes leave. Failures are
-    swallowed for reads and exports -- a logging problem must not deny an
-    authorised auditor their evidence -- but the row is written first, so a
+    Disclosure is what this feature exists to make accountable, so the export
+    and read events are written before the bytes leave. Failures are swallowed
+    for reads and exports, because a logging problem must not deny an
+    authorised auditor their evidence, but the row is written first, so a
     successful download always has a matching entry.
     """
     try:

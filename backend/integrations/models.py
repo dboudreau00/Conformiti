@@ -10,7 +10,7 @@ from accounts.tenancy import TenantModel
 
 class JiraIntegration(TenantModel):
     """Single-row configuration for the Jira connection. The API token is
-    stored in the application database and never returned by the API — use a
+    stored in the application database and never returned by the API. Use a
     scoped token created for this purpose, not a personal password."""
     base_url = models.URLField(blank=True, help_text="e.g. https://your-team.atlassian.net")
     email = models.EmailField(blank=True)

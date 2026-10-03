@@ -1,4 +1,4 @@
-"""Read-only audit trail of mutating actions -- important for compliance evidence."""
+"""Read-only audit trail of mutating actions, kept as compliance evidence."""
 from django.conf import settings
 from django.db import models
 
@@ -6,8 +6,8 @@ from accounts.tenancy import TenantModel
 
 
 class AuditLog(TenantModel):
-    # An entry belongs to the workspace the action HAPPENED IN, which is the
-    # active one -- not the actor's own. A superuser switched into another
+    # An entry belongs to the workspace the action happened in, which is the
+    # active one, not the actor's own. A superuser switched into another
     # tenant is acting on that tenant, and its administrators have to see it.
     # The few paths that run with no workspace active (sign-in, SSO) pass the
     # workspace explicitly; nullable covers a failed sign-in for a username

@@ -2,8 +2,8 @@ import { test, expect, expectBrowserError, open } from "../fixtures.js";
 
 // Every button that saves a file from the API goes through downloadFile in
 // client.js, which rejects when the download failed. These tests make sure
-// each screen shows that failure instead of the button doing nothing (and,
-// before the screens caught it, an unhandled rejection in the console).
+// each screen shows that failure instead of the button doing nothing or an
+// unhandled rejection in the console.
 
 // The words client.js uses when an X-Accel-Redirect reached the browser: the
 // server meant nginx to send the file and no nginx was in front of it.

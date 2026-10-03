@@ -3,7 +3,7 @@ Gaps in a vendor's assurance that somebody has to chase.
 
 A SOC 2 report covers a period. When that period ends and the next report is
 still being written, the provider issues a **bridge letter** stating that
-nothing material changed in between -- and an auditor will ask to see it.
+nothing material changed in between, and an auditor will ask to see it.
 This module finds the vendors whose latest SOC report has lapsed with neither
 a newer report nor a bridge letter on file, for the in-app feed and for the
 emailed reminder.
@@ -33,7 +33,7 @@ def lapsed_soc_report(vendor, today=None):
 
 
 def bridge_letter_gaps(user=None, today=None):
-    """``[(vendor, lapsed_report)]`` for live vendors -- those the user owns,
+    """``[(vendor, lapsed_report)]`` for live vendors: those the user owns,
     or every one when they can manage frameworks (or no user is given)."""
     live = Vendor.objects.filter(status__in=("active", "offboarding")).prefetch_related("assessments")
     if user is not None and not (user.is_superuser or user.can_manage_frameworks):

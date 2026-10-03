@@ -1,17 +1,16 @@
 /**
- * The three screens that did not fit a 1366 by 768 laptop.
+ * The three screens that must fit a 1366 by 768 laptop.
  *
  * The access review's decision and justification columns, the document table
- * and the vendor responsibility matrix all ran past the right edge, and the
- * columns a reviewer uses on every row were the ones off screen. This pins
- * the fix, because the release notes make the claim and nothing tested it.
+ * and the vendor responsibility matrix must not run past the right edge: the
+ * columns a reviewer uses on every row are the ones that would go off screen.
  *
- * Each of those tables already sat in a sideways scroller of its own, so the
- * page never scrolled even while the columns were off screen: they slid out
- * of sight inside the panel instead. The page staying still proves nothing on
- * its own. Each test therefore opens its screen until the table itself is
- * rendered, then measures how far the table reaches and where a control used
- * on every row sits, against the panel holding them and the window's width.
+ * Each of those tables sits in a sideways scroller of its own, so the page
+ * never scrolls even while columns are off screen: they slide out of sight
+ * inside the panel instead. The page staying still proves nothing on its own.
+ * Each test therefore opens its screen until the table itself is rendered,
+ * then measures how far the table reaches and where a control used on every
+ * row sits, against the panel holding them and the window's width.
  */
 import {
   test, expect, open, openMenu, governanceButton, accountButton, appearanceButton, searchButton,

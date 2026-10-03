@@ -14,7 +14,6 @@ M-2 lives in ``attestations.tests_pbc`` beside the list it changes, L-1 in
 ``vendors.tests_questionnaire``. L-3 is a shell script and L-8 is deferred;
 REVIEWS.md (0.9.5h review) says why.
 """
-from datetime import timedelta
 from unittest import mock
 
 from django.test import override_settings
@@ -27,10 +26,10 @@ from testutils import PASSWORD, APITestBase, make_user
 
 class LoginMintsAfterTheFactorTests(APITestBase):
     """M-1. ``TokenObtainPairSerializer.validate`` authenticates and mints in
-    one call, so calling it before the MFA branch left a refresh token in
-    OutstandingToken, and moved last_login, for a session no second factor had
-    authorised. The browser never saw it; a database dump, a replica and the
-    admin do, and a signed JWT needs no key ring to use."""
+    one call, so calling it before the MFA branch would leave a refresh token
+    in OutstandingToken, and move last_login, for a session no second factor
+    has authorised. The browser never sees it, but a database dump, a replica
+    and the admin do, and a signed JWT needs no key ring to use."""
 
     def setUp(self):
         super().setUp()
@@ -106,10 +105,11 @@ class LoginMintsAfterTheFactorTests(APITestBase):
 
 class AuditorRoleHoldsNoCapabilitiesTests(APITestBase):
     """M-3. The shipped Auditor role is ``is_auditor`` alone and is locked, but
-    a custom role was not: any combination stored, and ``PackageGrant`` only
-    asks for ``is_auditor``. Such an account could be issued an engagement and
-    then read every folder and every package, because the capability
-    short-circuits in both access modules sit above the auditor cap."""
+    a custom role could store any combination, and ``PackageGrant`` only asks
+    for ``is_auditor``. Without a cap, such an account could be issued an
+    engagement and then read every folder and every package, because the
+    capability short-circuits in both access modules sit above the auditor
+    cap."""
 
     def setUp(self):
         super().setUp()
@@ -169,19 +169,18 @@ class AuditorRoleHoldsNoCapabilitiesTests(APITestBase):
         self.assertEqual(r.status_code, 400, getattr(r, "data", r))
 
     def test_renaming_a_role_that_already_holds_both_still_works(self):
-        """The refusal is about introducing the combination. Refusing to save
-        a legacy row at all would be the silent strip this release
-        deliberately does not do."""
+        """Only introducing the combination is refused. Refusing to save an
+        existing row at all would force the operator to strip its flags."""
         r = self.client_for(self.admin).patch(
             f"/api/roles/{self.mixed.pk}/", {"description": "Historic"}, format="json")
         self.assertEqual(r.status_code, 200, getattr(r, "data", r))
 
 
 class ForwardedProtoTests(APITestBase):
-    """M-6. ``SECURE_PROXY_SSL_HEADER`` was set whenever DEBUG was off, which
-    includes the shipped compose stack, where nginx listens on plain HTTP and
-    BEHIND_TLS is false. Any client could then assert it was on https, and
-    ``build_absolute_uri`` emitted an OIDC redirect_uri and a SAML ACS at an
+    """M-6. ``SECURE_PROXY_SSL_HEADER`` must not be set merely because DEBUG
+    is off: the shipped compose stack has DEBUG off, nginx on plain HTTP and
+    BEHIND_TLS false. Any client could then assert it was on https, and
+    ``build_absolute_uri`` would emit an OIDC redirect_uri and a SAML ACS at an
     address they were never registered at."""
 
     HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -198,8 +197,8 @@ class ForwardedProtoTests(APITestBase):
         self.assertTrue(r.wsgi_request.is_secure())
 
     def test_the_setting_follows_behind_tls_not_debug(self):
-        """The shipped image pins DEBUG off and BEHIND_TLS false, which is the
-        combination that used to trust the client."""
+        """The shipped image pins DEBUG off and BEHIND_TLS false, a
+        combination in which the client's header must not be trusted."""
         import importlib
 
         with mock.patch.dict("os.environ", {"DJANGO_DEBUG": "false", "BEHIND_TLS": "false"}):
@@ -211,8 +210,9 @@ class ForwardedProtoTests(APITestBase):
 
 class OutboundAddressTests(APITestBase):
     """M-5. ``fec0::/10`` is deprecated site-local unicast that Python reports
-    as global, so every rule in ``ip_is_public`` missed it, and the Jira base
-    URL is set by anyone who can manage users with no host allow-list."""
+    as global, so ``ip_is_public`` needs an explicit rule for it. The Jira
+    base URL is set by anyone who can manage users and has no host
+    allow-list."""
 
     def test_site_local_ipv6_is_not_public(self):
         self.assertFalse(outbound.ip_is_public("fec0::1"))
@@ -230,8 +230,8 @@ class OutboundAddressTests(APITestBase):
             outbound.assert_safe_url("https://[fec0::1]/")
 
     def test_a_literal_is_checked_even_when_a_proxy_applies(self):
-        """A proxy resolves names; it does not change what a literal is. The
-        early return skipped the check entirely whenever one was configured."""
+        """A proxy resolves names; it does not change what a literal is, so
+        the check must not be skipped when a proxy is configured."""
         with mock.patch.object(outbound, "proxy_for", return_value="http://proxy.internal:3128"):
             with self.assertRaises(outbound.OutboundError):
                 outbound.assert_safe_url("https://169.254.169.254/")
@@ -245,10 +245,10 @@ class OutboundAddressTests(APITestBase):
 
 @override_settings(AUTH_TRANSPORT="cookie")
 class SignOutCsrfTests(APITestBase):
-    """L-2. 0.9.5f put the check on the three endpoints that set the auth
-    cookies and missed the one that clears them, which is the endpoint whose
-    whole purpose is the case where the access cookie is gone and the refresh
-    cookie is not, so the check inside cookie authentication never runs."""
+    """L-2. The endpoint that clears the auth cookies needs its own CSRF
+    check like the ones that set them. It exists for the case where the access
+    cookie is gone and the refresh cookie is not, so the check inside cookie
+    authentication never runs."""
 
     def setUp(self):
         super().setUp()
@@ -295,10 +295,9 @@ class CsvFormulaTests(APITestBase):
 class ThrottleDepthTests(APITestBase):
     """M-4. NUM_PROXIES is the number of hops DRF walks back along
     X-Forwarded-For to find the client. The default of 1 is the shipped nginx;
-    the production section of INSTALL.md puts a TLS terminator in front of
-    that without mentioning it, and at 1 every visitor then shares the
-    terminator's address, so one caller spends the login budget for all of
-    them."""
+    a TLS terminator in front of that adds a hop, and at 1 every visitor
+    shares the terminator's address, so one caller spends the login budget for
+    all of them. The production section of INSTALL.md must say so."""
 
     def test_the_production_checklist_names_it(self):
         import pathlib

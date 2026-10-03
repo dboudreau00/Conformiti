@@ -10,7 +10,7 @@ import { STATUS_FILL, StatusGlyph } from "./StatusGlyph.jsx";
 
 /** Above this many controls the field offers framework chips, and draws only
  * the largest few until the reader chooses more: a thousand squares of nine
- * pixels is a texture, not a map. */
+ * pixels cannot be read as a map. */
 const CHIP_FROM = 600;
 const DEFAULT_DRAWN = 4;
 /** Past this many squares a change of light is not animated: thousands of

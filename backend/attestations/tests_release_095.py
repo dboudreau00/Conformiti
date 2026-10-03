@@ -18,9 +18,10 @@ def run_verifier(root, *flags):
 
 
 class UnsignedBundleTests(PackageTestBase):
-    """Strip the signatures, rewrite the file list to match, and the old
-    verifier said OK with exit 0. Every checksum agreed with itself; nothing
-    proved who made it. Automation keyed on the exit code accepted a forgery.
+    """A bundle with its signatures stripped and its file list rewritten to
+    match must not verify with exit 0. Every checksum agrees with itself but
+    nothing proves who made it, and automation keyed on the exit code would
+    accept a forgery.
     """
 
     def export(self):
@@ -90,8 +91,8 @@ class UnsignedBundleTests(PackageTestBase):
 
 
 class SigningKeyDirectoryTests(APITestBase):
-    """``/api/signing-keys/`` is public because a public key is for
-    publishing. It must not also publish the list of tenants."""
+    """``/api/signing-keys/`` is public, so an auditor can compare keys. It
+    must not also publish the list of tenants."""
 
     def test_single_workspace_answers_without_a_slug(self):
         r = self.client_for().get("/api/signing-keys/")
@@ -122,12 +123,12 @@ class SigningKeyDirectoryTests(APITestBase):
             self.assertEqual(Workspace.objects.filter(is_active=True).count(), 1)
 
     def test_and_the_archived_one_is_not_in_the_answer_either(self):
-        """0.9.5f, L-2. Not counting an archived organisation is deliberate:
-        an installation that has retired a workspace is still a single-tenant
-        installation and should not have to name itself. But the unnamed
-        answer listed every key on the server, because scoping to None is
-        unscoped, so the organisations that had left were disclosed by the
-        route that exists to publish one public key."""
+        """0.9.5f, L-2. Archived organisations are deliberately not counted:
+        an installation that has retired a workspace is still single-tenant
+        and should not have to name itself. The unnamed answer must still
+        not list every key on the server (scoping to None is unscoped), or
+        the organisations that had left would be disclosed by the route that
+        publishes one public key."""
         from attestations.models import SigningKey
 
         old = Workspace.objects.create(name="Old Co", slug="old-co", is_active=False)

@@ -22,7 +22,8 @@ class JiraConfigSerializer(serializers.ModelSerializer):
 
         The column stores the encryption envelope, whose width was sized for a
         255-*byte* token. 255 non-ASCII characters is up to 1020 UTF-8 bytes and
-        would overflow the column — a 500 at write time rather than a 400 here.
+        would overflow the column, giving a 500 at write time rather than a 400
+        here.
         """
         if len(value.encode("utf-8")) > 255:
             raise serializers.ValidationError(
@@ -32,11 +33,11 @@ class JiraConfigSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data):
-        # An empty token field means "keep the saved one" -- but only for the
-        # host it was issued for. Moving base_url to another host while
-        # leaving the token box empty used to carry the saved credential
-        # across and send it to the new host on the next test, which defeats
-        # the write-only field for anyone who already holds this capability
+        # An empty token field means "keep the saved one", but only for the
+        # host it was issued for. Moving base_url to another host with the
+        # token box empty would otherwise carry the saved credential across
+        # and send it to the new host on the next test, which defeats the
+        # write-only field for anyone who already holds this capability
         # (0.9.5h, L-4).
         from urllib.parse import urlsplit
 

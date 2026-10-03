@@ -37,7 +37,7 @@ test.describe("in-browser document viewer", () => {
     await expect(canvas).toBeVisible();
     await expect(canvas).toHaveAttribute("data-zoom", "1");
     await expect(dialog.getByText(/1 page · 100%/)).toBeVisible();
-    // Something was actually painted: a rendered page is not a blank canvas.
+    // Something was painted: a rendered page is not a blank canvas.
     const painted = await canvas.evaluate((c) => {
       const ctx = c.getContext("2d");
       const px = ctx.getImageData(0, 0, c.width, c.height).data;

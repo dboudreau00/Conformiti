@@ -1,20 +1,20 @@
 """
 Watching the malware scanner, and re-scanning what is already stored.
 
-0.3.0 put the boundary in place: an upload is scanned when scanning is on,
-and refused when the scanner cannot be reached. This module watches that
-boundary and looks behind it:
+An upload is scanned when scanning is on, and refused when the scanner cannot
+be reached (see ``scanning.py``). This module watches that boundary and looks
+behind it:
 
-* ``probe()`` -- is clamd answering? Cached briefly so the health endpoint
-  and the tray can ask cheaply; the result is also written to a one-row
-  table so every worker agrees on when the outage began and whether it has
-  been announced.
-* ``scan_document()`` -- run a stored file through clamd again. Signatures
+* ``probe()``: is clamd answering? Cached briefly so the health endpoint and
+  the tray can ask cheaply; the result is also written to a one-row table so
+  every worker agrees on when the outage began and whether it has been
+  announced.
+* ``scan_document()``: run a stored file through clamd again. Signatures
   arrive after files do; a document that was clean on upload can be malware
   by next month's definitions. An infected file is **quarantined**: it stays
   on disk for the investigation, but every route that serves its bytes
   refuses it, and the fact is in the audit trail.
-* ``rescan()`` -- the sweep ``manage.py scan_evidence`` runs.
+* ``rescan()``: the sweep ``manage.py scan_evidence`` runs.
 """
 import logging
 import time

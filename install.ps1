@@ -75,7 +75,7 @@ function Probe {
   # "Continue" for the call: under "Stop", Windows PowerShell 5.1 turns each
   # redirected stderr line into a terminating error, so a probe that answers
   # "no" on stderr (docker info with no daemon, the Microsoft Store's python
-  # stub) threw before the message that explains it could run.
+  # stub) throws before the message that explains it can run.
   $ErrorActionPreference = "Continue"
   $rest = @($args | Select-Object -Skip 1)
   & $args[0] @rest *> $null
@@ -354,7 +354,7 @@ if ($Docker) {
   # default for Docker Desktop and new Docker Engine installs) it gives every
   # build a new image id, even when each step came from the cache, and a new
   # id makes Compose recreate the container. A re-run of an unchanged checkout
-  # then restarted the stack and took the demo password out of the log.
+  # then restarts the stack and takes the demo password out of the log.
   $shellPort = $env:CONFORMITI_PORT
   $shellAttest = $env:BUILDX_NO_DEFAULT_ATTESTATIONS
   $env:CONFORMITI_PORT = "$Port"
@@ -517,9 +517,9 @@ if ($Reset) {
 #
 # npm ci empties node_modules first, and Windows refuses to delete a file a
 # running program has loaded. With the web app's dev server still up (Vite
-# holds its native bundler binding), -Test stopped at "exited with code
-# -4048" and left node_modules half deleted, so the dev server's next start
-# failed too. A node_modules that already matches the lock file is therefore
+# holds its native bundler binding), -Test stops at "exited with code
+# -4048" and leaves node_modules half deleted, so the dev server's next start
+# fails too. A node_modules that already matches the lock file is therefore
 # kept, which covers every re-run and -Test of an unchanged checkout, and a
 # reinstall over an existing node_modules is refused while anything listens
 # on the dev port, on any address (Vite is often on [::1] only). With no

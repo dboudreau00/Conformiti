@@ -9,15 +9,15 @@ recogniser's job is to turn any of those into rows of
 
     control reference, responsibility, provider statement, customer statement
 
-with an honest report of what it could not place, so the person importing can
-fix the mapping rather than discover it at audit time.
+with a report of what it could not place, so the person importing can fix the
+mapping rather than discover the gap at audit time.
 
 Two passes:
 
-1. **Header recognition** — each column is scored against phrase lists for
+1. **Header recognition**: each column is scored against phrase lists for
    the four roles. A vendor's own name in a header ("AWS", "Stripe") is
    treated as the provider side.
-2. **Value recognition** — a single "responsibility" column is read as prose;
+2. **Value recognition**: a single "responsibility" column is read as prose;
    two mark columns (provider / customer, with X, ✓, Yes) are combined into
    provider / customer / shared; anything unrecognised is reported, never
    guessed.
@@ -68,7 +68,7 @@ def _norm(text):
 
 
 def _looks_like_marks(values):
-    """True when every non-blank cell in a column is a tick, a no, or an n/a --
+    """True when every non-blank cell in a column is a tick, a no, or an n/a,
     and at least one is an actual tick or no. A column that says only "N/A"
     is a statement column with nothing to say, not a mark column."""
     vals = [v for v in (_norm(v) for v in values) if v]
@@ -102,7 +102,7 @@ def _promote_mark_columns(assigned, report, body):
         if i is not None and mark not in assigned and _looks_like_marks(_column(body, i)):
             assigned[mark] = assigned.pop(stmt)
             _set_role(report, i, mark)
-    # A column nobody could name, full of ticks, is one party's marks -- a
+    # A column nobody could name, full of ticks, is one party's marks: a
     # vendor whose header is a name we did not know ("Northwind") lands here.
     # It pairs with the other side's mark column, or with the other side's
     # statement column when that turns out to be empty (nothing but the ticks
@@ -266,7 +266,7 @@ def recognise(filename, data, vendor_name="", control_refs=None):
     rows, matched, unmatched, unrecognised = [], 0, 0, 0
     vendor = _norm(vendor_name)
     # parse_upload stops one row past its cap rather than raising, so a
-    # longer file arrives cut; say so instead of pretending it was all read.
+    # longer file arrives cut; the summary reports that it was truncated.
     from governance.risk_import import MAX_ROWS
     truncated = len(body) > MAX_ROWS
     body = body[:MAX_ROWS]

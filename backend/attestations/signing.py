@@ -1,21 +1,19 @@
 """
 Detached signatures over the sealed manifest.
 
-Until 0.7.0 a bundle proved integrity and not origin: anyone who could rewrite
-it could rewrite manifest.json and every checksum consistently. The seal
-entry in the audit trail and a digest published out of band were the only
-binding to a moment. This module adds the signature that was deliberately
-left out until there was a key-management story worth stating:
+Digests alone prove integrity, not origin: anyone who could rewrite a bundle
+could rewrite manifest.json and every checksum consistently. The signature
+binds the manifest to the holder of the signing key, with this key management:
 
 * **The key never lives in the database.** It is an Ed25519 private key in a
-  file (``SIGNING_KEY_FILE``, generated at 0600 on first use -- in the
-  compose stack inside the ``secrets`` volume beside the Django secret key)
+  file (``SIGNING_KEY_FILE``, generated at 0600 on first use; in the
+  compose stack it sits in the ``secrets`` volume beside the Django secret key)
   or in the environment (``SIGNING_KEY``). A database dump, a backup, or a
   SQL injection yields the evidence and every digest, but not the key.
 * **The public key is published**, at ``GET /api/signing-keys/`` and on the
   package screen, so an auditor can fetch the fingerprint from the running
-  installation -- or, better, be handed it out of band -- and compare it
-  with the key inside the bundle.
+  installation, or be handed it out of band, and compare it with the key
+  inside the bundle.
 * **The bundle verifies offline** with the standard library alone:
   ``verify.py`` carries its own Ed25519 implementation. ``openssl`` works
   too (the README says how).
@@ -23,11 +21,10 @@ left out until there was a key-management story worth stating:
   key; every package remembers the public key that signed it, and the
   ``SigningKey`` table lists current and retired keys with their dates.
 
-What the signature proves: that the manifest bytes were signed by whoever
-held the installation's signing key when the package was sealed. What it
-does not prove: that the key was never stolen. The audit trail's seal entry,
-the published fingerprint and the key file's permissions are the rest of
-the story, and SECURITY.md says so.
+The signature proves that the manifest bytes were signed by whoever held the
+installation's signing key when the package was sealed. It does not prove that
+the key was never stolen: the audit trail's seal entry, the published
+fingerprint and the key file's permissions cover that, as SECURITY.md states.
 """
 import base64
 import hashlib
@@ -120,18 +117,18 @@ def load_private_key(create=True):
 # --------------------------------------------------------------------------- #
 # Public-key encodings
 # --------------------------------------------------------------------------- #
-# Bumping this changes every workspace's derived key, so it is versioned
-# rather than tweaked.
+# Changing this changes every workspace's derived key, so it is versioned.
 _DERIVATION_INFO = b"conformiti/workspace-package-signing/v1/"
 
 
 def derive_workspace_key(root_key, slug):
     """The signing key for one workspace, derived from the installation key.
 
-    One key for the whole installation meant a bundle from one organisation
-    verified identically to a bundle from another -- the published fingerprint
-    named the installation, not the client. Deriving keeps a single secret to
-    protect and rotate while giving each organisation its own identity.
+    With one key for the whole installation, a bundle from one organisation
+    would verify identically to a bundle from another, and the published
+    fingerprint would name the installation rather than the organisation.
+    Deriving keeps a single secret to protect and rotate while giving each
+    organisation its own identity.
     """
     seed = HKDF(
         algorithm=hashes.SHA256(), length=32, salt=None,
@@ -252,10 +249,9 @@ def signature_status(package):
     Checked against the *registered* public key for the package's key id, not
     against the copy stored on the package row. The manifest, the signature
     and that copy all live in the same table, so anyone who can write to it
-    could re-sign a doctored manifest with a key of their own and still be
-    told "valid" -- the row would simply be self-consistent. The published
-    key list is the reference, and the key has to belong to the organisation
-    whose package this is.
+    could re-sign a doctored manifest with a key of their own and the row
+    would be self-consistent. The published key list is the reference, and the
+    key has to belong to the organisation whose package this is.
 
     This is the in-app convenience check. The one that decides anything is
     ``verify.py`` inside the bundle, run against the fingerprint the

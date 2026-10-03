@@ -1,14 +1,11 @@
 /**
- * Put controls into a draft package from the page, not from curl.
+ * Put controls into a draft package from the page.
  *
- * Until 0.9.5 the only caller of POST add_controls was the test suite, and
- * the empty state told the person to "POST their ids". Year-two fieldwork
- * therefore started in a terminal. This is the picker: every control in
- * the workspace, filtered by framework and text, chosen with checkboxes,
- * added in one request with the evidence already linked to each one pinned
- *, and a plain report of which evidence was skipped because the person
- * assembling the package cannot see it, which the API has always returned
- * and nothing displayed.
+ * The picker lists every control in the workspace, filtered by framework and
+ * text and chosen with checkboxes. The controls are added in one request with
+ * the evidence already linked to each one pinned, and a plain report says
+ * which evidence was skipped because the person assembling the package
+ * cannot see it.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlusIcon, SearchIcon } from "lucide-react";
@@ -33,9 +30,9 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
 
   // The loads below report through the latest onError without depending on
   // it. The parent passes a fresh arrow on every render, so as a dependency
-  // it re-fetched every framework's controls whenever the page re-rendered,
-  // and a failing fetch looped: the report re-rendered the parent, which
-  // re-ran the fetch, which failed again.
+  // it would re-fetch every framework's controls whenever the page re-rendered,
+  // and a failing fetch would loop: the report re-renders the parent, which
+  // re-runs the fetch, which fails again.
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; });
 

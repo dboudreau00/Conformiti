@@ -3,23 +3,23 @@ Single sign-on over SAML 2.0 (SP-initiated, HTTP-Redirect out, HTTP-POST back).
 
 Same posture as OIDC (accounts/oidc.py): the provider is configured from the
 environment only, the identity-to-account rules are the same code, and the
-tokens reach the SPA through the same one-time ticket. What SAML adds is XML,
-and XML is where SAML deployments get broken, so the rules here are short:
+tokens reach the SPA through the same one-time ticket. SAML adds XML, which is
+where SAML deployments tend to break, so the rules here are strict:
 
 * The provider's signing certificate from the environment is the only trust
-  anchor. No metadata fetch, no certificate from inside the message.
-* Only the element the signature actually covers is read. A Response whose
-  signature covers one assertion and which carries a second, unsigned
-  assertion (the classic wrapping attack) yields nothing from the second.
+  anchor. There is no metadata fetch and no certificate taken from the message.
+* Only the element the signature covers is read. A Response whose signature
+  covers one assertion and which carries a second, unsigned assertion (the
+  classic wrapping attack) yields nothing from the second.
 * Parsing resolves no entities, loads nothing from the network and refuses
   DTDs; a response over 256 KB is refused before it is parsed.
 * The flow state (request id, relay, where to go next) travels in a signed,
-  HttpOnly cookie rather than the session: the provider's POST back to us is
-  cross-site, and a SameSite=Lax session cookie is not sent on it. The
-  cookie is SameSite=None; Secure, so it is -- and the assertion's
+  HttpOnly cookie instead of the session: the provider's POST back to us is
+  cross-site, and a SameSite=Lax session cookie is not sent on it. The flow
+  cookie is SameSite=None; Secure, so it is sent, and the assertion's
   InResponseTo must match it.
-* An assertion id is accepted once. Replays are refused from a shared table,
-  not a per-process cache.
+* An assertion id is accepted once. Replays are refused from a shared table
+  rather than a per-process cache.
 
 Only HTTP-POST binding responses with a bearer subject are accepted; requests
 are not signed (the providers that require signed requests are rare, and a
@@ -28,7 +28,6 @@ signing key would be one more secret to keep).
 import base64
 import datetime as dt
 import secrets
-import time
 import zlib
 from dataclasses import dataclass
 from urllib.parse import urlencode
@@ -302,10 +301,9 @@ def complete(request, flow):
     response_to = root.get("InResponseTo")
     if response_to and not _same(response_to, flow["id"]):
         raise OidcError("state", "the response answers a different request")
-    # Required, not merely checked when present. The HTTP-POST binding says a
-    # signed response carries Destination; treating an absent one as "fine"
-    # meant a response captured at one service could be replayed at another
-    # (REVIEWS.md (0.9.5 review), S-6).
+    # Destination is required. The HTTP-POST binding says a signed response
+    # carries it, and accepting an absent one would let a response captured at
+    # one service be replayed at another (REVIEWS.md (0.9.5 review), S-6).
     destination = root.get("Destination")
     if not destination:
         raise OidcError("token", "the response does not say where it was meant to go")
@@ -344,12 +342,11 @@ def complete(request, flow):
         recipient = data.get("Recipient")
         if not recipient or recipient != flow["acs"]:
             continue
-        # Required, not merely honoured when present. The profile makes
-        # NotOnOrAfter mandatory on a bearer confirmation, and an assertion
-        # without one was falling back to the Conditions window (or, absent
-        # that, an hour) for how long the replay table remembers it: after
-        # that row is pruned the same assertion posts again. Same rule as
-        # Recipient above, for the same reason (0.9.5f).
+        # NotOnOrAfter is required. The profile makes it mandatory on a bearer
+        # confirmation, and without it the replay table would remember the
+        # assertion only for the Conditions window (or an hour); once that row
+        # is pruned the same assertion could be posted again. Same reasoning
+        # as Recipient above.
         expiry = _parse_time(data.get("NotOnOrAfter"))
         if expiry is None or now - skew >= expiry:
             continue

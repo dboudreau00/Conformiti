@@ -8,7 +8,6 @@ could not see the refresh cookie.
 S-4 lives in ``documents.tests_uploads`` with the rest of upload validation,
 and S-8 in ``attestations.tests_review_fixes`` beside the check it changes.
 """
-import urllib.error
 from unittest import mock
 
 from django.test import override_settings
@@ -31,8 +30,8 @@ def stub_dns(case, addresses=PUBLIC_ADDRESS):
 
 class WebhookSecrecyTests(APITestBase):
     """S-1. An incoming-webhook URL is a credential: whoever holds it can post
-    into the channel as the app. 0.9.5 returned both of them on a read every
-    signed-in account could make, the issued external auditor included."""
+    into the channel as the app. No read may return it, whichever account makes
+    it, the issued external auditor included."""
 
     def setUp(self):
         super().setUp()
@@ -210,13 +209,12 @@ class WebhookAtRestTests(APITestBase):
 
 
 class KeyRotationCoverageTests(APITestBase):
-    """Not in the review, found while fixing S-3.
+    """Related to S-3.
 
-    The rotation command carried a hand-written list of encrypted columns and
-    a comment asking the next person to extend it. Encrypting the two webhook
-    columns without extending it would have left them on the old key, and
-    step 3 of a key rotation (drop the old key) would then have made every
-    stored webhook unreadable. It now asks the model registry instead.
+    The rotation command finds encrypted columns through the model registry
+    instead of a hand-written list. A list would leave newly encrypted columns
+    on the old key, and step 3 of a key rotation (drop the old key) would then
+    make every stored value in them unreadable.
     """
 
     def test_every_encrypted_column_is_rotated(self):

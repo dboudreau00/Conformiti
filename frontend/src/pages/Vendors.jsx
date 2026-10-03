@@ -830,7 +830,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   useEffect(() => { if (intent) { setMode(intent); onIntentDone(); } }, [intent, onIntentDone]);
 
   // [key, name] pairs, so every framework reads as its name: a hard-coded map
-  // of three keys showed the other twenty-two as slugs on a screen that is
+  // of three keys would show the other twenty-two as slugs on a screen that is
   // shared with the vendor.
   const frameworks = useMemo(() => {
     const seen = new Map();
@@ -1160,13 +1160,14 @@ export default function Vendors({ me }) {
         <div className="flex flex-col gap-4">
           <Panel className="overflow-hidden">
             <PanelHeader title="Vendor register" meta={vendorsErr ? "- total" : `${vendors.length} total`}>
-              {/* The panel is already titled "Vendor register", so the noun was
-                  on screen twice and the button wrapped to two lines in the
-                  300px column. The accessible name keeps the full phrase: that
-                  is what a screen reader announces, and what the viewer test
-                  asserts is absent. It is hidden while the form is open: the
-                  form has its own Cancel and "Register vendor", and a second
-                  click here used to close it and throw away what was typed. */}
+              {/* The panel is already titled "Vendor register", so the noun
+                  would be on screen twice and the button would wrap to two
+                  lines in the 300px column. The accessible name keeps the full
+                  phrase: that is what a screen reader announces, and what the
+                  viewer test asserts is absent. It is hidden while the form is
+                  open: the form has its own Cancel and "Register vendor", and a
+                  second click here would close it and throw away what was
+                  typed. */}
               {canManage && !creating ? (
                 <Button ref={registerRef} size="sm" variant="primary"
                         aria-label="Register a vendor" onClick={() => setCreating(true)}>

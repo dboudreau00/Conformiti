@@ -11,8 +11,8 @@ from .notifications import build
 
 class ChannelsView(APIView):
     """Which chat channels this deployment posts to (configured by an
-    operator, never from here), and -- for administrators -- the last few
-    delivery attempts and a test post."""
+    operator, never from here) and, for administrators, the last few delivery
+    attempts and a test post."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -40,8 +40,8 @@ class ChannelsView(APIView):
             "digest": request.user.digest,
             "digest_choices": [{"id": c, "label": label} for c, label in request.user.Digest.choices],
         }
-        # The delivery log is installation-wide -- WebhookDelivery is not a
-        # tenant model, and the webhook itself is configured by an operator --
+        # The delivery log is installation-wide (WebhookDelivery is not a
+        # tenant model, and the webhook itself is configured by an operator),
         # so a workspace administrator must not see other organisations' rows.
         if request.user.is_superuser:
             body["deliveries"] = [{
@@ -95,7 +95,7 @@ class NotificationListView(APIView):
 
 class NotificationMarkReadView(APIView):
     """Mark every currently-live notification as read (recomputed server-side,
-    so the client can't mark keys that aren't actually present)."""
+    so the client can't mark keys that are not present)."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -109,7 +109,7 @@ class NotificationMarkReadView(APIView):
 
 class NotificationDismissView(APIView):
     """Dismiss a single notification by key so it stops appearing. The key
-    must belong to the caller's *current* feed — otherwise a client could
+    must belong to the caller's *current* feed, otherwise a client could
     grow the receipt table without bound with made-up keys."""
     permission_classes = [IsAuthenticated]
 

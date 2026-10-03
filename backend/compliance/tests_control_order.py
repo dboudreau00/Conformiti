@@ -1,9 +1,9 @@
 """Controls come in their standard's order.
 
-The register sorted control_id as text, so ISO 27001 read A.5.1, A.5.10 ...
-A.5.19, A.5.2 and PCI DSS read 12.1, 12.10, 12.2. Each control now holds its
-place in its framework's data file (Control.order), the way categories hold
-theirs, and every list of controls sorts on it.
+A text sort of control_id reads A.5.1, A.5.10 ... A.5.19, A.5.2 for ISO 27001
+and 12.1, 12.10, 12.2 for PCI DSS. Each control therefore holds its place in
+its framework's data file (Control.order), the way categories hold theirs,
+and every list of controls sorts on it.
 """
 import csv
 import importlib

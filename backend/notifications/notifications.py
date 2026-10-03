@@ -1,13 +1,13 @@
 """
 Derived, per-user notifications.
 
-Notifications aren't a static table that a job fills in — they're computed for
-the requesting user from the things *they* are responsible for. What each
-person sees is therefore a function of two "assigned parameters":
+Notifications are not a static table that a job fills in. They are computed
+for the requesting user from the things *they* are responsible for, so what
+each person sees depends on two inputs:
 
-  1. Ownership / assignment — documents they own, risks they own, calendar
+  1. Ownership or assignment: documents they own, risks they own, calendar
      events assigned to them, meeting series they run.
-  2. Role capability — managers get org-wide digests (overdue risks, evidence
+  2. Role capability: managers get org-wide digests (overdue risks, evidence
      gaps, review backlog); admins get access-review and user items; auditors
      get read-only review pointers.
 
@@ -96,7 +96,6 @@ def build(user):
     # whom. Surfaced to the vendor's owner and to every frameworks manager.
     from vendors.models import SharedResponsibility
     from vendors.assurance import bridge_letter_gaps
-    from compliance.models import Control
     can_prompt = user.is_superuser or user.can_manage_frameworks
     prompt_vendors = Vendor.objects.filter(status__in=("prospective", "active"))
     if not can_prompt:
@@ -359,7 +358,7 @@ def build(user):
                     f"{pending} decision{'s' if pending != 1 else ''} pending",
                     "/user-audit", today,
                 ))
-            else:  # auditor — informational pointer
+            else:  # auditor: informational pointer
                 items.append(_n(
                     f"access-review-audit:{review.id}", "access_review", "info",
                     f"Access review in progress: {review.name}",

@@ -17,9 +17,9 @@ __pycache__/
 
 # Key material the local installer leaves in this directory. Without these,
 # `docker build` on a machine that has run ./install.sh bakes the developer's
-# field-encryption ring and package-signing key into the image, and 0.9.5e
-# started publishing that image to a public registry. The container generates
-# and persists its own in the `secrets` volume; nothing here should travel.
+# field-encryption ring and package-signing key into the image, which is
+# published to a public registry. The container generates and persists its own
+# in the `secrets` volume; nothing here should travel.
 .field-encryption-key
 .package-signing-key
 *.pem

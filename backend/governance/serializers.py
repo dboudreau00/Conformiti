@@ -68,8 +68,8 @@ class AccessReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ["status", "created_by", "completed_at"]
 
     def validate(self, attrs):
-        # Its rows were locked on completion and the review was not, so the
-        # name and notes of the evidence could still be rewritten.
+        # The rows are locked on completion, and so is the review itself:
+        # otherwise the name and notes of the evidence could be rewritten.
         if self.instance and self.instance.status == AccessReview.Status.COMPLETED:
             raise serializers.ValidationError("This review is completed and read-only.")
         return attrs

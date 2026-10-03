@@ -2,7 +2,7 @@
  * The vendor's side of the security questionnaire: a public page reached from
  * the emailed link, outside the signed-in shell. It shows the questions, keeps
  * a draft, and submits once. Nothing else of the product is reachable from
- * here -- the token is the only credential and it opens exactly this.
+ * here: the token is the only credential and it opens exactly this.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";

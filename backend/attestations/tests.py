@@ -24,7 +24,7 @@ from attestations.models import (
 from audit.models import AuditLog
 from compliance.models import ControlEvidence
 from documents.access import accessible_folder_ids
-from documents.models import EDIT, VIEW
+from documents.models import VIEW
 from testutils import APITestBase, grant, make_doc, make_user
 
 ASSERTION = (
@@ -253,8 +253,7 @@ class DisclosureBoundaryTests(PackageTestBase):
         self.auditor.save()
         # Reading ends with the role, as SECURITY.md says: a grant is issued
         # to an auditor, and it bypasses folder permissions that no other role
-        # gets round. Until the documentation audit's fixes reads went on and
-        # only conclusions stopped.
+        # gets round. Conclusions and reads both stop at once.
         self.assertEqual(
             self.client_for(self.auditor).get(
                 f"/api/package-controls/{PackageControl.objects.get().pk}/",
@@ -305,7 +304,7 @@ class DisclosureBoundaryTests(PackageTestBase):
         narrow = make_user("nick", narrow_role)
         grant(self.tree.ctrl1, user=narrow, level=VIEW)
         hidden = make_doc(self.tree.ctrl2, owner=self.owner, name="Hidden evidence")
-        # Linked to the control, so add_controls WILL encounter it -- and must
+        # Linked to the control, so add_controls WILL encounter it and must
         # skip it rather than pin a document this packager cannot see.
         ControlEvidence.objects.create(control=self.tree.c2, document=hidden,
                                        linked_by=self.manager)
@@ -477,7 +476,7 @@ class BundleTests(PackageTestBase):
         recorded = zf.read("MANIFEST.sha256").decode("utf-8").split()[0]
         self.assertEqual(recorded, self.package.manifest_sha256)
 
-        # Every SHA256SUMS line matches the member actually in the zip.
+        # Every SHA256SUMS line matches the member in the zip.
         for line in zf.read("SHA256SUMS").decode("utf-8").splitlines():
             digest, _, member = line.partition("  ")
             self.assertEqual(mf.sha256_hex(zf.read(member)), digest, member)

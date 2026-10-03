@@ -63,7 +63,7 @@ function Protected({ me, setMe }) {
 
   // Everything below waits for `me`. Firing before the session is confirmed
   // would put three 401s on the console for anyone opening a protected route
-  // signed out -- and in cookie mode the confirmation is a round trip, so
+  // signed out, and in cookie mode the confirmation is a round trip, so
   // there is a real window in which to do it.
   useEffect(() => {
     if (!me) return;
@@ -73,7 +73,7 @@ function Protected({ me, setMe }) {
   // Nav badges: controls in progress, live risks, open access reviews.
   const refreshCounts = useCallback(() => {
     if (!me) return;
-    if (me?.capabilities?.auditor) return;  // refused, and rightly
+    if (me?.capabilities?.auditor) return;  // the API refuses these requests for auditors
     api.get("/analytics/summary/").then((r) => {
       const s = r.data;
       setCounts((c) => ({ ...c, controls: s.controls?.by_status?.in_progress || 0, risks: s.risks?.open || 0 }));

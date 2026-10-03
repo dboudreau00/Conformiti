@@ -4,7 +4,7 @@ The control, risk, vendor and evidence-package lists annotate counts, which
 makes them GROUP BY queries, and Django drops Meta.ordering from those. The
 folder-permission model has no Meta.ordering at all. Unordered, each page is a
 LIMIT/OFFSET over rows PostgreSQL may return in any order, so a register built
-from several pages can repeat one row and skip another. Each viewset now
+from several pages can repeat one row and skip another. Each viewset therefore
 orders its own queryset: Meta.ordering (where there is one), then the id.
 
 The page size is patched down to 2 so a handful of rows spans several pages,

@@ -95,7 +95,7 @@ export default function Responsibilities({ me }) {
     return Array.from(seen.entries());
   }, [controls]);
   // The real names, from the choices the page already loads: a hard-coded
-  // map of three keys showed the other twenty-two frameworks as slugs.
+  // map of three keys would show the other twenty-two frameworks as slugs.
   const names = useMemo(() => Object.fromEntries(frameworks), [frameworks]);
   const rows = useMemo(() => (data?.rows || []).filter((r) =>
     (!q || `${r.control_id} ${r.title}`.toLowerCase().includes(q.toLowerCase()))

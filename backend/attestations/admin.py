@@ -5,9 +5,9 @@ from .models import EvidencePackage, PackageControl, PackageEvidence, PackageGra
 
 class ReadOnlyAdmin(admin.ModelAdmin):
     """What was sealed, who it was issued to and what the auditor concluded
-    change through the API's rules or not at all. The admin edited all of
-    them: conclusions the API accepts only from the auditor, digests the
-    manifest is signed over, and grants."""
+    change through the API's rules or not at all. Editing them here would
+    bypass those rules: conclusions the API accepts only from the auditor,
+    digests the manifest is signed over, and grants."""
 
     def has_add_permission(self, request):
         return False

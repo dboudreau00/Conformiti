@@ -1,9 +1,9 @@
 """The one place that decides whether the server may make a request.
 
-Two callers depend on this: the Jira client, which has been through it since
-0.9.2, and the chat webhooks, which had their own weaker copy until 0.9.5b
-(REVIEWS.md (0.9.5 review), S-2). Tested here on its own so a change to it cannot be
-judged only by whether those two suites still pass.
+Several callers depend on this: the Jira client, the chat webhooks and the
+identity-provider requests (REVIEWS.md (0.9.5 review), S-2). It is tested here
+on its own so a change to it cannot be judged only by whether their suites
+still pass.
 """
 import urllib.request
 from unittest import mock

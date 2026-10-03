@@ -11,14 +11,14 @@ from testutils import APITestBase, make_doc
 
 class ProgrammeScoreTests(APITestBase):
     def test_implemented_with_nothing_behind_it_does_not_count_as_ready(self):
-        # Both controls marked implemented: the old headline said 100 %.
+        # Both controls marked implemented: the implemented share is 100 %.
         Control.objects.update(status="implemented")
         scored = programme_score()
         self.assertEqual(scored["applicable"], 2)
         self.assertLess(scored["score"], 70, "no owner, no evidence, no test: not ready")
         self.assertEqual(scored["bands"]["ready"], 0)
 
-        # The summary carries both figures, and they now disagree honestly.
+        # The summary carries both figures, and they differ.
         s = self.client_for(self.manager).get("/api/analytics/summary/").data["readiness"]
         self.assertEqual(s["pct"], 100)
         self.assertEqual(s["score"], scored["score"])

@@ -40,7 +40,7 @@ test.describe("audit trail", () => {
     // Chrome logs a console error for each 405 this deliberately provokes.
     expectBrowserError(page, /status of 405/);
     // Driven from the page so it works under either transport: in cookie mode
-    // the credential is an HttpOnly cookie no script -- including this one --
+    // the credential is an HttpOnly cookie that no script, this one included,
     // can read, so a request built outside the browser cannot carry it.
     const statuses = await page.evaluate(async () => {
       const csrf = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);

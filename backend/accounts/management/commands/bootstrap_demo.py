@@ -47,8 +47,9 @@ DEMO_USERS = [
 def check_demo_password(password):
     """Refuse a chosen DEMO_PASSWORD the password policy would refuse for
     any of the demo accounts. They all share it and `admin` is a superuser:
-    unchecked, `DEMO_PASSWORD=admin` made a superuser with a five-letter
-    password on an installation that asks everyone else for twelve."""
+    unchecked, `DEMO_PASSWORD=admin` would create a superuser with a
+    five-letter password on an installation that asks everyone else for
+    twelve."""
     from django.contrib.auth.password_validation import validate_password
     from django.core.exceptions import ValidationError
 
@@ -95,13 +96,13 @@ REVIVED_ACTION = "create"
 # seeder records each application in the audit log as a PROGRAMME_OBJECT_TYPE
 # entry whose object_id names the last control it saw and a fingerprint of
 # the order it walked ("<last pk>-<fingerprint>", PROGRAMME_MARK), so
-# remove_demo_data can put back exactly what it set, and only where nobody
+# remove_demo_data can restore exactly what it set, and only where nobody
 # has changed it since. A seed that starts the demo on a register already
-# worked on sets nothing, and records a walk of no controls ("0-..."), so
-# that retirement is not taken for one of a demo an older release seeded,
-# which kept no record. The Audit log shows object_id as the record's
-# reference, so the entry's detail stays in plain words for whoever reads it.
-# A type of its own, so it never counts as a retirement or a revival.
+# worked on sets nothing and records a walk of no controls ("0-..."), so that
+# retirement is not mistaken for one of a demo seeded without a record. The
+# audit log shows object_id as the record's reference, so the entry's detail
+# stays in plain words. The entry has its own type, so it never counts as a
+# retirement or a revival.
 PROGRAMME_ORDER = ("category__framework__key", "category__order", "control_id")
 PROGRAMME_OBJECT_TYPE = "demo-controls"
 PROGRAMME_MARK = re.compile(r"(\d+)-([0-9a-f]{16})")
@@ -203,8 +204,8 @@ SAMPLE_DOCS = [
 
 
 def _demo_pdf(title, subtitle):
-    """A small, valid single-page PDF built by hand -- so the demo has one
-    file the in-browser viewer renders natively, not just text."""
+    """A small, valid single-page PDF built by hand, so the demo has one file
+    the in-browser viewer renders natively as well as text files."""
     def esc(s):
         return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
     content = (
@@ -343,9 +344,9 @@ class Command(BaseCommand):
 
         `DEMO_PASSWORD` when an operator sets one (the test suites and the
         end-to-end run do); otherwise a fresh random one per installation,
-        printed once. A constant here is a published credential on every
-        deployment that ever ran `docker compose up`. A chosen one is held to
-        the password policy (check_demo_password).
+        printed once. A constant would be a published credential on every
+        deployment that runs `docker compose up`. A chosen one is held to the
+        password policy (check_demo_password).
         """
         if self._password is None:
             import os
@@ -415,7 +416,7 @@ class Command(BaseCommand):
 
     def _permissions(self):
         """Give the Control Owner edit on the SOC 2 CC6 folder and the Auditor
-        view on the ISO 27001 root -- a concrete RBAC example."""
+        view on the ISO 27001 root, as an RBAC example."""
         owner_role = Role.objects.filter(name="Control Owner").first()
         auditor_role = Role.objects.filter(name="Auditor").first()
 
@@ -567,8 +568,8 @@ class Command(BaseCommand):
         a critical cloud provider with a full shared responsibility matrix, an
         identity provider whose SOC 2 report is about to lapse, a payment
         processor whose report already has (the seeded vendor risk points at
-        it), and a freshly onboarded pen-test firm with no matrix yet -- which
-        is what raises the onboarding prompt in the notification tray."""
+        it), and a freshly onboarded pen-test firm with no matrix yet, which
+        raises the onboarding prompt in the notification tray."""
         from compliance.models import Responsibility
         from governance.models import Risk
         from vendors.models import SharedResponsibility, Vendor, VendorAssessment
@@ -698,8 +699,8 @@ class Command(BaseCommand):
             ("ISO 27001 surveillance audit", 120, CalendarEvent.Type.AUDIT),
             ("Quarterly access review", 14, CalendarEvent.Type.TASK),
         ]:
-            # Keyed by title only: keying on the (moving) date created a new
-            # copy every time the seeder ran on a later day.
+            # Keyed by title only: the date moves, so keying on it would
+            # create a new copy each time the seeder runs on a later day.
             CalendarEvent.objects.get_or_create(
                 title=title, defaults=dict(event_type=etype, date=today + timedelta(days=offset)),
             )
@@ -772,11 +773,10 @@ class Command(BaseCommand):
     def _access_review(self):
         """Seed one in-flight access review (idempotent).
 
-        Without this the User audit screen is empty on a fresh install, so the
-        feature looks unimplemented and the screenshot in the README shows
-        something the demo does not actually produce. Left part-decided on
-        purpose: an open review with work still to do is what the screen is
-        for.
+        Without this the User audit screen is empty on a fresh install and
+        the README screenshot does not match the demo. The review is left
+        part-decided on purpose: an open review with work still to do is what
+        the screen is for.
         """
         from governance.models import AccessReview, AccessReviewItem
         from governance.views import _snapshot_items
@@ -819,10 +819,9 @@ class Command(BaseCommand):
         """Seal one evidence package and issue it to the demo auditor.
 
         Without this the auditor workspace is an empty screen on a fresh
-        install, and the feature that most distinguishes this product looks
-        unimplemented. Sealed and issued on purpose: a draft would not show
-        the manifest digest, and an unissued package would not show what an
-        external auditor actually sees.
+        install. The package is sealed and issued on purpose: a draft would
+        not show the manifest digest, and an unissued package would not show
+        what an external auditor sees.
         """
         from datetime import timedelta
 
@@ -838,7 +837,7 @@ class Command(BaseCommand):
         existing = EvidencePackage.objects.filter(name=DEMO_PACKAGE_NAME).first()
         if existing is not None:
             self.stdout.write("  Evidence package: already present, left alone")
-            # A database seeded before 0.6.0 still gets the request list.
+            # A database that already holds the package still gets the request list.
             self._pbc_requests(existing, aria, mia or admin)
             return
         links = list(
@@ -963,7 +962,7 @@ class Command(BaseCommand):
     def _pbc_requests(self, package, aria, mia):
         """The auditor's request list on the demo package: one answered and
         accepted, one provided and waiting on the auditor, one open and due
-        soon -- so the list shows every state on a fresh install."""
+        soon, so the list shows every state on a fresh install."""
         from datetime import timedelta
 
         from attestations.models import PbcItem, PbcRequest
@@ -1022,10 +1021,11 @@ class Command(BaseCommand):
                 # This seed starts the demo on a register someone already
                 # worked on, so the demo sets no status at all. Recorded as a
                 # walk of no controls, which remove_demo_data reads back as
-                # nothing to reset: without it, the retirement took the
-                # statuses for those of a demo an older release seeded, which
-                # kept no record, and warned about a cause that was not true.
-                # A refresh boot finds the demo already here and adds nothing.
+                # nothing to reset. Without the record, the retirement would
+                # take the statuses for those of a demo seeded by an older
+                # release (which kept no record) and warn about the wrong
+                # cause. A refresh boot finds the demo already here and adds
+                # nothing.
                 self._programme_record = (
                     f"0-{programme_fingerprint([])}",
                     "Demo control programme not applied: the controls already had statuses "
@@ -1072,14 +1072,14 @@ class Command(BaseCommand):
         The back-fill goes only into a trend with no point before today, and
         never into a workspace the demo was retired from (this run's --force,
         or a demo-data entry in its audit log): that trend is the operator's
-        real history, and invented months never go in among it, as _audit's
-        sample rows never go in among real entries. remove_demo_data relies
-        on this. On the run that retires the demo it deletes the points dated
-        before today, only those from the newest --force revival on when
-        there is one (the earlier ones are the operator's), and none where
-        no demo was ever seeded; a later run deletes none. Back-filled months
-        dated before a revival would be out of its reach, and would stay in a
-        real installation's trend."""
+        real history, and invented months are never mixed into it, just as
+        _audit's sample rows are never mixed into real entries.
+        remove_demo_data relies on this. On the run that retires the demo it
+        deletes the points dated before today, but only those from the newest
+        --force revival on when there is one (the earlier ones are the
+        operator's), and none where no demo was ever seeded; a later run
+        deletes none. Back-filled months dated before a revival would be out
+        of its reach and would stay in a real installation's trend."""
         from dateutil.relativedelta import relativedelta
 
         from analytics.models import ReadinessSnapshot

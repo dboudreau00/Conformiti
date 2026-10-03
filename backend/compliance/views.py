@@ -90,8 +90,8 @@ class ControlViewSet(viewsets.ModelViewSet):
     def readiness(self, request, pk=None):
         """Why this control scores what it scores.
 
-        The register shows a number; this explains it, so "68" turns into a
-        list of the things that would move it.
+        The register shows a number; this lists the signals behind it and
+        what would move it.
         """
         control = self.get_object()
         return Response({
@@ -229,7 +229,7 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             )
         )
 
-    # -- authorization helpers ----------------------------------------------
+    # -- authorisation helpers ----------------------------------------------
     def _can_link(self, document):
         user = self.request.user
         return user.can_manage_frameworks or document.folder.can_edit(user)

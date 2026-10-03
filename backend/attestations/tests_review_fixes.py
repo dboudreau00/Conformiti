@@ -1,10 +1,9 @@
 """Regression tests for the 0.9.0 adversarial review.
 
-Each test names the defect it locks shut. See REVIEWS.md (0.9.0 review) for the full set
-of findings; these cover the ones remediated in this pass.
+Each test names the defect it locks shut. See REVIEWS.md (0.9.0 review) for the
+full set of findings.
 """
 from django.core.files.base import ContentFile
-from rest_framework.test import APIClient
 
 from accounts.models import Workspace
 from documents.models import Document
@@ -26,8 +25,8 @@ class SealedManifestTests(PackageTestBase):
         self.auditor_client = self.client_for(self.auditor)
 
     def test_a_snapshot_field_cannot_ride_along_with_a_conclusion(self):
-        """The auditor's conclusion and a manifest field in one PATCH used to
-        save the manifest field without ever reaching assert_open."""
+        """The auditor's conclusion and a manifest field in one PATCH must not
+        save the manifest field without reaching assert_open."""
         before = self.row.population_size
         r = self.auditor_client.patch(
             f"/api/package-controls/{self.row.pk}/",
@@ -40,8 +39,8 @@ class SealedManifestTests(PackageTestBase):
 
     def test_a_refused_mixed_write_commits_nothing(self):
         """The management response is the organisation's. An auditor sending
-        it alongside their own conclusion used to have the conclusion
-        committed before the 403 fired."""
+        it alongside their own conclusion must not have the conclusion
+        committed before the 403 fires."""
         r = self.auditor_client.patch(
             f"/api/package-controls/{self.row.pk}/",
             {"design_conclusion": "no_exceptions", "management_response": "Forged"},
@@ -52,8 +51,8 @@ class SealedManifestTests(PackageTestBase):
         self.assertEqual(self.row.design_conclusion, "pending")
 
     def test_a_pinned_artefact_cannot_be_repointed(self):
-        """Re-pointing skipped the folder-permission check that pinning
-        performs, so it read any document in the workspace."""
+        """Re-pointing would skip the folder-permission check that pinning
+        performs, exposing any document in the workspace."""
         secret = make_secret_doc(self)
         r = self.manager_client.patch(
             f"/api/package-evidence/{self.evidence.pk}/",
@@ -63,7 +62,7 @@ class SealedManifestTests(PackageTestBase):
         self.assertEqual(self.evidence.document_id, self.doc.pk)
 
     def test_a_sample_row_needs_a_reason_to_be_touched(self):
-        """A body with neither a result nor an item field met no check."""
+        """A body with neither a result nor an item field must still meet a check."""
         r = self.manager_client.post("/api/package-samples/", {
             "package_control": self.row.pk, "identifier": "S-1"}, format="json")
         # Sealed: the organisation cannot add items, the auditor can.
@@ -91,8 +90,9 @@ class EvidenceByteTests(PackageTestBase):
     """Replacing a document's bytes is `new_version`'s job, not PATCH's."""
 
     def test_patching_a_file_is_refused(self):
-        """A multipart PATCH replaced the stored bytes with no folder-edit
-        check, no malware scan, no archived version and no version bump."""
+        """A multipart PATCH must not replace the stored bytes, which would
+        bypass the folder-edit check, the malware scan, the archived version
+        and the version bump."""
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         before = self.doc.version
@@ -108,7 +108,7 @@ class EvidenceByteTests(PackageTestBase):
 
     def test_taking_folder_ownership_needs_manage(self):
         """The owner IS a manager, so granting yourself ownership with only
-        edit access was a self-service promotion."""
+        edit access would be a self-service promotion."""
         from documents.models import EDIT, FolderPermission
 
         folder = self.tree.ctrl2
@@ -135,11 +135,11 @@ class ManifestIdentityTests(PackageTestBase):
 
 
 class BundleSignatureCoverageTests(PackageTestBase):
-    """The signature has to cover what the auditor actually reads.
+    """The signature has to cover what the auditor reads.
 
     manifest.sig is made at seal and covers manifest.json alone; the
     conclusions land in controls.csv and samples.csv afterwards. Rewriting
-    those used to leave verify.py printing VALID.
+    those must not leave verify.py printing VALID.
     """
 
     def export(self):
@@ -170,7 +170,6 @@ class BundleSignatureCoverageTests(PackageTestBase):
             self.assertIn(member, listed)
 
     def test_rewriting_the_conclusions_is_caught(self):
-        import base64
         import subprocess
         import sys
         import tempfile
@@ -226,9 +225,8 @@ class BundleSignatureCoverageTests(PackageTestBase):
 
 class GrantListDisclosureTests(PackageTestBase):
     """L-1, 0.9.5h. PackageGrantViewSet filters a grantee to their own row on
-    purpose; the package payload prefetched every grant and published each
-    live one, so two audit firms issued the same sealed package saw each
-    other's people by name."""
+    purpose; the package payload must match, or two audit firms issued the
+    same sealed package would see each other's people by name."""
 
     def _two_firms(self):
         import datetime as dt
@@ -319,9 +317,8 @@ class PerWorkspaceKeyTests(PackageTestBase):
         self.assertTrue(any(k["current"] for k in r.data["keys"]))
         # A name nobody recognises answers exactly as an organisation that
         # exists and has never signed anything: same status, same shape, empty
-        # list. 0.9.5b made it share the unnamed request's 400, which still
-        # left presence readable, because a slug that exists answered 200 and
-        # one that does not answered 400 (0.9.5f, L-2).
+        # list. A 400 for the unknown slug would leave presence readable,
+        # because a slug that exists answers 200 (0.9.5f, L-2).
         unknown = self.client_for(self.manager).get("/api/signing-keys/", {"workspace": "nope"})
         self.assertEqual(unknown.status_code, 200, unknown.data)
         self.assertEqual(unknown.data["keys"], [])

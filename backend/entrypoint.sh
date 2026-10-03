@@ -42,14 +42,13 @@ log "Applying migrations"
 python manage.py migrate --noinput
 
 log "Seeding control libraries, roles and folder tree in every workspace"
-# --all-workspaces: a release that adds a role or a control used to reach
-# only Default on boot; every other organisation on the installation kept
-# the previous release's libraries until someone ran this by hand.
+# --all-workspaces: a release that adds a role or a control reaches every
+# organisation on the installation at boot, not only Default.
 python manage.py seed_frameworks --with-folders --all-workspaces
 
 case "${SEED_DEMO_DATA:-false}" in
   1|true|TRUE|yes|on)
-    # Worded as a check, not a seed: on a workspace remove_demo_data retired,
+    # Worded as a check because on a workspace remove_demo_data retired,
     # bootstrap_demo seeds nothing and its own next line says so.
     log "SEED_DEMO_DATA=true: running bootstrap_demo (it seeds or refreshes the demo, or says why not)"
     # bootstrap_demo prints the generated sign-in password on first boot.
@@ -93,8 +92,8 @@ if [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ] && [ -n "${DJANGO_SUPERUSER_PASSWORD:
   # createsuperuser fails both when the account is already there (every boot
   # after the first) and when it refuses to make it, most often because
   # DJANGO_SUPERUSER_PASSWORD fails the password policy. Its own message says
-  # which, so it is kept: discarding it behind "already exists" left an
-  # installation with no administrator and nothing in the log to say why.
+  # which, so it is logged: reporting every failure as "already exists" would
+  # hide an installation with no administrator.
   # Either way the boot carries on, and the banner below says when no
   # administrator exists at all. The email fallback is not an @example.com
   # address: an account named admin with one is the demo administrator to
@@ -152,8 +151,8 @@ python - <<'PY'
 import os
 from config.version import __version__
 # DEBUG is read the way the image sets it, not the way the code defaults for
-# a developer running it. Reading DEBUG as on when the image pins it off is a
-# false alarm, and the line that matters is the one nobody believes.
+# a developer running it. Reading DEBUG as on when the image pins it off would
+# raise a false alarm, and a banner that raises false alarms gets ignored.
 debug = os.getenv("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes", "on")
 # The demo line reports the database, with the same test /api/health/ uses,
 # not SEED_DEMO_DATA: the variable stays set on a container after

@@ -45,9 +45,10 @@ class RoleViewSet(viewsets.ModelViewSet):
                     "Capability flags on built-in roles are fixed. Create a custom role "
                     "with the flags you need and assign it instead."
                 )
-        # The promise the user edits keep, kept here too: no change leaves the
-        # workspace without an active administrator. A custom role can carry
-        # can_manage_users, and taking the flag off it went round that guard.
+        # Same guarantee as the user edits: no change may leave the workspace
+        # without an active administrator. A custom role can carry
+        # can_manage_users, and removing the flag from it would bypass the
+        # user-level guard.
         role = serializer.instance
         if (role.can_manage_users
                 and serializer.validated_data.get("can_manage_users", True) is False
@@ -90,9 +91,9 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
 
     # ---- lockout / privilege guards ----------------------------------------
-    # These make the admin panel safe to hand to alpha testers: you cannot
-    # remove your own access, touch a superuser without being one, or strip
-    # the last remaining administrator.
+    # These stop an administrator removing their own access, touching a
+    # superuser without being one, or stripping the last remaining
+    # administrator.
 
     def _other_active_admins(self, excluding):
         return (
@@ -216,7 +217,7 @@ class LogoutView(APIView):
 
 
 # ==========================================================================
-# Multi-factor authentication (TOTP) — self-service enable/disable + admin reset
+# Multi-factor authentication (TOTP): self-service enable/disable + admin reset
 # ==========================================================================
 class _MfaThrottle(SimpleRateThrottle):
     """Per-identity limit on the MFA setup/verify/disable endpoints.
@@ -264,11 +265,11 @@ class MfaSetupView(APIView):
         device = getattr(request.user, "mfa_device", None)
         if device and device.enabled:
             return Response({"detail": "MFA is already enabled. Disable it first to re-enroll."}, status=400)
-        # Asked for here rather than at /verify/, so nobody scans a QR code
-        # only to be turned away. A hijacked session on a password-only
-        # account could otherwise enrol the attacker's authenticator, take
+        # Asked for here as well as at /verify/, so nobody scans a QR code
+        # only to be turned away. Without it, a hijacked session on a
+        # password-only account could enrol the attacker's authenticator, take
         # the backup codes, and leave the owner needing the attacker's phone
-        # to sign in. Adding a passkey has asked this since 0.9.5.
+        # to sign in. Adding a passkey asks the same.
         if not reauthenticated(request):
             return Response({"detail": "Confirm your password to set up an authenticator.",
                              "code": "reauth_required"}, status=403)
@@ -352,7 +353,7 @@ class MfaDisableView(APIView):
 
 class MfaBackupCodesView(APIView):
     """Regenerate backup codes (invalidates the old set). Re-authenticated,
-    and open to anyone with a second factor -- authenticator app or passkey."""
+    and open to anyone with a second factor (authenticator app or passkey)."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 

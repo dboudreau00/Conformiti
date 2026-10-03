@@ -68,7 +68,7 @@ class OidcRedeemView(APIView):
 
         # Same reason as the password login: this endpoint sets the auth
         # cookies and authenticates nobody, so the check that lives inside
-        # CookieJWTAuthentication never runs for it (0.9.5f).
+        # CookieJWTAuthentication never runs for it.
         refused = cookie_auth.csrf_required(request)
         if refused:
             return Response({"detail": f"CSRF failed: {refused}"}, status=403)

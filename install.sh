@@ -294,7 +294,7 @@ ENV
   # default for Docker Desktop and new Docker Engine installs) it gives every
   # build a new image id, even when each step came from the cache, and a new
   # id makes Compose recreate the container. A re-run of an unchanged checkout
-  # then restarted the stack and took the demo password out of the log.
+  # then restarts the stack and takes the demo password out of the log.
   CONFORMITI_PORT="$PORT" BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose up -d --build
   say "Waiting for the API to report healthy…"
   if wait_for_health "http://localhost:${PORT}/api/health/" 240; then

@@ -3,7 +3,7 @@
  *
  * The server speaks base64url for every byte field (challenge, ids, the
  * authenticator's outputs); the WebAuthn API wants ArrayBuffers. These helpers
- * translate in both directions and nothing else -- policy (which keys are
+ * translate in both directions and nothing else. Policy (which keys are
  * allowed, what the challenge is, whether the counter moved) is the server's.
  */
 

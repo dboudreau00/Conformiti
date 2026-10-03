@@ -171,9 +171,8 @@ class Folder(TenantModel):
 
 
 class FolderPermission(TenantModel):
-    tenant_parent = "folder"
-
     """Grants a role OR a specific user an access level on a folder (inherited)."""
+    tenant_parent = "folder"
     folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="permissions")
     role = models.ForeignKey(
         "accounts.Role", null=True, blank=True, on_delete=models.CASCADE, related_name="folder_permissions"
@@ -319,9 +318,8 @@ class ScannerStatus(models.Model):
 
 
 class DocumentVersion(TenantModel):
-    tenant_parent = "document"
-
     """Immutable snapshot of a prior document file."""
+    tenant_parent = "document"
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="versions")
     version = models.PositiveIntegerField()
     file = models.FileField(upload_to="document_versions/", max_length=500)

@@ -6,11 +6,11 @@ def bulk_effective_access(user, folders):
     """``{folder_id: level}`` for every folder in ``folders``, in three queries.
 
     ``Folder.effective_access`` answers for one folder by walking its parent
-    chain and querying the grants on it; the folder tree called it once per
-    node, and a tree of two hundred folders was two hundred round trips
-    plus the same again for document counts. This resolves the same answer
-    for every folder at once: the parent map in one query, the grants that
-    could apply in one more, and the walk in Python.
+    chain and querying the grants on it. Called once per node, a tree of two
+    hundred folders costs two hundred round trips, plus the same again for
+    document counts. This resolves the same answer for every folder at once:
+    the parent map in one query, the grants that could apply in one more, and
+    the walk in Python.
 
     The rules are the ones ``effective_access`` states, applied identically:
     superuser or the folders capability is manage everywhere; view-all is at

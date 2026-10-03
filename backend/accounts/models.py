@@ -1,4 +1,4 @@
-"""User and Role models -- the foundation of role-based access control."""
+"""User and Role models, the foundation of role-based access control."""
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
@@ -20,7 +20,7 @@ def validate_webhook_url(channel, value, error=ValidationError):
     Lives here rather than in the serializer so the Django admin cannot write
     a URL the API would refuse: a model's ``clean`` runs on every admin save.
     Only the part that can be judged from the text is checked here. Where the
-    host actually points is settled at send time, by ``notifications.webhooks``,
+    host points is settled at send time, by ``notifications.webhooks``,
     because that is the only answer that cannot go stale.
     """
     value = (value or "").strip()
@@ -54,13 +54,12 @@ class Workspace(models.Model):
         help_text="Where this organisation's reminders and alerts go. "
                   "Blank falls back to the installation's COMPLIANCE_TEAM_EMAIL.")
     # Chat channels are per organisation for the same reason the mailbox is:
-    # a sealed package's name, an auditor's request and a returned
-    # questionnaire name the organisation's own affairs, and one shared
-    # channel for the installation would show every tenant the others'.
-    # Encrypted at rest for the same reason the TOTP secret and the Jira token
-    # are: whoever holds an incoming-webhook URL can post into the channel as
-    # the app, and a database dump or a restored backup should not hand that
-    # over (REVIEWS.md (0.9.5 review), S-3).
+    # notifications name the organisation's own packages, requests and
+    # questionnaires, and a shared channel would show every tenant the others'.
+    # Encrypted at rest like the TOTP secret and the Jira token: whoever holds
+    # an incoming-webhook URL can post into the channel as the app, and a
+    # database dump or restored backup should not hand that over
+    # (REVIEWS.md (0.9.5 review), S-3).
     slack_webhook_url = EncryptedCharField(
         max_length=MAX_WEBHOOK_COLUMN, blank=True, aad_from="id",
         help_text="This organisation's Slack incoming webhook. On an installation with "
@@ -147,7 +146,7 @@ class OidcIdentity(models.Model):
 
     Created by a verified-email match on first SSO login, by auto-provisioning,
     or by hand with ``manage.py link_oidc_identity``. Superuser and staff
-    accounts are only ever linked by hand -- see accounts/oidc.py.
+    accounts are only ever linked by hand (see accounts/oidc.py).
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="oidc_identities"
@@ -157,7 +156,7 @@ class OidcIdentity(models.Model):
     email = models.EmailField(blank=True)
     # Set only by `link_oidc_identity --allow-privileged`. A privileged
     # account (superuser, staff, or a role that manages users) signs in
-    # through this identity only while this is true -- so promoting a linked
+    # through this identity only while this is true, so promoting a linked
     # user to administrator later closes their SSO path until an operator
     # re-affirms it.
     privileged_ok = models.BooleanField(default=False)
@@ -176,8 +175,8 @@ class OidcIdentity(models.Model):
 
 class SsoAssertion(models.Model):
     """A SAML assertion id that has been accepted, kept until it would have
-    expired anyway. Replays are refused from here -- a shared table, not a
-    per-process cache, so every worker sees the same history."""
+    expired anyway. Replays are refused from here. It is a shared table
+    rather than a per-process cache so every worker sees the same history."""
     assertion_id = models.CharField(max_length=255, unique=True)
     expires_at = models.DateTimeField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -211,13 +210,11 @@ class User(AbstractUser, TenantModel):
     digest_sent_at = models.DateTimeField(null=True, blank=True)
 
     # --- the line under every session issued before it -------------------
-    # Revoking refresh tokens ends a session's ability to renew itself, and
-    # nothing more: the access token already in the attacker's tab keeps
-    # answering until it expires, which is an hour by default. So a password
-    # reset, a forced sign-out and an MFA reset all left the thing they were
-    # meant to end running for up to an hour. Every access token issued
-    # before this moment is refused (accounts/cookie_auth.py), which is what
-    # "signed out everywhere" has to mean to be worth saying.
+    # Revoking refresh tokens stops a session renewing itself, but an access
+    # token already in the attacker's tab keeps working until it expires (an
+    # hour by default). Every access token issued before this moment is
+    # refused (accounts/cookie_auth.py), so a password reset, forced sign-out
+    # or MFA reset ends the session immediately.
     sessions_valid_from = models.DateTimeField(null=True, blank=True, editable=False)
 
     # --- capability helpers (safe when role is None) -----------------------
@@ -231,11 +228,10 @@ class User(AbstractUser, TenantModel):
         read every folder and every package through the capability
         short-circuits, which sit above the auditor cap in both access
         modules. Capping here rather than at those call sites keeps one
-        answer to what a capability means (0.9.5h, M-3).
+        answer to what a capability means (M-3).
 
-        A superuser is still a superuser. An auditor role on a superuser is a
-        misconfiguration that account can undo itself, and pretending
-        otherwise would only be surprising.
+        A superuser keeps every capability. An auditor role on a superuser is
+        a misconfiguration that account can undo itself.
         """
         if self.is_superuser:
             return True
@@ -277,11 +273,11 @@ class User(AbstractUser, TenantModel):
 
     @property
     def mfa_enabled(self):
-        """Does signing in take a second factor? True with an enrolled
-        authenticator app or ANY passkey -- including one marked suspect: a
-        suspect passkey cannot satisfy the factor, but it must not make the
-        requirement disappear either, or cloning a key would be the way to
-        drop an account to password-only."""
+        """True when signing in takes a second factor: an enrolled
+        authenticator app or any passkey, including one marked suspect. A
+        suspect passkey cannot satisfy the factor, but it must not remove the
+        requirement either, or cloning a key would drop the account to
+        password-only."""
         return self.totp_enabled or self.passkeys.exists()
 
     @property
@@ -289,8 +285,8 @@ class User(AbstractUser, TenantModel):
         return self.passkeys.filter(suspect_at__isnull=True)
 
     # --- backup codes: the recovery factor, owned by the account rather than
-    # by the authenticator app since 0.6.1, so a passkey-only person has them
-    # too. Stored as salted hashes; single use.
+    # by the authenticator app, so a passkey-only person has them too.
+    # Stored as salted hashes; single use.
     def set_backup_codes(self, codes):
         from django.contrib.auth.hashers import make_password
         from . import mfa as mfa_lib
@@ -319,10 +315,9 @@ class User(AbstractUser, TenantModel):
             return False
         for backup in self.backup_codes.filter(used_at__isnull=True):
             if check_password(normalized, backup.code_hash):
-                # Claim it with a conditional UPDATE rather than reading it,
-                # setting used_at and saving: two sign-ins arriving together
-                # both saw it unused, and the unlocked read-modify-write let
-                # one code authenticate both. Whoever's UPDATE matches the
+                # Claim it with a conditional UPDATE, not read-modify-write:
+                # two simultaneous sign-ins would both see it unused and one
+                # code would authenticate both. The UPDATE that matches the
                 # still-null row wins; the loser is told the code is spent.
                 claimed = MfaBackupCode.objects.filter(
                     pk=backup.pk, used_at__isnull=True,
@@ -420,8 +415,8 @@ class MfaDevice(models.Model):
     # The last TOTP time step this device authenticated with. A code stays
     # valid for its whole 30s window plus a step of drift either way, so
     # without a record of what was spent the same six digits work again for
-    # up to 90 seconds -- long enough for anyone who read them over a
-    # shoulder, out of a phishing form, or off a proxied login page.
+    # up to 90 seconds, long enough to replay a code taken from a phishing
+    # form or a proxied login page.
     last_counter = models.PositiveBigIntegerField(default=0)
 
     def __str__(self):
@@ -432,10 +427,10 @@ class MfaDevice(models.Model):
         not the device's: see ``User.verify_backup_code``).
 
         Each code is accepted once. The time step it matches has to be later
-        than the last one this device used, so replaying the same code -- or
-        an earlier one still inside the drift window -- is refused. The claim
-        is a single conditional UPDATE, which also settles two requests
-        presenting the same code at the same moment.
+        than the last one this device used, so replaying the same code, or an
+        earlier one still inside the drift window, is refused. The claim is a
+        single conditional UPDATE, which also settles two requests presenting
+        the same code at the same moment.
         """
         from django.utils import timezone
         from . import mfa as mfa_lib
@@ -460,13 +455,13 @@ class MfaBackupCode(models.Model):
     """A single-use recovery code (stored only as a hash).
 
     Owned by the account, not by the authenticator app: it is the way back
-    in when the app is lost OR when the only passkey is lost or flagged.
+    in when the app is lost or when the only passkey is lost or flagged.
 
-    Deliberately NOT encrypted like MfaDevice.secret. These are already salted
-    PBKDF2 hashes, so there is nothing to protect — and leaving them readable
-    is what makes a lost encryption key recoverable instead of terminal: a user
-    whose TOTP secret can no longer be decrypted can still sign in with a
-    backup code, and an administrator can reset their enrollment.
+    Not encrypted like MfaDevice.secret. These are already salted PBKDF2
+    hashes, so there is nothing to protect, and leaving them readable keeps a
+    lost encryption key recoverable: a user whose TOTP secret can no longer be
+    decrypted can still sign in with a backup code, and an administrator can
+    reset their enrollment.
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="backup_codes")

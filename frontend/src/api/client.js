@@ -3,12 +3,12 @@ import axios from "axios";
 // The server decides how credentials travel; the SPA asks once at boot.
 //
 //   "header"  tokens live in localStorage and go out as Authorization
-//             (the default, and what every 0.2.x deployment runs);
+//             (the default);
 //   "cookie"  the server sets HttpOnly cookies script cannot read, and unsafe
 //             methods must echo Django's CSRF token.
 //
-// withCredentials is on in both modes: harmless for header auth, required for
-// cookie auth, and one less thing to get wrong when the server flips.
+// withCredentials is on in both modes: harmless for header auth and required
+// for cookie auth, so it does not depend on which mode the server reports.
 let transport = "header";
 let oidc = { enabled: false, label: "" };
 let saml = { enabled: false, label: "" };
@@ -226,7 +226,7 @@ function clearSession() {
   chooseWorkspace("");
 }
 
-/** Revoke server-side, then clear local state. Always resolves, a failed
+/** Revoke server-side, then clear local state. Always resolves: a failed
  * revoke must never trap the user in a signed-in shell.
  *
  * Cookie mode goes through /auth/token/clear/ rather than /auth/logout/:
@@ -235,9 +235,9 @@ function clearSession() {
  * leave a live 7-day refresh cookie behind a UI that said "signed out".
  *
  * The refresh cookie's path is /api/auth/token/, so only an endpoint under
- * that path receives it. /auth/session/clear/ does not, which meant a
- * sign-out with an expired access cookie cleared the browser but never
- * revoked the token. It stays as the fallback for a server older than 0.9.5b.
+ * that path receives it. /auth/session/clear/ does not: it clears the browser
+ * but cannot revoke the token. It stays as the fallback for a server older
+ * than 0.9.5b.
  */
 export async function logout() {
   try {

@@ -13,24 +13,24 @@ from rest_framework import serializers
 
 # Extensions that browsers will execute or render as active content. Uploads
 # are always served with Content-Disposition: attachment, so this is defence
-# in depth rather than the primary control — but evidence libraries have no
+# in depth rather than the primary control, but evidence libraries have no
 # legitimate need for these.
 BLOCKED_EXTENSIONS = {
     ".exe", ".dll", ".com", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".jse",
     ".msi", ".scr", ".pif", ".hta", ".jar", ".sh", ".php", ".html", ".htm", ".svg",
     # Web pages in other clothing: .mhtml is a whole page in one file.
     ".mht", ".mhtml", ".xhtml",
-    # Macro-enabled Office. These are the files an analyst opens without
-    # thinking, which is what makes them the delivery method of choice. The
-    # equivalent formats without macros are accepted, so nothing legitimate
-    # is lost: save as .docx, .xlsx or .pptx and upload that.
+    # Macro-enabled Office. An analyst opens these without thinking, which
+    # makes them a common malware delivery route. The equivalent formats
+    # without macros are accepted, so nothing legitimate is lost: save as
+    # .docx, .xlsx or .pptx and upload that.
     ".docm", ".dotm", ".xlsm", ".xltm", ".xlam", ".xlsb",
     ".pptm", ".potm", ".ppsm", ".sldm",
     # Legacy Office, which is OLE2 rather than zip, so the macro scan below
     # cannot see inside it: a .doc carries its macros in a stream, and the
-    # formats that still get mailed to a compliance inbox are exactly the ones
-    # with a decade of memory-corruption history behind them. Blocking the
-    # macro-enabled OOXML names while accepting .doc was half a rule.
+    # formats that still get mailed to a compliance inbox are the ones with a
+    # decade of memory-corruption history behind them. Blocking only the
+    # macro-enabled OOXML names would leave them open.
     ".doc", ".dot", ".xls", ".xlt", ".xla", ".ppt", ".pot", ".pps",
     # RTF is not OLE2 itself, and is the usual wrapper for an object that is.
     ".rtf",
@@ -58,7 +58,7 @@ def _holds_macros(uploaded):
     """True if this is a zip container with a macro part inside it.
 
     Unreadable or non-zip files are not this function's business: they are
-    simply not OOXML, and the scanner and the rest of validation still apply.
+    not OOXML, and the scanner and the rest of validation still apply.
     """
     try:
         position = uploaded.tell()
@@ -67,10 +67,9 @@ def _holds_macros(uploaded):
     try:
         uploaded.seek(0)
         with zipfile.ZipFile(uploaded) as archive:
-            # Every name, not the first two thousand. Reading the central
-            # directory is what costs, and namelist() has already done it, so
-            # the old slice bought nothing and left a place to hide a macro
-            # part: entry 2001.
+            # Every name, not a prefix. Reading the central directory is what
+            # costs, and namelist() has already done it, so a slice would save
+            # nothing and leave a place to hide a macro part (entry 2001).
             names = [n.lower() for n in archive.namelist()]
     except (zipfile.BadZipFile, OSError, ValueError, AttributeError, NotImplementedError):
         return False

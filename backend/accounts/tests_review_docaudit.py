@@ -1,6 +1,6 @@
-"""The product defects the 0.9.5ma documentation audit found that 0.9.5mb
-left open. Each class names the documented promise the code did not keep;
-every test that is not marked as a guard fails on 0.9.5mb."""
+"""Regression tests for the defects the 0.9.5ma documentation audit found.
+Each class names the documented promise the code must keep; tests marked
+"Guard" cover behaviour that must not change."""
 import os
 import tempfile
 from io import StringIO
@@ -44,9 +44,9 @@ def _admin_client(user):
 
 
 class DemoPasswordPolicyTests(TestCase):
-    """install-1-06: DEMO_PASSWORD was set on all five demo accounts, the
-    superuser `admin` among them, without the password policy that every
-    other password meets."""
+    """install-1-06: DEMO_PASSWORD is set on all five demo accounts, the
+    superuser `admin` among them, so it must meet the password policy that
+    every other password meets."""
 
     def setUp(self):
         media = tempfile.TemporaryDirectory()
@@ -88,8 +88,9 @@ class DemoPasswordPolicyTests(TestCase):
 
 class RoleEditLastAdministratorTests(APITestBase):
     """G10: the API "will never leave the organisation without an active
-    administrator", but only user edits were guarded. Taking
-    can_manage_users off a custom role left the workspace with none."""
+    administrator", so role edits are guarded as well as user edits. Taking
+    can_manage_users off a custom role must not leave the workspace with
+    none."""
 
     def setUp(self):
         super().setUp()
@@ -118,8 +119,8 @@ class RoleEditLastAdministratorTests(APITestBase):
 
 
 class AdminTakesNoFileTests(APITestBase):
-    """XD-16: every upload was said to be size-capped, type-checked and
-    scanned. The Django admin stored whatever it was sent, and could clear
+    """XD-16: every upload is said to be size-capped, type-checked and
+    scanned, so the Django admin must not store whatever it is sent or clear
     the scanner's quarantine."""
 
     FILE_MODELS = {"Document", "DocumentVersion", "FormTemplate", "MeetingMinute"}
@@ -162,8 +163,8 @@ class AdminTakesNoFileTests(APITestBase):
 
 class CompletedAccessReviewTests(APITestBase):
     """R1-04: "A completed review is read-only evidence from that moment."
-    Its rows were; the review itself could be renamed, re-noted, and deleted
-    with every row."""
+    The review itself, not only its rows, must refuse renaming, re-noting and
+    deletion with every row."""
 
     def setUp(self):
         super().setUp()
@@ -198,8 +199,8 @@ class CompletedAccessReviewTests(APITestBase):
 
 class DemotedAuditorTests(PackageTestBase):
     """SEC-05: grants are "re-evaluated on every request, so deactivating or
-    demoting the account closes it immediately". Demotion closed conclusions
-    and left every read open."""
+    demoting the account closes it immediately". Demotion must close reads
+    as well as conclusions."""
 
     def setUp(self):
         super().setUp()
@@ -220,8 +221,8 @@ class DemotedAuditorTests(PackageTestBase):
 
 class SealedBytesTests(PackageTestBase):
     """R2-03: "The package freezes: the assessed organisation can no longer
-    change what the auditor is looking at." A new version after the seal
-    reached the auditor through the package."""
+    change what the auditor is looking at." A new version after the seal must
+    not reach the auditor through the package."""
 
     def setUp(self):
         super().setUp()
@@ -281,9 +282,9 @@ class SealedBytesTests(PackageTestBase):
 
 
 class PackagesReadOnlyInAdminTests(PackageTestBase):
-    """R2-04: conclusions "nobody at the assessed organisation can edit",
-    digests the manifest is signed over and the grants were all editable in
-    the Django admin."""
+    """R2-04: conclusions "nobody at the assessed organisation can edit", the
+    digests the manifest is signed over and the grants must not be editable
+    in the Django admin."""
 
     def test_the_admin_changes_no_part_of_a_package(self):
         self.add_control()
@@ -308,9 +309,9 @@ class PackagesReadOnlyInAdminTests(PackageTestBase):
 
 class SsoIssuerSpellingTests(APITestBase):
     """install-1-13: link_oidc_identity stores the issuer without a trailing
-    "/" and sign-in looked it up as the provider spells it, so the documented
-    pre-link never matched a provider whose issuer ends in one (Entra ID's
-    SAML entity id is https://sts.windows.net/<tenant>/)."""
+    "/", so sign-in must treat both spellings as one issuer. Otherwise the
+    documented pre-link never matches a provider whose issuer ends in one
+    (Entra ID's SAML entity id is https://sts.windows.net/<tenant>/)."""
 
     ISSUER = "https://sts.windows.net/tenant-id/"
 
@@ -361,9 +362,10 @@ class EntrypointDemoPasswordTests(TestCase):
 
 
 class ViewerRoleDescriptionTests(TestCase):
-    """The built-in Viewer said "Read-only access to granted folders". It
-    reads the programme-wide records as well, and writes risk notes: an
-    access review read against that description understated the role."""
+    """The built-in Viewer description must not say "Read-only access to
+    granted folders". The role reads the programme-wide records as well and
+    writes risk notes, so that wording would understate it in an access
+    review."""
 
     def test_the_description_says_what_the_role_does(self):
         viewer = make_roles()["Viewer"]

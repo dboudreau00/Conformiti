@@ -14,8 +14,8 @@ from notifications.models import NotificationReceipt, WebhookDelivery
 from notifications.tasks import post_daily_summary, run_digests
 from testutils import APITestBase, make_doc
 
-# Real Slack and Teams hosts: since 0.9.5b a webhook may only address a host
-# those services actually issue webhooks on, checked before every post.
+# Real Slack and Teams hosts: a webhook may only address a host those
+# services issue webhooks on, checked before every post.
 SLACK_HOOK = "https://hooks.slack.com/services/T/B/x"
 TEAMS_HOOK = "https://example.webhook.office.com/webhookb2/hook"
 CHANNELS = dict(SLACK_WEBHOOK_URL=SLACK_HOOK, TEAMS_WEBHOOK_URL=TEAMS_HOOK,

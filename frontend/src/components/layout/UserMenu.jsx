@@ -7,7 +7,7 @@ import { NavIcon } from "./NavIcon.jsx";
 
 /** The workspace a person is working in, or null where naming it tells them
  * nothing: an installation with only the default workspace, where a label
- * reading "Default" was an empty-looking section. A superuser who has switched
+ * reading "Default" would be an empty-looking section. A superuser who has switched
  * into another organisation's workspace is always told. */
 export function workspaceNote(me) {
   const ws = me?.active_workspace || me?.workspace_detail;

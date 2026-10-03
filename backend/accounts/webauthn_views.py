@@ -7,12 +7,12 @@ from audit.events import record_auth_event
 
 from . import passkeys
 from .models import WebAuthnCredential
-from .reauth import reauthenticated  # re-exported: this is where it used to live
+from .reauth import reauthenticated
 from .views import _MfaThrottle
 
 
 class PasskeyListView(APIView):
-    """GET: the caller's passkeys. POST: nothing -- enrolment is two steps
+    """GET: the caller's passkeys. There is no POST: enrolment is two steps
     (``/register/options/`` then ``/register/``)."""
     permission_classes = [IsAuthenticated]
 
@@ -59,7 +59,7 @@ class PasskeyRegisterView(APIView):
             return Response({"detail": exc.message, "code": exc.code}, status=400)
         record_auth_event(request, request.user, "mfa", f"passkey enrolled: {row.name}")
         # The account's first second factor comes with its recovery codes,
-        # shown once -- exactly as enabling the authenticator app does.
+        # shown once, as enabling the authenticator app does.
         codes = None
         if first_factor and request.user.backup_codes_remaining == 0:
             codes = request.user.issue_backup_codes()
@@ -68,9 +68,9 @@ class PasskeyRegisterView(APIView):
 
 
 class PasskeyDetailView(APIView):
-    """PATCH renames; DELETE removes and takes proof the account is yours in the
-    body, like turning off the authenticator app does, so a hijacked session
-    cannot quietly strip a factor -- or clear the suspect mark on a key it
+    """PATCH renames. DELETE removes, and takes proof the account is yours in
+    the body, as turning off the authenticator app does, so a hijacked session
+    cannot quietly strip a factor or clear the suspect mark on a key it
     cloned."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
@@ -93,11 +93,10 @@ class PasskeyDetailView(APIView):
         row = self._get(request, pk)
         if row is None:
             return Response({"detail": "No such passkey."}, status=404)
-        # Not check_password: an account provisioned through an identity
-        # provider has no usable password, so the owner of a passkey their
-        # authenticator has reported cloned had no way to take it off. A
-        # backup code, or a code from the authenticator app, proves the same
-        # thing.
+        # Not a bare check_password: an account provisioned through an
+        # identity provider has no usable password, so its owner could not
+        # remove a passkey reported as cloned. A backup code, or a code from
+        # the authenticator app, proves the same thing.
         if not reauthenticated(request):
             return Response({"detail": "Confirm your password, or a code from a factor you still have.",
                              "code": "reauth_required"}, status=403)

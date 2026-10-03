@@ -7,7 +7,6 @@ import base64
 import datetime as dt
 import secrets
 import zlib
-from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 from cryptography import x509
@@ -290,10 +289,9 @@ class SamlFlowTests(APITestBase):
         self.refused("token", recipient)
 
     def test_a_response_that_names_no_destination_is_refused(self):
-        """0.9.5 checked Destination only when it was there, so a response
-        captured at one service provider could be replayed at another by
-        dropping the attribute (REVIEWS.md (0.9.5 review), S-6). The POST binding
-        requires it."""
+        """The POST binding requires Destination. Accepting its absence would
+        let a response captured at one service provider be replayed at
+        another by dropping the attribute (REVIEWS.md (0.9.5 review), S-6)."""
         def no_destination(idp):
             idp.destination = ""
         self.refused("token", no_destination)
@@ -304,12 +302,10 @@ class SamlFlowTests(APITestBase):
         self.refused("state", no_recipient)
 
     def test_a_confirmation_with_no_expiry_confirms_nothing(self):
-        """L-1, 0.9.5f. The POST binding requires NotOnOrAfter on a bearer
-        confirmation. 0.9.5b made Destination and Recipient required and left
-        this one honoured-when-present, so an assertion that simply omitted it
-        was bounded by the Conditions window instead, and by an hour when that
-        was absent too. Once the replay row is pruned, the same assertion
-        posts again."""
+        """L-1. The POST binding requires NotOnOrAfter on a bearer
+        confirmation. An assertion that omits it would be bounded by the
+        Conditions window instead, or by an hour when that is absent too, and
+        once the replay row is pruned the same assertion could post again."""
         def no_expiry(idp):
             idp.subject_expiry = ""
         self.refused("state", no_expiry)

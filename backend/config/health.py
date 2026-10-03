@@ -88,8 +88,8 @@ def signing_state():
     one organisation it reports that organisation's key, the one its packages
     carry. With several it cannot know which is wanted and names none
     (``per_workspace``); /api/signing-keys/?workspace=<slug> answers for one.
-    Until 0.9.5mb it reported the installation's root key, which signs
-    nothing, so a fingerprint read here never matched a package."""
+    It never reports the installation's root key, which signs nothing, so a
+    fingerprint read here matches the packages."""
     from accounts import tenancy
     from accounts.models import Workspace
     from attestations import signing
@@ -126,19 +126,18 @@ class HealthView(APIView):
                 cur.fetchone()
         except DatabaseError:
             db_ok = False
-        # `demo_accounts` is deliberately still unauthenticated. It is what
-        # puts "this installation still has its seeded demo accounts, remove
-        # them before real use" on the sign-in screen, where the person who
-        # can act on it will actually see it. Hiding it would quietly remove
-        # that warning from the one page it belongs on, and the seeded
-        # accounts would stay. 0.9.5b stops seeding them by default instead,
-        # so an installation has nothing to disclose unless its operator
-        # asked for the demo dataset (REVIEWS.md (0.9.5 review), S-9).
+        # `demo_accounts` is unauthenticated on purpose. It puts "this
+        # installation still has its seeded demo accounts, remove them before
+        # real use" on the sign-in screen, where the person who can act on it
+        # will see it. Hiding it would remove that warning from the one page
+        # it belongs on. The demo accounts are not seeded by default, so an
+        # installation has nothing to disclose unless its operator asked for
+        # the demo dataset (REVIEWS.md (0.9.5 review), S-9).
         # `first_admin_needed` is unauthenticated for the same reason: it is
-        # true only while nobody at all can sign in, and it is what tells the
-        # person at the sign-in page how the first administrator is made. It
-        # turns false with the first active account, so a deployment anyone
-        # uses discloses nothing through it.
+        # true only while nobody at all can sign in, and it tells the person
+        # at the sign-in page how the first administrator is made. It turns
+        # false with the first active account, so a deployment anyone uses
+        # discloses nothing through it.
         body = {
             "status": "ok" if db_ok else "degraded",
             "version": __version__,

@@ -143,8 +143,8 @@ test.describe("phone width", () => {
 
   // The bar's own width, on every page. The pages' own layouts are another
   // matter: Users, Champion groups and the Risk register carry tables wider
-  // than a phone and scroll the page sideways, as they did under the old
-  // shell, so the page-level check below leaves those three out.
+  // than a phone and scroll the page sideways, so the page-level check
+  // below leaves those three out.
   const OVERFLOWING = new Set(["/users", "/groups", "/risks"]);
   for (const path of ALL_PAGES) {
     test(`${path}: the bar fits${OVERFLOWING.has(path) ? "" : " and the page does not scroll sideways"}`, async ({ page }) => {

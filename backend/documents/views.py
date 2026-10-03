@@ -3,7 +3,7 @@ import re
 
 import django_filters as filters
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.filters import OrderingFilter
@@ -142,8 +142,7 @@ class FolderViewSet(viewsets.ModelViewSet):
             by_parent.setdefault(key, []).append(f)
 
         # Two facts per node, each resolved once for the whole tree rather
-        # than once per node: the tree used to run an access walk and a
-        # count query for every folder it rendered.
+        # than once per node (an access walk and a count query per folder).
         from django.db.models import Count
 
         from .access import bulk_effective_access
@@ -171,8 +170,8 @@ class FolderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def permissions(self, request, pk=None):
         """Who can reach this folder. The map is as sensitive as the folder,
-        so it takes manage -- matching FolderPermissionViewSet, which already
-        scopes the same rows that way."""
+        so it takes manage, matching FolderPermissionViewSet, which scopes
+        the same rows that way."""
         folder = self.get_object()
         user = request.user
         if not (user.can_manage_folders or user.can_view_all or user.is_superuser
@@ -283,8 +282,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # Replacing the bytes is what `new_version` is for: it takes edit on
         # the folder, scans the upload, archives the old file and bumps the
-        # version. A plain PATCH did none of that and left the stale scan
-        # verdict in place, so the field is refused here.
+        # version. A plain PATCH would do none of that and would leave the
+        # stale scan verdict in place, so the field is refused here.
         if "file" in serializer.validated_data:
             raise ValidationError(
                 {"file": "Upload a new version instead: POST /documents/{id}/new_version/."})
@@ -301,9 +300,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         # A moved review clock is a new set of windows. The reminder scan
         # records which windows it has already sent for the *old* date, and
         # once the overdue sentinel is in that list nothing fires again, so
-        # an edit to the review date used to silence every later reminder
-        # for good. Clearing the record lets the scan start over against the
-        # new date, exactly as `mark_reviewed` and `new_version` already do.
+        # an edit to the review date would silence every later reminder.
+        # Clearing the record lets the scan start over against the new date,
+        # as `mark_reviewed` and `new_version` do.
         if doc.next_review_date != before:
             doc.reminders_sent = []
             fields.append("reminders_sent")
@@ -349,7 +348,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         scan_or_raise(new_file, request)
         # Never archive quarantined bytes: DocumentVersion is a download route
         # of its own and archived files are not re-scanned, so keeping them
-        # would leave the infected copy reachable after the "fix".
+        # would leave the infected copy reachable after the new upload.
         if doc.file and not doc.quarantined_at:
             DocumentVersion.objects.create(
                 document=doc, version=doc.version, file=doc.file,
@@ -374,8 +373,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         get_object() has already run get_queryset() (folder-filtered) and
         DocumentAccessPermission, so reaching this line means the read is
-        authorised. Recorded in the audit trail: who read which evidence is
-        exactly the kind of question this product exists to answer.
+        authorised. Recorded in the audit trail, so who read which evidence
+        can be answered later.
         """
         doc = monitor.refuse_if_quarantined(self.get_object())
         record_evidence_read(request, doc)
@@ -440,18 +439,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
 
 class FormTemplateViewSet(viewsets.ModelViewSet):
-    # Blank templates are internal working material; an external auditor
-    # reads the package they were issued and nothing else.
-    def get_queryset(self):
-        qs = super().get_queryset()
-        return qs.none() if self.request.user.is_auditor else qs
-
     """Central library of reusable blank forms/policy templates."""
     queryset = FormTemplate.objects.all()
     serializer_class = FormTemplateSerializer
     permission_classes = [CanManageDocuments]
     filterset_fields = ["category"]
     search_fields = ["name", "description"]
+
+    # Blank templates are internal working material; an external auditor
+    # reads the package they were issued and nothing else.
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.none() if self.request.user.is_auditor else qs
 
     def perform_create(self, serializer):
         scan_or_raise(serializer.validated_data.get("file"), self.request)
@@ -463,7 +462,7 @@ class FormTemplateViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
-        """Templates are blank forms, not evidence, so this is not audited --
+        """Templates are blank forms, not evidence, so this is not audited,
         but it still goes through the API so no storage path is published."""
         return serve_stored_file(self.get_object().file, self.get_object().name)
 

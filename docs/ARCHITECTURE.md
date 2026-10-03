@@ -216,7 +216,7 @@ Escape closes, focus moves in and returns to the trigger, and menus take the
 arrow keys. The palette searches only through the list endpoints the pages
 themselves use (`/controls/`, `/documents/` and `/users/` with `?search=`). It
 does not ask an external auditor for the two the API refuses, and a 403 from
-either simply leaves that group out, so it never shows what the API would not.
+either leaves that group out, so it never shows what the API would not.
 
 The dashboard reads `/analytics/summary/` and the upcoming reviews, and
 requests `/controls/atlas/` on its own, so a slow or refused atlas leaves the

@@ -1,14 +1,14 @@
 """
 Third-party vendor risk management.
 
-A vendor is any outside party the organisation relies on for a control — the
+A vendor is any outside party the organisation relies on for a control: the
 cloud provider that owns physical security, the payroll processor that holds
-PII, the pen-test firm whose report is evidence. What an auditor asks about
-each one is the same every time: how critical is it, what data does it touch,
-what assurance do we hold over it, and has that assurance expired.
+PII, the pen-test firm whose report is evidence. An auditor asks the same
+questions about each one: how critical is it, what data does it touch, what
+assurance do we hold over it, and has that assurance expired.
 
 Assurance is modelled as ``VendorAssessment`` rows: a SOC 2 report, an ISO
-certificate, a penetration test, a signed DPA, a completed questionnaire —
+certificate, a penetration test, a signed DPA or a completed questionnaire,
 each with a validity window, an outcome, and optionally the document that
 evidences it. The register's risk view is derived from those, never typed in.
 """
@@ -21,8 +21,8 @@ from django.utils import timezone
 from accounts.tenancy import TenantModel
 
 # The questionnaire the product ships. Deliberately short: every question maps
-# to something an auditor will ask about the vendor, and a 200-question sheet
-# nobody finishes is worse than twelve everyone does. Answers are stored on the
+# to something an auditor will ask about the vendor, and a long sheet is less
+# likely to be completed than twelve questions. Answers are stored on the
 # assessment as JSON keyed by ``id``.
 DEFAULT_QUESTIONNAIRE = [
     {"id": "soc2", "text": "Does the vendor hold a current SOC 2 Type II report (or equivalent)?", "area": "assurance"},
@@ -109,7 +109,7 @@ class Vendor(TenantModel):
 
     def compute_next_review(self):
         """Next review counts from the last one, or from onboarding when there
-        has never been one -- never from "now", or a vendor that keeps being
+        has never been one, and never from "now", or a vendor that keeps being
         edited would keep being pushed out of the overdue list."""
         base = self.last_reviewed or (self.created_at.date() if self.created_at else timezone.localdate())
         self.next_review_date = base + timedelta(days=self.CADENCE_DAYS[self.review_cadence])
@@ -171,9 +171,8 @@ class Vendor(TenantModel):
 
 
 class VendorAssessment(TenantModel):
-    tenant_parent = "vendor"
-
     """One piece of assurance we hold over a vendor, with its validity window."""
+    tenant_parent = "vendor"
 
     class Kind(models.TextChoices):
         SOC2_TYPE1 = "soc2_type1", "SOC 2 Type I"
@@ -238,13 +237,11 @@ class VendorAssessment(TenantModel):
 
 
 class SharedResponsibility(TenantModel):
-    tenant_parent = "vendor"
-
     """One control's split between us and a vendor, with a statement each way.
 
     This is the PCI DSS "responsibility matrix" (v4 Req 12.8.5 / TPSP guidance)
     generalised to every framework: for each control, does the provider do it,
-    do we, or is it shared -- and what, concretely, does each side do. An
+    do we, or is it shared, and what does each side do. An
     auditor reads this before anything else about the vendor, because it tells
     them which controls' evidence to expect from whom.
 
@@ -253,6 +250,7 @@ class SharedResponsibility(TenantModel):
     readable version we can cross-check against the control register, prompt
     people to complete, and export.
     """
+    tenant_parent = "vendor"
 
     class Responsibility(models.TextChoices):
         PROVIDER = "provider", "Provider"
@@ -288,8 +286,6 @@ class SharedResponsibility(TenantModel):
 
 
 class QuestionnaireInvite(TenantModel):
-    tenant_parent = "vendor"
-
     """The questionnaire, sent to the vendor to answer themselves.
 
     A time-boxed link, like an audit package grant but for someone with no
@@ -300,6 +296,7 @@ class QuestionnaireInvite(TenantModel):
     the organisation to review. Only the token's hash is stored; the link is
     shown once to the person who sent it and travels in the email.
     """
+    tenant_parent = "vendor"
     DEFAULT_DAYS = 14
     MAX_DAYS = 90
 

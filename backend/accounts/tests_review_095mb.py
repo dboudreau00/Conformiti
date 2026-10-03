@@ -1,6 +1,6 @@
-"""Defects a documentation audit found before a partner security review,
-fixed in 0.9.5mb. Each class names the documented control the code did not
-deliver; see REVIEWS.md and SECURITY.md."""
+"""Regression tests for the defects a documentation audit found before a
+partner security review (fixed in 0.9.5mb). Each class names the documented
+control the code must deliver; see REVIEWS.md and SECURITY.md."""
 import time
 from unittest import mock
 
@@ -10,7 +10,7 @@ from django.test import Client, RequestFactory, override_settings
 from rest_framework.test import APIClient
 
 from accounts import mfa as mfa_lib
-from accounts.models import MfaDevice, Role, User, Workspace
+from accounts.models import MfaDevice, Role, Workspace
 from attestations.tests import PackageTestBase
 from attestations.views import PackageWorkThrottle
 from audit.middleware import _client_ip
@@ -37,7 +37,7 @@ def _admin_client(user):
 class UnreadableTotpSecretTests(APITestBase):
     """A secret the field-encryption ring cannot decrypt reads as "", and the
     code of an empty key is one anyone can compute. SECURITY.md says this
-    state degrades safely; it accepted that code as the second factor."""
+    state degrades safely, so that code must be refused as a second factor."""
 
     def empty_key_code(self):
         # The next time step, which the drift window accepts: the current one
@@ -67,9 +67,10 @@ class UnreadableTotpSecretTests(APITestBase):
 
 
 class HealthOverPlainHttpTests(APITestBase):
-    """With BEHIND_TLS on, SECURE_SSL_REDIRECT answered the image's own
-    HEALTHCHECK (plain HTTP to 127.0.0.1:8000) with a 301, so the backend was
-    never healthy and compose started nothing that waits for it."""
+    """With BEHIND_TLS on, SECURE_SSL_REDIRECT must not redirect the image's
+    own HEALTHCHECK (plain HTTP to 127.0.0.1:8000). A 301 there would leave
+    the backend permanently unhealthy and compose would start nothing that
+    waits for it."""
 
     def test_health_answers_plain_http_and_the_rest_still_redirects(self):
         self.assertEqual(settings.SECURE_REDIRECT_EXEMPT, [r"^api/health/$"])
@@ -82,8 +83,8 @@ class HealthOverPlainHttpTests(APITestBase):
 
 
 class AdminTrailReadOnlyTests(APITestBase):
-    """The Django admin could delete audit entries, one at a time or with
-    "Delete selected", and delete a workspace with its whole trail."""
+    """The Django admin must not delete audit entries, one at a time or with
+    "Delete selected", or delete a workspace with its whole trail."""
 
     def test_no_superuser_can_edit_or_delete_an_entry(self):
         entry = AuditLog.objects.create(user=self.manager, action="update", object_type="documents",
@@ -105,8 +106,8 @@ class AdminTrailReadOnlyTests(APITestBase):
 
 
 class AdminPasswordPageTests(APITestBase):
-    """The hook meant to end sessions on an administrator's password set sat
-    in save_model, which the admin's password page never calls."""
+    """The hook that ends sessions on an administrator's password set must run
+    on the admin's password page, which never calls save_model."""
 
     def test_a_password_set_on_the_admin_page_ends_sessions_and_is_audited(self):
         from datetime import timedelta
@@ -143,8 +144,8 @@ class AdminPasswordPageTests(APITestBase):
 
 
 class PackageWorkThrottleTests(PackageTestBase):
-    """THROTTLE_PACKAGE_WORK was never applied: a ScopedRateThrottle with no
-    view throttle_scope lets every request through."""
+    """THROTTLE_PACKAGE_WORK must apply: a ScopedRateThrottle with no view
+    throttle_scope lets every request through."""
 
     def test_seal_and_export_share_the_documented_per_account_limit(self):
         with mock.patch.object(PackageWorkThrottle, "THROTTLE_RATES", {"package_work": "3/min"}):
@@ -160,9 +161,10 @@ class PackageWorkThrottleTests(PackageTestBase):
 
 
 class AuditClientAddressTests(APITestBase):
-    """The trail took the rightmost X-Forwarded-For entry whatever NUM_PROXIES
-    said, so behind a terminator in front of the shipped nginx it recorded the
-    terminator for every client. It now chooses as the rate limits do."""
+    """The trail chooses the client address as the rate limits do, following
+    NUM_PROXIES. Taking the rightmost X-Forwarded-For entry regardless would
+    record the terminator for every client behind one in front of the shipped
+    nginx."""
 
     def ip_with(self, proxies, xff="203.0.113.5, 10.0.0.2", remote="10.0.0.3"):
         rest = dict(settings.REST_FRAMEWORK, NUM_PROXIES=proxies)
@@ -187,8 +189,8 @@ class AuditClientAddressTests(APITestBase):
 
 class SecondFactorTrailTests(APITestBase):
     """Turning the authenticator on and off and regenerating backup codes
-    wrote nothing: /api/auth/ is outside the request middleware, and these
-    views recorded no event of their own."""
+    must reach the trail: /api/auth/ is outside the request middleware, so
+    these views record their own events."""
 
     def mfa_details(self):
         return list(AuditLog.objects.filter(action="mfa", user=self.manager)
@@ -208,8 +210,8 @@ class SecondFactorTrailTests(APITestBase):
 
 
 class RefusedSignInTrailTests(APITestBase):
-    """A sign-in the rate limit refused never reached the trail: DRF refuses
-    it before the view's post(), where every other attempt is recorded."""
+    """A sign-in the rate limit refuses must reach the trail: DRF refuses it
+    before the view's post(), where every other attempt is recorded."""
 
     def test_a_throttled_attempt_is_recorded_once_a_window(self):
         c = APIClient()
@@ -221,8 +223,8 @@ class RefusedSignInTrailTests(APITestBase):
 
 
 class AdminActivityTrailTests(APITestBase):
-    """Sign-ins to the Django admin, and what was saved there, reached the
-    trail only for a password set and a refused second factor."""
+    """Sign-ins to the Django admin, and what is saved there, must reach the
+    trail."""
 
     def test_admin_sign_ins_are_recorded_both_ways(self):
         Client().post("/admin/login/", {"username": "ada", "password": "wrong"})
@@ -250,9 +252,10 @@ class AdminActivityTrailTests(APITestBase):
 
 
 class SigningFingerprintTests(PackageTestBase):
-    """Settings > About and /api/health/ showed the installation's root key,
-    which signs nothing: every package is signed with a key derived for its
-    workspace. Operators were told to hand auditors that fingerprint."""
+    """Settings > About and /api/health/ must show the key a package is signed
+    with, not the installation's root key, which signs nothing: every package
+    is signed with a key derived for its workspace. Operators hand auditors
+    that fingerprint."""
 
     def test_health_names_the_key_a_package_carries_on_a_single_workspace(self):
         self.add_control()

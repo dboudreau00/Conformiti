@@ -5,7 +5,7 @@
 
 The old key file is kept beside the new one as <file>.retired-<key id>, its
 public key stays in the SigningKey table marked retired, and every package
-already sealed keeps the public key that signed it -- so nothing in
+already sealed keeps the public key that signed it, so nothing in
 circulation stops verifying. Packages sealed from now on use the new key.
 With SIGNING_KEY set in the environment there is no file to rotate: change
 the variable and restart.

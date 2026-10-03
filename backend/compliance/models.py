@@ -53,11 +53,11 @@ class Control(TenantModel):
     category = models.ForeignKey(ControlCategory, on_delete=models.CASCADE, related_name="controls")
     control_id = models.CharField(max_length=40)
     # Where the control sits in its category: its place in the framework's
-    # data file, the way ControlCategory.order places categories. The register
-    # sorted control_id as text, so ISO 27001 read A.5.1, A.5.10 ... A.5.19,
-    # A.5.2, and no text or numeric sort gets every standard right: NIST CSF
-    # 2.0 lists GV.OC, GV.RM, GV.RR, GV.PO, GV.OV, GV.SC. 0 means not placed;
-    # save() puts such a control last in its category.
+    # data file, the way ControlCategory.order places categories. A text sort
+    # of control_id reads A.5.1, A.5.10 ... A.5.19, A.5.2 for ISO 27001, and no
+    # text or numeric sort suits every standard: NIST CSF 2.0 lists GV.OC,
+    # GV.RM, GV.RR, GV.PO, GV.OV, GV.SC. 0 means not placed; save() puts such
+    # a control last in its category.
     order = models.PositiveIntegerField(default=0)
     title = models.CharField(max_length=255)
     objective = models.TextField(blank=True)
@@ -69,10 +69,10 @@ class Control(TenantModel):
 
     # --- operating-effectiveness testing ---------------------------------
     # "Implemented" says the control was built; these say somebody checked it
-    # still works, which is the question an auditor actually asks. Recorded
-    # with who and when, because the audit middleware logs field NAMES only --
-    # without provenance a single manager could backdate all 217 controls and
-    # the trail would read `fields=last_tested_on` 217 times.
+    # still works, which is what an auditor asks. Recorded with who and when,
+    # because the audit middleware logs field NAMES only: without provenance a
+    # single manager could backdate all 217 controls and the trail would read
+    # `fields=last_tested_on` 217 times.
     last_tested_on = models.DateField(null=True, blank=True)
     test_interval_days = models.PositiveSmallIntegerField(
         null=True, blank=True,

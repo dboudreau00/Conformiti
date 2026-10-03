@@ -58,7 +58,7 @@ test.describe("authentication", () => {
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
     // Sign-out revokes server-side: the refresh token must no longer mint
-    // access tokens, which is the whole point of the 0.2.0 rotation work.
+    // access tokens, which is what refresh-token rotation is for.
     const refreshed = await request.post("/api/auth/token/refresh/", { data: { refresh } });
     expect(refreshed.status()).toBe(401);
   });

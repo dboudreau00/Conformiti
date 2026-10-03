@@ -1,4 +1,4 @@
-// `npm run shots` — regenerate the README screenshots from the running app.
+// `npm run shots`: regenerate the README screenshots from the running app.
 //
 // The screenshot project writes PNGs into assets/screenshots/, so it is gated
 // behind SHOOT rather than left in the default project list where `npm test`

@@ -87,9 +87,9 @@ class HeavilyLinkedDocumentTests(APITestBase):
     """A policy pre-mapped into every shipped library carries thousands of
     control links. Django expands a forward-key prefetch on SQLite into one
     OR clause per related row, and SQLite refuses an expression deeper than
-    1000, so the document list answered 500 for exactly the customers with
-    the most content. The links are now prefetched with their control joined
-    in, which is one query on every backend."""
+    1000, so the document list would answer 500 for the organisations with
+    the most content. The links are prefetched with their control joined in,
+    which is one query on every backend."""
 
     def test_the_list_answers_with_more_than_a_thousand_links(self):
         from compliance.models import Control, ControlEvidence
@@ -251,9 +251,8 @@ class DocumentLifecycleTests(APITestBase):
     def test_active_content_extensions_are_refused(self):
         c = self.client_for(self.manager)
         for bad in ("evil.html", "evil.svg", "run.exe", "s.ps1",
-                    # Macro-enabled Office, refused since 0.9.5b: these are the
-                    # files an analyst opens without thinking, which is what
-                    # makes them the delivery method of choice.
+                    # Macro-enabled Office: an analyst opens these without
+                    # thinking, which makes them a common delivery route.
                     "policy.docm", "figures.xlsm", "deck.pptm", "book.xlsb",
                     "saved.mhtml"):
             self.assertEqual(self._upload(c, self.tree.ctrl1, filename=bad).status_code, 400, bad)
@@ -286,12 +285,12 @@ class DocumentLifecycleTests(APITestBase):
                                       content=ooxml("word/vbaProject.bin")).status_code, 400)
 
     def test_legacy_office_is_refused_by_name_and_by_shape(self):
-        """M-2, 0.9.5f. 0.9.5b refused the macro-enabled OOXML names and looked
-        inside the zip for a VBA project. Neither reaches legacy Office: a .doc
-        is an OLE2 compound file, its macros live in a stream rather than in a
-        zip member, and it is still what arrives in a compliance inbox. The
-        signature is what decides, because the extension is the uploader's
-        word and renaming it to .dat used to be the whole bypass."""
+        """M-2, 0.9.5f. The macro-enabled OOXML names and the VBA project
+        inside a zip do not cover legacy Office: a .doc is an OLE2 compound
+        file, its macros live in a stream rather than in a zip member, and it
+        is still what arrives in a compliance inbox. The signature decides,
+        because the extension is the uploader's word and renaming it to .dat
+        would otherwise bypass the check."""
         ole2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64
         c = self.client_for(self.manager)
         for bad in ("policy.doc", "figures.xls", "deck.ppt", "memo.rtf"):
@@ -333,9 +332,9 @@ class DocumentLifecycleTests(APITestBase):
                          ).status_code, 201)
 
     def test_a_macro_part_past_the_old_scan_limit_is_found(self):
-        """The scan read the first two thousand names, so entry 2001 was a
-        place to hide. Reading the central directory is what costs, and
-        namelist() has already done it."""
+        """The scan reads every name, not the first two thousand, so entry
+        2001 is not a place to hide. Reading the central directory is what
+        costs, and namelist() has already done it."""
         import io as _io
         import zipfile
 
@@ -356,10 +355,10 @@ class DocumentLifecycleTests(APITestBase):
 
 class AuditorWriteTests(APITestBase):
     """L-5, 0.9.5h. Folder writes go through effective_access, which caps an
-    external auditor at view. Document writes went round it: the owner
-    short-circuit returned True before anything asked what the caller was, so
-    an auditor made the owner of a document in a folder they had been granted
-    could edit its name, status and description."""
+    external auditor at view. Document writes must not go round it: if the
+    owner short-circuit returned True before anything asked what the caller
+    was, an auditor made the owner of a document in a folder they had been
+    granted could edit its name, status and description."""
 
     def setUp(self):
         super().setUp()
@@ -391,10 +390,9 @@ class AuditorWriteTests(APITestBase):
 class EvidenceDownloadTests(APITestBase):
     """Reading a stored file is an authorised, audited act.
 
-    Before 0.3.0 nginx served the whole media volume as a plain alias, and
-    upload paths are derived from the folder tree and the file name -- so
-    anyone who could reach the site and guess a path could read any document,
-    with nothing recorded.
+    Upload paths are derived from the folder tree and the file name, so if
+    nginx served the media volume as a plain alias, anyone who could reach the
+    site and guess a path could read any document, with nothing recorded.
     """
 
     def setUp(self):
@@ -469,9 +467,9 @@ class EvidenceDownloadTests(APITestBase):
 
 class DownloadNameTests(APITestBase):
     """A download is named after the document and keeps the stored file's
-    extension and type. Before, 'Access Control Policy' uploaded from
-    policy.pdf downloaded as 'Access Control Policy', with no extension and
-    as application/octet-stream, so no OS would open it by double-click."""
+    extension and type. 'Access Control Policy' uploaded from policy.pdf must
+    not download as 'Access Control Policy' with no extension and as
+    application/octet-stream, which no OS would open by double-click."""
 
     def setUp(self):
         super().setUp()
@@ -567,7 +565,7 @@ class DownloadNameTests(APITestBase):
                          "the bytes are a PDF whatever the title says")
 
     def test_a_compressed_tarball_keeps_both_suffixes(self):
-        """'Backup logs' from logs.tar.gz downloaded as 'Backup logs.gz',
+        """'Backup logs' from logs.tar.gz must not download as 'Backup logs.gz',
         which decompresses to an extensionless tar."""
         from documents.downloads import download_filename
 
@@ -597,8 +595,8 @@ class DownloadNameTests(APITestBase):
 
 class OwnerNameTests(APITestBase):
     """createsuperuser asks for no first or last name, so the first
-    administrator's documents showed no owner at all while the upload form
-    offered '<username> (me)'."""
+    administrator's documents must not show no owner while the upload form
+    offers '<username> (me)'."""
 
     def test_an_account_with_no_name_is_shown_by_its_username(self):
         from testutils import make_user
@@ -624,8 +622,8 @@ class OwnerNameTests(APITestBase):
         self.assertEqual(c.get(f"/api/documents/{doc.pk}/").data["owner_name"], "")
 
     def test_the_other_pages_name_a_nameless_account_the_same_way(self):
-        """Controls, risks and vendors showed such an owner as 'Unassigned',
-        and the dashboard's overdue list as nobody."""
+        """Controls, risks and vendors must not show such an owner as
+        'Unassigned', nor the dashboard's overdue list as nobody."""
         from governance.models import Risk
         from testutils import make_user
         from vendors.models import Vendor
@@ -722,7 +720,7 @@ class UnorderedPageGuardTests(APITestBase):
 
         with self.assertRaises(UnorderedObjectListWarning):
             Paginator(FolderPermission.objects.all(), 2)
-        # Ordered, as the viewsets now order it, it pages as before.
+        # Ordered, as the viewsets order it, it pages normally.
         grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
         self.assertEqual(Paginator(FolderPermission.objects.order_by("pk"), 2).count, 1)
 
@@ -828,7 +826,7 @@ class VirusScanTests(APITestBase):
 
     # ---------------------------------------------------------------- default
     def test_scanning_is_off_by_default(self):
-        """Benign bytes and a mock -- writing a real EICAR file into MEDIA_ROOT
+        """Benign bytes and a mock: writing a real EICAR file into MEDIA_ROOT
         would be quarantined by on-access AV on a developer machine."""
         with mock.patch("documents.clamav.scan_stream") as scan:
             r = self.upload(b"an ordinary policy")
@@ -907,7 +905,7 @@ class VirusScanTests(APITestBase):
     def test_content_the_scanner_could_not_inspect_is_refused_not_called_malware(self):
         """ClamAV reports Heuristics.Limits.Exceeded as FOUND. Storing it would
         mean keeping a file that carries the claim it was scanned; calling it
-        malware would be a lie in the other direction."""
+        malware would be wrong in the other direction."""
         self.clamd.forced = b"stream: Heuristics.Limits.Exceeded.MaxFileSize FOUND\0"
         with self.scanning():
             r = self.upload(b"a big archive")
@@ -1115,8 +1113,8 @@ class PreviewTests(APITestBase):
         self.assertEqual(r.status_code, 415)
 
     def test_a_small_docx_that_expands_into_a_forest_of_tags_is_refused(self):
-        """The zip header's declared sizes can be honest and the part still be
-        a bomb: 3 MB of empty paragraphs is a tree many times that size."""
+        """The zip header's declared sizes can be accurate and the part still
+        be a bomb: 3 MB of empty paragraphs is a tree many times that size."""
         W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         body = b"<w:p/>" * 500_000
         doc_xml = (f'<?xml version="1.0"?><w:document xmlns:w="{W}"><w:body>'.encode() + body

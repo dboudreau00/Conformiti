@@ -92,7 +92,7 @@ job below. What it covers:
 
 - The browser walkthrough in [TESTING.md](TESTING.md), for the things a
   scripted suite reads past: contrast in every theme pack, keyboard order,
-  whether a message is actually intelligible.
+  whether a message is intelligible.
 - Real email delivery (`manage.py test_mailbox --to you@…`) and Jira, both of
   which need real accounts.
 - Malware scanning against a real ClamAV daemon (`docker compose --profile

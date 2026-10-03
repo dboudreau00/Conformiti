@@ -58,7 +58,7 @@ const SECTIONS = [
     url: "/users/",
     // The directory answers any member, but the Users page it links to is for
     // whoever manages users; anyone else would be sent to a refusal. A 403 is
-    // still handled below, and simply leaves People out.
+    // still handled below, and leaves People out.
     allowed: (me) => !me?.capabilities?.auditor && !!me?.capabilities?.manage_users,
     row: (u) => ({
       id: u.id,

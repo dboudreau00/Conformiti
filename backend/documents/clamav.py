@@ -5,19 +5,19 @@ Speaks INSTREAM to a ClamAV daemon over TCP: send ``zINSTREAM\\0``, then
 length-prefixed chunks, then a zero-length chunk; the daemon answers
 ``stream: OK`` or ``stream: <signature> FOUND``.
 
-No dependency, because the protocol is a dozen lines and a Python client for it
-would be a supply-chain surface for the sake of them. The file is streamed in
-64 KiB chunks, so a 32 MB upload never lands in memory.
+No dependency: the protocol is a dozen lines, and a client library would add
+supply-chain surface for no gain. The file is streamed in 64 KiB chunks, so a
+32 MB upload never lands in memory.
 
-Three outcomes, and the third matters:
+Three outcomes:
 
 * clean;
-* infected — ``InfectedError``, the upload is refused and audited;
-* not fully inspected — ``LimitsExceededError``. ClamAV skips content that
+* infected: ``InfectedError``, the upload is refused and audited;
+* not fully inspected: ``LimitsExceededError``. ClamAV skips content that
   trips ``MaxFileSize`` / ``MaxScanSize`` / ``MaxRecursion`` and, with
   ``AlertExceedsMax yes``, says so. Without that it answers ``OK`` for a file
-  it did not actually scan, and the application would store it carrying the
-  claim that it was clean.
+  it did not scan, and the application would store it carrying the claim that
+  it was clean.
 """
 import socket
 import struct
@@ -29,7 +29,7 @@ INSTREAM = b"zINSTREAM\0"
 # The EICAR test string, split so no contiguous copy of it exists in the
 # repository for an on-access scanner to quarantine. It lives in this module
 # rather than in scanning.py because tools/validate.py imports it on a bare
-# checkout, before anything is pip-installed -- and scanning.py needs Django.
+# checkout, before anything is pip-installed, and scanning.py needs Django.
 _EICAR_HEAD = rb"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-"
 _EICAR_TAIL = rb"ANTIVIRUS-TEST-FILE!$H+H*"
 
@@ -51,8 +51,8 @@ class InfectedError(Exception):
 
 
 class LimitsExceededError(Exception):
-    """ClamAV declined to inspect the whole file. Not the same as clean, and
-    not the same as malware."""
+    """ClamAV declined to inspect the whole file. This is neither clean nor
+    malware."""
 
     def __init__(self, reason):
         self.reason = reason
@@ -69,8 +69,8 @@ def parse_response(text):
     if text.endswith("FOUND"):
         signature = text.split(":", 1)[-1].rsplit(" FOUND", 1)[0].strip()
         # Heuristics.Limits.Exceeded is reported as FOUND but is not a
-        # detection -- it means the file was too big or too deeply nested to
-        # inspect. Refusing it is right; calling it malware is not.
+        # detection: the file was too big or too deeply nested to inspect.
+        # It is refused, but not reported as malware.
         if signature.startswith("Heuristics.Limits.Exceeded"):
             raise LimitsExceededError(signature)
         raise InfectedError(signature)

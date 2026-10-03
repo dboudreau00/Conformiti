@@ -60,10 +60,10 @@ class ClaimBeforeSendTests(APITestBase):
 @override_settings(SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T/B/installation",
                    TEAMS_WEBHOOK_URL="")
 class WorkspaceChannelTests(APITestBase):
-    """One installation-wide webhook used to receive every organisation's
+    """One installation-wide webhook must not receive every organisation's
     sealed packages and auditor requests, each prefixed with the
-    organisation's name: a disclosure to every other organisation reading
-    the channel."""
+    organisation's name: that discloses them to every other organisation
+    reading the channel."""
 
     def test_a_single_workspace_installation_uses_the_installation_channel(self):
         self.assertEqual(webhooks.channels(), [("slack", "https://hooks.slack.com/services/T/B/installation")])

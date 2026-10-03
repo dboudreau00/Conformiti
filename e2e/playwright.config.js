@@ -8,7 +8,7 @@ const ROOT = path.resolve(HERE, "..");
 // The suite drives the *built* SPA served by `vite preview`, not the dev
 // server, so a bundling or minification failure is caught here rather than in
 // production. Both servers are started by Playwright unless they are already
-// running (locally) — in CI they are always started fresh.
+// running (locally); in CI they are always started fresh.
 const IS_CI = !!process.env.CI;
 const PORT = Number(process.env.E2E_PORT || 4173);
 const API_PORT = Number(process.env.E2E_API_PORT || 8001);

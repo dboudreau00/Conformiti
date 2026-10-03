@@ -3,7 +3,6 @@ the bundle carries signature and key, the shipped stdlib verifier agrees with
 the cryptography library, and rotation keeps old packages verifying."""
 import base64
 import io
-import json
 import os
 import tempfile
 import zipfile
@@ -128,7 +127,7 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
             self.assertIn("signature    : VALID", out.getvalue())
             self.assertIn(self.package.signing_key_id, out.getvalue())
             # Alter the manifest: the checksums line still matches the altered
-            # file only if SHA256SUMS is rewritten too -- do that, as a forger
+            # file only if SHA256SUMS is rewritten too. Do that, as a forger
             # would, and the signature is what still fails.
             manifest_path = os.path.join(root, "manifest.json")
             with open(manifest_path, "rb") as fh:

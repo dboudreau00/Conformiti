@@ -23,12 +23,12 @@ class RoleSerializer(serializers.ModelSerializer):
         """An auditor role holds no capabilities.
 
         The shipped Auditor role is ``is_auditor`` alone and is locked, but a
-        custom role was not: any combination stored, and ``PackageGrant`` only
-        asks for ``is_auditor``, so a role with ``can_view_all`` beside it
-        could be issued an engagement and then read the whole programme. The
-        capability short-circuits in documents.access and attestations.access
-        now run after the auditor cap, so such a role is contained at read
-        time too; this stops another one being made (0.9.5h, M-3).
+        custom role could combine flags, and ``PackageGrant`` only asks for
+        ``is_auditor``, so a role with ``can_view_all`` beside it could be
+        issued an engagement and then read the whole programme. The capability
+        short-circuits in documents.access and attestations.access run after
+        the auditor cap, so such a role is contained at read time as well; this
+        stops one being created (M-3).
 
         Merged with the stored row because PATCH is partial: adding a
         capability to an existing auditor role sends only that one field.
@@ -40,11 +40,10 @@ class RoleSerializer(serializers.ModelSerializer):
         if not (merged.get("is_auditor") and any(merged.get(c) for c in self.CAPABILITIES)):
             return attrs
         # A role that already holds the combination keeps it: renaming or
-        # redescribing one must not be refused, and refusing it would amount
-        # to making the operator strip flags that this release deliberately
-        # does not strip for them. What is refused is introducing the mix --
-        # creating one, or flipping either half onto a role that has the
-        # other. _cap contains the legacy rows at read time.
+        # redescribing one must not force the operator to strip flags. Only
+        # introducing the mix is refused: creating one, or adding either half
+        # to a role that has the other. _cap contains existing rows at read
+        # time.
         already = self.instance is not None and self.instance.is_auditor and any(
             getattr(self.instance, c) for c in self.CAPABILITIES)
         if already:
@@ -90,10 +89,10 @@ class UserSerializer(serializers.ModelSerializer):
         return {"id": ws.pk, "name": ws.name, "slug": ws.slug} if ws else None
 
     def get_active_workspace(self, obj):
-        """The workspace this REQUEST is working in, which is not the account's
-        own when a superuser has switched. The shell shows this one; showing
-        the home workspace instead meant a switched superuser saw the wrong
-        organisation's name over another organisation's data."""
+        """The workspace this request is working in, which differs from the
+        account's own when a superuser has switched. The shell shows this one,
+        so a switched superuser sees the name of the organisation whose data
+        is on screen."""
         from accounts import tenancy
 
         ws = tenancy.current()
@@ -119,18 +118,16 @@ class UserWriteSerializer(serializers.ModelSerializer):
     def validate_username(self, value):
         """`username` is unique across the installation, but the validator DRF
         builds for it is workspace-pinned, so a name taken in another tenant
-        used to pass here and fail at the database as a 500 -- telling the
+        would pass it and fail at the database as a 500, which tells the
         caller that person has an account somewhere on this installation.
         Checked unscoped, and reported without saying where."""
         from accounts import tenancy
 
-        # Built inside the block, not outside it. A tenant queryset carries
-        # `workspace_id = ActiveWorkspace()`, which resolves when the query
-        # runs: built out here it was pinned to the caller's workspace, and
-        # running it unscoped compared the column to NULL and matched nothing.
-        # The check passed, the name reached the database's global unique
-        # constraint, and the 500 that came back was the disclosure this was
-        # written to remove.
+        # The queryset must be built inside the block. A tenant queryset
+        # carries `workspace_id = ActiveWorkspace()`, which resolves when the
+        # query runs: built outside, it is pinned to the caller's workspace,
+        # and running it unscoped compares the column to NULL and matches
+        # nothing, so the name would reach the global unique constraint.
         with tenancy.unscoped():
             qs = User.objects.filter(username__iexact=value)
             if self.instance is not None:
@@ -142,11 +139,11 @@ class UserWriteSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         """One address, one account, within the organisation.
 
-        Nothing enforced this, and an identity provider linking by verified
-        email gives up with ``ambiguous_email`` when two accounts answer to
-        one address, which locks that person out of single sign-on. Scoped to
-        the workspace on purpose: a consultant may hold an account in two
-        organisations on the same installation, under the same address."""
+        An identity provider linking by verified email gives up with
+        ``ambiguous_email`` when two accounts answer to one address, which
+        locks that person out of single sign-on. Scoped to the workspace on
+        purpose: a consultant may hold an account in two organisations on the
+        same installation, under the same address."""
         value = (value or "").strip()
         if not value:
             return value
@@ -192,11 +189,9 @@ class UserWriteSerializer(serializers.ModelSerializer):
         instance.save()
         if password:
             # An administrator setting somebody's password is the recovery
-            # path for an account that may already be in the wrong hands.
-            # The person's own password change and the MFA reset both revoke
-            # every issued refresh token; this path used to leave them all
-            # valid, so a hijacked session outlived the reset that was meant
-            # to end it.
+            # path for an account that may already be in the wrong hands, so
+            # it ends the account's sessions as the person's own password
+            # change and the MFA reset do.
             from accounts.session_views import end_all_sessions
             from audit.events import record_auth_event
 
@@ -214,14 +209,14 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
     """Fields a user may edit about themselves. Role and status are excluded so
     a user can never escalate their own access through the account page.
 
-    ``email`` is excluded for a subtler reason. With ``OIDC_LINK_BY_EMAIL`` on,
-    which is the default, an identity provider binds its subject to whichever
-    local account holds the address it asserts. A self-service edit therefore
-    decided who a colleague's first single sign-on would land on: claim an
-    address whose owner had not signed in through the provider yet, and their
+    ``email`` is excluded because of single sign-on. With ``OIDC_LINK_BY_EMAIL``
+    on, which is the default, an identity provider binds its subject to
+    whichever local account holds the address it asserts. A self-service edit
+    would decide where a colleague's first single sign-on lands: claim an
+    address whose owner has not signed in through the provider yet, and their
     first sign-in lands in the claimant's account. Any signed-in caller could
-    do it, the issued external auditor included. Changing an address is an
-    operator's act, at ``/users/{id}/``, where it is recorded (0.9.5f)."""
+    do it, an external auditor included. Changing an address is an operator's
+    act, at ``/users/{id}/``, where it is recorded."""
 
     class Meta:
         model = User
@@ -252,9 +247,8 @@ class PasswordChangeSerializer(serializers.Serializer):
         user = self.context["request"].user
         user.set_password(self.validated_data["new_password"])
         user.save(update_fields=["password"])
-        # A password change that leaves the old sessions alive is not a
-        # password change: every refresh token issued before now is revoked,
-        # so a stolen one cannot renew itself indefinitely.
+        # Revoke every refresh token issued before now, so a stolen one
+        # cannot renew itself after the password changes.
         end_all_sessions(user)
         return user
 
@@ -284,22 +278,22 @@ class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
     has one: a TOTP code (``otp``) or a passkey assertion (``passkey``).
 
     The password is checked first, by the grandparent, which authenticates and
-    stops there. Minting happens at the end, after the factor has been
+    stops there. Tokens are minted at the end, after the factor has been
     accepted, because ``TokenObtainPairSerializer.validate`` does both at once:
-    calling it first left a refresh token in OutstandingToken, and moved
-    last_login, for a session the second factor had not authorised yet. The
-    browser never saw that token; a database dump, a replica and the admin do,
-    and a signed JWT needs no key ring to use, unlike the TOTP secret stored
-    beside it (0.9.5h, M-1).
+    calling it first would leave a refresh token in OutstandingToken, and move
+    last_login, for a session the second factor has not authorised. The
+    browser never sees that token, but a database dump, a replica and the
+    admin do, and a signed JWT needs no key ring to use, unlike the TOTP
+    secret stored beside it (M-1).
     """
 
     def _authenticate_only(self, attrs):
         """The password check, without the tokens.
 
         ``TokenObtainSerializer.validate`` is the grandparent: it authenticates,
-        sets ``self.user`` and returns an empty dict. Addressed through the MRO
-        rather than imported, so a SimpleJWT that changes the hierarchy fails
-        here loudly rather than silently minting again.
+        sets ``self.user`` and returns an empty dict. It is addressed through
+        the MRO instead of imported, so a SimpleJWT release that changes the
+        hierarchy fails here loudly rather than silently minting tokens again.
         """
         return super(TokenObtainPairSerializer, self).validate(attrs)
 
@@ -329,8 +323,8 @@ class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
         otp = (self.initial_data.get("otp") or "").strip()
         assertion = self.initial_data.get("passkey")
         if otp:
-            # An authenticator code, or one of the account's backup codes --
-            # which a passkey-only person also holds.
+            # An authenticator code, or one of the account's backup codes
+            # (which a passkey-only person also holds).
             if not ((totp_on and device.verify(otp)) or user.verify_backup_code(otp)):
                 raise AuthenticationFailed("Invalid authentication code.", "mfa_invalid")
             return self._issue()

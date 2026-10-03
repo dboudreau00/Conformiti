@@ -12,7 +12,7 @@ import { NavCount, TAB_CLASS } from "./NavParts.jsx";
 import { SearchPalette } from "./SearchPalette.jsx";
 import { UserMenu, workspaceNote } from "./UserMenu.jsx";
 
-// The shortcut a person's own keyboard calls it.
+// The search shortcut is Cmd K on a Mac and Ctrl K elsewhere.
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
 
 /** The one bar: the product, the Workspace tabs and Governance on the left;

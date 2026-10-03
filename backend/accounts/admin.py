@@ -12,10 +12,10 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
     """The admin sign-in, held to the same bar as the application's.
 
     Django's own form checks a password and nothing else, so an account with
-    an authenticator enrolled could still be signed in with the password
-    alone -- and the resulting session used to authenticate the whole API.
-    This asks for the second factor, honours the archived-workspace refusal,
-    and rate-limits attempts per client the way /api/auth/token/ does.
+    an authenticator enrolled could be signed in with the password alone, and
+    the resulting session authenticates the whole API. This form asks for the
+    second factor, refuses archived workspaces, and rate-limits attempts per
+    client the way /api/auth/token/ does.
     """
 
     otp = forms.CharField(
@@ -33,8 +33,8 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
         return f"admin-login:{_client_ip(self.request) if self.request else 'unknown'}"
 
     def clean(self):
-        # Every outcome reaches the audit trail (from 0.9.5mb), as an API
-        # sign-in does; a refusal for the rate limit once per client and window.
+        # Every outcome reaches the audit trail, as an API sign-in does; a
+        # rate-limit refusal is recorded once per client and window.
         from audit.events import record_admin_sign_in
 
         key = self._throttle_key()
@@ -112,10 +112,10 @@ class CustomUserAdmin(UserAdmin):
 
         The admin sets a password on this page only: the change form shows the
         hash read-only, and this view saves through its own form without
-        calling ``save_model``. The hook that used to live in ``save_model``
-        therefore never ran (fixed in 0.9.5mb), and the recovery action for an
-        account believed to be in the wrong hands left whoever held it signed
-        in. A saved form answers with a redirect; a refused one re-renders.
+        calling ``save_model``, so the session-ending hook lives here. Without
+        it, resetting the password of a compromised account would leave
+        whoever held it signed in. A saved form answers with a redirect; a
+        refused one re-renders.
         """
         from django.contrib.admin.utils import unquote
 

@@ -11,7 +11,7 @@ updates:
       # Conformiti tracks the Django LTS line on purpose: a compliance
       # deployment is long-lived, and 5.2 LTS has security support until
       # April 2028 while a feature release has roughly eight months. Moving
-      # to 6.x is a deliberate release decision, not a weekly bump. The next
+      # to 6.x is a deliberate release decision. The next
       # move is to 6.2 LTS. See PREREQUISITES.md.
       - dependency-name: Django
         update-types: ["version-update:semver-major"]

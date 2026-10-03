@@ -3,7 +3,7 @@ Application-level encryption for the two columns that hold secrets the
 application must be able to read back.
 
 Most secrets in Conformiti are hashed: passwords, MFA backup codes. Two cannot
-be, because the server needs the original value to do its job — the TOTP shared
+be, because the server needs the original value to do its job: the TOTP shared
 secret (to compute the expected code) and the Jira API token (to authenticate
 outbound calls). Those are encrypted here instead, so a database dump, a stolen
 backup or a read-only SQL injection does not hand over working secrets.
@@ -18,9 +18,9 @@ Design
   old one. The ring is read on every call so tests can override it.
 * **Associated data binds the ciphertext to its row.** The AAD is
   ``table:column:row-id``, so a ciphertext lifted from one user's row and
-  written into another's fails to decrypt. It does *not* defend against an
-  attacker who can write to the database — they can simply write plaintext,
-  which the read path still accepts (see ``from_db_value``). It defends against
+  written into another's fails to decrypt. It does not defend against an
+  attacker who can write to the database, who can write plaintext, which the
+  read path still accepts (see ``from_db_value``). It defends against
   transplanting, which is the realistic case for a leaked dump.
 * **A wrong or missing key degrades to read-only, never to data loss.** An
   envelope that will not decrypt reads as empty, and ``pre_save`` writes the
@@ -98,7 +98,7 @@ def ring():
 
 
 def key_ids():
-    """Fingerprints of the ring, newest first — for `rotate_field_keys --status`."""
+    """Fingerprints of the ring, newest first, for `rotate_field_keys --status`."""
     return [_key_id(k) for k in ring()]
 
 
@@ -140,7 +140,7 @@ def decrypt(envelope: str, aad: bytes):
     except (ValueError, base64.binascii.Error):
         return None
     keys = ring()
-    # Try the key the row names first, then the rest — a ring that has rotated
+    # Try the key the row names first, then the rest: a ring that has rotated
     # holds rows written under several keys at once.
     ordered = sorted(keys, key=lambda k: _key_id(k) != kid)
     for key in ordered:
@@ -160,7 +160,7 @@ def envelope_key_id(envelope: str):
 
 
 def ciphertext_length(plaintext_bytes: int) -> int:
-    """Envelope length for a plaintext of this many bytes — used to size columns."""
+    """Envelope length for a plaintext of this many bytes, used to size columns."""
     body = _NONCE_BYTES + plaintext_bytes + 16  # + GCM tag
     return len(PREFIX) + 8 + 1 + ((_NONCE_BYTES * 4 + 2) // 3) + 1 + ((body * 4 + 2) // 3) + 2
 
@@ -174,11 +174,11 @@ class _EncryptedAttribute(DeferredAttribute):
     It has to be here rather than in ``from_db_value``: the AAD needs another
     column from the same row, and ``from_db_value`` is handed only the value.
 
-    ``__set__`` is what makes this a *data* descriptor. Without it Python's
-    lookup rules hand back ``instance.__dict__[attname]`` — which
-    ``Model.__init__`` fills with the raw column — and the decryption below
-    never runs at all. ``FileField``'s descriptor is a data descriptor for the
-    same reason.
+    ``__set__`` is what makes this a data descriptor. Without it Python's
+    lookup rules hand back ``instance.__dict__[attname]``, which
+    ``Model.__init__`` fills with the raw column, and the decryption below
+    never runs. ``FileField``'s descriptor is a data descriptor for the same
+    reason.
     """
 
     def __set__(self, instance, value):
@@ -209,13 +209,13 @@ class EncryptedCharField(models.CharField):
     """A CharField whose value is AES-256-GCM encrypted in the database.
 
     ``aad_from`` names the attribute that identifies the row for the associated
-    data. It must be populated *before* the row is written, because ``pre_save``
-    runs ahead of the INSERT — ``user_id`` on a OneToOne, or an explicitly-set
+    data. It must be populated before the row is written, because ``pre_save``
+    runs ahead of the INSERT: ``user_id`` on a OneToOne, or an explicitly set
     ``id`` on a singleton row. A field whose id is only assigned by the database
     cannot be bound this way.
 
-    ``max_length`` is the width of the stored *envelope*, not of the plaintext;
-    size it with ``ciphertext_length()``.
+    ``max_length`` is the width of the stored envelope, which is wider than the
+    plaintext; size it with ``ciphertext_length()``.
     """
 
     descriptor_class = _EncryptedAttribute
@@ -290,7 +290,7 @@ def encrypt_existing_rows(connection, table, column, aad_column):
 def decrypt_existing_rows(connection, table, column, aad_column):
     """The reverse migration: write plaintext back.
 
-    This puts readable secrets in the database on purpose — it is what
+    This puts readable secrets in the database on purpose, which is what
     "reverse this migration" means. Rows that cannot be decrypted are left as
     they are rather than blanked.
     """

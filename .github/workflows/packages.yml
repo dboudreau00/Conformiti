@@ -142,7 +142,7 @@ jobs:
           done
 
       # The same boot check CI runs against a locally built image, run against
-      # the artefact a stranger would actually pull, and with nothing in the
+      # the artefact a stranger would pull, and with nothing in the
       # environment but the key path: that is the case 0.9.5e fixed.
       - name: The backend image boots and reports its own version
         run: |
@@ -154,7 +154,7 @@ jobs:
           ok=
           for i in $(seq 1 60); do
             # `curl -f` succeeds on a 3xx and writes nothing, so the published
-            # image answering 301 to https passed this and failed the version
+            # image answering 301 to https would pass this and fail the version
             # check below with an empty file (0.9.5f).
             if [ "$(curl -s -o /tmp/health.json -w '%{http_code}' http://localhost:8000/api/health/)" = 200 ]; then
               ok=1; break

@@ -172,7 +172,7 @@ export default function UserAudit({ me }) {
     try {
       const { data } = await api.patch(`/access-review-items/${item.id}/`, patch);
       setItems((prev) => prev.map((i) => (i.id === item.id ? data : i)));
-      // Keep the picker's decided/total label honest without a refetch.
+      // Keep the picker's decided/total label current without a refetch.
       const delta = (data.decision !== "pending" ? 1 : 0) - (item.decision !== "pending" ? 1 : 0);
       if (delta) {
         const reviewId = data.review ?? item.review;
@@ -256,7 +256,7 @@ export default function UserAudit({ me }) {
 
   return (
     <PanelTransition>
-      {/* Completing is not only a freeze: the backend deactivates the Revoke
+      {/* Completing also acts on accounts: the backend deactivates the Revoke
           rows it can and revokes their refresh tokens, and an inactive
           account's access token is refused on its next request. The dialog
           says so, names the accounts, and says which rows it leaves alone. */}

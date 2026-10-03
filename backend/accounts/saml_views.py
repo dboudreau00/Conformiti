@@ -12,8 +12,8 @@ from .oidc_views import _LoginThrottle, _fail
 
 def _flow_cookie(response, request, value):
     """Set (or clear) the flow cookie. The provider posts back cross-site, so
-    the cookie has to be SameSite=None -- which browsers accept only with
-    Secure. Over plain http (a developer's box) it falls back to Lax."""
+    the cookie has to be SameSite=None, which browsers accept only with
+    Secure. Over plain http (a developer's machine) it falls back to Lax."""
     secure = request.is_secure() or bool(getattr(settings, "BEHIND_TLS", False))
     if value is None:
         response.set_cookie(saml.FLOW_COOKIE, "", max_age=0, path="/api/auth/saml/",

@@ -23,7 +23,7 @@ class LoginRateThrottle(SimpleRateThrottle):
     Subclasses SimpleRateThrottle so its ``scope`` binds directly to the
     THROTTLE_LOGIN rate. (ScopedRateThrottle would instead read the scope from
     a view ``throttle_scope`` attribute these views don't define, which would
-    silently leave the endpoint unthrottled.)"""
+    leave the endpoint unthrottled.)"""
     scope = "login"
 
     def get_cache_key(self, request, view):
@@ -32,25 +32,24 @@ class LoginRateThrottle(SimpleRateThrottle):
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     """Login endpoint: tight per-IP rate limit (THROTTLE_LOGIN) + optional
-    TOTP second factor for accounts that have MFA enabled. Every attempt —
-    success, bad password, bad/missing OTP — is written to the audit trail.
+    TOTP second factor for accounts that have MFA enabled. Every attempt
+    (success, bad password, bad or missing OTP) is written to the audit trail.
 
     In cookie mode it checks CSRF itself. The usual check runs inside
-    ``CookieJWTAuthentication``, so it only ever guarded a request that
-    already carried a session, and this endpoint authenticates nobody: a
-    cross-site form post could therefore sign the visitor's browser into the
-    attacker's account, which on this product means the evidence they upload
-    next goes somewhere else (0.9.5f). ``SameSite=Lax`` does not help, because
-    the cookie being set is in the response rather than the request."""
+    ``CookieJWTAuthentication``, so it only guards a request that already
+    carries a session, and this endpoint authenticates nobody: a cross-site
+    form post could otherwise sign the visitor's browser into the attacker's
+    account, and the evidence they upload next would go there.
+    ``SameSite=Lax`` does not help, because the cookie being set is in the
+    response rather than the request."""
     throttle_classes = [LoginRateThrottle]
     serializer_class = MFATokenObtainPairSerializer
 
     def throttled(self, request, wait):
         """A refused attempt reaches the trail too. DRF refuses it before
-        ``post`` runs, which is where every other attempt is recorded, so the
-        throttled reason used to be unreachable (fixed in 0.9.5mb). Once per
-        client address and minute: a flood of refused attempts must not turn
-        into a flood of writes."""
+        ``post`` runs, which is where every other attempt is recorded, so this
+        hook records the throttled reason. Once per client address and minute:
+        a flood of refused attempts must not turn into a flood of writes."""
         from django.core.cache import cache
 
         ident = LoginRateThrottle().get_ident(request)

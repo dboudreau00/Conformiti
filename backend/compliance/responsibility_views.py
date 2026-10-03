@@ -1,6 +1,6 @@
 """
 Responsibility matrices: who is Responsible, Accountable, Consulted and
-Informed for each control — including when "who" is a vendor.
+Informed for each control, including when "who" is a vendor.
 
 Two things this settles that a control's single ``owner`` field cannot:
 

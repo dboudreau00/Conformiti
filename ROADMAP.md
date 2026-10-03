@@ -82,7 +82,7 @@
   token, the signing-key directory no longer lists the organisations on a
   server and answers a name it does not know exactly as it answers one that
   has never signed, and the demo dataset is no longer seeded by default.
-- **0.9.5c to 0.9.5ma** are maintenance revisions. 0.9.5f, 0.9.5h and 0.9.5i
+- **0.9.5c to 0.9.5md** are maintenance revisions. 0.9.5f, 0.9.5h and 0.9.5i
   closed the fourth, fifth and sixth independent reviews
   ([REVIEWS.md](REVIEWS.md)); [CHANGELOG.md](CHANGELOG.md) has each revision.
 
@@ -90,11 +90,11 @@
 
 **0.9.5 is the last version number.** It is the feature-complete release of
 the open-source edition, and every release after it is a revision letter on
-it: 0.9.5b, then c, d, e and so on. That is deliberate rather than untidy, and
+it: 0.9.5b, then c, d, e and so on. That is deliberate, and
 it is why this project does not follow semantic versioning: the number is
 finished, so only the revision moves.
 
-Those revisions are maintenance. Security fixes, dependency updates, and
+Those revisions are maintenance: security fixes, dependency updates and
 compatibility with new Python, Django and PostgreSQL versions, for as long as
 people run it. Automated evidence collection, additional framework libraries
 and other extensions are not planned for this edition.

@@ -10,13 +10,13 @@ infrastructure, with no telemetry, no phone-home and no licence server.
 ## The problem
 
 Most compliance programmes run on a control matrix in a spreadsheet, a folder
-of policies nobody has opened since the last audit, and six weeks of heroics
-before fieldwork. Three questions expose it every time:
+of policies nobody has opened since the last audit, and six weeks of scrambling
+before fieldwork. Three questions show the gaps:
 
 | The question | What usually happens |
 |---|---|
 | "Where is the evidence for CC6.1?" | Somebody searches a shared drive |
-| "When was this policy last reviewed?" | 2023, and nobody noticed |
+| "When was this policy last reviewed?" | Nobody can say without opening the file |
 | "Can the auditor get read access?" | Access that outlives the engagement |
 
 ## What it does
@@ -27,24 +27,24 @@ before fieldwork. Three questions expose it every time:
   app, one per framework, category and control; 1,117 on disk, where each
   control also gets policies, procedures, evidence and forms folders). Your
   own frameworks can be added alongside.
-- **Evidence that knows what it proves.** Every document declares the controls
+- **Evidence mapped to controls.** Every document declares the controls
   it satisfies and every control lists its documents, with versions, owners,
   folder-level access and an in-browser viewer.
-- **Reviews that chase themselves.** Each document carries a cadence and a next
+- **Automatic review reminders.** Each document carries a cadence and a next
   review date. Owners, and the organisation's compliance mailbox, are emailed
   as a review falls due (30, 14, 7 and 1 days by default) and once when it is
   overdue: at most one email per document a day, for the nearest window it has
   entered, never repeated for a window already sent, and retried the next day
   if the send fails.
-- **Readiness measured, not asserted.** Implemented divided by applicable,
+- **Calculated readiness.** Implemented divided by applicable,
   scored per control across the signals an auditor asks about, snapshotted
-  daily for the whole programme and broken down live per framework. Nobody
-  types a percentage into this system.
+  daily for the whole programme and broken down live per framework. No
+  percentage is entered by hand.
 - **Third parties.** A vendor register with assurance on file, a security
   questionnaire the vendor answers by a time-boxed link, and a shared
   responsibility matrix that is typed, prompted or imported.
 - **Governance.** A 5x5 risk register, periodic user access reviews whose
-  revocations are actually applied, meeting cadences with minutes, and an
+  revocations are applied, meeting cadences with minutes, and a
   read-only trail of every change and sign-in.
 
 ## The audit package
@@ -62,16 +62,15 @@ rolls forward from this year's, with a year-over-year diff.
 
 A signature proves the bundle is unaltered since sealing and that it came from
 this installation's key. It does not prove the underlying evidence is true.
-That is still the auditor's job, which is the point.
+That remains the auditor's job.
 
 ## Why self-hosted matters here
 
 Compliance data is a map of an organisation's weaknesses: which controls are
-unimplemented, which reviews lapsed, which vendors were never assessed. The
-usual answer is to upload that to a vendor's cloud. Conformiti's answer is
-that it stays on your infrastructure. Nothing leaves it unless you connect
-something, and each connection (email, Slack or Teams, Jira, single sign-on)
-is opt-in. Some carry names: a reminder email's subject holds the document's
+unimplemented, which reviews lapsed, which vendors were never assessed. Hosted
+tools upload that to a vendor's cloud. Conformiti keeps it on your
+infrastructure. Nothing leaves it unless you connect something, and each connection
+(email, Slack or Teams, Jira, single sign-on) is opt-in. Some carry names: a reminder email's subject holds the document's
 name.
 
 One `docker compose up` brings up PostgreSQL, Redis, the API, a worker and its
@@ -104,7 +103,7 @@ that needs nothing but a bare interpreter.
 ## What it deliberately does not do
 
 - **Automated evidence collection** from AWS, GitHub, Okta and the like. That
-  is the thing hosted competitors are genuinely good at, it is weeks of work
+  is the thing hosted competitors are good at, it is weeks of work
   per integration, and this edition does not attempt it.
 - **Tell you that you are compliant.** It shows what is implemented, what is
   evidenced and what is overdue. The conclusion belongs to your auditor.
@@ -119,7 +118,7 @@ git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"   # the newes
 docker compose up -d --build
 ```
 
-Then `docs` in the repository: [GETTING_STARTED.md](../GETTING_STARTED.md) for
+Then read [GETTING_STARTED.md](../GETTING_STARTED.md) for
 a guided first hour, [SECURITY.md](../SECURITY.md) for the posture and the
 residual risks to weigh, [INSTALL.md](../INSTALL.md) for production.
 

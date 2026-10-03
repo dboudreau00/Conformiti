@@ -25,10 +25,10 @@ openssl agrees with it:
 Exit codes: 0 everything matches and both signatures verify; 1 a mismatch;
 2 the bundle is unusable; 3 every file matches but a signature is missing.
 
-That last one is deliberate. A bundle with its signatures stripped and its
+Exit code 3 is deliberate. A bundle with its signatures stripped and its
 file list rewritten still has every checksum in agreement with itself, and a
-script that answered 0 to it would be telling an automated check that a
-forgery was fine. Pass --allow-unsigned to accept an unsigned bundle on
+script that answered 0 to it would tell an automated check that a forgery was
+fine. Pass --allow-unsigned to accept an unsigned bundle on
 purpose (for example, one sealed by a release that predates bundle
 signatures) and compare the manifest digest with the one you were given.
 """
@@ -233,7 +233,7 @@ def check_sums_signature(root, problems):
 def check_for_extra_files(root, listed, problems):
     """Anything in the bundle that SHA256SUMS does not name.
 
-    Without this, a file could simply be ADDED -- every listed hash still
+    Without this check, a file could be ADDED while every listed hash still
     matches and nothing looks wrong.
     """
     for base, _dirs, files in os.walk(root):

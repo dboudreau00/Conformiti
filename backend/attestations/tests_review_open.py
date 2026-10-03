@@ -8,13 +8,14 @@ from .tests import PackageTestBase
 
 
 class SignatureStatusTests(PackageTestBase):
-    """Medium 7: the in-app check trusted the key stored beside the signature.
+    """Medium 7: the in-app check must not trust the key stored beside the
+    signature.
 
     The manifest, the signature and the public key all live in the same row.
     Verifying one against the other only proves the row is self-consistent, so
     anyone who could write to the table could re-sign a doctored manifest with
-    a key of their own and still be told "valid". The published key list is
-    the reference now.
+    a key of their own and be told "valid". The published key list is the
+    reference.
     """
 
     def setUp(self):
@@ -80,14 +81,14 @@ class SignatureStatusTests(PackageTestBase):
 
 
 class SealLockTests(PackageTestBase):
-    """Medium 11: sealing checked that the package was open, then acted on the
-    answer with nothing holding the row.
+    """Medium 11: sealing must not check that the package is open and then act
+    on the answer with nothing holding the row.
 
-    Evidence pinned in the gap landed inside the package but outside the
-    manifest -- a bundle whose signature covers less than it contains, which is
-    the one thing a signed manifest exists to rule out. The seal now re-reads
-    the package under a row lock, and every write that changes what the
-    manifest would say queues behind the same lock.
+    Evidence pinned in the gap would land inside the package but outside the
+    manifest: a bundle whose signature covers less than it contains, which is
+    what a signed manifest exists to rule out. The seal re-reads the package
+    under a row lock, and every write that changes what the manifest would say
+    queues behind the same lock.
     """
 
     def test_a_package_sealed_in_the_gap_is_caught(self):

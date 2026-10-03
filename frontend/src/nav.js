@@ -77,7 +77,7 @@ export const NAV_LOOKUP = {
 // It reads navSections at call time, never NAV_SECTIONS, and decides from the
 // section ids alone, never from a flag on `me`, so an add-on that wraps
 // navSections lands in the right place and a section the core does not define
-// needs no change here. A side menu with no items is simply absent.
+// needs no change here. A side menu with no items is absent.
 const isOverlayItem = (item) => String(item.id).startsWith("pro-");
 
 export function shellNav(me) {

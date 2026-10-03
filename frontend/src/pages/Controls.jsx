@@ -34,7 +34,7 @@ export default function Controls({ me }) {
   const [pageError, setPageError] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [exporting, setExporting] = useState(false);
-  // A failed load is not an empty catalogue: emptying the list told the reader
+  // A failed load is not an empty catalogue: emptying the list would tell the reader
   // to seed a framework they already have.
   const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);

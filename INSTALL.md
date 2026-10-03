@@ -58,8 +58,8 @@ any account is made, the backend log says why and the stack starts without
 the demo. Leave it unset to get a strong generated one. Note the password when you
 see it: the log keeps it only until the backend container is recreated, which
 `docker compose up` does after any change to `.env`. It is off by default: an
-installation carrying those accounts says so on its own sign-in page, which is
-not a thing a real deployment should publish.
+installation carrying those accounts says so on its own sign-in page, which a
+real deployment should not publish.
 
 Keep settings like these in `.env`. Compose reads that file on every start
 and hands it to the application containers; a variable exported in your
@@ -215,7 +215,7 @@ Name it after the other two, on every command or once in `.env`
 and run `up -d`. After a later edit, `docker compose restart frontend` makes
 nginx read the file again.
 
-A container will tell you what it is: `curl -s localhost:8080/api/health/`
+To check which release a container runs, `curl -s localhost:8080/api/health/`
 reports the version compiled into the image, and
 `docker inspect ghcr.io/dboudreau00/conformiti-backend:0.9.5md` carries the
 commit it was built from in `org.opencontainers.image.revision`.
@@ -633,11 +633,11 @@ read both tokens, the refresh token (7 days by default, `JWT_REFRESH_DAYS`)
 included; cookie mode keeps them out of script's reach. API clients using a
 Bearer header are unaffected.
 
-**From 0.9.5f, signing in with cookies is CSRF-checked.** The check used to
-run inside cookie authentication, which meant it only ever guarded a request
-that already had a session, and the endpoints that hand out the cookies have
-none by definition: a cross-site form post could sign a visitor's browser into
-someone else's account. `/api/auth/token/`, `/api/auth/token/refresh/` and
+**From 0.9.5f, signing in with cookies is CSRF-checked.** Earlier releases ran
+the check inside cookie authentication, which only guards a request that
+already has a session. The endpoints that hand out the cookies have none, so a
+cross-site form post could sign a visitor's browser into someone else's
+account. `/api/auth/token/`, `/api/auth/token/refresh/` and
 `/api/auth/oidc/redeem/` now require `X-CSRFToken`, matching the readable CSRF
 cookie (`__Host-csrftoken` over https, `csrftoken` over plain http). Over
 https the check also wants an `Origin` (or `Referer`) header naming this site
@@ -675,7 +675,7 @@ The rebuild line is an upgrade only after `scripts/backup.sh` and a checkout
 of the new release tag ([README, Upgrading](README.md#upgrading)). An
 installation started from the published images must keep the override on
 both commands (or carry `COMPOSE_FILE` in `.env`, as *Without a build*
-shows): the plain line above would quietly switch it to building from
+shows): the plain line above would switch it to building from
 source. If you pin `CONFORMITI_VERSION`, set it in `.env` to the new release:
 an inline or exported value lasts only for that command or shell, and the
 next short-form command goes back to the pin in `.env`. An exported value
@@ -1096,7 +1096,7 @@ and copy them off the machine:
 | What | Where, in this recipe | Why |
 |---|---|---|
 | The database | `pg_dump` of `compliance` | everything but the files |
-| The evidence files | `MEDIA_ROOT`: `/srv/conformiti/backend/media/` | a database without them is a list of files you no longer have |
+| The evidence files | `MEDIA_ROOT`: `/srv/conformiti/backend/media/` | a restored database without them points at files that are gone |
 | The folder tree on disk | `COMPLIANCE_TREE_ROOT`: `/srv/conformiti/compliance-data/` | the evidence tree generated from the control libraries |
 | The package-signing key | `/srv/conformiti/backend/.package-signing-key`, and each `.package-signing-key.retired-*` beside it (`SIGNING_KEY_FILE` moves them) | signatures already issued stay valid without it, but you cannot sign as the same identity again |
 | The field-encryption key | the file `DJANGO_FIELD_ENCRYPTION_KEY_FILE` names: `/srv/conformiti/backend/.field-encryption-key` | without it authenticator-app codes cannot be checked (backup codes and passkeys still work), and a stored Jira token and each workspace's own Slack and Teams webhook addresses must be entered again |
@@ -1132,8 +1132,8 @@ To restore, stop the three services, reload the database with
 `sudo -u postgres pg_restore --clean --if-exists -d compliance <dump>`, unpack
 the files into `/srv/conformiti` (as the `conformiti` user, or `chown` them
 back to it), make sure the restored `.env` is the `conformiti` user's at mode
-0600 again (`chmod 600 .env`: an archive made before that step was in this
-recipe carries it readable by everyone), and start the services again.
+0600 again (`chmod 600 .env`: the archive keeps the file's mode, which is readable
+by everyone if `.env` was copied without the `chmod 600` step above), and start the services again.
 
 **The field-encryption key and `DJANGO_SECRET_KEY`.** With
 `DJANGO_FIELD_ENCRYPTION_KEY_FILE` unset and a real `DJANGO_SECRET_KEY`, the
@@ -1243,7 +1243,7 @@ Vite listens on `localhost`, and `.env` trusts only that name.
 <summary><strong>The site loads but I cannot sign in</strong></summary>
 
 Almost always `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` or
-`CORS_ALLOWED_ORIGINS` not listing the hostname you are actually using,
+`CORS_ALLOWED_ORIGINS` not listing the hostname you are using,
 including scheme and port. `DJANGO_ALLOWED_HOSTS` takes host names only; the
 two origin lists take `scheme://host:port` and matter mostly behind a proxy
 (*Moving the ports* explains when). The sign-in page names a refused origin

@@ -3,7 +3,7 @@ Passkeys: the Django side of WebAuthn.
 
 ``accounts/webauthn.py`` is the protocol; this module keeps the credentials
 and challenges, resolves the relying-party id and origins for a request, and
-applies the one policy that matters -- what happens when a signature counter
+applies the one policy that matters: what happens when a signature counter
 goes backwards.
 
 Every ceremony is two calls: ``begin_*`` stores a challenge and returns the
@@ -171,10 +171,10 @@ def begin_login(user, request):
 def finish_login(user, request, payload):
     """Verify an assertion for ``user``. Returns the credential used.
 
-    The counter rule is applied here and it fails CLOSED: a counter that did
-    not increase marks the credential suspect and refuses this sign-in; the
+    The counter rule is applied here and fails closed: a counter that did
+    not increase marks the credential suspect and refuses this sign-in. The
     account keeps requiring a second factor (the person's other passkey, their
-    authenticator app or a backup code -- or an administrator's reset).
+    authenticator app, a backup code or an administrator's reset).
     """
     if not isinstance(payload, dict):
         raise PasskeyRefused("format", "Malformed passkey response.")

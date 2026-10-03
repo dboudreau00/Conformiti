@@ -100,13 +100,13 @@ jobs:
       - run: npm audit --audit-level=high
         working-directory: frontend
 
-  # Nothing ran the installers here, which is how two defects that stopped
-  # every run of install.ps1 shipped from 0.9.5b to 0.9.5k: a variable that
-  # PowerShell's case-insensitive names made into the -Demo switch, and npm's
-  # npm.ps1 shim, which received none of its arguments. Both Windows shells,
-  # because they are where the two differ. The second run is a returning
-  # user's with the demo on, and its banner has to repeat the password
-  # bootstrap_demo printed.
+  # Runs the installers on a clean runner. It guards against two defects that
+  # stop every run of install.ps1: a variable that PowerShell's
+  # case-insensitive names turn into the -Demo switch, and npm's npm.ps1 shim,
+  # which receives none of its arguments. Both Windows shells run, because
+  # they are where the two differ. The second run is a returning user's with
+  # the demo on, and its banner has to repeat the password bootstrap_demo
+  # printed.
   installer-windows:
     name: Installer on Windows (${{ matrix.shell }})
     runs-on: windows-latest
@@ -168,8 +168,8 @@ jobs:
       # to run in a stock Windows PowerShell, whose Restricted policy refuses
       # the npm.ps1 shim a bare "npm" finds (npm.cmd is the fix). With that
       # dev server up, a reinstall of the frontend packages is refused:
-      # Windows keeps the files the server has loaded, and npm ci used to stop
-      # part way and leave node_modules half deleted.
+      # Windows keeps the files the server has loaded, and npm ci stops
+      # part way and leaves node_modules half deleted.
       - name: Moved web port, the printed start command, no reinstall under the dev server
         env:
           CONFORMITI_DEV_API_PORT: "18000"
@@ -260,9 +260,9 @@ jobs:
           # A here-string, not a pipe, for the reason the docker job gives.
           grep -Eq '^ *Password:? +CiDemoPassword2026( |$)' <<< "$(sed 's/\x1b\[[0-9;]*m//g' /tmp/demo.log)" \
             || { echo "the setup banner does not repeat the demo password"; exit 1; }
-      # Run mode, stopped the way a user stops it. The old trap signalled its
-      # own process group from inside the handler, ran again on every TERM it
-      # sent, and ended in a segmentation fault after thousands of lines. A
+      # Run mode, stopped the way a user stops it. A handler that signals its
+      # own process group from inside itself runs again on every TERM it
+      # sends and ends in a segmentation fault after thousands of lines. A
       # terminal of its own, because Ctrl-C is the terminal's doing: the 0x03
       # written to it becomes a SIGINT for the installer's process group.
       - name: Ctrl-C in run mode stops both servers, once, and exits 0
@@ -381,7 +381,7 @@ jobs:
       - run: docker build -t conformiti-backend:ci ./backend
       - run: docker build -t conformiti-frontend:ci ./frontend
       # Two runs, because they take different paths through entrypoint.sh and
-      # the first one is the one nothing used to cover: compose and both
+      # the first one is the one no other job covers: compose and both
       # installers always set SEED_DEMO_DATA, so a plain `docker run` of the
       # published image was the only caller that left it unset, and `set -u`
       # made that fatal after the migrations had already run (0.9.5e).
@@ -476,8 +476,8 @@ jobs:
       - run: npx playwright install-deps chromium
         working-directory: e2e
         if: steps.browsers.outputs.cache-hit == 'true'
-      # Both authentication transports. The suite found three specs that had
-      # quietly assumed the token was readable from localStorage.
+      # Both authentication transports, so that no spec can assume the token is
+      # readable from localStorage.
       - run: npm test
         working-directory: e2e
         env:
@@ -498,9 +498,8 @@ jobs:
   # The stack as shipped, through nginx: sign in on the cookie transport,
   # upload evidence, read it back through X-Accel, back the installation up
   # with the shipped script, destroy it, restore it and read the same bytes
-  # back. Until 0.9.5 nothing exercised the compose file end to end, and the
-  # backup instructions in the README named a database user that did not
-  # exist.
+  # back. This exercises the compose file and the backup instructions end to
+  # end.
   compose:
     name: Compose stack, backup and restore
     runs-on: ubuntu-latest
@@ -513,12 +512,12 @@ jobs:
       - uses: actions/checkout@v7
       - name: Start the stack (Redis password on, demo data seeded, a public host name)
         run: |
-          # SEED_DEMO_DATA is off in the shipped compose file since 0.9.5b, so
-          # this job asks for it: the steps below sign in as a demo account.
+          # SEED_DEMO_DATA is off in the shipped compose file, so this job
+          # asks for it: the steps below sign in as a demo account.
           # DJANGO_ALLOWED_HOSTS is what a production .env sets, and it names
-          # neither localhost nor 127.0.0.1. Until the compose file added its
-          # own names to the operator's, that left the backend's healthcheck
-          # (127.0.0.1:8000) failing, so nothing behind it ever started, and
+          # neither localhost nor 127.0.0.1. The compose file adds its own
+          # names to the operator's; without them the backend's healthcheck
+          # (127.0.0.1:8000) would fail, so nothing behind it would start, and
           # every step below signs in through localhost.
           printf 'DEMO_PASSWORD=%s\nREDIS_PASSWORD=%s\nSEED_DEMO_DATA=true\nDJANGO_ALLOWED_HOSTS=%s\n' \
             "$DEMO_PASSWORD" "$REDIS_PASSWORD" "$PUBLIC_HOST" > .env
@@ -546,9 +545,9 @@ jobs:
         run: |
           set -euo pipefail
           jar=/tmp/cookies.txt
-          # Signing in is CSRF-checked in cookie mode since 0.9.5f, because
-          # it is one of the two endpoints that SET the auth cookies and so
-          # never reached the check inside cookie authentication. This is the
+          # Signing in is CSRF-checked in cookie mode: it is one of the two
+          # endpoints that SET the auth cookies, so the check inside cookie
+          # authentication never covers it. This is the
           # sequence INSTALL.md gives an API client, run here so the
           # documentation and the product are tested by the same steps.
           curl -fsS -c "$jar" http://localhost:8080/api/auth/config/ > /dev/null
@@ -588,7 +587,7 @@ jobs:
           docker compose down -v
           # Standard output is the restore's own progress lines and nothing
           # else. psql's result tables, one for every sequence in the dump,
-          # used to land here (0.9.5k). Compose reports on stderr, and its
+          # would land here if the restore did not quiet them (0.9.5k). Compose reports on stderr, and its
           # status line for every container it starts or stops is quieted
           # where Compose allows it, as it does here (0.9.5m). Here-strings,
           # not pipes, for the reason the docker job gives.

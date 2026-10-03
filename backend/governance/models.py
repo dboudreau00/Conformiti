@@ -3,14 +3,14 @@ Governance models.
 
 Three related compliance rituals live here:
 
-* **Access reviews** — a point-in-time audit of every user account. Creating a
+* **Access reviews**: a point-in-time audit of every user account. Creating a
   review snapshots each user's role, activity and folder grants into grid rows;
   a reviewer records keep / modify / revoke per row and exports the evidence
   as CSV.
-* **Meeting minutes** — recurring governance meetings (steering committees,
+* **Meeting minutes**: recurring governance meetings (steering committees,
   risk reviews) with a required number of occurrences per year, so the platform
   can show whether the cadence is being met.
-* **Champion groups** — cross-departmental groups (e.g. security champions)
+* **Champion groups**: cross-departmental groups (e.g. security champions)
   with an accountable owner and members tagged by the department they champion.
 """
 from django.conf import settings
@@ -46,10 +46,9 @@ class AccessReview(TenantModel):
 
 
 class AccessReviewItem(TenantModel):
-    tenant_parent = "review"
-
     """One user's row in a review. Fields are snapshotted at creation so the
     audit evidence stays stable even if the account changes later."""
+    tenant_parent = "review"
 
     class Decision(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -271,9 +270,8 @@ class Risk(TenantModel):
 
 
 class RiskNote(TenantModel):
-    tenant_parent = "risk"
-
     """A progress / discussion note on a risk (the remediation trail)."""
+    tenant_parent = "risk"
     risk = models.ForeignKey(Risk, on_delete=models.CASCADE, related_name="notes")
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,

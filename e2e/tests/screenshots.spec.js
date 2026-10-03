@@ -4,7 +4,7 @@
  *     cd e2e && npm run shots
  *
  * Opt-in (its own Playwright project) because it writes into the repository.
- * The captures are real screens driven through the real UI — never mock-ups —
+ * The captures are real screens driven through the real UI, never mock-ups,
  * and they inherit the suite's console-error fixture, so a run that produces a
  * screenshot also proves the screen was error-free when it was taken.
  */
@@ -19,7 +19,7 @@ const THEME = process.env.SHOT_THEME || "ledger-dark";
 const test = base.extend({
   page: async ({ page }, use) => {
     const errors = [];
-    // A headed Chromium's PDF viewer phones home for its own resources; on a
+    // A headed Chromium's PDF viewer fetches its own resources; on a
     // firewalled box that is refused and logged, and it is not the app's fault.
     page.on("console", (m) => m.type() === "error" && !/ERR_NETWORK_ACCESS_DENIED/.test(m.text()) && errors.push(m.text()));
     page.on("pageerror", (e) => errors.push(String(e)));

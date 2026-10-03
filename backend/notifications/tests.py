@@ -105,9 +105,9 @@ class ReviewScanTests(APITestBase):
 
 @override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local", REVIEW_ALERT_LEAD_DAYS=[30, 14, 7, 1])
 class GreetingNameTests(APITestBase):
-    """createsuperuser asks for no first or last name, and the reminders
-    greeted such an owner with "Hi ,". They use the username now, a full name
-    still wins, and nobody is still "team"."""
+    """createsuperuser asks for no first or last name, so the reminders must
+    not greet such an owner with "Hi ,". They use the username, a full name
+    still wins, and "team" is used only when there is no owner."""
 
     def setUp(self):
         super().setUp()
@@ -195,9 +195,9 @@ def _email_context(on):
 
 
 class EmailCopyTests(SimpleTestCase):
-    """What a recipient reads, in both parts of every email. The 0.9.5j dash
-    sweep turned "&mdash; Conformiti" into ", Conformiti" and "request &mdash;
-    please" into "request , please", and nothing rendered the templates."""
+    """What a recipient reads, in both parts of every email. Rendering every
+    template catches stray punctuation such as ", Conformiti" or "request ,
+    please" that editing the source alone would miss."""
 
     EMAILS = Path(__file__).resolve().parent / "templates" / "emails"
     # Block tags break a line where the mail client would; inline ones do not.
@@ -225,9 +225,8 @@ class EmailCopyTests(SimpleTestCase):
 
 class TestMailboxCommandTests(SimpleTestCase):
     """test_mailbox sends a sample review reminder through the email service
-    for every provider, and signs in over IMAP/POP3 only for mailbox. It used
-    to refuse every provider but mailbox, so smtp, ses and console had no way
-    to send a test through the path reminders take."""
+    for every provider, and signs in over IMAP/POP3 only for mailbox. Every
+    provider can send a test through the path reminders take."""
 
     TO = "you@example.com"
 
@@ -314,9 +313,9 @@ class TestMailboxCommandTests(SimpleTestCase):
 
 
 class CountWordingTests(SimpleTestCase):
-    """A count and its noun agree. The plain-text reminder said "due for
-    review in 30 day(s)" while its HTML part said "30 days", and the
-    reminder subjects said "due in 1 day(s)"."""
+    """A count and its noun agree. The plain-text reminder must say "30 days"
+    like its HTML part, not "30 day(s)", and the reminder subjects must say
+    "due in 1 day", not "1 day(s)"."""
 
     def test_the_plain_text_review_reminder_says_day_or_days(self):
         document = SimpleNamespace(name="Access policy", get_review_cadence_display="Annual",

@@ -111,10 +111,10 @@ export function ControlDetail({
     [docChoices, linkedIds]
   );
 
-  // Filtering a capped list in the browser answered "No documents match." for
-  // a document that sorts after the cap. When the list is capped, a search
-  // also asks the server, which matches the name across every document the
-  // caller can see, and its matches join the list.
+  // Filtering a capped list in the browser cannot find a document that sorts
+  // after the cap. When the list is capped, a search also asks the server,
+  // which matches the name across every document the caller can see, and its
+  // matches join the list.
   useEffect(() => {
     const term = docQuery.trim();
     if (!capped || !term) {
@@ -288,9 +288,8 @@ export function ControlDetail({
           </div>
         </div>
 
-        {/* Testing is 15 points of the readiness score and, until 0.9.5, had
-            no way to be recorded except the API: the toast copy for these
-            two fields existed, the inputs did not. */}
+        {/* Testing is 15 points of the readiness score, so the last test date
+            and the test interval are edited here. */}
         <div className="rounded-xl border border-line bg-surface p-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -521,10 +520,9 @@ export function ControlDetail({
 
 
 /** Why a control scores what it scores.
-
- * A bare number invites arguing with it; the breakdown turns "68" into a list
- * of the specific things that would move it, which is the only version of this
- * a control owner can act on.
+ *
+ * The breakdown turns a bare number such as "68" into a list of the specific
+ * things that would move it, which is what a control owner can act on.
  */
 function ReadinessBreakdown({ readiness }) {
   const band = READINESS_BAND[readiness.band] || READINESS_BAND.not_started;

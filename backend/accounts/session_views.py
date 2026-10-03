@@ -1,21 +1,22 @@
 """
-The three endpoints cookie mode needs that header mode did not.
+The endpoints that cookie mode needs and header mode does not.
 
-* ``GET  /api/auth/session/``       — who am I, and can this session renew?
-* ``POST /api/auth/session/clear/`` — sign out, from any state.
+* ``GET  /api/auth/session/``       reports who is signed in and whether the
+                                    session can renew.
+* ``POST /api/auth/session/clear/`` signs out, from any state.
 
-``LogoutView`` is untouched. It requires authentication, which is right for a
-client holding a token it wants revoked, and wrong for the case cookie mode
-introduces: the access cookie has expired, the SPA cannot read or clear the
-HttpOnly refresh cookie, and a sign-out that 401s would leave a live 7-day
-credential in the browser while the interface said "signed out" — so the next
-person at that workstation would be signed back in silently. The clear endpoint
-therefore takes anyone, is CSRF-protected, and revokes opportunistically.
+``LogoutView`` requires authentication, which suits a client holding a token
+it wants revoked but not cookie mode: once the access cookie has expired, the
+SPA cannot read or clear the HttpOnly refresh cookie, and a sign-out that 401s
+would leave a live 7-day credential in the browser while the interface said
+"signed out", so the next person at that workstation would be signed back in
+silently. The clear endpoint therefore takes anyone, is CSRF-protected, and
+revokes opportunistically.
 """
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
@@ -66,12 +67,12 @@ class SessionClearView(APIView):
     def post(self, request):
         from audit.events import record_logout
 
-        # 0.9.5f put this on the three endpoints that SET the auth cookies and
-        # missed the one that clears them. The check inside cookie
-        # authentication only runs once an access cookie has authenticated,
-        # and the whole reason this endpoint exists is the case where that
-        # cookie is gone and the refresh cookie is not. SameSite=Lax covers
-        # most of it; Chrome's two-minute Lax+POST window does not (0.9.5h).
+        # Like the endpoints that set the auth cookies, this one needs its own
+        # CSRF check. The check inside cookie authentication only runs once an
+        # access cookie has authenticated, and this endpoint exists for the
+        # case where that cookie is gone and the refresh cookie is not.
+        # SameSite=Lax covers most of it, but not Chrome's two-minute
+        # Lax+POST window.
         refused = cookie_auth.csrf_required(request)
         if refused:
             return Response({"detail": f"CSRF failed: {refused}"}, status=403)
@@ -85,9 +86,8 @@ class SessionClearView(APIView):
                 revoked = 1
             except TokenError:
                 revoked = 0
-        # Belt and braces: revoke every outstanding token for a user we can
-        # still identify, so an expired access cookie does not leave siblings
-        # alive.
+        # Also revoke every outstanding token for a user we can still
+        # identify, so an expired access cookie does not leave siblings alive.
         if request.user and request.user.is_authenticated:
             revoked += _blacklist_all(request.user)
             record_logout(request)
@@ -103,14 +103,13 @@ def end_all_sessions(user):
 
     For the recovery paths only: a password change, an administrator setting a
     password, an MFA reset. Those say the account may be in the wrong hands,
-    and revoking refresh tokens does not end the session already running -- the
-    access token in the hijacked tab keeps answering until it expires, an hour
-    by default, after the reset that was meant to end it (0.9.5f, M-4).
+    and revoking refresh tokens does not end the session already running: the
+    access token in the hijacked tab keeps working until it expires, an hour
+    by default (M-4).
 
     Signing out calls ``_blacklist_all`` instead. It revokes every refresh
-    token, which is belt and braces for an expired access cookie, but it does
-    not reach across to the person's other browser and close it mid-sentence:
-    that is a different act, and not the one the review was about.
+    token, which covers an expired access cookie, but it does not end the
+    person's other browser sessions that are still running.
     """
     from django.utils import timezone
 
@@ -143,9 +142,9 @@ class AuthConfigView(APIView):
     """What the SPA needs to know before it can sign anyone in.
 
     Also where the CSRF cookie comes from. In cookie mode the login endpoint
-    checks CSRF (0.9.5f), and a visitor arriving at /login with no session has
-    no token to send: this is the request the SPA makes before that one, so
-    this is where Django is asked to set it.
+    checks CSRF, and a visitor arriving at /login with no session has no token
+    to send. This is the request the SPA makes before that one, so this is
+    where Django is asked to set the cookie.
     """
     authentication_classes = []
     permission_classes = [AllowAny]

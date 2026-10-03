@@ -204,7 +204,7 @@ export default function Packages({ me }) {
     }, "Package opened. Add the controls in scope, then seal it.");
   };
 
-  // Every question that used to be a browser prompt is a dialog: `ask`
+  // Every question is a dialog rather than a browser prompt: `ask`
   // names which one is open, and the dialog's onSubmit runs the request.
   const [ask, setAsk] = useState(null);
 
@@ -1083,7 +1083,7 @@ function IssueForm({ packageId, onDone, onError }) {
   const [auditors, setAuditors] = useState([]);
   const [user, setUser] = useState("");
   const [busy, setBusy] = useState(false);
-  // An empty list has two very different causes, and a bare placeholder told
+  // An empty list has two different causes, and a bare placeholder tells
   // the reader neither: nobody holds the Auditor role, or the list did not load.
   const [state, setState] = useState("loading");
 

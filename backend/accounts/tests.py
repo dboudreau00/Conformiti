@@ -266,10 +266,10 @@ class UserAdminGuardTests(APITestBase):
 class MfaSecretAtRestTests(APITestBase):
     """The TOTP secret is encrypted in the database but transparent to the app.
 
-    The first test here is the one that matters: without a data descriptor on
-    the field, Model.__init__ writes the raw column straight into the
-    instance's __dict__ and wins the attribute lookup, so nothing ever
-    decrypts -- and mfa.verify() would be handed a ciphertext.
+    The first test is the important one: without a data descriptor on the
+    field, Model.__init__ writes the raw column straight into the instance's
+    __dict__ and wins the attribute lookup, so nothing decrypts and
+    mfa.verify() would be handed a ciphertext.
     """
 
     def setUp(self):
@@ -355,7 +355,7 @@ class MfaSecretAtRestTests(APITestBase):
             self.assertFalse(self.owner.verify_backup_code("abcd-1234"))   # single use
 
     def test_enrolment_and_verification_work_end_to_end(self):
-        """The whole point: encryption must be invisible to the feature."""
+        """Encryption must be invisible to the feature."""
         c = self.client_for(self.manager)
         setup = c.post("/api/auth/mfa/setup/", {"password": PASSWORD}, format="json")
         self.assertEqual(setup.status_code, 200)
@@ -379,11 +379,11 @@ class CookieAuthTests(APITestBase):
     def login(self, client=None, **extra):
         """Sign in the way the SPA does.
 
-        Since 0.9.5f the login endpoint checks CSRF in cookie mode, because it
-        is one of the two that *set* the auth cookies and so never reached the
-        check inside CookieJWTAuthentication. A browser has a token by then:
+        The login endpoint checks CSRF in cookie mode, because it sets the
+        auth cookies and so never reaches the check inside
+        CookieJWTAuthentication. A browser has a token by then:
         /api/auth/config/ is the request the interface makes before this one,
-        and it is what seeds the cookie.
+        and it seeds the cookie.
         """
         client = client or APIClient(enforce_csrf_checks=True)
         if "HTTP_X_CSRFTOKEN" not in extra:
@@ -399,7 +399,7 @@ class CookieAuthTests(APITestBase):
     def test_login_sets_httponly_cookies_and_returns_no_tokens(self):
         client, r = self.login()
         self.assertEqual(r.status_code, 200, r.data)
-        # The whole point: nothing usable in the body.
+        # Nothing usable in the body.
         self.assertNotIn("access", r.data)
         self.assertNotIn("refresh", r.data)
         self.assertTrue(r.data["authenticated"])
@@ -410,7 +410,7 @@ class CookieAuthTests(APITestBase):
             self.assertTrue(cookie["httponly"])
             self.assertEqual(cookie["samesite"], "Lax")
         self.assertEqual(access["path"], "/api/")
-        # NOT /api/auth/ -- that prefix covers the MFA routes that return the
+        # Not /api/auth/: that prefix covers the MFA routes that return the
         # TOTP secret and the backup codes.
         self.assertEqual(refresh["path"], "/api/auth/token/")
 
@@ -434,8 +434,8 @@ class CookieAuthTests(APITestBase):
         attached by the browser, so it cannot be forged cross-site."""
         pair = APIClient().post("/api/auth/token/",
                                 {"username": "mia", "password": PASSWORD}, format="json")
-        # In cookie mode the body is empty, so read the token from the cookie
-        # the way a script never could -- this is a test, not the browser.
+        # In cookie mode the body is empty, so read the token from the
+        # cookie, which a script in the browser could not do.
         access = pair.cookies["conformiti_access"].value
         client = APIClient(enforce_csrf_checks=True)
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
@@ -498,9 +498,9 @@ class CookieAuthTests(APITestBase):
         self.assertTrue(r.data["renewable"])
 
     def test_signing_out_works_even_after_the_access_cookie_has_expired(self):
-        """The fail-open this closes: the SPA cannot clear an HttpOnly cookie,
-        so a sign-out that 401d would leave a live 7-day credential in the
-        browser while the interface said 'signed out'."""
+        """The SPA cannot clear an HttpOnly cookie, so a sign-out that 401d
+        would leave a live 7-day credential in the browser while the
+        interface said 'signed out'."""
         client, login = self.login()
         refresh = login.cookies["conformiti_refresh"].value
         token = client.cookies["csrftoken"].value
@@ -536,9 +536,9 @@ class CookieAuthTests(APITestBase):
 
 
 class TransportDefaultTests(APITestBase):
-    """Cookie transport is the default since 0.6.1 (the suite itself runs
-    header mode from testutils so older tests keep reading tokens). Header
-    mode stays available and behaves as it always did."""
+    """Cookie transport is the shipped default (the suite itself runs header
+    mode from testutils so tests can read tokens). Header mode stays
+    available."""
 
     def test_the_shipped_default_is_cookie(self):
         from config import settings as raw
@@ -576,7 +576,7 @@ class TransportDefaultTests(APITestBase):
                              ("/", True, True))
             self.assertEqual((refresh["path"], bool(refresh["secure"])), ("/api/auth/token/", True))
             self.assertNotIn("conformiti_access", r.cookies)
-            # Signing out expires the prefixed names and the pre-0.6.1 ones.
+            # Signing out expires the prefixed names and the unprefixed ones.
             client = APIClient()
             client.cookies["__Host-conformiti_access"] = access.value
             out = client.post("/api/auth/session/clear/", {}, format="json", secure=True)

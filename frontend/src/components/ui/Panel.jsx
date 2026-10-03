@@ -19,10 +19,9 @@ export function Panel({ children, className, padded = false, as: Tag = "section"
 
 export function PanelHeader({ title, meta, children, className }) {
   // A string (or a number) is a caption and gets the Label treatment. Anything
-  // else is markup the caller built, and wrapping it in a Label pushed its own
-  // typography onto it: buttons in a letter-spaced monospace face and badges
-  // shouting in capitals, which is how Pro's headers came to look nothing like
-  // the core's.
+  // else is markup the caller built, and wrapping it in a Label would apply its
+  // typography to it: buttons in a letter-spaced monospace face and badges in
+  // capitals.
   const caption = typeof meta === "string" || typeof meta === "number";
   return (
     <header className={cn("flex items-center justify-between gap-4 border-b border-line px-5 py-3.5", className)}>
@@ -59,8 +58,7 @@ export function Empty({ title, children, action, className }) {
 }
 
 /**
- * What a list shows when its request failed, which is not what it shows when
- * it is genuinely empty.
+ * What a list shows when its request failed, as opposed to when it is empty.
  *
  * "No frameworks available, seed a framework to populate the register" under a
  * red banner describes a state the workspace is not in, and sends the reader

@@ -181,8 +181,9 @@ class MonitorTests(ClamdMixin, APITestBase):
 
     def test_a_sweep_counts_what_the_scanner_flags(self):
         # Benign bytes and a forced verdict: writing a real EICAR file into
-        # MEDIA_ROOT gets it eaten by on-access antivirus on a developer box,
-        # and the sweep would then count an unreadable file, not an infection.
+        # MEDIA_ROOT gets it deleted by on-access antivirus on a developer
+        # box, and the sweep would then count an unreadable file instead of an
+        # infection.
         doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Test file", content=b"plain")
         with self.scanning():
             self.clamd.forced = b"stream: Win.Test.EICAR_HDB-1 FOUND\0"

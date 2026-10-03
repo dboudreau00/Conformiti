@@ -1,14 +1,14 @@
 """
 Roll-forward: this year's package from last year's, and the diff between them.
 
-An auditor's first question on a repeat engagement is "what changed since
-last time?" -- which controls entered or left scope, which evidence was
-replaced, which of last year's exceptions are still open. ``diff`` answers
-that from the two packages' own snapshots, so it works years later against
-sealed rows and never reads a live control. ``roll_forward`` starts the new
-draft from the sealed one: same engagement shape, the same controls
-re-snapshotted as they stand today, with today's linked evidence pinned, and
-``prior_package`` set so the diff is available from the first minute.
+On a repeat engagement an auditor asks what changed since last time: which
+controls entered or left scope, which evidence was replaced, which of last
+year's exceptions are still open. ``diff`` answers that from the two packages'
+own snapshots, so it works years later against sealed rows and never reads a
+live control. ``roll_forward`` starts the new draft from the sealed one: same
+engagement shape, the same controls re-snapshotted as they stand today, with
+today's linked evidence pinned, and ``prior_package`` set so the diff is
+available straight away.
 """
 from django.db import transaction
 
@@ -154,7 +154,7 @@ def roll_forward(prior, user, name=None, engagement=None):
 
     Controls are re-snapshotted as they stand today, with today's linked
     evidence pinned where the person can see it; the auditor's conclusions,
-    samples and the request list are NOT copied -- they belong to the
+    samples and the request list are NOT copied: they belong to the
     engagement they were made in.
     """
     if prior.status == EvidencePackage.Status.DRAFT:
@@ -174,8 +174,7 @@ def roll_forward(prior, user, name=None, engagement=None):
         for old in prior.controls.select_related("control__category__framework").order_by("ordinal", "control_ref"):
             control = old.control
             if control is None:
-                # The control was deleted since; carry the reference forward
-                # as a row with no live link so the diff can still name it.
+                # The control has been deleted, so there is nothing to snapshot.
                 continue
             row = snapshot_control(package, control, user, note=old.note)
             for link in control.evidence_links.select_related("document", "linked_by"):

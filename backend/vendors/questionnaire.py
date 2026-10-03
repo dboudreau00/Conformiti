@@ -83,12 +83,13 @@ def public_base(request):
     ``PUBLIC_URL`` decides it. The token in that link is a bearer credential,
     so the host it points at cannot be taken from the request: an ``Origin``
     header is chosen by whoever sent the request, and a mailed link to an
-    attacker's copy of the sign-in page is the whole attack (REVIEWS.md (0.9.5 review),
-    S-5). Off DEBUG, an unset PUBLIC_URL is refused rather than guessed.
+    attacker's copy of the sign-in page is the attack this blocks
+    (REVIEWS.md (0.9.5 review), S-5). Off DEBUG, an unset PUBLIC_URL is
+    refused rather than guessed.
 
-    In DEBUG the fallback survives, because a developer moves between
-    localhost ports all day, and even then only to an origin the operator has
-    already named in CSRF_TRUSTED_ORIGINS or CORS_ALLOWED_ORIGINS.
+    In DEBUG a request-derived fallback is kept, because developers switch
+    between localhost ports, and even then only an origin the operator has
+    already named in CSRF_TRUSTED_ORIGINS or CORS_ALLOWED_ORIGINS is used.
     """
     configured = getattr(settings, "PUBLIC_URL", "") or ""
     if configured:
@@ -158,9 +159,9 @@ def create_invite(vendor, request, email, days=None, message=""):
     with transaction.atomic():
         # One live link per vendor: a second send supersedes the first, so a
         # forwarded old link cannot be answered alongside the new one. The
-        # vendor row is taken first because the revoke-then-create below has
-        # nothing of its own to lock: two sends arriving together each revoked
-        # what they could see and each created a link, leaving two live.
+        # vendor row is locked first because the revoke-then-create below has
+        # nothing of its own to lock: two simultaneous sends would each revoke
+        # what they could see and each create a link, leaving two live.
         Vendor.objects.select_for_update().filter(pk=vendor.pk).first()
         QuestionnaireInvite.objects.filter(
             vendor=vendor, submitted_at__isnull=True, revoked_at__isnull=True,
@@ -216,18 +217,15 @@ def revoke(invite, request):
 def public_state(invite, request=None):
     """What the public page shows. Never the vendor's other data.
 
-    A link that is no longer open says so and stops there. Until 0.9.5h the
-    draft answers were cleared for a revoked, expired or submitted invite
-    while the vendor's name, the organisation's name, the sender, the address
-    it was sent to and the private message that went with it were still
-    returned to whoever held the URL, for as long as the row existed (L-6).
+    A link that is no longer open says so and stops there. For a revoked,
+    expired or submitted invite the draft answers, the vendor's name, the
+    organisation's name, the sender, the address it was sent to and the
+    private message must not be returned to whoever holds the URL (L-6).
     """
     if invite.status != "open":
-        # The state, and nothing else. 0.9.5h removed the names and left the
-        # timestamps, which still told whoever holds a dead URL when the
-        # vendor filed; the changelog sentence was wider than the code
-        # (0.9.5i, L-3). The page needs the state to say "this link has
-        # expired", and needs nothing more to say it.
+        # The state, and nothing else, not even timestamps: they would tell
+        # whoever holds a dead URL when the vendor filed (0.9.5i, L-3). The
+        # page needs only the state to say "this link has expired".
         return {"status": invite.status, "questions": [], "answers": {}}
     if invite.opened_at is None:
         invite.opened_at = timezone.now()

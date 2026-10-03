@@ -29,7 +29,7 @@ def c(cid, title, objective):
 
 
 # ---------------------------------------------------------------------------
-# SOC 2 -- Trust Services Criteria (2017, incl. 2022 points-of-focus revision)
+# SOC 2: Trust Services Criteria (2017, incl. 2022 points-of-focus revision)
 # ---------------------------------------------------------------------------
 SOC2 = {
     "key": "soc2",
@@ -169,7 +169,7 @@ SOC2 = {
 }
 
 # ---------------------------------------------------------------------------
-# ISO/IEC 27001:2022 -- Annex A (93 controls, 4 themes)
+# ISO/IEC 27001:2022, Annex A (93 controls, 4 themes)
 # ---------------------------------------------------------------------------
 ISO = {
     "key": "iso27001",
@@ -295,7 +295,7 @@ ISO = {
 }
 
 # ---------------------------------------------------------------------------
-# PCI DSS v4.0.1 -- 12 requirements
+# PCI DSS v4.0.1: 12 requirements
 # ---------------------------------------------------------------------------
 PCI = {
     "key": "pci_dss_v4",
@@ -431,7 +431,7 @@ PCI = {
 }
 
 # ---------------------------------------------------------------------------
-# Cross-framework crosswalk (representative starter set -- extend freely)
+# Cross-framework crosswalk (representative starter set; extend freely)
 # Groups the "same" underlying control theme across the three frameworks so a
 # single piece of evidence can satisfy multiple standards (Vanta-style).
 # ---------------------------------------------------------------------------

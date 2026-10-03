@@ -61,8 +61,8 @@ class CalendarTests(APITestBase):
         self.assertEqual(m.get(f"/api/calendar/{ids['Hidden audit']}/").data["document"], hidden.pk)
 
     def test_a_nameless_assignee_is_named_by_username(self):
-        """createsuperuser asks for no first or last name; such an assignee
-        showed as nobody, on the event and in the merged feed."""
+        """createsuperuser asks for no first or last name, so such an assignee
+        must show by username, on the event and in the merged feed."""
         from testutils import make_user
 
         root = make_user("rootadmin", self.roles["Administrator"], first_name="", last_name="")

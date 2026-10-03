@@ -1,11 +1,11 @@
 """
-Per-control readiness: how ready a control actually is, not whether someone
+Per-control readiness: how ready a control is, rather than whether someone
 ticked "implemented".
 
-Until 0.3.0 readiness was ``implemented / applicable``. A control counted as
-implemented with no owner, no evidence, evidence that expired two years ago and
-an open control gap against it — which is exactly the state an auditor finds
-and the dashboard did not.
+A plain ``implemented / applicable`` ratio would count a control as ready with
+no owner, no evidence, evidence that expired two years ago and an open control
+gap against it, which is the state an auditor finds and the dashboard would
+hide.
 
 Six signals, five of which earn and one of which subtracts:
 
@@ -46,10 +46,9 @@ DEFAULT_WEIGHTS = {
 EARNING = ["implementation", "owner", "evidence", "freshness", "testing"]
 
 BAND_LABELS = {
-    # Deliberately not "Not started"/"Not applicable": Control.status already
-    # uses those words, and the two would sit side by side on the same row.
-    # "Unscored" would be worse still -- a control in this band has a score,
-    # it is just a low one.
+    # Not "Not started"/"Not applicable": Control.status already uses those
+    # words, and the two would sit side by side on the same row. "Unscored"
+    # would mislead too, since a control in this band has a low score.
     "not_started": "Not ready",
     "at_risk": "At risk",
     "nearly": "Nearly there",
@@ -90,7 +89,7 @@ def annotate(queryset, user, visible=None):
     ``evidence`` and ``freshness`` count only documents in folders ``user`` can
     see. Call this on any queryset whose serializer will report a score, or the
     serializer falls back to a per-row query. ``visible`` overrides the folder
-    set — the organisation-wide figure on the dashboard counts every folder,
+    set: the organisation-wide figure on the dashboard counts every folder,
     because it is an aggregate and names nothing.
     """
     from documents.access import accessible_folder_ids
@@ -122,11 +121,11 @@ def programme_score(queryset=None):
     control, counting evidence in every folder, plus how many controls sit in
     each band.
 
-    This is the number the dashboard should show. It used to show the share
-    of controls marked *implemented*, which the register's own scoring exists
-    to disbelieve: a control marked implemented with no evidence, no owner,
-    no test and an open risk scored well under the bar in the register and
-    counted as ready on the dashboard. The two now agree.
+    This is the number the dashboard shows. It is not the share of controls
+    marked *implemented*, which the register's own scoring exists to
+    disbelieve: a control marked implemented with no evidence, no owner, no
+    test and an open risk scores well under the bar in the register, so the
+    dashboard must agree with it.
 
     Returns ``{"score", "applicable", "bands": {band: n}, "by_framework"}``;
     ``score`` is None when nothing is applicable. ``by_framework`` is the same
@@ -205,10 +204,10 @@ def _freshness(total, approved, best_review, weight, today, fresh_days):
     if not approved:
         return 0.0, f"{total} document(s) linked but none are approved."
     if best_review is None:
-        # Deliberately zero, not half. Document.review_cadence accepts "none",
-        # which leaves next_review_date null -- so awarding half the weight in
-        # perpetuity would make the one document nobody will ever chase the
-        # best-scoring evidence you can attach.
+        # Zero, not half. Document.review_cadence accepts "none", which leaves
+        # next_review_date null, so awarding half the weight in perpetuity
+        # would make the one document nobody will ever chase the best-scoring
+        # evidence you can attach.
         return 0.0, "Approved evidence has no review schedule."
     days = (best_review - today).days
     if days >= fresh_days:
@@ -238,8 +237,8 @@ def score_control(control, user=None):
     """The score and its full breakdown.
 
     Uses the annotations from :func:`annotate` when present, and falls back to
-    per-row queries otherwise so a caller that forgot still gets the right
-    answer — just more slowly.
+    per-row queries otherwise, so an unannotated caller still gets the right
+    answer, more slowly.
     """
     if control.status == "not_applicable":
         return {

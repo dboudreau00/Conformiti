@@ -27,8 +27,8 @@ class ReviewClockTests(APITestBase):
         self.assertEqual(self.doc.status, Document.Status.EXPIRED)
 
         # The owner corrects the last-reviewed date through the ordinary
-        # PATCH. The clock moves; the record of windows sent for the OLD
-        # clock used to stay, so nothing ever fired for the new one.
+        # PATCH. The clock moves, so the record of windows sent for the OLD
+        # clock must be cleared or nothing would fire for the new one.
         r = self.client_for(self.manager).patch(
             f"/api/documents/{self.doc.pk}/",
             {"last_reviewed": timezone.localdate().isoformat()}, format="json")
@@ -53,8 +53,9 @@ class ReviewClockTests(APITestBase):
 
 
 class FolderTreeQueryTests(APITestBase):
-    """The tree ran an access walk and a count per node. Fifty folders were
-    a hundred queries; the bell and the package list are the same class."""
+    """The tree must not run an access walk and a count per node (fifty
+    folders would be a hundred queries); the bell and the package list are the
+    same class of problem."""
 
     def setUp(self):
         super().setUp()

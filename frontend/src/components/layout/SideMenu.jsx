@@ -47,7 +47,7 @@ function SideItem({ item, pathname, rail, counts }) {
       >
         {active ? (
           // Travels only when the page changes: left to measure on every
-          // render, collapsing the menu slid it across the rail.
+          // render, collapsing the menu would slide it across the rail.
           <motion.span
             layoutId="nav-active-pill"
             layoutDependency={pathname}

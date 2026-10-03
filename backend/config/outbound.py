@@ -7,9 +7,9 @@ network, where it can reach the database, Redis, the scanner and, on a cloud
 host, the instance metadata service. A URL that looks harmless from outside
 can point at any of them.
 
-This module is the single implementation of the defence. It was the Jira
-client's private code until 0.9.5b, when the per-workspace chat webhooks added
-a second caller that had gone without it (see REVIEWS.md (0.9.5 review), S-2).
+This module is the single implementation of the defence. The Jira client, the
+per-workspace chat webhooks and the identity-provider requests all use it (see
+REVIEWS.md (0.9.5 review), S-2).
 
 What a caller gets
 ------------------
@@ -116,10 +116,10 @@ _ALSO_NOT_PUBLIC = tuple(ipaddress.ip_network(n) for n in (
     "192.0.0.0/24",       # RFC 6890, IETF protocol assignments
     "198.18.0.0/15",      # RFC 2544, benchmarking
     "64:ff9b::/96",       # RFC 6052, IPv4/IPv6 translation
-    # Deprecated site-local unicast. Python reports it as global, so every
-    # rule in ip_is_public missed it, and it is still routed on plenty of
-    # internal networks (0.9.5h, M-5). Listed explicitly rather than using
-    # ip.is_site_local, which the standard library deprecates with it.
+    # Deprecated site-local unicast. Python reports it as global, so it needs
+    # an explicit rule, and it is still routed on plenty of internal networks
+    # (M-5). Listed here instead of using ip.is_site_local, which the standard
+    # library deprecates with it.
     "fec0::/10",          # RFC 3879, site-local
 ))
 
@@ -132,11 +132,10 @@ def ip_is_public(ip_str):
     unreachable from the open internet, so the list above is checked too.
     """
     ip = ipaddress.ip_address(ip_str)
-    # ::ffff:100.64.0.1 is 100.64.0.1 wearing an IPv6 address. Python says it
-    # is neither private nor in any v4 network, because the version check
-    # below would compare a v6 address with a v4 range, so every rule in this
-    # function missed it and the range it belongs to is the one hosting
-    # providers put tenant networks in (0.9.5f).
+    # ::ffff:100.64.0.1 is 100.64.0.1 as an IPv6 address. Python reports it
+    # as neither private nor in any v4 network (the version check below would
+    # compare a v6 address with a v4 range), so unwrap it first: 100.64.0.0/10
+    # is the range hosting providers put tenant networks in.
     if getattr(ip, "ipv4_mapped", None) is not None:
         ip = ip.ipv4_mapped
     if (ip.is_private or ip.is_loopback or ip.is_link_local
@@ -149,9 +148,9 @@ def ip_is_public(ip_str):
 def host_matches(host, allowed):
     """Label-wise match: the host is ``allowed`` itself or a subdomain of it.
 
-    ``"hooks.slack.com" in url`` is the version of this test that lets
+    ``"hooks.slack.com" in url`` is a substring test that lets
     ``hooks.slack.com.attacker.example`` and ``https://x/?hooks.slack.com``
-    through, which is how S-2 was found.
+    through (S-2).
     """
     host = (host or "").lower().rstrip(".")
     for entry in allowed or ():
@@ -169,7 +168,7 @@ def check_shape(url, *, allowed_hosts=None, allowed_ports=(443,),
     Split out from ``assert_safe_url`` so a form can reject a wrong URL the
     moment it is typed without depending on DNS. It is not a safety check on
     its own: only the resolution in ``assert_safe_url`` can tell where a name
-    actually points, so that is what runs before a request is sent.
+    points, so that is what runs before a request is sent.
     """
     parsed = urllib.parse.urlparse(url or "")
     # ``allowed_schemes`` is https everywhere except one case: a service the
@@ -233,18 +232,17 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
     ``allowed_ports`` of None means any port.
 
     ``require_public=False`` allows an address inside the deployment network.
-    It exists for the one honest case: an operator who deliberately runs the
-    service being called on their own network, a self-hosted model server
-    being the example. It must never be reachable from a setting a tenant
-    administrator can change, or it is simply the hole this module closes.
-    The connection is still pinned and redirects are still refused.
+    It exists for one case: an operator who deliberately runs the service
+    being called on their own network, a self-hosted model server being the
+    example. It must never be reachable from a setting a tenant administrator
+    can change, or it reopens the hole this module closes. The connection is
+    still pinned and redirects are still refused.
 
     **Through a proxy, nothing here is resolved or pinned.** The proxy does
     the resolving, so a check made on this side would describe a connection
     that is not the one being made. The URL's shape is still checked, the
     proxy's own address still is, and redirects are still refused; beyond
-    that the operator's proxy is the control, which is what choosing one
-    means.
+    that the operator's proxy is the control.
     """
     host, port = check_shape(url, allowed_hosts=allowed_hosts, allowed_ports=allowed_ports,
                              deny_internal_names=deny_internal_names and require_public,
@@ -255,9 +253,9 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
         check_shape(proxy, allowed_hosts=None, allowed_ports=None,
                     deny_internal_names=False, allowed_schemes=("http", "https"))
         # A proxy resolves names; it does not change what a literal address
-        # is. Returning here unconditionally meant https://169.254.169.254/
-        # left through the proxy unexamined whenever one was configured, on a
-        # URL a tenant administrator had typed (0.9.5h, M-5).
+        # is. Returning here unconditionally would let https://169.254.169.254/
+        # through the proxy unexamined, on a URL a tenant administrator typed
+        # (M-5).
         if require_public:
             try:
                 literal = ipaddress.ip_address(host.strip("[]"))
@@ -277,9 +275,9 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
             public = ip_is_public(addr)
         except ValueError:
             raise OutboundError("address", "The host resolved to an invalid address.")
-        # Every answer must be public, not merely the first: a name that
-        # resolves to both a public and a private address would otherwise
-        # pass on one ordering and fail on another.
+        # Every answer must be public: a name that resolves to both a public
+        # and a private address would otherwise pass on one ordering and fail
+        # on another.
         if require_public and not public:
             raise OutboundError("private", "The host must resolve to a public address.")
         if pinned is None:
@@ -297,9 +295,9 @@ def opener(pinned_ip, proxy=None):
     to this URL), it goes through the proxy instead and does **not** pin:
     under a proxy the far end is reached by the proxy, and a handler that
     dialled the target's address itself would step around the operator's
-    egress control rather than use it. That is not a theoretical tidy-up. The
-    pinning handler replaces the connection wholesale, so combining the two
-    silently sends the request to the target's address on the proxy's port.
+    egress control instead of using it. The pinning handler replaces the
+    connection wholesale, so combining the two would send the request to the
+    target's address on the proxy's port.
     """
     if proxy:
         return urllib.request.build_opener(

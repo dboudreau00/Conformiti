@@ -3,10 +3,10 @@
  * through window.prompt.
  *
  * A management assertion is the statement an auditor relies on; a withdrawal
- * reason is written into the record for good. Both were being collected in
- * a browser prompt: unstyled, unlabelled, invisible to screen readers as a
- * form, impossible to validate before the person commits, and dismissed by
- * one wrong keystroke. Three components replace every one of them:
+ * reason is written into the record for good. A browser prompt is unstyled,
+ * unlabelled, invisible to screen readers as a form, impossible to validate
+ * before the person commits, and dismissed by one wrong keystroke. Three
+ * components cover these cases:
  *
  *   <Dialog>        the frame: overlay, title, Escape, focus, scroll lock
  *   <TextDialog>    one labelled field (input or textarea) with a submit
@@ -37,8 +37,8 @@ export function Dialog({ open, title, description, onClose, children, size = "md
   const restoreTo = useRef(null);
   // Escape reads the latest onClose through a ref. Callers pass a fresh arrow,
   // or `busy ? undefined : onClose`, on every render; as a dependency of the
-  // effect below it tore the trap down and rebuilt it whenever the page behind
-  // re-rendered, and each rebuild sent focus back to the first control.
+  // effect below it would tear the trap down and rebuild it whenever the page
+  // behind re-rendered, and each rebuild would send focus to the first control.
   const closeRef = useRef(onClose);
   useLayoutEffect(() => {
     closeRef.current = onClose;

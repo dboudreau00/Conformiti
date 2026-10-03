@@ -123,8 +123,8 @@ def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
                 if write_readmes:
                     # Create only. _control.md asks the operator to fill in the
                     # owner and review cadence, so rewriting it on every run
-                    # (the normal way to pick up a new control) would silently
-                    # discard their edits.
+                    # (the normal way to pick up a new control) would discard
+                    # their edits.
                     readme_path = os.path.join(ctrl_dir, "_control.md")
                     if not os.path.exists(readme_path):
                         with open(readme_path, "w", encoding="utf-8", newline="\n") as f:
@@ -135,14 +135,14 @@ def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
                     "category": category["key"],
                     "control_id": control["control_id"],
                     # Always forward slashes: os.path.relpath yields backslashes
-                    # on Windows, which would make the manifest — a portable,
-                    # machine-readable index — depend on the OS that built it.
+                    # on Windows, which would make the manifest (a portable,
+                    # machine-readable index) depend on the OS that built it.
                     "path": os.path.relpath(ctrl_dir, root).replace(os.sep, "/"),
                 })
 
-    # top-level index + machine-readable manifest. LF on every OS: the
-    # generated files are tracked, .gitattributes pins *.md and *.json to
-    # eol=lf, and a CRLF rewrite on Windows showed both as modified after
+    # Top-level index and machine-readable manifest. LF on every OS: the
+    # generated files are tracked and .gitattributes pins *.md and *.json to
+    # eol=lf, so a CRLF rewrite on Windows would show both as modified after
     # every install that runs generate_folder_tree.
     if write_readmes:
         with open(os.path.join(root, "README.md"), "w", encoding="utf-8", newline="\n") as f:

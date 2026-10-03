@@ -24,11 +24,10 @@ from testutils import PASSWORD, APITestBase, make_user
 
 
 class ReauthOnEveryFactorChangeTests(APITestBase):
-    """H-1 and M-6. Adding a passkey has asked the caller to prove the account
-    is theirs since 0.9.5; enrolling an authenticator app asked for nothing,
-    which is the same hole and a worse one. A stolen session enrolled its own
-    app, took the backup codes, and left the owner locked out of an account
-    the attacker could still reach."""
+    """H-1 and M-6. Adding a passkey or an authenticator app asks the caller
+    to prove the account is theirs. Without that, a stolen session could
+    enrol its own app, take the backup codes, and leave the owner locked out
+    of an account the attacker can still reach."""
 
     def test_setup_without_proof_is_refused(self):
         r = self.client_for(self.owner).post("/api/auth/mfa/setup/", {}, format="json")
@@ -66,8 +65,8 @@ class ReauthOnEveryFactorChangeTests(APITestBase):
         self.assertTrue(self.owner.mfa_enabled)
 
     def test_an_account_with_nothing_to_prove_with_may_enrol_its_first_factor(self):
-        """The escape hatch passkeys already have: an account provisioned
-        through an identity provider has no password and no factor yet."""
+        """The same exception passkeys have: an account provisioned through
+        an identity provider has no password and no factor yet."""
         sso = make_user("sven", self.roles["Viewer"])
         sso.set_unusable_password()
         sso.save()
@@ -75,9 +74,9 @@ class ReauthOnEveryFactorChangeTests(APITestBase):
         self.assertEqual(r.status_code, 200, r.data)
 
     def test_an_sso_account_disables_with_a_backup_code(self):
-        """M-6. Disabling insisted on ``check_password``, which is False for
-        every account that signs in through an identity provider, so the
-        factor could be added and never taken off."""
+        """M-6. Disabling must not depend on ``check_password``, which is
+        False for every account that signs in through an identity provider;
+        otherwise the factor could be added and never removed."""
         sso = make_user("sonia", self.roles["Viewer"])
         sso.set_unusable_password()
         sso.save()
@@ -112,11 +111,11 @@ class ReauthOnEveryFactorChangeTests(APITestBase):
 
 
 class SelfServiceEmailTests(APITestBase):
-    """H-2. ``/users/me/`` wrote ``email`` with no verification and no
-    uniqueness, and ``OIDC_LINK_BY_EMAIL`` (on by default) binds an identity
-    provider's subject to whichever local account holds that address. Any
-    signed-in account, the issued external auditor included, could claim an
-    address whose owner had not signed in through SSO yet and take their
+    """H-2. ``OIDC_LINK_BY_EMAIL`` (on by default) binds an identity
+    provider's subject to whichever local account holds the address it
+    asserts, so ``/users/me/`` must not accept an ``email`` edit. Otherwise
+    any signed-in account, the issued external auditor included, could claim
+    an address whose owner had not signed in through SSO yet and take their
     first sign-in."""
 
     def test_a_user_cannot_set_their_own_email(self):
@@ -143,9 +142,8 @@ class SelfServiceEmailTests(APITestBase):
         self.assertEqual(self.viewer.job_title, "Analyst")
 
     def test_an_operator_cannot_duplicate_an_address(self):
-        """Two accounts on one address is what makes an identity provider
-        give up with ``ambiguous_email``, which is a denial of that person's
-        sign-in rather than a takeover, but is still nobody's intent."""
+        """Two accounts on one address make an identity provider give up with
+        ``ambiguous_email``, which locks that person out of single sign-on."""
         r = self.client_for(self.admin).post(
             "/api/users/", {"username": "newcomer", "email": self.owner.email,
                             "role": self.roles["Viewer"].pk}, format="json")
@@ -154,12 +152,12 @@ class SelfServiceEmailTests(APITestBase):
 
 
 class CrossTenantUniquenessTests(APITestBase):
-    """M-3. The unscoped check was built scoped: the queryset carried
+    """M-3. The unscoped username check must build its queryset inside the
+    unscoped block: a queryset built earlier carries
     ``workspace_id = ActiveWorkspace()``, which resolves at compile time, so
-    running it inside ``unscoped()`` compared the column to NULL and matched
-    nothing. The name then reached the database's global unique constraint
-    and came back a 500, which is the disclosure the check was added to
-    remove."""
+    running it unscoped compares the column to NULL and matches nothing. The
+    name would then reach the database's global unique constraint and come
+    back as a 500, which discloses that the account exists."""
 
     def setUp(self):
         super().setUp()
@@ -201,10 +199,11 @@ class CrossTenantUniquenessTests(APITestBase):
 @override_settings(AUTH_TRANSPORT="cookie")
 class LoginCsrfTests(APITestBase):
     """M-5. ``_enforce_csrf`` runs inside ``CookieJWTAuthentication``, so it
-    only ever saw a request that was already carrying a session. The two
-    endpoints that *set* the cookies authenticate nobody, so a cross-site form
-    post could sign the visitor's browser into the attacker's account, and
-    the evidence they uploaded next went to it."""
+    only sees a request that already carries a session. The two endpoints
+    that set the cookies authenticate nobody, so they must check CSRF
+    themselves: otherwise a cross-site form post could sign the visitor's
+    browser into the attacker's account, and the evidence they upload next
+    would go to it."""
 
     def setUp(self):
         super().setUp()
@@ -251,19 +250,17 @@ class LoginCsrfTests(APITestBase):
 
 
 class AccessTokenEpochTests(APITestBase):
-    """M-4. "Signed out everywhere" walked ``OutstandingToken``, which holds
-    refresh tokens only. The access token in the hijacked tab kept answering
-    until it expired, up to an hour after the reset that was supposed to end
-    it.
+    """M-4. Revoking ``OutstandingToken`` rows only reaches refresh tokens, so
+    the access token in a hijacked tab keeps working for up to an hour after
+    a reset unless it is refused on its issue time.
 
     Each revocation here happens through ``later()``. The stamp is floored to
     the second because the ``iat`` claim is whole seconds, and a stamp
     carrying microseconds would refuse the token the person signing in again
     has just been handed. That floor means a revocation in the same second as
-    the token it revokes is a tie the token wins, which is a second-wide
-    window in production and a coin toss in a test that does both in one
-    breath. Moving the revocation on by a minute tests the rule rather than
-    the clock.
+    the token it revokes is a tie the token wins, which is a one-second window
+    in production and nondeterministic in a test that does both back to back.
+    Moving the revocation on by a minute tests the rule rather than the clock.
     """
 
     @staticmethod
@@ -323,12 +320,10 @@ class AccessTokenEpochTests(APITestBase):
     def test_signing_out_of_one_browser_leaves_the_others_alone(self):
         """Ending every session is for the recovery paths, not for sign-out.
 
-        Signing out revokes every refresh token the account holds, which has
-        been true since 0.6.1, so no other session can renew itself. Reaching
-        across and refusing the access token another browser is holding is a
-        different act: it closes the person's other device mid-sentence, and
-        it is not what the review asked for. CI found this the honest way,
-        by holding a second session."""
+        Signing out revokes every refresh token the account holds, so no other
+        session can renew itself. Also refusing the access token another
+        browser is holding would close the person's other device
+        mid-session, which is not what a sign-out should do."""
         phone = self.client_for(None)
         signed_in = phone.post("/api/auth/token/",
                                {"username": self.owner.username, "password": PASSWORD},

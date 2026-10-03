@@ -136,7 +136,7 @@ class ControlEvidenceSerializer(serializers.ModelSerializer):
     framework_key = serializers.CharField(source="control.category.framework.key", read_only=True)
     framework_name = serializers.CharField(source="control.category.framework.name", read_only=True)
     linked_by_name = PersonNameField("linked_by")
-    # Whether the *requesting* user may remove this link — the UI uses it to
+    # Whether the *requesting* user may remove this link. The UI uses it to
     # show the Unlink control only where the API would accept the call.
     can_unlink = serializers.SerializerMethodField()
 

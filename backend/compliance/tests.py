@@ -123,14 +123,14 @@ class SeedTests(APITestBase):
         real = Folder.objects.filter(control__isnull=False).exclude(control__category__framework__key="tfw")
         self.assertEqual(real.count(), 217)
         self.assertEqual(Folder.objects.filter(is_framework_root=True).count(), 4)  # 3 real + the test one
-        # the ISO root name no longer carries a path separator
+        # the ISO root name carries no path separator
         self.assertFalse(Folder.objects.filter(is_framework_root=True, name__contains="/").exists())
 
 
 class ReadinessScoringTests(APITestBase):
     """A control is "ready" when someone owns it, evidence exists, the evidence
-    is current, it has been tested, and nothing is openly failing -- not when a
-    box is ticked."""
+    is current, it has been tested, and nothing is openly failing, rather than
+    when a box is ticked."""
 
     def setUp(self):
         super().setUp()
@@ -280,9 +280,9 @@ class ReadinessScoringTests(APITestBase):
             self.assertEqual(self._score()["band"], "nearly")
 
     def test_band_labels_are_honest_and_do_not_collide_with_statuses(self):
-        """Two adjacent chips both called 'Not started' would be unusable --
-        and 'Unscored' would be a lie, because a control in the lowest band
-        does have a score."""
+        """Two adjacent chips both called 'Not started' would be unusable, and
+        'Unscored' would be wrong, because a control in the lowest band does
+        have a score."""
         labels = set(scoring.BAND_LABELS.values())
         self.assertNotIn("Not started", labels)
         self.assertNotIn("Not applicable", labels)
@@ -378,8 +378,8 @@ class ReadinessScoringTests(APITestBase):
 
 class NamelessAccountTests(APITestBase):
     """createsuperuser asks for no first or last name. A control such an
-    account owned read as 'Unassigned', and the test it recorded and the
-    evidence it linked as recorded by nobody."""
+    account owns must not read as 'Unassigned', nor the test it recorded or
+    the evidence it linked as recorded by nobody."""
 
     def test_a_nameless_account_is_named_by_its_username(self):
         import csv
@@ -409,8 +409,8 @@ class NamelessAccountTests(APITestBase):
 
 class FolderTreeFileTests(SimpleTestCase):
     """The generated tree is tracked with eol=lf. Written with the platform's
-    newline, every Windows install left README.md and manifest.json showing
-    as modified."""
+    newline, every Windows install would leave README.md and manifest.json
+    showing as modified."""
 
     def test_every_generated_text_file_is_written_with_lf(self):
         import json

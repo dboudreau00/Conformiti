@@ -3,7 +3,7 @@
 The dashboard's readiness trend needs history the live tables cannot give.
 One row per day is recorded by the daily Celery task (and lazily by the
 summary endpoint the first time it is hit on a given day), so the trend line
-is real program history rather than an illustration.
+reflects recorded programme history.
 """
 from django.db import models
 
@@ -21,9 +21,9 @@ class ReadinessSnapshot(TenantModel):
     documents_overdue = models.PositiveIntegerField(default=0)
     risks_open = models.PositiveIntegerField(default=0)
     # The programme's readiness score (the mean of every applicable control's
-    # score, 0–100) as of that day. Null on rows recorded before 0.9.5, which
-    # knew only the implemented share; the trend shows the score from the
-    # first day it was measured and says so.
+    # score, 0 to 100) as of that day. Null on rows recorded before 0.9.5,
+    # which stored only the implemented share; the trend shows the score from
+    # the first day it was measured.
     score = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -1,5 +1,5 @@
 """
-WebAuthn (passkeys and security keys) as a second factor -- the protocol.
+WebAuthn (passkeys and security keys) as a second factor: the protocol.
 
 This module is the relying-party side of WebAuthn Level 2, reduced to what a
 second factor needs: build the options the browser is given, and verify what
@@ -9,21 +9,20 @@ glue that stores credentials and challenges. Cryptography comes from the
 parsing is here in full because both are small, and a reader should be able
 to check every byte the server trusts without following an import.
 
-What is deliberately NOT here:
+Not implemented:
 
-* **Attestation is not verified.** The browser is asked for ``"none"`` and
+* **Attestation verification.** The browser is asked for ``"none"`` and
   whatever statement arrives is ignored. Attestation proves which make of
   authenticator created a key; a second factor needs only that the same key
-  signs next time, and verifying attestation chains is a large surface for
-  no gain to this product.
+  signs next time, and verifying attestation chains is a large surface with
+  no benefit to this product.
 * **Discoverable (usernameless) login.** A passkey is always presented
   after the password, so the server always knows whose credentials to allow.
 
-The counter rule that the roadmap deferred this feature over lives in
-``counter_regressed`` and in ``passkeys.finish_login``: a signature counter
-that fails to increase is a sign the credential was cloned, and the answer is
-to refuse the sign-in and mark the credential, never to drop the account to
-password-only.
+The counter rule lives in ``counter_regressed`` and in
+``passkeys.finish_login``: a signature counter that fails to increase is a
+sign the credential was cloned, and the response is to refuse the sign-in and
+mark the credential, never to drop the account to password-only.
 """
 import base64
 import hashlib

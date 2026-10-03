@@ -1,11 +1,11 @@
 """
 Minimal Jira Cloud / Server client built on the Python standard library
-(urllib) — no new dependencies. Used by the optional Jira integration to pull
-issues from specific boards so security work tracked in Jira is visible next
-to the controls it supports.
+(urllib), with no extra dependencies. Used by the optional Jira integration to
+pull issues from specific boards so security work tracked in Jira is visible
+next to the controls it supports.
 
-Authentication is HTTP Basic with an Atlassian API token
-(email + token — create one at id.atlassian.com → Security → API tokens).
+Authentication is HTTP Basic with an Atlassian API token (email and token;
+create one at id.atlassian.com under Security > API tokens).
 """
 import base64
 import json
@@ -21,9 +21,9 @@ class JiraError(Exception):
     message is safe to show to the user."""
 
 
-# The safety checks below used to live here in full. They moved to
-# config/outbound.py in 0.9.5b so the chat webhooks could not ship a second,
-# weaker copy of them (REVIEWS.md (0.9.5 review), S-2). Jira keeps its own wording.
+# The URL safety checks live in config/outbound.py, shared with the chat
+# webhooks so there is no second, weaker copy (REVIEWS.md (0.9.5 review), S-2).
+# Jira keeps its own wording.
 _MESSAGES = {
     "scheme": "Jira base URL must start with https:// (e.g. https://your-team.atlassian.net).",
     "userinfo": "Jira base URL must not carry a username or password.",

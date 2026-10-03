@@ -27,7 +27,7 @@ test.describe("vendor register", () => {
   });
 
   // Runs before the walkthrough below: that test states Brightline's first
-  // control, after which the "new vendor" alert rightly stops firing.
+  // control, after which the "new vendor" alert stops firing.
   test("the onboarding alert reaches the vendor's owner and deep-links to the matrix", async ({ page }) => {
     await page.goto("/login");
     await page.evaluate(() => localStorage.clear());
@@ -57,7 +57,7 @@ test.describe("vendor register", () => {
     await expect(page.getByText("Controls in scope", { exact: true })).toBeVisible();
     await expect(page.getByText("Stated", { exact: true })).toBeVisible();
     // A seeded statement is in the grid, editable by a frameworks manager.
-    // The framework filter is a select since 0.9.5d: twenty-five chips wrapped.
+    // The framework filter is a select: twenty-five chips wrapped.
     await page.locator("#matrix-framework").selectOption("pci_dss_v4");
     await expect(page.getByLabel("Amazon Web Services does for 1.3", { exact: true })).toHaveValue(/Edge network controls/);
     // Typing marks the row unsaved until Save is pressed.
@@ -76,14 +76,14 @@ test.describe("vendor register", () => {
     await page.getByLabel("Matrix file").setInputFiles({
       name: "aws-matrix.csv",
       mimeType: "text/csv",
-      // The AWS layout: a column per party, X marks under each -- and the
+      // The AWS layout: a column per party, X marks under each, and the
       // vendor is registered under its full name, not "AWS".
       buffer: Buffer.from("Requirement,AWS,Customer\n1.3,X,X\n12.1,,X\nZZ9,X,\n"),
     });
     // The header report says how each column was read...
     await expect(page.getByText(/AWS → provider mark/)).toBeVisible();
     await expect(page.getByText(/Customer → customer mark/)).toBeVisible();
-    // ...and the honest tally: one reference the register does not have.
+    // ...and the tally: one reference the register does not have.
     await expect(page.getByText("2 matched a control")).toBeVisible();
     await expect(page.getByText("1 unmatched")).toBeVisible();
     // Nothing was written by parsing; confirming writes exactly the usable rows.
@@ -149,7 +149,7 @@ test.describe("responsibility matrix (RACI)", () => {
   test("a second Accountable party is refused", async ({ page }) => {
     expectBrowserError(page, /status of 400/);   // the refusal is the point
     await open(page, "/responsibilities", "Responsibility matrix");
-    // Since 0.9.5d the control is found by typing rather than scrolling a
+    // The control is found by typing rather than scrolling a
     // dropdown of every control in the workspace.
     await page.locator("#raci-control").fill("CC6.1");
     await page.getByRole("button", { name: /^CC6\.1/ }).click();

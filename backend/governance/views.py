@@ -159,8 +159,8 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
         _snapshot_items(review)
 
     def perform_destroy(self, instance):
-        # Deleting took every row with it, so a completed review, the evidence
-        # that the control operated, could simply go.
+        # Deleting removes every row with it, so a completed review, the
+        # evidence that the control operated, must not be deletable.
         from rest_framework.exceptions import ValidationError
 
         if instance.status == AccessReview.Status.COMPLETED:
@@ -178,12 +178,11 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
                 {"detail": f"{pending} row(s) still pending a decision."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # A decision that nobody carried out is not evidence of a control; it
-        # is evidence that the control was not operating. Completing the
-        # review now applies every "revoke" row (the account is deactivated
-        # and its sessions are revoked) and says which rows it could not
-        # apply and why, so the reviewer finishes the job by hand rather than
-        # believing it was done.
+        # A revoke decision that nobody carried out would show the control was
+        # not operating. Completing the review applies every "revoke" row (the
+        # account is deactivated and its sessions are revoked) and reports
+        # which rows it could not apply and why, so the reviewer finishes the
+        # job by hand.
         applied = _apply_revocations(request, review)
         review.status = AccessReview.Status.COMPLETED
         review.completed_at = timezone.now()
@@ -224,8 +223,8 @@ class AccessReviewItemViewSet(viewsets.ModelViewSet):
 
     Pagination is disabled: a review's rows (one per user account) are a bounded
     set the grid needs in full to compute decided/total and show every account.
-    Default 50-row pagination would silently truncate the audit grid for orgs
-    with more than 50 users."""
+    Default 50-row pagination would truncate the audit grid for orgs with
+    more than 50 users."""
     queryset = AccessReviewItem.objects.select_related("review", "decided_by")
     serializer_class = AccessReviewItemSerializer
     permission_classes = [AccessAuditPermission]

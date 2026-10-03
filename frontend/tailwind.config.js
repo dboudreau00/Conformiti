@@ -24,7 +24,7 @@ export default {
       },
       // Stacks, not downloads: Inter and JetBrains Mono are used when the
       // reader already has them, and the platform's own UI faces otherwise.
-      // Nothing is fetched from a font CDN -- see index.html.
+      // Nothing is fetched from a font CDN; see index.html.
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system",
                "Segoe UI", "Roboto", "Helvetica Neue", "Arial",

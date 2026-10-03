@@ -152,18 +152,17 @@ class Command(BaseCommand):
         demo_users = list(
             User.objects.filter(username__in=DEMO_USERNAMES, email__endswith="@example.com")
         )
-        # Guard: the org must keep at least one active superuser/administrator
-        # that is NOT one of the demo accounts. The test lives beside the
-        # seeder (own_administrator_present), because the seeder's advice and
-        # the container's boot banner ask it too: they tell an operator to
+        # Guard: the org must keep at least one active superuser or
+        # administrator that is not a demo account. The test lives beside the
+        # seeder (own_administrator_present) because the seeder's advice and
+        # the container's boot banner use it too: they tell an operator to
         # run createsuperuser first exactly when this would refuse.
-        # `createsuperuser` now files its account in the first workspace that
-        # is not archived (and accounts migration 0013 moved the ones older
-        # releases left with none), but a superuser with no workspace at all
-        # still counts: one detached by hand is still the administrator an
-        # operator may have made before retiring the demo users. A role counts
-        # the way User._cap reads it: an auditor role holds no capability,
-        # whatever it stores.
+        # `createsuperuser` files its account in the first workspace that is
+        # not archived, but a superuser with no workspace at all still
+        # counts: one detached by hand may be the administrator an operator
+        # made before retiring the demo users. A role counts the way
+        # User._cap reads it: an auditor role holds no capability, whatever
+        # it stores.
         if demo_users and not own_administrator_present(workspace):
             raise CommandError(
                 "Refusing: no administrator other than the demo accounts exists. "
@@ -194,7 +193,7 @@ class Command(BaseCommand):
             name=DEMO_PACKAGE_NAME, created_by__username__in=DEMO_USERNAMES
         )
         # Vendors cascade to their assessments, shared responsibility rows and
-        # RACI rows; a risk that named one is kept and simply loses the link.
+        # RACI rows; a risk that named one is kept and loses the link.
         from compliance.models import Responsibility
         from documents.models import FolderPermission
         from vendors.models import Vendor
@@ -229,7 +228,7 @@ class Command(BaseCommand):
         counts.append(("Seeded readiness history points", history.count()))
 
         # The control programme. Owners first: a control owned by an account
-        # that can no longer sign in has no owner in any sense that matters.
+        # that can no longer sign in is effectively unowned.
         demo_by_pk = {u.pk: u.username for u in demo_users}
         demo_owned = Control.objects.filter(owner_id__in=list(demo_by_pk))
         programme, reset, unreadable = self._programme_resets(demo_by_pk, retiring, demo_seen)

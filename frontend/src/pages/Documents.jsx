@@ -374,8 +374,8 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
 export default function Documents({ me }) {
   const [tree, setTree] = useState([]);
   const [treeLoading, setTreeLoading] = useState(true);
-  // A failed read is { reason } (see failReason), never an empty list: a tree
-  // that did not load read as "No folders yet" and offered to make the first.
+  // A failed read is { reason } (see failReason), never an empty list: an empty
+  // tree would read as "No folders yet" and offer to make the first.
   const [treeErr, setTreeErr] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
   const [folderId, setFolderId] = useState(null);
@@ -503,15 +503,14 @@ export default function Documents({ me }) {
   const closeActions = useCallback(() => setActionsFor(null), []);
   const refreshDocs = () => { if (folderId != null) loadDocs(folderId, { silent: true }); };
 
-  // Search across every folder the person can see. Until 0.9.5 finding a
-  // document meant knowing which of a hundred seeded folders it was in; the
-  // API had ?search= all along and nothing on the page used it. Two letters
-  // start it, a short pause between keystrokes, and the newest answer wins.
+  // Search across every folder the person can see, through the API's
+  // ?search=. Two letters start it, a short pause between keystrokes, and the
+  // newest answer wins.
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(null); // null = not searching
   const [searching, setSearching] = useState(false);
   // A search that failed is not one that found nothing: "0 matches, try a
-  // shorter word" sent the reader off to retype a name that does exist.
+  // shorter word" would send the reader off to retype a name that does exist.
   const [searchErr, setSearchErr] = useState(null);
   const [searchTry, setSearchTry] = useState(0);
   const searchReq = useRef(0);
@@ -663,8 +662,8 @@ export default function Documents({ me }) {
   }
 
   // Runs inside the confirmation dialog, so a failure has to throw: the dialog
-  // then stays open and says why. Through run() it was swallowed, and the
-  // dialog closed as if the review had been recorded.
+  // then stays open and says why. Through run() it would be swallowed and the
+  // dialog would close as if the review had been recorded.
   async function markReviewed(d) {
     setMsg(null);
     setBusy(true);
@@ -870,7 +869,7 @@ export default function Documents({ me }) {
                 className="max-h-[60vh] overflow-y-auto"
               />
             )}
-            {/* Upload lives in the folder's header now, so a folder the reader
+            {/* Upload is in the folder's header, so a folder the reader
                 can edit leaves nothing to say here. */}
             {treeErr || canEdit ? null : (
               <div className="border-t border-line p-3">

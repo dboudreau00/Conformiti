@@ -25,9 +25,9 @@ def compliance_inbox():
 
     Every scan runs inside one workspace at a time (``for_each_workspace``),
     and the subject lines carry document names, vendor names and auditor
-    requests. Sending them all to one installation-wide address published
-    every tenant's business to whoever runs the box, so a workspace names its
-    own; the setting remains the fallback, and is the whole answer for a
+    requests. Sending them all to one installation-wide address would expose
+    every tenant's business to whoever runs the installation, so a workspace
+    names its own; the setting is the fallback, and is the whole answer for a
     single-organisation install.
     """
     workspace = tenancy.current()
@@ -96,9 +96,9 @@ def run_review_scan(dry_run=False):
         # Claim the window before sending it, with a conditional UPDATE that
         # only succeeds if the row still records what this worker read. Two
         # workers running the scan at once (a second beat, a manual run beside
-        # the scheduled one) used to both read "not yet sent", both send, and
-        # both save — one document, two emails. Now only one of them wins the
-        # claim; the other sees zero rows updated and moves on.
+        # the scheduled one) would otherwise both read "not yet sent", both
+        # send and both save: one document, two emails. Only one of them wins
+        # the claim; the other sees zero rows updated and moves on.
         fields = {"reminders_sent": sent}
         if overdue:
             fields["status"] = Document.Status.EXPIRED
@@ -230,7 +230,7 @@ def run_pbc_scan(dry_run=False):
 def run_scanner_watch(dry_run=False):
     """Probe the malware scanner and email the compliance team once when it
     goes down and once when it comes back. Returns "down", "up", "recovered"
-    or "off" -- what the probe found, not whether mail went out."""
+    or "off": what the probe found, not whether mail went out."""
     from documents import monitor
     from documents.models import ScannerStatus
 

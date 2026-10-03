@@ -7,16 +7,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # The code default is DEBUG on, because the code's usual caller is a developer
 # running `manage.py runserver`. This image's caller is `docker run`, which is
-# a server. Compose and both installers set this explicitly, so a published
-# image was the one path that reached the code default and came up with the
+# a server. Compose and both installers set this explicitly; pinning it here
+# covers a published image run on its own, which would otherwise start with the
 # browsable API, session authentication on every route, and MEDIA_ROOT served
 # around the X-Accel check. Override it on purpose through compose with
 # CONFORMITI_DEBUG; nothing else should.
 ENV DJANGO_DEBUG=false
 
-# And the other half of the same decision. BEHIND_TLS defaults to "not DEBUG",
-# so pinning DEBUG off turned SECURE_SSL_REDIRECT on, and a plain `docker run`
-# answered every request with a 301 to https that nothing was listening on.
+# BEHIND_TLS defaults to "not DEBUG", so pinning DEBUG off would turn
+# SECURE_SSL_REDIRECT on, and a plain `docker run` would answer every request
+# with a 301 to https that nothing is listening on.
 # The compose file this image was built for sets BEHIND_TLS=false, because it
 # serves plain HTTP on the LAN until an operator puts TLS in front; the image
 # defaults the same way, for the same reason. Set BEHIND_TLS=true once TLS is
@@ -46,9 +46,9 @@ RUN useradd --system --create-home --uid 10001 app \
 USER app
 
 EXPOSE 8000
-# The status code is checked, not merely curl's exit code: `curl -f` treats a
+# The status code is checked as well as curl's exit code: `curl -f` treats a
 # redirect as success, so a container answering every request with a 301 to a
-# port nothing listens on reported itself healthy (0.9.5f).
+# port nothing listens on would report itself healthy.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=5 \
     CMD test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/health/)" = 200 || exit 1
 

@@ -1,13 +1,12 @@
 """
 Taking the point-in-time copies a package is made of.
 
-Nothing here reads a live row at display time. Controls get renamed, documents
-get new versions, people leave — none of which may change what a sealed package
-says was handed over.
+Nothing here reads a live row at display time. Controls are renamed, documents
+get new versions and people leave, and none of that may change what a sealed
+package says was handed over.
 """
 import hashlib
 
-from django.core.files.storage import default_storage
 from django.utils import timezone
 
 from .models import PackageControl, PackageEvidence
@@ -64,7 +63,7 @@ def pin_document(package_control, document, user, link=None, ordinal=0, **extra)
     """Pin one document into a control row, hashing it as it stands.
 
     ``link`` is the ``ControlEvidence`` row, if the document is being pinned
-    because it is already linked to the control — its ``linked_by`` and
+    because it is already linked to the control. Its ``linked_by`` and
     ``created_at`` are carried forward, because who asserted that this artefact
     evidences this control, and when, is itself audit evidence.
     """
@@ -95,11 +94,10 @@ def pinned_file(row):
     """The file a pinned row stands for, as ``(file, archived_version)``.
 
     The document's own file while it is still the one pinned; after a new
-    version, the archived version that kept it. Every read used to take the
-    document's current file, so once a new version landed after the seal the
-    auditor opened bytes the package never sealed while the package went on
-    showing the sealed digest. ``(None, None)`` when neither holds it: a file
-    the package did not seal is not served in its place.
+    version, the archived version that kept it. Reading the document's current
+    file instead would serve bytes the package never sealed while the package
+    still showed the sealed digest. ``(None, None)`` when neither holds it: a
+    file the package did not seal is not served in its place.
     """
     document = row.document
     if document is None or not document.file:

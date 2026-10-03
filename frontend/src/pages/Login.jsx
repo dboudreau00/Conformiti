@@ -289,7 +289,7 @@ export default function Login({ onDone }) {
   }
 
   // Something typed can satisfy the step: an authenticator code, or a backup
-  // code -- which a passkey-only account holds too.
+  // code, which a passkey-only account holds too.
   const codeWorks = factors.totp || factors.backup_codes;
   // Nothing usable: every passkey is suspect, no app, no codes left.
   const lockedOut = mfaStep && !codeWorks && !factors.passkey && factors.passkey_suspect > 0;

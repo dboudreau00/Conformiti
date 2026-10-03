@@ -1,6 +1,6 @@
-"""Regression tests for the findings left open after 0.9.3.
+"""Regression tests for findings in REVIEWS.md (0.9.0 review).
 
-Each class names the defect it closes. See REVIEWS.md (0.9.0 review).
+Each class names the finding it covers.
 """
 from django.conf import settings
 from django.test import TestCase, override_settings
@@ -12,11 +12,11 @@ from testutils import APITestBase, make_user
 
 
 class TotpReplayTests(TestCase):
-    """Medium 4: a code stayed good for its whole window.
+    """Medium 4: a spent code must not stay good for its whole window.
 
-    TOTP is valid for 30 seconds plus a step of drift either way, and nothing
-    recorded which codes had been spent -- so six digits read over a shoulder,
-    lifted from a phishing form or replayed off a proxied login page worked
+    TOTP is valid for 30 seconds plus a step of drift either way. Without a
+    record of which codes have been spent, six digits read over a shoulder,
+    lifted from a phishing form or replayed off a proxied login page work
     again for up to 90 seconds.
     """
 
@@ -64,9 +64,9 @@ class TotpReplayTests(TestCase):
 
 
 class BackupCodeClaimTests(TestCase):
-    """Low 9: a backup code was read, checked and marked used in three steps
-    with nothing between them, so one code could authenticate two sign-ins
-    that arrived together."""
+    """Low 9: a backup code is claimed atomically. Reading, checking and
+    marking it used in three separate steps would let one code authenticate
+    two sign-ins that arrive together."""
 
     def setUp(self):
         self.user = make_user("codes-user")
@@ -95,11 +95,11 @@ class BackupCodeClaimTests(TestCase):
 
 
 class SlicedQuerysetTests(TestCase):
-    """Low 2: _pin() skipped any queryset that was already sliced.
+    """Low 2: _pin() must not skip a queryset that is already sliced.
 
-    A queryset built with no workspace active and read inside one used to come
-    back with the workspace condition missing -- every organisation's rows,
-    silently. It now refuses instead.
+    A queryset built with no workspace active and read inside one would
+    otherwise come back without the workspace condition, with every
+    organisation's rows. It refuses instead.
     """
 
     def setUp(self):
@@ -140,11 +140,11 @@ class SlicedQuerysetTests(TestCase):
 
 
 class ComplianceInboxTests(TestCase):
-    """Low 1: every organisation's reminders went to one address.
+    """Low 1: each organisation's reminders go to its own address.
 
     The subject lines carry document names, vendor names and auditor requests,
-    so one installation-wide mailbox published every tenant's business to
-    whoever ran the box.
+    so one installation-wide mailbox would publish every tenant's business to
+    whoever runs the box.
     """
 
     def setUp(self):
@@ -171,11 +171,11 @@ class ComplianceInboxTests(TestCase):
 
 class SsoAssertionDefaultTests(TestCase):
     """Low 4: the shipped list of "the provider asserted a second factor"
-    included two RFC 8176 values that are not second factors."""
+    must not include the two RFC 8176 values that are not second factors."""
 
     def test_user_presence_and_pin_are_not_second_factors(self):
         self.assertNotIn("user", settings.SSO_MFA_ASSERTIONS,
-                         "amr=user is a presence test -- somebody touched the key")
+                         "amr=user is a presence test: somebody touched the key")
         self.assertNotIn("pin", settings.SSO_MFA_ASSERTIONS,
                          "amr=pin may well be the IdP's *first* factor")
 
@@ -185,8 +185,8 @@ class SsoAssertionDefaultTests(TestCase):
 
 
 class AuditorRoleDescriptionTests(APITestBase):
-    """High 13: the shipped description promised something the code did not
-    enforce. Both halves are now true."""
+    """High 13: the shipped description must promise only what the code
+    enforces."""
 
     def test_the_description_no_longer_claims_folders_are_the_limit(self):
         description = self.roles["Auditor"].description

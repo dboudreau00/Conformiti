@@ -13,7 +13,6 @@ from django.utils import timezone
 from compliance import scoring
 from compliance.models import Control, Responsibility
 from documents.models import VIEW
-from governance.models import Risk
 from notifications.notifications import build as build_feed
 from testutils import APITestBase, grant, make_doc
 from vendors import matrix as mx
@@ -28,7 +27,7 @@ def _vendor(**extra):
 
 
 def _xlsx(rows):
-    """A minimal .xlsx with one sheet and inline strings -- enough for the
+    """A minimal .xlsx with one sheet and inline strings, enough for the
     stdlib reader the importer sits on."""
     def cell(ref, value):
         text = str(value).replace("&", "&amp;").replace("<", "&lt;")
@@ -123,7 +122,7 @@ class VendorRegisterTests(APITestBase):
 
     def test_export_names_a_nameless_owner_by_username(self):
         """createsuperuser asks for no first or last name, and such an owner
-        exported as a blank."""
+        must not export as a blank."""
         import csv
 
         from testutils import make_user
@@ -140,7 +139,7 @@ class VendorRegisterTests(APITestBase):
         self.assertEqual(rows["Unowned Co"]["Owner"], "")
 
     def test_the_returned_questionnaire_email_greets_a_nameless_owner_by_username(self):
-        """It opened with "Hello ," for such an owner."""
+        """It must not open with "Hello ," for such an owner."""
         from types import SimpleNamespace
 
         from django.core import mail
@@ -431,9 +430,8 @@ class ImportRecognitionTests(APITestBase):
 
     def test_an_em_dash_cell_is_read_as_na(self):
         """A cell holding only an em dash means "not this side", as "-" does.
-        The 0.9.5j copy sweep turned the token into a second "-", which made a
-        tick column with em dash blanks read as statements and every row as
-        shared."""
+        The token must stay distinct from "-": otherwise a tick column with em
+        dash blanks reads as statements and every row as shared."""
         dash = "\u2014"
         csv = f"Requirement,AWS,Customer\nTC1.1,X,{dash}\nTC1.2,{dash},X\n".encode()
         out = mx.recognise("m.csv", csv, "Amazon Web Services", self.refs)

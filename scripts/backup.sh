@@ -67,14 +67,12 @@ for v in media secrets tree; do
   echo "backup: $v volume"
   # Both the mode and the owner are set INSIDE the container, by the process
   # that creates the file. The tar has to run as root, because the volumes
-  # belong to the unprivileged user the application runs as; that is what
-  # made the archive root-owned and 644, and what made the chmod 0.9.5h added
-  # afterwards fail silently behind `|| true` while the script printed
-  # "mode 600" regardless (0.9.5i, L-2).
+  # belong to the unprivileged user the application runs as. A chmod from the
+  # host afterwards would fail on the root-owned archive, and hiding that
+  # failure behind `|| true` would print "mode 600" regardless (0.9.5i, L-2).
   #
   # The chown is the other half. Without it the archive is 600 root:root and
-  # the operator who ran this cannot read their own backup without sudo,
-  # which is a different way of being unusable.
+  # the operator who ran this cannot read their own backup without sudo.
   docker run --rm -v "${project}_${v}:/src:ro" -v "$out:/out" alpine:3.20 \
     sh -c "umask 077 && tar czf /out/$v.tgz -C /src . \
            && chown ${owner_uid}:${owner_gid} /out/$v.tgz \

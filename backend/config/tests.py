@@ -141,10 +141,10 @@ class DemoDataTests(TestCase):
     def test_a_superuser_with_no_workspace_counts_as_the_surviving_administrator(self):
         """The sequence the README documents: `createsuperuser`, then
         `remove_demo_data`, with the superuser belonging to no workspace at
-        all. `createsuperuser` now files its account in a workspace, but an
-        account detached by hand still has none, and so did every one an older
-        release made. The guard, which runs inside one workspace, must still
-        see it or the documented path dead-ends."""
+        all. `createsuperuser` files its account in a workspace, but an account
+        detached by hand, or made by an older release, has none. The guard,
+        which runs inside one workspace, must still see it or the documented
+        path dead-ends."""
         from accounts import tenancy
 
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
@@ -181,8 +181,8 @@ class DemoDataTests(TestCase):
 
     def test_remove_still_finds_the_data_when_the_demo_accounts_are_already_gone(self):
         """An operator who deleted the demo users by hand first must not be
-        left with the demo vendors, documents and RACI rows -- those rows
-        lose their creator (SET_NULL) and used to slip through the match."""
+        left with the demo vendors, documents and RACI rows. Those rows lose
+        their creator (SET_NULL), so the match must still find them."""
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         with tempfile.TemporaryDirectory() as media:
             from django.test import override_settings
@@ -351,7 +351,8 @@ class MigrationHelperTests(TestCase):
     def test_encrypt_existing_rows_upgrades_legacy_plaintext(self):
         user = make_user("legacy")
         MfaDevice.objects.create(user=user, secret="JBSWY3DPEHPK3PXP")
-        # Put the column back to plaintext, as a pre-0.3.0 database has it.
+        # Put the column back to plaintext, as a database from before field
+        # encryption has it.
         MfaDevice.objects.filter(user=user).update(secret="JBSWY3DPEHPK3PXP")
         self.assertEqual(_raw_secret(user), "JBSWY3DPEHPK3PXP")
 
@@ -359,7 +360,7 @@ class MigrationHelperTests(TestCase):
             connection, "accounts_mfadevice", "secret", "user_id")
         self.assertEqual(moved, 1)
         self.assertTrue(fieldcrypto.is_encrypted(_raw_secret(user)))
-        # And the LIVE field reads it -- this is the AAD-divergence guard.
+        # And the live field reads it: this is the AAD-divergence guard.
         self.assertEqual(MfaDevice.objects.get(user=user).secret, "JBSWY3DPEHPK3PXP")
 
     def test_encrypt_existing_rows_is_idempotent_and_reversible(self):
@@ -415,8 +416,8 @@ class FieldKeyRotationTests(TestCase):
 
     def test_an_empty_column_is_neither_unreadable_nor_plaintext(self):
         """A workspace with no Slack or Teams webhook stores an empty value.
-        Every rotation warned that it was "not readable under any current
-        key", and --status counted it as plaintext."""
+        Rotation must not warn that it is "not readable under any current
+        key", and --status must not count it as plaintext."""
         out, err = StringIO(), StringIO()
         call_command("rotate_field_keys", stdout=out, stderr=err)
         self.assertNotIn("not readable", err.getvalue())
@@ -440,8 +441,8 @@ class ValidatorPortabilityTests(SimpleTestCase):
 
     The CI `validate` job installs nothing, so any module the validator imports
     must depend on the standard library alone. Check 17 imports
-    documents.clamav; importing documents.scanning instead broke that job while
-    passing everywhere else.
+    documents.clamav; importing documents.scanning instead would break that job
+    while passing everywhere else.
     """
 
     def test_the_scanner_client_imports_without_django(self):
@@ -566,10 +567,9 @@ class BootWarningTests(SimpleTestCase):
     a correct configuration starts quietly."""
 
     def test_num_proxies_is_asked_for_only_while_it_is_unset(self):
-        """It used to fire on any value below 2 and advise 2, so a deliberate
-        NUM_PROXIES=1 (right when the host's own nginx terminates TLS) warned
-        on every command with advice that would have keyed the throttles on
-        an address the client writes."""
+        """A deliberate NUM_PROXIES=1 (right when the host's own nginx
+        terminates TLS) must not warn: advising 2 there would key the
+        throttles on an address the client writes."""
         env = {**_PRODUCTION, "BEHIND_TLS": "true", "CACHE_URL": "redis://localhost:6379/2"}
         if not _dotenv_sets("NUM_PROXIES"):
             r = _run_check(env, drop=_BOOT_VARS)
@@ -608,8 +608,8 @@ class BootWarningTests(SimpleTestCase):
 
 class LoggingNoiseTests(SimpleTestCase):
     """What DJANGO_DEBUG=true, the local .env's setting, prints. django.template
-    logged a chained traceback at DEBUG for every variable a template could not
-    resolve: 46 lines per 404 in the dev server's terminal, and dozens of
+    would log a chained traceback at DEBUG for every variable a template could
+    not resolve: 46 lines per 404 in the dev server's terminal, and dozens of
     tracebacks in the documented test gate."""
 
     # `python -c PROBE test` leaves sys.argv[1] == "test", as `manage.py test` does.
@@ -656,13 +656,14 @@ class LoggingNoiseTests(SimpleTestCase):
         self.assertEqual(levels["django.template"], logging.WARNING)
 
     def test_an_empty_log_level_counts_as_unset(self):
-        """`LOG_LEVEL=` in a .env used to be an unknown level at startup."""
+        """`LOG_LEVEL=` in a .env must not be read as an unknown level."""
         levels, _ = self.probe(LOG_LEVEL="", **_PRODUCTION)
         self.assertEqual(levels["django"], logging.INFO)
 
     def test_the_test_runner_prints_only_real_request_errors(self):
-        """Hundreds of 4xx answers in the suite are deliberate; each was a
-        WARNING line in the test gate. A 5xx still logs at ERROR."""
+        """Hundreds of 4xx answers in the suite are deliberate, so they must
+        not each print a WARNING line in the test gate. A 5xx still logs at
+        ERROR."""
         levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true")
         self.assertEqual(levels["django.request"], logging.ERROR)
         levels, _ = self.probe(argv=("runserver",), DJANGO_DEBUG="true")
@@ -671,9 +672,9 @@ class LoggingNoiseTests(SimpleTestCase):
         self.assertEqual(levels["django.request"], logging.WARNING, "a LOG_LEVEL set on purpose wins")
 
     def test_the_test_runner_does_not_list_every_email_it_sends(self):
-        """Each console email the suite sends was an INFO line in the test
-        gate, dozens of them between the dots. A run with LOG_LEVEL set, and
-        every other command, still lists them."""
+        """Each console email the suite sends would be an INFO line in the
+        test gate, dozens of them between the dots. A run with LOG_LEVEL set,
+        and every other command, still lists them."""
         levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true")
         self.assertEqual(levels["notifications.email_service"], logging.WARNING)
         levels, _ = self.probe(argv=("runserver",), DJANGO_DEBUG="true")
@@ -683,9 +684,9 @@ class LoggingNoiseTests(SimpleTestCase):
 
 
 class OptionsMetadataTests(TestCase):
-    """An OPTIONS request answered with the view's docstring as its
-    "description": developer notes on the login throttle and CSRF, to anyone,
-    signed in or not."""
+    """An OPTIONS request must not answer with the view's docstring as its
+    "description": that is developer notes on the login throttle and CSRF,
+    for anyone to read, signed in or not."""
 
     def test_options_still_answers_but_carries_no_docstring(self):
         from config.urls import ThrottledTokenObtainPairView

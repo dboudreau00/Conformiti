@@ -2,15 +2,15 @@
 Serving stored files through the application, so that reading evidence is an
 authorised, auditable act.
 
-Until 0.3.0 the shipped nginx served the whole media volume directly. Upload
-paths are derived from the folder tree and the file name
-(``documents/<framework>/<category>/<control>/<file>``), so anyone who could
-reach the site and guess or observe a path could fetch any document regardless
-of its folder permissions — and nothing recorded that they had.
+The shipped nginx does not serve the media volume directly. Upload paths are
+derived from the folder tree and the file name
+(``documents/<framework>/<category>/<control>/<file>``), so if nginx served
+them, anyone who could reach the site and guess or observe a path could fetch
+any document regardless of its folder permissions, with nothing recorded.
 
-Every read now goes through a view that has already resolved the caller's
-rights. The bytes themselves are still handed to nginx to send (``X-Accel-
-Redirect``), so authorisation costs a Python call and the transfer does not.
+Every read goes through a view that has already resolved the caller's rights.
+The bytes themselves are handed to nginx to send (``X-Accel-Redirect``), so
+authorisation costs a Python call and the transfer does not.
 """
 import mimetypes
 import os
@@ -36,8 +36,8 @@ _ENCODING_TYPES = {
 def _extension(filename):
     """``filename``'s extension, both parts of it for a compressed tarball.
 
-    posixpath.splitext takes only the last suffix, so "logs.tar.gz" gave
-    ".gz" and a document named "Backup logs" downloaded as "Backup logs.gz",
+    posixpath.splitext takes only the last suffix, so "logs.tar.gz" would give
+    ".gz" and a document named "Backup logs" would download as "Backup logs.gz",
     which decompresses to an extensionless tar. A ".tar" followed by a
     compression suffix mimetypes knows (.gz, .bz2, .xz, .Z, .br) is kept
     whole. Django's storage keeps every suffix when it renames a clashing
@@ -55,12 +55,12 @@ def download_filename(name, stored_name, tag=""):
     stored file's extension.
 
     ``name`` is usually a document's display name, which people type without
-    an extension ("Access Control Policy"). Sent as it was, the download had
-    no extension, the OS could not open it, and its type was guessed from a
-    name with nothing to guess from. The stored file keeps the extension it
-    was uploaded with, so that is the one the download carries; a display
-    name that already ends in it is not given a second. ``tag`` (" (v2)")
-    goes before the extension, all of it for a ".tar.gz".
+    an extension ("Access Control Policy"). Sent as is, the download would
+    have no extension, so the OS could not open it or guess its type. The
+    stored file keeps the extension it was uploaded with, so that is the one
+    the download carries; a display name that already ends in it is not given
+    a second. ``tag`` (" (v2)") goes before the extension, all of it for a
+    ".tar.gz".
     """
     stored = posixpath.basename(str(stored_name or "").replace("\\", "/"))
     ext = _extension(stored)
@@ -112,7 +112,7 @@ def serve_stored_file(file_field, download_name=None):
 
     With ``MEDIA_INTERNAL`` (the default off DEBUG) the response is empty and
     carries ``X-Accel-Redirect``, which nginx expands into a send from its own
-    ``internal`` location — the client never learns the storage path, and a
+    ``internal`` location. The client never learns the storage path, and a
     direct request for it is refused. Without it (the dev server, or a
     deployment with no accelerator) the file is streamed by Django.
 
@@ -155,7 +155,7 @@ def serve_inline(file_field, content_type, download_name=None):
     """Stream a file for display *inside* the app, not as an attachment.
 
     Only ever called for a kind the preview module has verified from the
-    file's own bytes -- a PDF that starts with %PDF-, an image with its magic
+    file's own bytes: a PDF that starts with %PDF-, an image with its magic
     number. The CSP still forbids scripts and plugins, and frame-ancestors is
     restricted to the app itself, so the document can be shown in the viewer
     and nowhere else.

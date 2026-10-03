@@ -37,12 +37,12 @@ def _measure(scored=None):
 
 def record_today(force=False, scored=None):
     """Create (or, with force, refresh) today's snapshot. Idempotent; never
-    raises — a read replica or a locked table must not break the dashboard.
+    raises: a read replica or a locked table must not break the dashboard.
 
     ``scored`` is a ``programme_score()`` result the caller already holds: the
     summary scores the programme for its own figures, and measuring again here
-    scored every control twice per request. A row that exists is not measured
-    at all unless ``force`` asks for it."""
+    would score every control twice per request. A row that exists is not
+    measured at all unless ``force`` asks for it."""
     today = timezone.localdate()
     try:
         with transaction.atomic():
@@ -66,7 +66,7 @@ def trend(months=TREND_MONTHS):
     """Monthly series ending this month: the last snapshot of each of the
     last ``months`` calendar months, plus the delta (percentage points) between
     the latest point and the one before it. Months with no snapshot are
-    omitted — a fresh install shows one point, not invented history."""
+    omitted, so a fresh install shows one point and no invented history."""
     today = timezone.localdate()
     first_month = today.replace(day=1)
     for _ in range(months - 1):
@@ -86,10 +86,9 @@ def trend(months=TREND_MONTHS):
             "applicable": snap.applicable,
         })
     delta = points[-1]["pct"] - points[-2]["pct"] if len(points) >= 2 else None
-    # The score is the headline figure from 0.9.5 on. Its own delta is only
-    # offered when both months measured it; before that the implemented
-    # share is the only history there is, and the dashboard says which it is
-    # showing.
+    # The score is the headline figure. Its own delta is offered only when
+    # both months measured it; otherwise the implemented share is the only
+    # history, and the dashboard says which one it shows.
     scored = [p for p in points if p["score"] is not None]
     score_delta = (scored[-1]["score"] - scored[-2]["score"]
                    if len(scored) >= 2 and scored[-1] is points[-1] else None)

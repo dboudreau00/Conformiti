@@ -8,17 +8,16 @@ four operations asks for proof here.
 
 
 def reauthenticated(request):
-    """Has the caller just proved the account is theirs?
+    """True if the caller has just proved the account is theirs.
 
-    Adding a passkey used to take nothing, so a hijacked session could quietly
-    enrol the attacker's own key and keep the account for good. Enrolling an
-    authenticator app was the same gap, and it was worse: the attacker's app
-    became the second factor the real owner then had to produce (0.9.5f).
-    All four operations now ask for the same proof -- the password, or a code
-    from a factor already enrolled, which is what an account signed in through
-    an identity provider has instead of a password. A backup code counts:
-    removal used to insist on a password, which an SSO account does not have,
-    so the owner of a passkey reported cloned could not take it off.
+    Without this, a hijacked session could quietly enrol the attacker's own
+    passkey or authenticator app and keep the account for good (an enrolled
+    attacker app would even become the second factor the real owner has to
+    produce). All four operations ask for the same proof: the password, or a
+    code from a factor already enrolled, which is what an account signed in
+    through an identity provider has instead of a password. A backup code
+    counts, so the owner of a passkey reported as cloned can remove it even
+    when the account has no password.
 
     An account with neither (no usable password, no second factor) has
     nothing to prove with and nothing yet to protect: that is the first

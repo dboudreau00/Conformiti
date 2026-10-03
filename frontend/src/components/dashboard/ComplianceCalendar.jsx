@@ -103,7 +103,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
 
   // Audit, task and other events can only be created through the API today,
   // so most workspaces never see one; showing a chip that always empties the
-  // grid is a dead control. Only chips for kinds actually present survive,
+  // grid is a dead control. Only chips for kinds present survive,
   // and a filter dropped this way is cleared rather than left hiding a grid
   // with no visible reason why. A failed load empties the feed with a visible
   // reason, so the filter survives it and applies again once a retry lands.
@@ -157,9 +157,9 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
     try {
       await api.post(`/documents/${event.document}/mark_reviewed/`);
       // The review moves the document's next review date on, so the entry has
-      // left this day. It goes now: waiting for the dashboard and then the
-      // feed to reload left an enabled "Mark reviewed" on a row that was
-      // already attested, and a second click attested it again.
+      // left this day. It is removed now: until the dashboard and the feed
+      // reload, an enabled "Mark reviewed" on an attested row would let a
+      // second click attest it again.
       setEvents((list) => list.filter((e) => e.id !== event.id));
       setOutcome({ day: event.date, ok: true, text: `Marked "${name}" reviewed.` });
       await onChanged?.();

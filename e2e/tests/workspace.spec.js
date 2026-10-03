@@ -1,7 +1,7 @@
 import { test, expect, open, topHeading } from "../fixtures.js";
 
 /** Dashboard panels are unnamed <section> elements, so they carry no landmark
- *  role — anchor on the <h2> each one contains instead. */
+ *  role: anchor on the <h2> each one contains instead. */
 function panel(page, heading) {
   return page.locator("section").filter({
     has: page.getByRole("heading", { name: heading, level: 2 }),
@@ -14,14 +14,14 @@ test.describe("dashboard", () => {
   });
 
   test("the readiness card reports a figure and a trend", async ({ page }) => {
-    // 0.9.5: once any control is applicable the headline is the register's
+    // Once any control is applicable the headline is the register's
     // score out of 100, with the implemented share quoted beside it; an
     // empty programme still shows the share on its own.
     const label = page.getByText(/^(Readiness score|Overall readiness)$/);
     await expect(label).toBeVisible();
     if ((await label.textContent()).trim() === "Readiness score") {
       await expect(page.getByText("/100")).toBeVisible();
-      // 0.9.5d: the card states the share, and the "i" beside the label
+      // The card states the share, and the "i" beside the label
       // explains how the score is worked out, on hover or on focus.
       await expect(page.getByText(/\d+% of [\d,]+ applicable controls are marked implemented/)).toBeVisible();
       const why = page.getByRole("button", { name: /how the readiness score is worked out/i });

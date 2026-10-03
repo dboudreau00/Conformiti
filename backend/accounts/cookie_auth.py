@@ -2,27 +2,27 @@
 HttpOnly cookie authentication: the same SimpleJWT tokens, delivered where
 JavaScript cannot read them.
 
-The SPA's default is still the Authorization header, because that is what every
-0.2.x deployment runs and flipping it silently would sign everyone out. Set
-``AUTH_TRANSPORT=cookie`` to move a deployment across; both modes accept a
-Bearer header, so an API client keeps working either way.
+The SPA's default is the Authorization header, so existing deployments keep
+working when they upgrade. Set ``AUTH_TRANSPORT=cookie`` to move a deployment
+across; both modes accept a Bearer header, so an API client keeps working
+either way.
 
-**What this buys.** With header auth, any XSS can read the access token *and*
-the refresh token out of ``localStorage``. With cookie auth it can still make
-requests as the user while the page is open — a cookie is attached
-automatically — but it cannot exfiltrate a credential that keeps working after
-the tab closes. That is a real reduction, and it is the honest size of it.
+**Benefit.** With header auth, any XSS can read the access token and the
+refresh token out of ``localStorage``. With cookie auth it can still make
+requests as the user while the page is open (the browser attaches the cookie
+automatically), but it cannot exfiltrate a credential that keeps working after
+the tab closes.
 
-**What it costs.** A cookie is sent on every same-site request, so cookie mode
-needs CSRF protection that header mode did not. Unsafe methods must carry
-``X-CSRFToken`` matching the readable ``csrftoken`` cookie — Django's own
-double-submit check, reused rather than reinvented.
+**Cost.** A cookie is sent on every same-site request, so cookie mode needs
+CSRF protection that header mode does not. Unsafe methods must carry
+``X-CSRFToken`` matching the readable ``csrftoken`` cookie. This is Django's
+own double-submit check, reused.
 
-Deliberately **same-origin only**. The shipped stack serves the SPA and the API
-from one nginx, and the CSP is ``connect-src 'self'``. A split-origin
-configuration would need ``SameSite=None; Secure``, a cookie domain and CORS
-credentials — four more knobs, each a way to get it subtly wrong — for a
-topology the product does not otherwise support.
+Same-origin only. The shipped stack serves the SPA and the API from one nginx,
+and the CSP is ``connect-src 'self'``. A split-origin configuration would need
+``SameSite=None; Secure``, a cookie domain and CORS credentials, which is more
+configuration to get wrong for a topology the product does not otherwise
+support.
 """
 from datetime import datetime, timezone
 
@@ -73,7 +73,7 @@ def _cookie_kwargs():
     return {
         "httponly": True,
         "secure": _secure(),
-        # Pinned, not configurable: see the module docstring.
+        # Fixed rather than configurable: see the module docstring.
         "samesite": "Lax",
     }
 
@@ -111,8 +111,8 @@ def clear_auth_cookies(response):
     refresh_path = getattr(settings, "AUTH_COOKIE_REFRESH_PATH", "/api/auth/token/")
     response.set_cookie(access_cookie_name(), "", path=access_cookie_path(), max_age=0, **common)
     response.set_cookie(refresh_cookie_name(), "", path=refresh_path, max_age=0, **common)
-    # Cookies set by a release before the prefixed names, so a sign-out after
-    # an upgrade leaves nothing behind under the old names.
+    # Also expire the unprefixed names, so a sign-out after an upgrade leaves
+    # nothing behind under the old names.
     for legacy, path in (("conformiti_access", "/api/"), ("conformiti_refresh", refresh_path)):
         if legacy not in (access_cookie_name(), refresh_cookie_name()):
             response.set_cookie(legacy, "", path=path, max_age=0, **common)
@@ -199,11 +199,11 @@ class CookieJWTAuthentication(JWTAuthentication):
 def _refuse_if_superseded(user, validated_token):
     """Refuse an access token minted before the account's sessions were ended.
 
-    Blacklisting reaches refresh tokens only, so until 0.9.5f "signed out
-    everywhere" left the access token in the hijacked tab answering for the
-    rest of its hour. A token with no ``iat`` predates the field or was minted
-    by something that does not set it; it is refused rather than trusted,
-    because the alternative is a claim the holder controls.
+    Blacklisting reaches refresh tokens only, so without this check an access
+    token in a hijacked tab would keep working for the rest of its hour after
+    "sign out everywhere". A token with no ``iat`` was minted by something that
+    does not set it; it is refused rather than trusted, because the
+    alternative is a claim the holder controls.
     """
     stamped = getattr(user, "sessions_valid_from", None)
     if not stamped:
@@ -217,11 +217,12 @@ def _refuse_if_superseded(user, validated_token):
 def csrf_required(request):
     """Django's CSRF check, for a view that authenticates nobody.
 
-    ``_enforce_csrf`` above runs inside authentication, so it only ever saw a
-    request that already had a session. The endpoints that hand out the auth
-    cookies have none by definition, which left login itself forgeable: a
-    cross-site form post signs the visitor's browser into the attacker's
-    account, and on this product the next thing they upload is evidence.
+    ``_enforce_csrf`` above runs inside authentication, so it only sees a
+    request that already has a session. The endpoints that hand out the auth
+    cookies have none by definition, so they call this to keep login itself
+    from being forgeable: a cross-site form post would sign the visitor's
+    browser into the attacker's account, and anything the visitor then uploads
+    as evidence would land there.
     Returns a reason string when the request fails, None when it passes, and
     None in header mode, where no cookie is being set.
     """

@@ -34,10 +34,10 @@ def env_int(key, default):
 DEBUG = env_bool("DJANGO_DEBUG", True)
 
 _INSECURE_KEY = "dev-insecure-change-me"
-# Every placeholder that ships in the repo must be rejected, not just the
-# built-in default: .env.example carries its own placeholder. SECRET_KEY also
-# signs the JWTs (SIMPLE_JWT has no separate SIGNING_KEY), so booting on a
-# published value would let anyone mint tokens for any account.
+# Every placeholder that ships in the repo is rejected, including the one
+# .env.example carries as well as the built-in default. SECRET_KEY also signs
+# the JWTs (SIMPLE_JWT has no separate SIGNING_KEY), so booting on a published
+# value would let anyone mint tokens for any account.
 _PLACEHOLDER_KEYS = {
     _INSECURE_KEY,
     "change-me-to-a-long-random-string",
@@ -95,7 +95,7 @@ if not DEBUG and (SECRET_KEY.strip().lower() in _PLACEHOLDER_KEYS or len(SECRET_
 # Slack and Teams webhook URLs. They are encrypted with AES-256-GCM instead
 # (see config/fieldcrypto.py).
 #
-# Keys are a RING, newest first: the first key encrypts, every key decrypts, so
+# Keys form a ring, newest first: the first key encrypts, every key decrypts, so
 # a key can be rotated without downtime (manage.py rotate_field_keys).
 _FIELD_KEY_FILE_DEFAULT = BASE_DIR / ".field-encryption-key"
 
@@ -112,10 +112,9 @@ def _load_field_encryption_keys():
          deployment that already keeps one secret does not have to keep two;
       4. a generated key file beside the database.
 
-    Step 3 deliberately refuses a placeholder or short SECRET_KEY *regardless
-    of DEBUG*: `dev-insecure-change-me` is published in this repository, and a
-    ring derived from it would make "encrypted at rest" a false claim rather
-    than a weak one.
+    Step 3 refuses a placeholder or short SECRET_KEY whatever DEBUG is:
+    `dev-insecure-change-me` is published in this repository, and a ring
+    derived from it would make "encrypted at rest" a false claim.
 
     Step 3 also ties the encrypted columns to SECRET_KEY, which is the usual
     case on bare metal (a real DJANGO_SECRET_KEY and no key file). Changing
@@ -273,7 +272,7 @@ if _cache_url:
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
     if not DEBUG:
-        # Said at boot because nothing else ever shows it: the login throttle
+        # Warned at boot because nothing else shows it: the login throttle
         # still answers 429, only later than configured, so an operator who
         # never set this believes 8/min is enforced while three workers allow
         # 24. The compose stack sets CACHE_URL, and the test suite and the dev
@@ -290,8 +289,8 @@ else:
         )
 
 AUTH_USER_MODEL = "accounts.User"
-# A real setting, not only a validator option: /api/auth/config/ reports it so
-# the interface can state the rule before anyone types a password.
+# A setting of its own as well as a validator option: /api/auth/config/ reports
+# it so the interface can state the rule before anyone types a password.
 PASSWORD_MIN_LENGTH = env_int("PASSWORD_MIN_LENGTH", 12)
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -342,11 +341,11 @@ COMPLIANCE_TREE_ROOT = os.getenv(
 
 # --- Malware scanning for uploaded evidence ---------------------------------
 # Off by default: it needs a ClamAV daemon. `docker compose --profile scanning
-# up` starts one, and install.sh --scan turns it on. When it IS on it fails
-# CLOSED -- an upload is refused if the scanner cannot be reached -- because
-# "is evidence scanned?" must not depend on whether the daemon happened to
-# answer. A scan occupies a gunicorn worker for its duration, which is why the
-# API runs threaded workers.
+# up` starts one, and install.sh --scan turns it on. When it is on it fails
+# closed: an upload is refused if the scanner cannot be reached, because
+# "is evidence scanned?" must not depend on whether the daemon answered. A scan
+# occupies a gunicorn worker for its duration, which is why the API runs
+# threaded workers.
 CLAMAV_ENABLED = env_bool("CLAMAV_ENABLED", False)
 CLAMAV_HOST = os.getenv("CLAMAV_HOST", "clamav")
 CLAMAV_PORT = env_int("CLAMAV_PORT", 3310)
@@ -384,8 +383,8 @@ MEDIA_ACCEL_PREFIX = os.getenv("MEDIA_ACCEL_PREFIX", "/protected-media/")
 
 # --- Control readiness scoring ----------------------------------------------
 # A control's readiness is a weighted 0-100 score over the signals an auditor
-# actually asks about, rather than a binary implemented/not. Weights and bands
-# are configurable because "ready" means different things to different
+# asks about, instead of a binary implemented/not. Weights and bands are
+# configurable because "ready" means different things to different
 # programmes; compliance/scoring.py reads these through settings at call time
 # so a test can override them.
 READINESS_WEIGHTS = {
@@ -398,7 +397,8 @@ READINESS_WEIGHTS = {
 }
 # Ascending lower bounds for the at-risk / nearly / ready bands.
 READINESS_BANDS = [int(x) for x in os.getenv("READINESS_BANDS", "40,70,90").split(",") if x.strip()]
-if len(READINESS_BANDS) != 3 or sorted(READINESS_BANDS) != READINESS_BANDS         or len(set(READINESS_BANDS)) != 3 or not all(0 <= b <= 100 for b in READINESS_BANDS):
+if len(READINESS_BANDS) != 3 or sorted(READINESS_BANDS) != READINESS_BANDS \
+        or len(set(READINESS_BANDS)) != 3 or not all(0 <= b <= 100 for b in READINESS_BANDS):
     raise ImproperlyConfigured(
         "READINESS_BANDS must be three strictly ascending integers in 0..100, "
         f"e.g. '40,70,90' (got {os.getenv('READINESS_BANDS')!r}). A malformed value "
@@ -418,18 +418,18 @@ REST_FRAMEWORK = {
     #
     # SessionAuthentication is DEBUG-only on purpose: it exists for the
     # browsable API, which is itself DEBUG-only (see DEFAULT_RENDERER_CLASSES).
-    # In production it meant a Django admin session -- obtained through a login
-    # form that asks for a password and nothing else -- authenticated every
+    # In production it would let a Django admin session, obtained through a
+    # login form that asks for a password and nothing else, authenticate every
     # /api/ endpoint as well.
     "DEFAULT_AUTHENTICATION_CLASSES": (
         ["accounts.cookie_auth.CookieJWTAuthentication",
          "rest_framework.authentication.SessionAuthentication"]
         if DEBUG else ["accounts.cookie_auth.CookieJWTAuthentication"]
     ),
-    # Signed in AND not an external auditor. A view that sets its own
+    # Signed in and not an external auditor. A view that sets its own
     # permission_classes replaces this pair entirely, which is how the
     # engagement's own routes (packages, granted folders, the trail) let the
-    # auditor back in; everything else refuses them by saying nothing at all.
+    # auditor in; every other route refuses them.
     # accounts/tests_auditor_surface.py walks the routers and holds the line.
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -442,12 +442,12 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
-    # OPTIONS without the view's docstring, which is developer commentary and
-    # was answered to anyone who asked (see config/metadata.py).
+    # OPTIONS answers without the view's docstring, which is developer
+    # commentary (see config/metadata.py).
     "DEFAULT_METADATA_CLASS": "config.metadata.NoDescriptionMetadata",
     # How many proxies sit in front of this process. DRF takes the client's
     # address from that many hops back along X-Forwarded-For, and every
-    # throttle keys on it. DRF's own default (unset) trusts the WHOLE header,
+    # throttle keys on it. DRF's own default (unset) trusts the whole header,
     # so a caller varying it would get a fresh bucket per request; hence a
     # number is always set here. The default of 1 is one proxy: the shipped
     # nginx on its own, or on bare metal a host nginx that terminates TLS
@@ -455,8 +455,9 @@ REST_FRAMEWORK = {
     # is what INSTALL.md's production section does, makes two: leaving this at
     # 1 there makes the terminator's address the client for every visitor, so
     # they share one login bucket and one caller can spend it for everybody
-    # (0.9.5h, M-4). Setting 2 where there is only one hop is the opposite
-    # mistake: every limit is then keyed on an entry the client writes itself.
+    # (M-4 of the 0.9.5h review). Setting 2 where there is only one hop is the
+    # opposite mistake: every limit is then keyed on an entry the client
+    # writes itself.
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
     # Throttling: limit anonymous traffic globally; the login endpoint adds a
     # tighter scoped limit (see config/urls.py) to blunt password brute-forcing.
@@ -526,8 +527,8 @@ WEBHOOK_TIMEOUT = env_int("WEBHOOK_TIMEOUT", 5)
 # allowed if it equals an entry or is a subdomain of one). A webhook URL is a
 # credential the server posts to, so an unchecked one is a request the server
 # makes to wherever someone else chose: Redis, the database, the cloud
-# instance metadata service. Override only to reach a genuinely different
-# endpoint, never to widen these to a bare domain.
+# instance metadata service. Override only to reach a different endpoint,
+# never to widen these to a bare domain.
 WEBHOOK_ALLOWED_HOSTS_SLACK = [
     h.strip() for h in os.getenv("WEBHOOK_ALLOWED_HOSTS_SLACK", "hooks.slack.com").split(",")
     if h.strip()]
@@ -549,8 +550,9 @@ AWS_SES_CONFIGURATION_SET = os.getenv("AWS_SES_CONFIGURATION_SET", "")
 # Standard mailbox account (EMAIL_PROVIDER=mailbox).
 # The mailbox side (IMAP or POP3) is used to verify credentials and, for IMAP,
 # to file a copy of each reminder in the Sent folder. Outgoing mail is sent over
-# SMTP -- IMAP/POP3 cannot send. The SMTP host/user default to the mailbox
-# host/user so a single-provider account (e.g. Gmail) needs minimal config.
+# SMTP, because IMAP/POP3 cannot send. The SMTP host/user default to the
+# mailbox host/user so a single-provider account (e.g. Gmail) needs minimal
+# config.
 MAILBOX_PROTOCOL = os.getenv("MAILBOX_PROTOCOL", "imap").lower()   # "imap" or "pop3"
 MAILBOX_HOST = os.getenv("MAILBOX_HOST", "")
 MAILBOX_PORT = env_int("MAILBOX_PORT", 993 if MAILBOX_PROTOCOL == "imap" else 995)
@@ -639,46 +641,44 @@ CSRF_COOKIE_SAMESITE = "Lax"
 BEHIND_TLS = env_bool("BEHIND_TLS", not DEBUG)
 if BEHIND_TLS:
     # Trust X-Forwarded-Proto only where the operator has said a TLS
-    # terminator is in front. This used to be set whenever DEBUG was off,
-    # which includes the shipped compose stack, where BEHIND_TLS is false
-    # and nginx listens on plain HTTP: any client could then send
-    # `X-Forwarded-Proto: https` and make request.is_secure() true. Cookie
-    # Secure flags follow BEHIND_TLS so nothing was stolen, but
-    # build_absolute_uri emitted https for the OIDC redirect_uri and the SAML
-    # ACS, which are not the addresses those were registered at, and
-    # passkeys.origins() reads the same answer (0.9.5h, M-6).
+    # terminator is in front. The shipped compose stack has DEBUG off,
+    # BEHIND_TLS false and nginx on plain HTTP, so trusting the header there
+    # would let any client send `X-Forwarded-Proto: https` and make
+    # request.is_secure() true. Cookie Secure flags follow BEHIND_TLS, but
+    # build_absolute_uri would emit https for the OIDC redirect_uri and the
+    # SAML ACS, which are not the addresses those were registered at, and
+    # passkeys.origins() reads the same answer (M-6 of the 0.9.5h review).
     #
     # The forwarder itself is not the place for this. nginx cannot know which
-    # hop it can trust, and making it overwrite the header with $scheme puts
-    # 0.9.5f's L-4 back: this container listens on 80, so an outer
-    # terminator's https would die here. Your terminator must SET the header
-    # rather than forward the client's; every one of them does by default.
+    # hop it can trust, and making it overwrite the header with $scheme would
+    # lose an outer terminator's https, because this container listens on 80
+    # (L-4 of the 0.9.5f review). Your terminator must set the header rather
+    # than forward the client's; every one of them does by default.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # The health endpoint answers plain HTTP even when the rest redirects to
 # https. The image's own HEALTHCHECK and load balancers call it on the internal
-# hop, where it has no X-Forwarded-Proto; redirected, the backend was never
-# healthy with BEHIND_TLS on, and compose never started the worker, beat or
-# nginx (fixed in 0.9.5mb). It carries no credentials and sets no cookie.
+# hop, where it has no X-Forwarded-Proto; redirected, the backend would never
+# be healthy with BEHIND_TLS on, and compose would never start the worker,
+# beat or nginx. It carries no credentials and sets no cookie.
 SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
 if not DEBUG:
     SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", BEHIND_TLS)
     SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", BEHIND_TLS)
     CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", BEHIND_TLS)
-    # HSTS: opt-in via env so it isn't switched on before TLS is truly ready.
+    # HSTS: opt-in via env so it is not switched on before TLS is ready.
     SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 0)
     SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
     SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
 
 if BEHIND_TLS and not DEBUG and os.getenv("NUM_PROXIES") is None:
-    # Not an error, and only when NUM_PROXIES is unset: the right number
-    # depends on the topology, which nothing here can see. One hop is right
-    # when this host's own nginx terminates TLS (the bare-metal recipe), two
-    # when a separate terminator sits in front of the shipped nginx. This used
-    # to fire on any value below 2 and advise 2, so a correct, deliberate 1
-    # warned on every start with advice that would have keyed the limits on a
-    # client-written address. It says so at boot because the symptom of the
-    # wrong number, everyone sharing one rate-limit bucket, looks like an
-    # attack rather than a setting.
+    # A warning, not an error, and only when NUM_PROXIES is unset: the right
+    # number depends on the topology, which nothing here can see. One hop is
+    # right when this host's own nginx terminates TLS (the bare-metal recipe),
+    # two when a separate terminator sits in front of the shipped nginx. A
+    # deliberate 1 must not warn, because advising 2 there would key the
+    # limits on a client-written address. It warns at boot because the symptom
+    # of the wrong number, everyone sharing one rate-limit bucket, looks like
+    # an attack rather than a setting.
     import warnings
 
     warnings.warn(
@@ -692,28 +692,27 @@ if BEHIND_TLS and not DEBUG and os.getenv("NUM_PROXIES") is None:
 
 # --- Authentication transport -----------------------------------------------
 # "cookie"  the tokens travel as HttpOnly cookies, so script cannot read them,
-#           and unsafe methods must carry Django's CSRF token. The default
-#           since 0.6.1, after a release in the field;
-# "header"  the SPA keeps the tokens in localStorage and sends Authorization
-#           (the 0.2.x behaviour). Switching signs everyone out once.
+#           and unsafe methods must carry Django's CSRF token (the default);
+# "header"  the SPA keeps the tokens in localStorage and sends Authorization.
+#           Switching signs everyone out once.
 # Both modes accept a Bearer header, so API clients are unaffected either way.
 AUTH_TRANSPORT = os.getenv("AUTH_TRANSPORT", "cookie").strip().lower()
 if AUTH_TRANSPORT not in ("header", "cookie"):
     raise ImproperlyConfigured(
         f"AUTH_TRANSPORT must be 'header' or 'cookie' (got {AUTH_TRANSPORT!r}). "
-        "A typo here would silently fall back to header auth and quietly undo "
-        "the hardening it was set for."
+        "A typo here would fall back to header auth and undo the hardening it "
+        "was set for."
     )
 AUTH_COOKIE_SECURE = env_bool("AUTH_COOKIE_SECURE", BEHIND_TLS)
 # Cookie names. Left empty they are derived in accounts/cookie_auth.py: with
 # Secure cookies the access cookie is `__Host-conformiti_access` (bound to
-# this host, Path=/, no Domain -- a subdomain cannot plant one) and the
+# this host, Path=/, no Domain, so a subdomain cannot plant one) and the
 # refresh cookie `__Secure-conformiti_refresh` (the __Secure- prefix, so it
 # can keep the narrow path below); over plain http the prefixes are not
 # allowed by browsers and the plain names are used.
 AUTH_COOKIE_ACCESS = os.getenv("AUTH_COOKIE_ACCESS", "").strip()
 AUTH_COOKIE_REFRESH = os.getenv("AUTH_COOKIE_REFRESH", "").strip()
-# Scoped to the endpoint that consumes it, not to /api/auth/ -- that prefix
+# Scoped to the endpoint that consumes it, not to /api/auth/: that prefix
 # covers nine routes, including the ones that return the TOTP secret and the
 # backup codes.
 AUTH_COOKIE_REFRESH_PATH = "/api/auth/token/"
@@ -736,8 +735,8 @@ OIDC_ALLOWED_DOMAINS = [
     d.strip().lower().lstrip("@") for d in os.getenv("OIDC_ALLOWED_DOMAINS", "").split(",") if d.strip()
 ]
 OIDC_AUTO_PROVISION = env_bool("OIDC_AUTO_PROVISION", False)
-# Which workspace an auto-provisioned SSO account joins (0.9.0). One IdP
-# per installation, by design: SSO is not mapped per workspace.
+# Which workspace an auto-provisioned SSO account joins. One IdP per
+# installation, by design: SSO is not mapped per workspace.
 SSO_WORKSPACE = os.getenv("SSO_WORKSPACE", "default").strip() or "default"
 OIDC_DEFAULT_ROLE = os.getenv("OIDC_DEFAULT_ROLE", "Viewer").strip() or "Viewer"
 OIDC_LINK_BY_EMAIL = env_bool("OIDC_LINK_BY_EMAIL", True)
@@ -798,11 +797,11 @@ if SSO_STEP_UP not in ("off", "if_enrolled", "required"):
 # and SAML AuthnContextClassRef / authnmethodsreferences values.
 #
 # RFC 8176 registers several values that are not second factors, and two of
-# them used to be in this default. `user` is a user-presence test -- a touch,
-# proving somebody is at the keyboard and nothing more -- and `pin` is a
-# knowledge factor an IdP may well be using as the *first* one. A provider
-# returning either satisfied the step-up requirement without a second factor
-# ever being presented. Add them back deliberately if a particular IdP means
+# them are left out of this default. `user` is a user-presence test (a touch,
+# proving somebody is at the keyboard and nothing more), and `pin` is a
+# knowledge factor an IdP may well be using as the first one. A provider
+# returning either would satisfy the step-up requirement without a second
+# factor being presented. Add them deliberately if a particular IdP means
 # something stronger by them.
 SSO_MFA_ASSERTIONS = [
     a.strip() for a in os.getenv(
@@ -822,7 +821,7 @@ SSO_MFA_ASSERTIONS = [
 # --- Passkeys (WebAuthn) -------------------------------------------------------------
 # A passkey is bound to the relying-party id for life. By default it is the
 # host the request arrived on, without the port, and the accepted origin is
-# the request's own -- right for the shipped stack, where the SPA and the API
+# the request's own, which suits the shipped stack, where the SPA and the API
 # share one origin. Pin both when the app sits behind a proxy that rewrites
 # Host, or when it must keep serving keys enrolled under an earlier hostname.
 WEBAUTHN_RP_ID = os.getenv("WEBAUTHN_RP_ID", "").strip().lower()
@@ -858,7 +857,7 @@ TEST_RUNNER = "config.testrunner.Runner"
 # a FILE, never in the database: SIGNING_KEY_FILE is generated at 0600 on
 # first use (the compose stack keeps it in the `secrets` volume beside the
 # Django secret key), or SIGNING_KEY carries the key itself (PEM, or a base64
-# 32-byte seed). Unset both and packages seal unsigned, as before 0.7.0.
+# 32-byte seed). Unset both and packages seal unsigned.
 # Back the key up with the secrets volume (scripts/backup.sh takes it); on
 # bare metal the file is backend/.package-signing-key unless SIGNING_KEY_FILE
 # says otherwise, and belongs in the backup beside the database dump. Rotate
@@ -878,9 +877,9 @@ LOG_LEVEL = _LOG_LEVEL_SET or ("DEBUG" if DEBUG else "INFO")
 # default under DJANGO_DEBUG, or LOG_LEVEL=DEBUG) still reaches everything else.
 _AUTORELOAD_LEVEL = "INFO" if LOG_LEVEL in ("DEBUG", "NOTSET") else LOG_LEVEL
 # django.template logs every variable a template fails to resolve, at DEBUG
-# and with a chained traceback. Django's own 404 page trips it on every
+# and with a chained traceback. Django's own 404 page triggers it on every
 # unknown URL (46 lines each in the dev server's terminal) and the email
-# templates trip it dozens of times in the test suite, so both read as if
+# templates trigger it dozens of times in the test suite, so both read as if
 # something had crashed. Under the DEBUG default it is held at INFO like the
 # autoreloader; a LOG_LEVEL you set yourself applies to it as written, so
 # LOG_LEVEL=DEBUG brings those records back.
@@ -904,20 +903,19 @@ LOGGING = {
         # SQL echo is far too chatty even in DEBUG.
         "django.db.backends": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
-        # signxml logs every canonicalised SAML document at DEBUG -- the whole
-        # assertion, attributes and all -- which has no business in a log.
+        # signxml logs every canonicalised SAML document at DEBUG, the whole
+        # assertion and its attributes included, which does not belong in a log.
         "signxml": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },
 }
 # The test suite answers hundreds of 4xx responses on purpose (refused
-# permissions, invalid input), and django.request logs each one as a WARNING:
-# the documented test gate scrolled over four hundred of them past the reader
-# before "OK", burying anything real. Under `manage.py test`, and unless you
-# set LOG_LEVEL yourself, it prints only its ERRORs (a 5xx) instead.
+# permissions, invalid input), and django.request logs each one as a WARNING,
+# which buries anything real before the final "OK". Under `manage.py test`,
+# and unless you set LOG_LEVEL yourself, it prints only its ERRORs (a 5xx).
 if getattr(sys, "argv", [])[1:2] == ["test"] and not _LOG_LEVEL_SET:
     LOGGING["loggers"]["django.request"] = {"handlers": ["console"], "level": "ERROR",
                                            "propagate": False}
-    # Every email the suite sends through the console backend was an INFO
+    # Every email the suite sends through the console backend would be an INFO
     # line between the dots, dozens per run. A failure to send still logs.
     LOGGING["loggers"]["notifications.email_service"] = {
         "handlers": ["console"], "level": "WARNING", "propagate": False}

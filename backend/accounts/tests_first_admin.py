@@ -1,17 +1,15 @@
 """The first administrator, made the way every install guide says to.
 
-The clean-install run found that ``manage.py createsuperuser`` produced an
-account that could sign in to /admin/ and was then shown the sign-in form
-again. The command runs with no workspace active, so the account belonged to
-none, and the session's user lookup inside a request is pinned to the
-workspace that request resolves to, which a row with no workspace never
-matches. The same run found the command's "Bypass password validation"
-answer let that account keep a password the installation refuses everywhere
-else, and the users list paginating in no particular order.
+``manage.py createsuperuser`` must produce an account that can sign in to
+/admin/. The command runs with no workspace active, and the session's user
+lookup inside a request is pinned to the workspace that request resolves to,
+which a row with no workspace never matches, so the account must be attached
+to a workspace. The command's "Bypass password validation" answer must not
+let that account keep a password the installation refuses everywhere else,
+and the users list must paginate in a defined order.
 
-The test runner keeps the Default workspace active for the whole suite, which
-is why nothing caught the first of these: here the command runs with nothing
-active, as it does on a real installation.
+The test runner keeps the Default workspace active for the whole suite, so
+here the command runs with nothing active, as it does on a real installation.
 """
 import io
 import os
@@ -117,9 +115,9 @@ class FirstAdministratorPasswordTests(APITestBase):
             self.assertFalse(User.objects.get(username="root").has_usable_password())
 
     def test_the_interactive_path_offers_no_bypass_and_asks_again(self):
-        """Django asked "Bypass password validation and create user anyway?",
-        and a yes was then refused by the policy, throwing away the username
-        and email already typed. The command now says the policy has no
+        """Stock Django asks "Bypass password validation and create user
+        anyway?", and the policy would then refuse a yes and discard the
+        username and email already typed. The command says the policy has no
         bypass and asks for another password, keeping what was typed."""
         err = io.StringIO()
         asked = []
@@ -130,7 +128,7 @@ class FirstAdministratorPasswordTests(APITestBase):
                 return "root"
             if prompt.startswith("Email"):
                 return "root@test.local"
-            return "y"  # what the clean-install run answered to the bypass
+            return "y"  # the answer that would accept the bypass
 
         with tenancy.unscoped(), \
                 mock.patch.object(stock.getpass, "getpass",
@@ -219,7 +217,7 @@ class WorkspacelessSuperuserMigrationTests(APITestBase):
     def test_an_old_account_is_attached_and_can_use_the_admin(self):
         legacy = _workspaceless("legacy")
         self.assertIsNone(legacy.workspace_id)
-        self.assertNotEqual(_admin_home("legacy"), 200, "the defect this migration repairs")
+        self.assertNotEqual(_admin_home("legacy"), 200, "unattached accounts cannot use the admin")
 
         _run_migration_0013()
 
@@ -289,9 +287,9 @@ def _email_of(user):
 
 
 class FallbackAdministratorAddressTests(APITestBase):
-    """An installation from before 0.9.5l whose administrator was made with
-    the old fallback address was taken for the demo once migration 0013 filed
-    it in a workspace. The boot banner told the operator to run
+    """An administrator made before 0.9.5l with the old fallback address
+    looks like the demo administrator once migration 0013 files it in a
+    workspace. The boot banner would then tell the operator to run
     remove_demo_data, which deactivates that account, takes the owner off its
     controls and deletes the readiness history from before today."""
 
@@ -308,7 +306,7 @@ class FallbackAdministratorAddressTests(APITestBase):
         legacy = _legacy_admin()
         Control.objects.filter(pk=self.tree.c1.pk).update(owner=legacy)
         ReadinessSnapshot.objects.create(date=timezone.localdate() - timedelta(days=30))
-        self.assertTrue(demo_accounts_present(), "the defect this migration repairs")
+        self.assertTrue(demo_accounts_present(), "the legacy admin reads as a demo account")
 
         _run_migration_0014()
 
@@ -375,10 +373,10 @@ def _posix_bash():
 @skipUnless(_posix_bash(), "needs bash")
 class EntrypointSuperuserTests(SimpleTestCase):
     """The DJANGO_SUPERUSER_* step of backend/entrypoint.sh, run in bash with
-    ``python`` (and so createsuperuser) replaced by a stub. It used to discard
-    the command's stderr and log "already exists" for every failure, so a
-    password the policy refused left no administrator and a log that said
-    there was one."""
+    ``python`` (and so createsuperuser) replaced by a stub. The step must log
+    the command's stderr and say "already exists" only when that is the
+    cause, so a password the policy refuses is not reported as an existing
+    administrator."""
 
     source = (Path(__file__).resolve().parent.parent / "entrypoint.sh").read_text(encoding="utf-8")
     start = 'if [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ]'
@@ -438,9 +436,10 @@ class EntrypointSuperuserTests(SimpleTestCase):
 
 
 class EntrypointEmailFallbackTests(TestCase):
-    """With DJANGO_SUPERUSER_EMAIL unset, the entrypoint's fallback address.
-    It used to be admin@example.com, so a real administrator named admin was
-    the demo administrator to /api/health/, the banner and remove_demo_data."""
+    """With DJANGO_SUPERUSER_EMAIL unset, the entrypoint's fallback address
+    must not be the demo administrator's admin@example.com, or a real
+    administrator named admin would count as the demo administrator to
+    /api/health/, the banner and remove_demo_data."""
 
     def test_an_admin_made_with_the_fallback_is_no_demo_account(self):
         import re

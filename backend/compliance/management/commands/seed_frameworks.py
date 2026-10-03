@@ -30,14 +30,12 @@ BUILTIN_ROLES = [
           can_manage_folders=True, can_view_all=True)),
     ("Control Owner", "Owns controls and maintains their evidence.",
      dict(can_manage_documents=True)),
-    # Not "sees only granted folders": that was the intention, and for a long
-    # time the description was the only thing enforcing it. What it says now
-    # is what accounts/permissions.py actually allows.
+    # The description states what accounts/permissions.py allows.
     ("Auditor", "Read-only outside party: packages issued to them, the folders granted with them, and the trail.",
      dict(is_auditor=True)),
-    # Not "read-only access to granted folders" either: every account but the
-    # Auditor reads the programme-wide records, and a viewer adds notes to
-    # risks and edits the ones they own (USER_GUIDE.md, Roles).
+    # Every account but the Auditor reads the programme-wide records, and a
+    # viewer adds notes to risks and edits the ones they own (USER_GUIDE.md,
+    # Roles).
     ("Viewer", "Reads the programme-wide records and the folders granted to them; adds "
                "notes to risks and edits the risks they own.", dict()),
 ]

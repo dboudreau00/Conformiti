@@ -4,19 +4,19 @@ Re-encrypt every encrypted column under the newest key in the ring.
     python manage.py rotate_field_keys --status   # report only, changes nothing
     python manage.py rotate_field_keys            # rewrite rows under the newest key
 
-Rotating a key is a three-step operation and this command is the middle one:
+Rotating a key takes three steps and this command is the middle one:
 
-  1. Put the new key at the FRONT of DJANGO_FIELD_ENCRYPTION_KEY (or the first
+  1. Put the new key at the front of DJANGO_FIELD_ENCRYPTION_KEY (or the first
      line of the key file), keeping the old one after it. Both keys decrypt;
-     the first encrypts. Restart. Nothing breaks -- existing rows are still
-     readable under the old key.
+     the first encrypts. Restart. Existing rows stay readable under the old
+     key.
   2. Run this command. Every row is read under whichever key wrote it and
      written back under the newest one.
   3. Once `--status` reports every row on the new key, drop the old key and
      restart.
 
-Doing step 3 before step 2 is what makes secrets unreadable, which is why
-`--status` reports per key rather than just a total.
+Doing step 3 before step 2 leaves secrets unreadable, so `--status` reports
+per key as well as a total.
 """
 from django.apps import apps
 from django.core.management.base import BaseCommand
@@ -26,13 +26,11 @@ from config import fieldcrypto
 
 
 def encrypted_columns():
-    """Every encrypted column in the project, found rather than listed.
+    """Every encrypted column in the project, found through the model registry.
 
-    This used to be a hand-written list with a comment asking the next person
-    to extend it. 0.9.5b encrypted two more columns and the list did not
-    follow, which would have left those rows on the old key and made them
-    unreadable the moment an operator completed step 3 above. Asking the
-    model registry cannot go stale that way.
+    A hand-written list would go stale when a column is added, leaving those
+    rows on the old key and unreadable once an operator completes step 3
+    above. The registry cannot.
     """
     found = []
     for model in apps.get_models():
@@ -50,9 +48,7 @@ class Command(BaseCommand):
                             help="Report how many rows sit under each key, and change nothing.")
 
     def handle(self, *args, **opts):
-        from django.apps import apps
-
-        ids = fieldcrypto.key_ids()
+        ids =fieldcrypto.key_ids()
         newest = ids[0]
         self.stdout.write(
             f"Key ring: {len(ids)} key(s), newest first: {', '.join(ids)}"
