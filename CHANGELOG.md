@@ -30,6 +30,13 @@ build tools' advisories without failing. GHSA-vfj7-8cjw-p6xm, in `braces`, has
 no fixed release and reaches this project only through Tailwind's build-time
 file watcher and glob matching, which read nothing but this repository.
 
+**Dependencies.** React and React DOM 19.3, framer-motion 14, pdf.js 6.4,
+Vite 8.3, lucide-react 1.51, React Router 7.18.4, tailwind-merge 3.7,
+autoprefixer 10.6 and PostCSS 8.5.28 in the front end. The backend raises its
+minimums to Django REST framework 3.18.1, django-filter 26.2, boto3 1.43.108,
+psycopg 3.3.6, python-dotenv 1.2.4, cryptography 50.0.2, PyJWT 2.15.1 and
+lxml 6.1.3. No setting or stored data changed.
+
 ## [0.9.5md], 2026-10-02
 
 A top bar in place of the sidebar, and a dashboard that reads as a schedule
