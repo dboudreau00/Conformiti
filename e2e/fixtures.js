@@ -44,7 +44,9 @@ export const test = base.extend({
       if (msg.type() !== "error") return;
       const text = msg.text();
       if (IGNORED.some((re) => re.test(text)) || allowed(text)) return;
-      problems.push(`console.error: ${text}`);
+      // Chrome's "Failed to load resource" names no URL; its location does.
+      const where = msg.location()?.url;
+      problems.push(`console.error: ${text}${where ? ` (${where})` : ""}`);
     });
     page.on("pageerror", (err) => problems.push(`pageerror: ${err.message}`));
     page.on("requestfailed", (req) => {
