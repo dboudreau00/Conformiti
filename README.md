@@ -770,7 +770,7 @@ documented in [`.env.example`](.env.example). The ones that matter most:
 
 | Setting | Purpose |
 |---|---|
-| `DJANGO_DEBUG` | Unset, the code defaults to `true`. The Docker image and compose stack run with it off (on Docker it is set with `CONFORMITI_DEBUG`). Every other production installation must set `DJANGO_DEBUG=false` itself |
+| `DJANGO_DEBUG` | Unset, the code defaults to `false`. Local development sets `DJANGO_DEBUG=true` (`.env.example` does). The Docker stack sets it with `CONFORMITI_DEBUG`. A bare-metal production install needs a strong `DJANGO_SECRET_KEY`, since debug is off |
 | `DJANGO_SECRET_KEY` / `DJANGO_SECRET_KEY_FILE` | A strong key, or a path where one is generated and persisted (compose uses the file form on the `secrets` volume, and takes an explicit key from `CONFORMITI_SECRET_KEY`) |
 | `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS` | Your real hostname(s) once you leave localhost. `DJANGO_ALLOWED_HOSTS` is your public host name(s): the Docker stack adds its own internal names (`localhost`, `127.0.0.1`, `backend`) itself. Getting these wrong is the most common cause of an install that runs but refuses logins |
 | `BEHIND_TLS` | `true` once a TLS-terminating proxy sits in front of nginx. Off by default on Docker; elsewhere it is on whenever `DJANGO_DEBUG` is off, so a bare-metal trial over plain http sets it `false` |
@@ -1056,7 +1056,10 @@ the framework files list, so edits to those fields (possible only in the
 Django admin) do not survive a restart. Controls you add yourself are left as
 they are.
 
-**0.9.5me** has no migration. The button that confirms a delete, removal or
+**0.9.5me** has no migration. With `DJANGO_DEBUG` unset the application now
+starts with debug off, so a bare-metal install with no strong
+`DJANGO_SECRET_KEY` refuses to start until it has one (the Docker stack and
+.env.example already say what they mean). The button that confirms a delete, removal or
 withdrawal in a dialog is solid red, a dialog's button keeps its label and
 shows a spinner while its request runs, and Tab reaches a dialog's Close
 button. The risk register and vendor matrix imports and the document preview

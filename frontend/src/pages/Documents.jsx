@@ -485,6 +485,7 @@ export default function Documents({ me }) {
     if (node.id === folderId) return;
     setFolderId(node.id);
     setShowPerms(false);
+    permsReq.current += 1; // drop a reply still on its way for the old folder
     setPerms(null);
     setEditor(null);
     setShowUpload(false);
@@ -720,13 +721,17 @@ export default function Documents({ me }) {
   }
 
   // --- folder access --------------------------------------------------------------
+  // A slow reply for a folder the user has since left must not replace the
+  // access list of the one now on screen.
+  const permsReq = useRef(0);
   async function loadPerms(id) {
+    const req = ++permsReq.current;
     setPermsErr(null);
     try {
       const r = await api.get(`/folders/${id}/permissions/`);
-      setPerms(r.data);
+      if (req === permsReq.current) setPerms(r.data);
     } catch (e) {
-      setPermsErr({ reason: failReason(e) });
+      if (req === permsReq.current) setPermsErr({ reason: failReason(e) });
     }
   }
   function togglePerms() {

@@ -104,7 +104,7 @@ def send_mailbox_email(subject, html_body, text_body, to_addresses, from_address
         try:
             server.quit()
         except Exception:
-            pass
+            logger.debug("mailbox: closing the connection failed", exc_info=True)
 
     if settings.MAILBOX_SAVE_SENT and settings.MAILBOX_PROTOCOL == "imap":
         try:
@@ -196,7 +196,7 @@ def append_to_sent(msg):
         try:
             conn.logout()
         except Exception:
-            pass
+            logger.debug("mailbox: closing the connection failed", exc_info=True)
 
 
 def verify_mailbox():
@@ -216,7 +216,7 @@ def verify_mailbox():
             try:
                 conn.logout()
             except Exception:
-                pass
+                logger.debug("mailbox: closing the connection failed", exc_info=True)
     elif protocol == "pop3":
         conn = _pop3_connect()
         try:
@@ -226,5 +226,5 @@ def verify_mailbox():
             try:
                 conn.quit()
             except Exception:
-                pass
+                logger.debug("mailbox: closing the connection failed", exc_info=True)
     raise ValueError(f"Unknown MAILBOX_PROTOCOL: {protocol!r} (expected 'imap' or 'pop3')")

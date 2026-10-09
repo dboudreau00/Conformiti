@@ -22,6 +22,15 @@ GENERATOR = "Conformiti"
 VERIFIER = Path(__file__).with_name("verifier.py")
 
 
+def _read_chunks(fh, size=64 * 1024):
+    """Yield ``fh`` in ``size`` pieces until it is exhausted."""
+    while True:
+        chunk = fh.read(size)
+        if not chunk:
+            return
+        yield chunk
+
+
 def _iso(value):
     return value.isoformat() if value else None
 
@@ -466,7 +475,7 @@ def write_bundle(package, fh):
                     sha = hashlib.sha256()
                     try:
                         with zf.open(info, "w") as target:
-                            for chunk in iter(lambda: source.read(64 * 1024), b""):
+                            for chunk in _read_chunks(source):
                                 sha.update(chunk)
                                 target.write(chunk)
                     finally:

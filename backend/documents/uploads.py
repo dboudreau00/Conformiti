@@ -53,9 +53,21 @@ EMBEDDED_OBJECT_SUFFIXES = (".bin", ".ole", ".emf")
 # The macro-free Office formats, which are the ones worth looking inside.
 OOXML_EXTENSIONS = {".docx", ".dotx", ".xlsx", ".xltx", ".pptx", ".potx", ".ppsx"}
 
+# OpenDocument is a zip too, and keeps its macros in top-level ``Basic/`` and
+# ``Scripts/`` folders (LibreOffice Basic, Python, BeanShell, JavaScript).
+ODF_EXTENSIONS = {".odt", ".ott", ".ods", ".ots", ".odp", ".otp", ".odg", ".otg", ".odf", ".odb"}
+ODF_SCRIPT_PREFIXES = ("basic/", "scripts/")
 
-def _holds_macros(uploaded):
+# A zip starts with a local-file header, or with the end record when empty.
+ZIP_MAGIC = (b"PK\x03\x04", b"PK\x05\x06")
+
+
+def _holds_macros(uploaded, strict=True):
     """True if this is a zip container with a macro part inside it.
+
+    ``strict`` adds the packaged-object rule (``embeddings/*.bin``). A file
+    that only *looks* like a zip, with no Office or OpenDocument name, is
+    checked without it: an ordinary archive may hold a folder of that name.
 
     Unreadable or non-zip files are not this function's business: they are
     not OOXML, and the scanner and the rest of validation still apply.
@@ -80,8 +92,32 @@ def _holds_macros(uploaded):
             pass
     if any(any(part in name for part in MACRO_PARTS) for name in names):
         return True
-    return any(EMBEDDED_OBJECT in name and name.endswith(EMBEDDED_OBJECT_SUFFIXES)
+    # An OpenDocument package is recognised by its own members, not its name,
+    # so an ordinary archive with a ``scripts/`` folder is left alone.
+    is_odf = "mimetype" in names and "meta-inf/manifest.xml" in names
+    if is_odf and any(name.startswith(ODF_SCRIPT_PREFIXES) for name in names):
+        return True
+    return strict and any(EMBEDDED_OBJECT in name and name.endswith(EMBEDDED_OBJECT_SUFFIXES)
                for name in names)
+
+
+def _is_zip(uploaded):
+    """True if the file begins with a zip signature, whatever it is called."""
+    try:
+        position = uploaded.tell()
+    except (AttributeError, OSError):
+        position = None
+    try:
+        uploaded.seek(0)
+        head = bytes(uploaded.read(4))
+    except (AttributeError, OSError, ValueError):
+        return False
+    finally:
+        try:
+            uploaded.seek(position or 0)
+        except (AttributeError, OSError):
+            pass
+    return head.startswith(ZIP_MAGIC)
 
 
 def _is_ole2(uploaded):
@@ -129,7 +165,10 @@ def validate_upload(uploaded):
             f"{ext} files cannot be stored as evidence. Export the content to PDF or "
             "an archive and upload that instead."
         )
-    if ext in OOXML_EXTENSIONS and _holds_macros(uploaded):
+    # By name for the Office and OpenDocument formats, and by shape for
+    # anything else: a macro document renamed to .zip or .dat is still one.
+    named_office = ext in OOXML_EXTENSIONS or ext in ODF_EXTENSIONS
+    if (named_office or _is_zip(uploaded)) and _holds_macros(uploaded, strict=named_office):
         raise serializers.ValidationError(
             "That file carries macros, whatever its name says. Remove them, or save "
             "it as PDF, and upload that instead."

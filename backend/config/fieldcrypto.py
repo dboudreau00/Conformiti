@@ -269,7 +269,9 @@ def encrypt_existing_rows(connection, table, column, aad_column):
     """
     quote = connection.ops.quote_name
     with connection.cursor() as cursor:
-        cursor.execute(
+        # S608: identifiers come from the migration's own constants and pass
+        # through quote_name(); every value is a bound %s parameter.
+        cursor.execute(  # noqa: S608
             f"SELECT {quote(aad_column)}, {quote(column)} FROM {quote(table)} "
             f"WHERE {quote(column)} IS NOT NULL AND {quote(column)} <> ''"
         )
@@ -279,7 +281,7 @@ def encrypt_existing_rows(connection, table, column, aad_column):
             if is_encrypted(value):
                 continue
             envelope = encrypt(value, aad_for(table, column, row_id))
-            cursor.execute(
+            cursor.execute(  # noqa: S608 (quoted identifiers, bound values)
                 f"UPDATE {quote(table)} SET {quote(column)} = %s WHERE {quote(aad_column)} = %s",
                 [envelope, row_id],
             )
@@ -296,7 +298,9 @@ def decrypt_existing_rows(connection, table, column, aad_column):
     """
     quote = connection.ops.quote_name
     with connection.cursor() as cursor:
-        cursor.execute(
+        # S608: identifiers come from the migration's own constants and pass
+        # through quote_name(); every value is a bound %s parameter.
+        cursor.execute(  # noqa: S608
             f"SELECT {quote(aad_column)}, {quote(column)} FROM {quote(table)} "
             f"WHERE {quote(column)} IS NOT NULL AND {quote(column)} <> ''"
         )
@@ -308,7 +312,7 @@ def decrypt_existing_rows(connection, table, column, aad_column):
             plaintext = decrypt(value, aad_for(table, column, row_id))
             if plaintext is None:
                 continue
-            cursor.execute(
+            cursor.execute(  # noqa: S608 (quoted identifiers, bound values)
                 f"UPDATE {quote(table)} SET {quote(column)} = %s WHERE {quote(aad_column)} = %s",
                 [plaintext, row_id],
             )

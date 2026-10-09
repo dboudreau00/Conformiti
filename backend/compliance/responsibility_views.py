@@ -167,12 +167,15 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
         writer = csv.writer(response)
         writer.writerow(["Framework", "Control ID", "Title", "Status", "Shared with vendor",
                          "Responsible", "Accountable", "Consulted", "Informed"])
-        for row in data["rows"]:
-            names = lambda role: "; ".join(
+        def names(row, role):
+            return "; ".join(
                 f"{x['name']} (vendor)" if x["kind"] == "vendor" else x["name"] for x in row[role])
+
+        for row in data["rows"]:
             writer.writerow(csv_safe([
                 row["framework"], row["control_id"], row["title"], row["status"],
                 "yes" if row["shared"] else "no",
-                names("responsible"), names("accountable"), names("consulted"), names("informed"),
+                names(row, "responsible"), names(row, "accountable"),
+                names(row, "consulted"), names(row, "informed"),
             ]))
         return response

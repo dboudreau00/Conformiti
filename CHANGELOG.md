@@ -14,8 +14,17 @@ says what changed and what to expect on upgrade.
 ## [0.9.5me], 2026-10-09
 
 Plainer wording throughout, a clearer confirmation before something is
-deleted, and a spreadsheet reader that decodes Excel's character escapes. No
-stored data, permission or setting changed.
+deleted, a spreadsheet reader that decodes Excel's character escapes, macro
+scanning that reaches OpenDocument and renamed archives, and a safer
+default for `DJANGO_DEBUG`. No migration and no stored data changed.
+
+**On upgrade.** When `DJANGO_DEBUG` is not set anywhere, the application
+now starts with debug off, where it used to start with it on. The Docker
+stack and `.env.example` already say what they mean, so they behave as
+before. A bare-metal installation that never set the variable and never
+set a strong `DJANGO_SECRET_KEY` now refuses to start and says why: set a
+real key (or `DJANGO_SECRET_KEY_FILE`), or set `DJANGO_DEBUG=true` for local
+development only.
 
 **Dialogs.** The main button of a dialog that deletes, removes, withdraws or
 returns something, or records an exception, is now a solid red button, so it
@@ -36,6 +45,29 @@ as one character. This holds for the risk register and vendor matrix imports
 and for the spreadsheet preview of a stored document. Text that only looks like
 an escape, such as `_x12_`, is left alone, and so are a NUL and a lone half of
 a surrogate pair, which cannot be stored.
+
+**Safer defaults.** With `DJANGO_DEBUG` unset the application starts with
+debug off, so a bare-metal run with no `.env` cannot come up with the
+development signing key. Local development opts in with
+`DJANGO_DEBUG=true`, which `.env.example` and both installers already do.
+`.env.example`, the README and SECURITY.md say so, and a test holds it.
+
+**Uploads.** The macro check now also looks inside OpenDocument files
+(`.odt`, `.ods`, `.odp` and the rest), which keep macros in `Basic/` and
+`Scripts/` folders, and it looks at any file that is a zip whatever it is
+called, so a macro document renamed to `.zip` or `.dat` is refused too.
+An ordinary archive that happens to hold a folder called `scripts` is left
+alone.
+
+**Access reviews.** Completing a review is one transaction under a row
+lock. Two clicks, or two reviewers, can no longer both apply the
+revocations, and a failure half way no longer leaves some accounts revoked
+on a review that still reads as open.
+
+**Stale replies.** A slow answer for a folder or a vendor you have already
+moved off no longer replaces the access list or the detail now on screen,
+and two requests that fail at once no longer clear each other's token
+refresh.
 
 **Settings and vendors.** The licence row under *Settings › About* is now
 called Core licence, so it cannot be mistaken for the licence page of an

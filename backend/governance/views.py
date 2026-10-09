@@ -1,6 +1,7 @@
 """Views for access reviews (with CSV export), meeting cadence, and groups."""
 import csv
 
+from django.db import transaction
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -169,24 +170,30 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        review = self.get_object()
-        if review.status == AccessReview.Status.COMPLETED:
-            return Response({"detail": "Already completed."}, status=status.HTTP_400_BAD_REQUEST)
-        pending = review.items.filter(decision=AccessReviewItem.Decision.PENDING).count()
-        if pending:
-            return Response(
-                {"detail": f"{pending} row(s) still pending a decision."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        # A revoke decision that nobody carried out would show the control was
-        # not operating. Completing the review applies every "revoke" row (the
-        # account is deactivated and its sessions are revoked) and reports
-        # which rows it could not apply and why, so the reviewer finishes the
-        # job by hand.
-        applied = _apply_revocations(request, review)
-        review.status = AccessReview.Status.COMPLETED
-        review.completed_at = timezone.now()
-        review.save(update_fields=["status", "completed_at"])
+        self.get_object()  # permission and workspace checks
+        # One transaction under a row lock: two clicks (or two reviewers) must
+        # not both pass the status check and apply the revocations twice, and a
+        # failure half way through must not leave some accounts revoked on a
+        # review that still reads as open.
+        with transaction.atomic():
+            review = AccessReview.objects.select_for_update().get(pk=pk)
+            if review.status == AccessReview.Status.COMPLETED:
+                return Response({"detail": "Already completed."}, status=status.HTTP_400_BAD_REQUEST)
+            pending = review.items.filter(decision=AccessReviewItem.Decision.PENDING).count()
+            if pending:
+                return Response(
+                    {"detail": f"{pending} row(s) still pending a decision."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # A revoke decision that nobody carried out would show the control
+            # was not operating. Completing the review applies every "revoke"
+            # row (the account is deactivated and its sessions are revoked) and
+            # reports which rows it could not apply and why, so the reviewer
+            # finishes the job by hand.
+            applied = _apply_revocations(request, review)
+            review.status = AccessReview.Status.COMPLETED
+            review.completed_at = timezone.now()
+            review.save(update_fields=["status", "completed_at"])
         data = AccessReviewSerializer(review).data
         data["applied"] = applied
         return Response(data)

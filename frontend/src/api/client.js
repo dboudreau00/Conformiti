@@ -185,16 +185,23 @@ api.interceptors.response.use(
             { withCredentials: true,
               headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {} }
           );
-          const { data } = await refreshing;
-          refreshing = null;
+          const attempt = refreshing;
+          let data;
+          try {
+            ({ data } = await attempt);
+          } finally {
+            // Only the request that set it clears it, so a later refresh that
+            // has already replaced it is not wiped by an earlier waiter.
+            if (refreshing === attempt) refreshing = null;
+          }
           if (!cookieMode()) {
             localStorage.setItem("access", data.access);
             if (data.refresh) localStorage.setItem("refresh", data.refresh);
             config.headers.Authorization = `Bearer ${data.access}`;
           }
           return api(config);
-        } catch (e) {
-          refreshing = null;
+        } catch {
+          /* refresh refused or offline: fall through to sign-out */
         }
       }
       clearSession();

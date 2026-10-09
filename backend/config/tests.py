@@ -30,12 +30,16 @@ def _raw_secret(user):
 BACKEND = Path(__file__).resolve().parent.parent
 
 
-def _run_check(env_overrides, drop=()):
+def _run_check(env_overrides, drop=(), debug_default=True):
     """`manage.py check` in a fresh process, so settings.py runs again under
     `env_overrides`. `drop` names further variables (prefixes) to take out
-    of this process's environment first."""
+    of this process's environment first. settings.py defaults DJANGO_DEBUG to
+    off, so the process gets DJANGO_DEBUG=true (the developer's .env) unless an
+    override sets it or `debug_default=False` leaves it unset."""
     strip = ("DJANGO_", "POSTGRES_", "CACHE_URL", *drop)
     env = {k: v for k, v in os.environ.items() if not k.startswith(strip)}
+    if debug_default:
+        env["DJANGO_DEBUG"] = "true"
     env.update(env_overrides)
     env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
@@ -56,6 +60,14 @@ def _dotenv_sets(key):
 
 
 class SecretKeyBootTests(SimpleTestCase):
+
+    def test_debug_defaults_to_off(self):
+        """With DJANGO_DEBUG unset the guard runs: no real key, no boot."""
+        if _dotenv_sets("DJANGO_DEBUG") or _dotenv_sets("DJANGO_SECRET_KEY"):
+            self.skipTest("the checkout's .env sets DJANGO_DEBUG or the key")
+        r = _run_check({"EMAIL_PROVIDER": "console"}, debug_default=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("DJANGO_SECRET_KEY must be set", r.stderr)
     def test_production_refuses_placeholder_key(self):
         r = _run_check({"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY": "change-me-to-a-long-random-string"})
         self.assertNotEqual(r.returncode, 0)
@@ -319,6 +331,7 @@ class FieldKeyRingBootTests(SimpleTestCase):
                    if not k.startswith(("DJANGO_", "POSTGRES_", "CACHE_URL"))}
             env.update({"DJANGO_SETTINGS_MODULE": "config.settings",
                         "DJANGO_SECRET_KEY": "dev-insecure-change-me",
+                        "DJANGO_DEBUG": "true",
                         "EMAIL_PROVIDER": "console", "PYTHONIOENCODING": "utf-8"})
             r = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, env=env,
                                capture_output=True, text=True, timeout=120)

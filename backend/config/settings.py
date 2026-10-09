@@ -31,7 +31,9 @@ def env_int(key, default):
 
 
 # --- Core -------------------------------------------------------------------
-DEBUG = env_bool("DJANGO_DEBUG", True)
+# Off unless asked for: a bare-metal run with no .env must not start in debug.
+# Local development opts in with DJANGO_DEBUG=true (./install.sh writes it to .env).
+DEBUG = env_bool("DJANGO_DEBUG", False)
 
 _INSECURE_KEY = "dev-insecure-change-me"
 # Every placeholder that ships in the repo is rejected, including the one

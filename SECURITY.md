@@ -262,9 +262,11 @@ point of view.
   together); empty files refused. Refused by extension: executables and
   scripts, web pages (`.html`, `.svg`, `.mht` and similar), macro-enabled and
   legacy Office formats, and `.rtf`. Refused by content: any file carrying
-  the legacy Office (OLE2) signature, whatever it is called, and `.docx`,
+  the legacy Office (OLE2) signature, whatever it is called, `.docx`,
   `.xlsx` and `.pptx` files (and their template and show variants) that
-  carry macros or embedded OLE objects. It is a list of what is refused, not
+  carry macros or embedded OLE objects, OpenDocument files with a `Basic/`
+  or `Scripts/` folder, and any zip, under any name, that holds a VBA
+  project. It is a list of what is refused, not
   of what is allowed: any other type is stored and downloaded as an
   attachment. Files arrive through the API only: the Django admin takes
   none, and cannot change a document's scan verdict or clear its quarantine.
@@ -552,10 +554,10 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   refused the list, but reads the same names and addresses in access-review
   snapshots and the audit trail. Since 0.9.0 the list stops at the workspace
   boundary; within one organisation it is the whole directory.
-- **`DJANGO_DEBUG` still defaults to true for the *local developer* path** so
-  a first `./install.sh` is friction-free (the installer writes a random key
-  and binds the development server to 127.0.0.1). The Docker stack and the
-  published image default to off. Never let a reachable server run with
+- **`DJANGO_DEBUG` defaults to off.** The *local developer* path opts in with
+  `DJANGO_DEBUG=true` in `.env` (`./install.sh` writes it, a random key, and
+  binds the development server to 127.0.0.1). The Docker stack and the
+  published image are off too. Never let a reachable server run with
   DEBUG on: the secret-key guard does not run, so with no key set, or with
   the placeholder from `.env.example`, the tokens are signed with a key
   published in this repository and anyone can mint one; uploaded files are

@@ -511,7 +511,6 @@ def resolve_user(claims, cfg):
         # A provisioned account joins the workspace named by SSO_WORKSPACE,
         # and its role is looked up there, not across the installation.
         from . import tenancy
-        from .models import Workspace
 
         workspace = sso_workspace()
         given, family = _names(claims)

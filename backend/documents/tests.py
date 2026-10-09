@@ -332,6 +332,36 @@ class DocumentLifecycleTests(APITestBase):
                          content=ooxml("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
                          ).status_code, 201)
 
+    def test_macros_are_found_in_opendocument_and_renamed_zips(self):
+        import io as _io
+        import zipfile
+
+        def package(*parts, odf=False):
+            buffer = _io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                if odf:
+                    archive.writestr("mimetype", "application/vnd.oasis.opendocument.text")
+                    archive.writestr("META-INF/manifest.xml", "<m/>")
+                    archive.writestr("content.xml", "<c/>")
+                else:
+                    archive.writestr("[Content_Types].xml", "<Types/>")
+                for part in parts:
+                    archive.writestr(part, b"\x00\x01")
+            return buffer.getvalue()
+
+        c = self.client_for(self.manager)
+        up = lambda name, content: self._upload(c, self.tree.ctrl1, filename=name,
+                                                content=content).status_code
+        self.assertEqual(up("clean.odt", package(odf=True)), 201)
+        self.assertEqual(up("macro.odt", package("Basic/Standard/Module1.xml", odf=True)), 400)
+        self.assertEqual(up("macro.ods", package("Scripts/python/x.py", odf=True)), 400)
+        # Renamed: the shape decides, not the name.
+        self.assertEqual(up("macro.dat", package("Basic/Standard/Module1.xml", odf=True)), 400)
+        self.assertEqual(up("report.zip", package("xl/vbaProject.bin")), 400)
+        self.assertEqual(up("report.bin", package("word/vbaProject.bin")), 400)
+        # An ordinary archive is not penalised for folder names it happens to use.
+        self.assertEqual(up("backup.zip", package("scripts/run.sh", "embeddings/model.bin")), 201)
+
     def test_a_macro_part_past_the_old_scan_limit_is_found(self):
         """The scan reads every name, not the first two thousand, so entry
         2001 is not a place to hide. Reading the central directory is what

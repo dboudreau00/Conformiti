@@ -1083,12 +1083,17 @@ export default function Vendors({ me }) {
       setMsg({ ok: false, text: errorText(e, "Couldn't load the vendor register.") });
     });
   }
+  // The vendor whose detail was asked for last. A slower reply for a vendor the
+  // user has already moved off must not overwrite the one now on screen.
+  const detailWanted = useRef(null);
   async function loadDetail(id) {
+    detailWanted.current = id;
     setDetailErr(false);
     try {
       const { data } = await api.get(`/vendors/${id}/`);
-      setDetail(data);
+      if (detailWanted.current === id) setDetail(data);
     } catch {
+      if (detailWanted.current !== id) return;
       setDetail(null);
       setDetailErr(true);
     }
@@ -1102,7 +1107,10 @@ export default function Vendors({ me }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => { if (selectedId) loadDetail(selectedId); else setDetail(null); }, [selectedId]);
+  useEffect(() => {
+    if (selectedId) loadDetail(selectedId);
+    else { detailWanted.current = null; setDetail(null); }
+  }, [selectedId]);
 
   // Deep links from the notification tray: /vendors?vendor=3&tab=matrix.
   useEffect(() => {
