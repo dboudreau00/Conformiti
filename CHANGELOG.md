@@ -11,10 +11,37 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5me], 2026-10-09
 
-Plainer wording throughout. No behaviour, stored data, permission or setting
-changed.
+Plainer wording throughout, a clearer confirmation before something is
+deleted, and a spreadsheet reader that decodes Excel's character escapes. No
+stored data, permission or setting changed.
+
+**Dialogs.** The main button of a dialog that deletes, removes, withdraws or
+returns something, or records an exception, is now a solid red button, so it
+reads as the main action beside Cancel; the pale red button stays for the
+Delete and Remove buttons on the pages themselves. Its text is white on the two
+light theme packs and a dark ink on the two dark ones, where white was hard to
+read. While a dialog's request is running its button keeps its label and shows
+a spinner, where it used to change to "Working…", and the Cancel button waits
+with it. Tab now reaches the Close button: Shift+Tab from the first field lands
+on it, and Tab from the last button wraps round to it. A dialog still opens on
+its first field or its safest button, never on Close.
+
+**Spreadsheets.** An .xlsx file is read the way Excel meant it. Text Excel
+stores as `_x000D_` (a carriage return inside a cell) or as any other
+`_xHHHH_` escape is decoded, `_x005F_x0041_` reads as the literal text
+`_x0041_`, and a pair of escapes for the two halves of a surrogate pair reads
+as one character. This holds for the risk register and vendor matrix imports
+and for the spreadsheet preview of a stored document. Text that only looks like
+an escape, such as `_x12_`, is left alone, and so are a NUL and a lone half of
+a surrogate pair, which cannot be stored.
+
+**Settings and vendors.** The licence row under *Settings › About* is now
+called Core licence, so it cannot be mistaken for the licence page of an
+add-on. When an add-on that scores the vendor register is installed, the
+register panel offers a quiet Portfolio view link to it; a standard
+installation shows nothing new.
 
 **Changed.** Code comments and docstrings say why the code is the way it is
 instead of retelling earlier fixes, and keep every review finding they cite.
