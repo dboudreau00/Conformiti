@@ -91,6 +91,55 @@ class RiskRegisterTests(APITestBase):
         self.assertEqual(v.delete(f"/api/risk-notes/{n.data['id']}/").status_code, 204)
         self.assertEqual(m.delete(f"/api/risks/{rid}/").status_code, 204)
 
+    def test_an_owner_changes_only_the_remediation_fields(self):
+        m = self.client_for(self.manager)
+        rid = m.post("/api/risks/", {"title": "Shared admin account", "likelihood": 3, "impact": 3,
+                                      "owner": self.owner.pk}, format="json").data["id"]
+        o = self.client_for(self.owner)
+        ok = o.patch(f"/api/risks/{rid}/", {"status": "mitigating", "mitigation_plan": "rotate",
+                                             "due_date": "2027-01-31", "jira_key": "SEC-9"}, format="json")
+        self.assertEqual(ok.status_code, 200, ok.data)
+        for field, value in (("owner", self.viewer.pk), ("owner", None), ("likelihood", 1),
+                             ("impact", 5), ("treatment", "accept"), ("title", "Renamed"),
+                             ("control", self.tree.c1.pk)):
+            with self.subTest(field=field, value=value):
+                r = o.patch(f"/api/risks/{rid}/", {field: value}, format="json")
+                self.assertEqual(r.status_code, 400, r.data)
+                self.assertIn(field, r.data)
+        # Sending a field back unchanged is not a change (a form posts it all).
+        r = o.patch(f"/api/risks/{rid}/", {"title": "Shared admin account", "owner": self.owner.pk,
+                                           "status": "open"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        # A manager keeps the lot.
+        self.assertEqual(m.patch(f"/api/risks/{rid}/", {"owner": self.viewer.pk, "likelihood": 1},
+                                 format="json").status_code, 200)
+
+    def test_a_decision_cannot_land_on_a_completed_review(self):
+        admin = self.client_for(self.admin)
+        rid = admin.post("/api/access-reviews/", {"name": "R"}, format="json").data["id"]
+        items = admin.get(f"/api/access-review-items/?review={rid}").data
+        for it in items:
+            admin.patch(f"/api/access-review-items/{it['id']}/", {"decision": "keep"}, format="json")
+        self.assertEqual(admin.post(f"/api/access-reviews/{rid}/complete/").status_code, 200)
+        r = admin.patch(f"/api/access-review-items/{items[0]['id']}/", {"decision": "revoke"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(AccessReviewItem.objects.get(pk=items[0]["id"]).decision, "keep")
+
+    def test_xlsx_with_a_doctype_is_refused(self):
+        import zipfile
+        good = make_xlsx([["Title"], ["Backups"]])
+        src = zipfile.ZipFile(io.BytesIO(good))
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as zf:
+            for name in src.namelist():
+                data = src.read(name)
+                if name.startswith("xl/worksheets/sheet"):
+                    data = b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]>' + data.split(b"?>", 1)[-1]
+                zf.writestr(name, data)
+        with self.assertRaises(ValueError):
+            parse_upload("register.xlsx", out.getvalue())
+        self.assertEqual(parse_upload("register.xlsx", good)[1], ["Backups"])
+
     def test_import_creates_dedupes_and_warns(self):
         csv_bytes = (
             "Title;Probability;Severity;Owner;Control;Due date;Status;Notes\n"

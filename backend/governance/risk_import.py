@@ -19,7 +19,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 
-from documents.ooxml import unescape_xstring
+from documents.ooxml import XmlRefused, safe_fromstring, unescape_xstring
 
 MAX_FILE_BYTES = 2 * 1024 * 1024        # request-level guard (2 MB)
 MAX_UNZIPPED_BYTES = 20 * 1024 * 1024   # zip-bomb guard for xlsx
@@ -186,12 +186,14 @@ def _read_xlsx(data):
     try:
         shared = []
         if "xl/sharedStrings.xml" in zf.namelist():
-            root = ET.fromstring(_bounded_read(zf, "xl/sharedStrings.xml"))
+            root = safe_fromstring(_bounded_read(zf, "xl/sharedStrings.xml"))
             for si in root.iter(f"{_XLSX_NS}si"):
                 shared.append(unescape_xstring("".join(node.text or "" for node in si.iter(f"{_XLSX_NS}t"))))
 
-        root = ET.fromstring(_bounded_read(zf, sheet_names[0]))
-    except ET.ParseError:
+        root = safe_fromstring(_bounded_read(zf, sheet_names[0]))
+    except (ET.ParseError, XmlRefused):
+        # XmlRefused: a DOCTYPE, which a spreadsheet never needs and an
+        # entity-expansion attack depends on.
         raise ValueError("The .xlsx file is corrupt or unreadable.")
     except zipfile.BadZipFile:
         raise ValueError("The .xlsx file is corrupt or unreadable.")

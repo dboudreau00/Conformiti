@@ -222,6 +222,30 @@ class AnswerTests(PbcBase):
         self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/withdraw/").status_code, 400)
         self.assertEqual(self.manager_client.delete(f"/api/pbc-items/{PbcItem.objects.first().pk}/").status_code, 400)
 
+    def test_detaching_the_last_document_reopens_a_provided_line_with_no_note(self):
+        lid = self.line["id"]
+        item = self.attach(self.manager_client, self.doc).data
+        self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/provide/").status_code, 200)
+        self.assertEqual(PbcRequest.objects.get(pk=lid).status, "provided")
+        self.assertEqual(self.manager_client.delete(f"/api/pbc-items/{item['id']}/").status_code, 204)
+        row = PbcRequest.objects.get(pk=lid)
+        self.assertEqual(row.status, "open")
+        self.assertIsNone(row.provided_at)
+        # With a note saying why, the answer stands even with nothing attached.
+        item = self.attach(self.manager_client, self.doc).data
+        self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "Held on paper."}, format="json")
+        self.manager_client.delete(f"/api/pbc-items/{item['id']}/")
+        self.assertEqual(PbcRequest.objects.get(pk=lid).status, "provided")
+
+    def test_a_judgement_is_decided_on_the_status_read_under_the_lock(self):
+        lid = self.line["id"]
+        self.attach(self.manager_client, self.doc)
+        self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "x"}, format="json")
+        self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/withdraw/").status_code, 200)
+        for action in ("accept", "provide"):
+            self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/{action}/").status_code, 400, action)
+        self.assertEqual(PbcRequest.objects.get(pk=lid).status, "withdrawn")
+
     def test_withdrawal_and_a_withdrawn_package_close_the_list(self):
         lid = self.line["id"]
         self.assertEqual(self.owner_client.post(f"/api/pbc-requests/{lid}/withdraw/").status_code, 403)

@@ -19,6 +19,7 @@ const day = (iso) => (iso ? String(iso).slice(0, 10) : "");
 export function RiskDetail({
   risk,
   canEdit,
+  canManage = canEdit,
   users,
   usersErr,
   saving,
@@ -102,28 +103,28 @@ export function RiskDetail({
             </select>
           </Field>
           <Field id={id("treatment")} label="Treatment">
-            <select id={id("treatment")} className="input input-sm" value={risk.treatment} disabled={saving} onChange={(e) => onPatch({ treatment: e.target.value })}>
+            <select id={id("treatment")} className="input input-sm" value={risk.treatment} disabled={saving || !canManage} onChange={(e) => onPatch({ treatment: e.target.value })}>
               {TREATMENTS.map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
           </Field>
           <Field id={id("likelihood")} label="Likelihood">
-            <select id={id("likelihood")} className="input input-sm" value={risk.likelihood} disabled={saving} onChange={(e) => onPatch({ likelihood: Number(e.target.value) })}>
+            <select id={id("likelihood")} className="input input-sm" value={risk.likelihood} disabled={saving || !canManage} onChange={(e) => onPatch({ likelihood: Number(e.target.value) })}>
               {SCALE.map((n) => (
                 <option key={n} value={n}>{n} · {LIKELIHOOD_WORDS[n - 1]}</option>
               ))}
             </select>
           </Field>
           <Field id={id("impact")} label="Impact">
-            <select id={id("impact")} className="input input-sm" value={risk.impact} disabled={saving} onChange={(e) => onPatch({ impact: Number(e.target.value) })}>
+            <select id={id("impact")} className="input input-sm" value={risk.impact} disabled={saving || !canManage} onChange={(e) => onPatch({ impact: Number(e.target.value) })}>
               {SCALE.map((n) => (
                 <option key={n} value={n}>{n} · {IMPACT_WORDS[n - 1]}</option>
               ))}
             </select>
           </Field>
           <Field id={id("owner")} label="Owner">
-            <select id={id("owner")} className="input input-sm" value={risk.owner ?? ""} disabled={saving} onChange={(e) => onPatch({ owner: e.target.value ? Number(e.target.value) : null })}>
+            <select id={id("owner")} className="input input-sm" value={risk.owner ?? ""} disabled={saving || !canManage} onChange={(e) => onPatch({ owner: e.target.value ? Number(e.target.value) : null })}>
               <option value="">Unassigned</option>
               {ownerOptions.map((u) => (
                 <option key={u.id} value={u.id}>{displayName(u)}</option>

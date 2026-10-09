@@ -17,7 +17,9 @@ Who may do what, in one place:
   the product, and ``access.py`` holds it beside the first.
 """
 import csv
+import functools
 
+from django.db.models import F
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse
 from django.utils import timezone
@@ -72,6 +74,16 @@ class PbcRequestFilter(filters.FilterSet):
         fields = ["package", "status", "assignee", "priority"]
 
 
+def _atomic(method):
+    """Run a status-changing action in one transaction, so the row lock taken
+    by ``_locked`` is held until the new status is saved."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with transaction.atomic():
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class PbcRequestViewSet(viewsets.ModelViewSet):
     serializer_class = PbcRequestSerializer
     permission_classes = [IsAuthenticated]
@@ -84,6 +96,15 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get("mine") in ("1", "true"):
             qs = qs.filter(assignee=self.request.user)
         return qs.select_related("package", "assignee", "package_control").prefetch_related("items")
+
+    def _locked(self):
+        """The request, re-read under a row lock. ``get_object`` has already
+        applied the permission and workspace rules; this makes the status
+        check and the save one step, so an accept racing a withdraw (or two
+        accepts) cannot both pass the check."""
+        req = self.get_object()
+        return (PbcRequest.objects.select_for_update()
+                .select_related("package").get(pk=req.pk))
 
     # ------------------------------------------------------------- create
     def perform_create(self, serializer):
@@ -173,10 +194,11 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
 
     # ------------------------------------------------------------- actions
     @action(detail=True, methods=["post"])
+    @_atomic
     def provide(self, request, pk=None):
         """Mark the answer given. Needs at least one attached document or a
         note saying why there is none."""
-        req = self.get_object()
+        req = self._locked()
         user = request.user
         if not (access.can_assemble(user) or req.assignee_id == user.pk):
             raise PermissionDenied("Only the organisation, or the person this request is assigned to, "
@@ -195,8 +217,9 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(req).data)
 
     @action(detail=True, methods=["post"])
+    @_atomic
     def accept(self, request, pk=None):
-        req = self.get_object()
+        req = self._locked()
         if not self._may_judge(request.user, req):
             raise PermissionDenied("Only the issued auditor, or the organisation closing a transcribed "
                                    "request, can accept an answer.")
@@ -210,8 +233,9 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(req).data)
 
     @action(detail=True, methods=["post"], url_path="return")
+    @_atomic
     def return_(self, request, pk=None):
-        req = self.get_object()
+        req = self._locked()
         if not self._may_judge(request.user, req):
             raise PermissionDenied("Only the issued auditor, or the organisation, can return an answer.")
         if req.status != PbcRequest.Status.PROVIDED:
@@ -234,8 +258,9 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(req).data)
 
     @action(detail=True, methods=["post"])
+    @_atomic
     def withdraw(self, request, pk=None):
-        req = self.get_object()
+        req = self._locked()
         user = request.user
         own = access.live_grant(user, req.package) is not None and req.requested_by_id == user.pk
         if not (access.can_assemble(user) or own):
@@ -329,12 +354,21 @@ class PbcItemViewSet(viewsets.ModelViewSet):
         record_package_event(self.request, req.package, "update",
                              f"{req.reference}: detached '{instance.document_name}'")
         instance.delete()
+        # An answer with nothing attached and no note saying why is no answer:
+        # `provide` would have refused it, so the request goes back to open.
+        if (req.status == PbcRequest.Status.PROVIDED and not req.response_note
+                and not req.items.exists()):
+            req.status = PbcRequest.Status.OPEN
+            req.provided_at = None
+            req.save(update_fields=["status", "provided_at", "updated_at"])
+            record_package_event(self.request, req.package, "update",
+                                 f"{req.reference}: reopened, its last document was detached")
 
     def _touch_grant(self, request, package):
         grant = access.live_grant(request.user, package)
         if grant is not None:
             PackageGrant.objects.filter(pk=grant.pk).update(
-                last_accessed_at=timezone.now(), access_count=grant.access_count + 1)
+                last_accessed_at=timezone.now(), access_count=F("access_count") + 1)
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):

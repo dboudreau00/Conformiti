@@ -239,6 +239,16 @@ class AccessReviewItemViewSet(viewsets.ModelViewSet):
     filterset_fields = ["review", "decision"]
     http_method_names = ["get", "patch", "head", "options"]
 
+    def perform_update(self, serializer):
+        # Under the review's row lock, the one ``complete`` takes: a decision
+        # cannot land between the completion check and its revocations, nor
+        # after the review has been sealed.
+        with transaction.atomic():
+            review = AccessReview.objects.select_for_update().get(pk=serializer.instance.review_id)
+            if review.status == AccessReview.Status.COMPLETED:
+                raise ValidationError({"detail": "This review is completed and read-only."})
+            serializer.save()
+
 
 # --------------------------------------------------------------------------- #
 # Meetings
@@ -302,7 +312,6 @@ class GroupMemberViewSet(viewsets.ModelViewSet):
 # ==========================================================================
 # Risk register
 # ==========================================================================
-from django.db import transaction
 from django.db.models import Count
 from rest_framework.exceptions import PermissionDenied, ValidationError
 

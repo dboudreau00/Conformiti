@@ -24,7 +24,7 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 
-from .ooxml import unescape_xstring
+from .ooxml import XmlRefused, safe_fromstring, unescape_xstring
 
 MAX_PARAGRAPHS = 3000
 MAX_TABLE_ROWS = 500
@@ -119,10 +119,10 @@ def _read_xml(zf, member):
     if raw.count(b"<") > MAX_ELEMENTS:
         raise PreviewError("The document is too complex to preview. Download it instead.")
     try:
-        # ElementTree does not resolve external entities, so this is safe on
-        # untrusted input; a malformed part is a preview failure, not a crash.
-        return ET.fromstring(raw)
-    except ET.ParseError:
+        # A part with a DOCTYPE is refused outright (see safe_fromstring); a
+        # malformed part is a preview failure, not a crash.
+        return safe_fromstring(raw)
+    except (ET.ParseError, XmlRefused):
         raise PreviewError("The document's contents could not be read.")
 
 

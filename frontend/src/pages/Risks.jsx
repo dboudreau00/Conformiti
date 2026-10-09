@@ -413,6 +413,7 @@ export default function Risks({ me }) {
               <RiskDetail
                 risk={selected}
                 canEdit={canEditRisk(selected)}
+                canManage={canManage}
                 users={users}
                 usersErr={usersErr}
                 saving={saving}

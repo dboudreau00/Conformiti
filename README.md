@@ -1059,7 +1059,8 @@ they are.
 **0.9.5me** has no migration. With `DJANGO_DEBUG` unset the application now
 starts with debug off, so a bare-metal install with no strong
 `DJANGO_SECRET_KEY` refuses to start until it has one (the Docker stack and
-.env.example already say what they mean). The button that confirms a delete, removal or
+.env.example already say what they mean). The owner of a risk can now change only its status, plan, due date and Jira
+key. The button that confirms a delete, removal or
 withdrawal in a dialog is solid red, a dialog's button keeps its label and
 shows a spinner while its request runs, and Tab reaches a dialog's Close
 button. The risk register and vendor matrix imports and the document preview

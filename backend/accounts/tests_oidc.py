@@ -227,6 +227,28 @@ class OidcFlowTests(APITestBase):
         with override_settings(OIDC_REQUIRE_VERIFIED_EMAIL=False):
             self.sign_in()
 
+    def test_email_verified_may_be_the_string_true(self):
+        """Some providers (Cognito) send "true" for the boolean claim."""
+        self.idp.claims["email_verified"] = "true"
+        self.sign_in()
+        for bad in ("false", "yes", 1, "", None):
+            with self.subTest(value=bad):
+                OidcIdentity.objects.all().delete()   # the first sign-in linked it
+                self.idp.claims["email_verified"] = bad
+                self._refused("unverified_email")
+
+    def test_provisioning_never_makes_a_second_account_on_an_address(self):
+        """With email linking off, an existing account on the address was not
+        matched; provisioning must refuse rather than duplicate it."""
+        with override_settings(OIDC_LINK_BY_EMAIL=False, OIDC_AUTO_PROVISION=True):
+            self._refused("email_taken")
+        self.assertFalse(OidcIdentity.objects.filter(subject="sub-val").exists())
+        # A new address still provisions.
+        self.idp.claims.update({"sub": "sub-new", "email": "brand.new@example.com"})
+        with override_settings(OIDC_LINK_BY_EMAIL=False, OIDC_AUTO_PROVISION=True):
+            self.sign_in()
+        self.assertTrue(OidcIdentity.objects.filter(subject="sub-new").exists())
+
     def test_ambiguous_email(self):
         self.owner.email = "val@example.com"
         self.owner.save()

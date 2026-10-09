@@ -62,6 +62,10 @@ ODF_SCRIPT_PREFIXES = ("basic/", "scripts/")
 ZIP_MAGIC = (b"PK\x03\x04", b"PK\x05\x06")
 
 
+# Not covered, deliberately: a macro file one archive level down (a .docm
+# inside a .zip, anything inside a .7z or .rar). Looking inside means
+# decompressing attacker-chosen containers, which is the ClamAV scan's job
+# (documents/scanning.py) rather than something to hand-roll here.
 def _holds_macros(uploaded, strict=True):
     """True if this is a zip container with a macro part inside it.
 

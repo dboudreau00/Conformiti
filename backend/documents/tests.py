@@ -1,11 +1,13 @@
 """Folder RBAC, tree integrity, document lifecycle and upload validation."""
+import xml.etree.ElementTree as ET
+
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, override_settings
 
 from documents.models import EDIT, MANAGE, VIEW, Document, Folder, FolderPermission
-from documents.ooxml import unescape_xstring
+from documents.ooxml import XmlRefused, safe_fromstring, unescape_xstring
 from testutils import APITestBase, grant, make_doc, make_xlsx
 from audit.models import AuditLog
 import socketserver
@@ -1086,6 +1088,34 @@ class OoxmlEscapeTests(SimpleTestCase):
     def test_a_long_run_of_almost_escapes_stays_fast(self):
         text = "_x" * 50_000 + "004"
         self.assertEqual(unescape_xstring(text), text)
+
+
+class SafeXmlTests(SimpleTestCase):
+    """A part with a DOCTYPE is refused before anything is expanded."""
+
+    def test_an_ordinary_part_parses(self):
+        root = safe_fromstring(b'<?xml version="1.0"?><a><b>x</b></a>')
+        self.assertEqual(root.find("b").text, "x")
+
+    def test_a_doctype_is_refused_with_or_without_entities(self):
+        for raw in (b'<?xml version="1.0"?><!DOCTYPE a><a/>',
+                    b'<!DOCTYPE a [<!ENTITY e "aaaa">]><a>&e;</a>',
+                    b'<!DOCTYPE a SYSTEM "http://example.invalid/a.dtd"><a/>'):
+            with self.subTest(raw=raw[:40]), self.assertRaises(XmlRefused):
+                safe_fromstring(raw)
+
+    def test_a_doctype_in_utf16_is_refused_too(self):
+        raw = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE a [<!ENTITY e "x">]><a>&e;</a>'
+        with self.assertRaises(XmlRefused):
+            safe_fromstring(raw.encode("utf-16"))
+
+    def test_a_malformed_part_is_left_to_elementtree(self):
+        with self.assertRaises(ET.ParseError):
+            safe_fromstring(b"<a><b></a>")
+
+    def test_text_that_only_mentions_a_doctype_is_not_one(self):
+        root = safe_fromstring(b"<a>the &lt;!DOCTYPE a&gt; line</a>")
+        self.assertEqual(root.text, "the <!DOCTYPE a> line")
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32

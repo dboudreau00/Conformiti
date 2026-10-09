@@ -13,6 +13,7 @@ Two rules run through everything here:
 import tempfile
 
 from django.db import transaction
+from django.db.models import F
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -779,7 +780,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         grant = access.live_grant(request.user, package)
         if grant is not None:
             PackageGrant.objects.filter(pk=grant.pk).update(
-                last_accessed_at=timezone.now(), access_count=grant.access_count + 1)
+                last_accessed_at=timezone.now(), access_count=F("access_count") + 1)
         record_package_event(
             request, package, "read",
             f"previewed evidence '{row.document_name}' from package {package.pk}",
@@ -801,7 +802,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         grant = access.live_grant(request.user, package)
         if grant is not None:
             PackageGrant.objects.filter(pk=grant.pk).update(
-                last_accessed_at=timezone.now(), access_count=grant.access_count + 1)
+                last_accessed_at=timezone.now(), access_count=F("access_count") + 1)
         record_package_event(
             request, package, "read",
             f"read evidence '{row.document_name}' from package {package.pk}",

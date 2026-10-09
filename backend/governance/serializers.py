@@ -211,6 +211,25 @@ class RiskSerializer(serializers.ModelSerializer):
             "impact": {"min_value": 1, "max_value": 5},
         }
 
+    # What a risk's owner may change without being a framework manager: the
+    # remediation fields. Who owns it, how it is rated and how it is treated
+    # stay with the managers (RiskPermission lets the owner through to here).
+    OWNER_EDITABLE = {"status", "mitigation_plan", "due_date", "jira_key"}
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if self.instance is not None and user is not None and not user.can_manage_frameworks:
+            changed = sorted(
+                name for name, value in attrs.items()
+                if name not in self.OWNER_EDITABLE and getattr(self.instance, name) != value
+            )
+            if changed:
+                raise serializers.ValidationError({
+                    name: "Only a framework manager can change this." for name in changed
+                })
+        return attrs
+
     def get_note_count(self, obj):
         annotated = getattr(obj, "note_count", None)
         return annotated if annotated is not None else obj.notes.count()

@@ -77,6 +77,7 @@ MESSAGES = {
     "domain": "That email domain is not allowed to sign in here.",
     "privileged": "Administrator accounts sign in with their password.",
     "ambiguous_email": "More than one account uses that email address. Ask an administrator to link your identity.",
+    "email_taken": "An account already uses that email address. Ask an administrator to link your identity.",
     "unknown_user": "No account is linked to that identity. Ask an administrator to link it.",
     "inactive": "That account is deactivated.",
     "role": "The server's default single sign-on role is misconfigured.",
@@ -442,6 +443,17 @@ def sso_workspace():
     return workspace
 
 
+def _email_verified(claims):
+    """The provider's own say-so that it checked the address. The claim is a
+    JSON boolean by the spec, but some providers (AWS Cognito among them) send
+    the string "true". Anything else, including "false", 1 and a missing
+    claim, is not verified."""
+    value = claims.get("email_verified")
+    if value is True:
+        return True
+    return isinstance(value, str) and value.strip().lower() == "true"
+
+
 @transaction.atomic
 def resolve_user(claims, cfg):
     User = get_user_model()
@@ -483,7 +495,7 @@ def resolve_user(claims, cfg):
 
     if not email:
         raise OidcError("no_email")
-    if cfg.require_verified_email and claims.get("email_verified") is not True:
+    if cfg.require_verified_email and not _email_verified(claims):
         raise OidcError("unverified_email")
     domain = email.rsplit("@", 1)[-1]
     if cfg.allowed_domains and domain not in cfg.allowed_domains:
@@ -513,6 +525,12 @@ def resolve_user(claims, cfg):
         from . import tenancy
 
         workspace = sso_workspace()
+        # With linking by email off, an existing account on this address was
+        # not matched above. Creating a second one would leave two people
+        # sharing an address, and the next email-linked sign-in "ambiguous".
+        with tenancy.scoped(workspace):
+            if User.objects.filter(email__iexact=email).exists():
+                raise OidcError("email_taken", f"an account already uses {email}")
         given, family = _names(claims)
         # Computed outside the tenant scope: usernames are installation-wide.
         username = _unique_username(email)

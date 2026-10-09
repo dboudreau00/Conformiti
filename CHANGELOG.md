@@ -15,8 +15,9 @@ says what changed and what to expect on upgrade.
 
 Plainer wording throughout, a clearer confirmation before something is
 deleted, a spreadsheet reader that decodes Excel's character escapes, macro
-scanning that reaches OpenDocument and renamed archives, and a safer
-default for `DJANGO_DEBUG`. No migration and no stored data changed.
+scanning that reaches OpenDocument and renamed archives, a safer default
+for `DJANGO_DEBUG`, and a tighter hand on who may change a risk. No
+migration and no stored data changed.
 
 **On upgrade.** When `DJANGO_DEBUG` is not set anywhere, the application
 now starts with debug off, where it used to start with it on. The Docker
@@ -24,7 +25,10 @@ stack and `.env.example` already say what they mean, so they behave as
 before. A bare-metal installation that never set the variable and never
 set a strong `DJANGO_SECRET_KEY` now refuses to start and says why: set a
 real key (or `DJANGO_SECRET_KEY_FILE`), or set `DJANGO_DEBUG=true` for local
-development only.
+development only. The owner of a risk can now change only its status,
+mitigation plan, due date and Jira key; its title, rating, treatment, owner
+and control need a framework manager, and the Risks page greys those
+fields out for an owner who is not one.
 
 **Dialogs.** The main button of a dialog that deletes, removes, withdraws or
 returns something, or records an exception, is now a solid red button, so it
@@ -62,7 +66,37 @@ alone.
 **Access reviews.** Completing a review is one transaction under a row
 lock. Two clicks, or two reviewers, can no longer both apply the
 revocations, and a failure half way no longer leaves some accounts revoked
-on a review that still reads as open.
+on a review that still reads as open. A decision can no longer be saved on
+a review that is completed, or between the check and the revocations.
+
+**Risks.** The owner of a risk was allowed through to every field, so an
+owner could hand the risk to someone else, lower its rating or change its
+treatment. The API now refuses those changes with the name of the field,
+unless the person is a framework manager. Sending a field back unchanged,
+as a form does, is not a change.
+
+**Single sign-on.** An identity provider that sends `email_verified` as the
+string "true" (AWS Cognito does) is accepted as verified; "false" and
+anything else still is not. With linking by email off, provisioning an
+account on an address another account already uses is refused with a
+message, rather than creating a second account that makes the next
+email-linked sign-in ambiguous.
+
+**Evidence requests.** Accepting, returning, withdrawing and providing an
+answer each run in one transaction under a row lock, so an accept racing a
+withdraw cannot both pass the status check. Detaching the last document of
+an answer that has no note puts the request back to open, since that is not
+an answer. An auditor's access count rises by one in the database, so two
+reads at once both count.
+
+**Spreadsheets and documents.** A part that declares a DOCTYPE, and with it
+any entity, is refused in an imported spreadsheet and in the document
+preview before anything is expanded, using the standard library only.
+
+**Backup codes.** Migration `accounts` 0006 can now be reversed: the codes go
+back to the person's authenticator, and a person with none (a passkey-only
+account) loses them, as the old schema could not hold them. A test runs it
+both ways.
 
 **Stale replies.** A slow answer for a folder or a vendor you have already
 moved off no longer replaces the access list or the detail now on screen,

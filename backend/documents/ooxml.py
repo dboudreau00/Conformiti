@@ -4,6 +4,8 @@ importers (governance/risk_import.py) and the in-browser preview
 without Django.
 """
 import re
+import xml.etree.ElementTree as ET
+from xml.parsers import expat
 
 # ST_Xstring (ECMA-376 part 1, 22.4.2.4). XML cannot carry most control
 # characters, so a workbook writes one as _xHHHH_, the four hex digits of its
@@ -40,3 +42,40 @@ def unescape_xstring(text):
     if not text or "_x" not in text:
         return text
     return _ESCAPE.sub(_decode, text)
+
+
+class XmlRefused(ValueError):
+    """A part that declares a DOCTYPE, and with it any entity."""
+
+
+class _ReachedRoot(Exception):
+    pass
+
+
+def safe_fromstring(raw):
+    """``ElementTree.fromstring`` for a part that came from an upload.
+
+    A spreadsheet or document never needs a DOCTYPE, and entity expansion is
+    what an attack on an XML parser depends on, so a part that declares one is
+    refused rather than parsed. A DOCTYPE can only stand before the root
+    element, so a first pass with expat stops at the root: it costs nothing
+    for a part without one, and reads encodings (UTF-16 included) the way the
+    real parse will. A malformed part is left for ``ElementTree`` to report.
+    """
+    probe = expat.ParserCreate()
+
+    def refuse(*_args):
+        raise XmlRefused("The part declares a DOCTYPE, which is not accepted.")
+
+    def reached_root(*_args):
+        raise _ReachedRoot
+
+    probe.StartDoctypeDeclHandler = refuse
+    probe.StartElementHandler = reached_root
+    try:
+        probe.Parse(raw, True)
+    except _ReachedRoot:
+        pass
+    except expat.ExpatError:
+        pass
+    return ET.fromstring(raw)
