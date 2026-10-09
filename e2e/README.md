@@ -111,9 +111,10 @@ e2e/
     workspace.spec.js     dashboard (lead schedule, coverage atlas, calendar, review
                           queue), documents, risks
     controls.spec.js      217-control register: tabs, filters, search, export
-    governance.spec.js    audit trail, access reviews, users, meetings, groups
+    governance.spec.js    audit trail, access reviews, users, meetings, groups, and
+                          the confirmation dialog (solid confirm, Tab cycle, busy button)
     downloads.spec.js     a download or export that fails says why on screen
-    settings.spec.js      profile, theme packs, accent packs, MFA enrolment
+    settings.spec.js      profile, theme packs, accent packs, MFA enrolment, About
     laptop.spec.js        a 1366 by 768 laptop and a 1024 wide window: tables, the
                           dashboard and the top bar stay on screen
     phone.spec.js         a 390 by 844 phone: the Menu sheet, menus that fit the screen
@@ -121,7 +122,8 @@ e2e/
     passkeys.spec.js      passkey enrolment and sign-in (virtual authenticator)
     pbc.spec.js           the PBC request list: organisation, auditor, assignee
     questionnaire.spec.js the vendor questionnaire, answered by link
-    vendors.spec.js       vendor register, assurance, responsibility matrix
+    vendors.spec.js       vendor register (and its portfolio link), assurance,
+                          responsibility matrix
     viewer.spec.js        the in-browser document viewer
     screenshots.spec.js   opt-in: regenerates the README screenshots
 ```

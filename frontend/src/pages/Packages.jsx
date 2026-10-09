@@ -722,7 +722,7 @@ export default function Packages({ me }) {
       initial="Fieldwork complete"
       required={false}
       submitLabel="Withdraw"
-      tone="danger"
+      tone="danger-solid"
       onSubmit={submitWithdraw}
     />
     <TextDialog
@@ -1071,7 +1071,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
         multiline
         initial={failing?.exception_note || ""}
         submitLabel="Record exception"
-        tone="danger"
+        tone="danger-solid"
         onSubmit={submitException}
       />
     </section>

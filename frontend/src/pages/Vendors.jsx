@@ -11,7 +11,7 @@
  * anything is written.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Building2Icon, DownloadIcon, FileUpIcon, SparklesIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
@@ -1052,6 +1052,10 @@ export default function Vendors({ me }) {
   const [viewing, setViewing] = useState(null);
   const [intent, setIntent] = useState(null);
   const canManage = !!(me?.is_superuser || me?.capabilities?.manage_frameworks);
+  // An add-on that scores the register sends the features it has switched on
+  // with the signed-in user. On a core-only install `pro` is absent, so this is
+  // false and the link below is not drawn.
+  const hasPortfolio = Array.isArray(me?.pro?.features) && me.pro.features.includes("tprm.advanced");
   // Register is hidden while the form is open, so when the form closes
   // (Cancel, or a vendor registered) focus goes back to it rather than to
   // the page: the button that had focus went with the form.
@@ -1159,7 +1163,8 @@ export default function Vendors({ me }) {
         {/* ------------------------------------------------------------ register */}
         <div className="flex flex-col gap-4">
           <Panel className="overflow-hidden">
-            <PanelHeader title="Vendor register" meta={vendorsErr ? "- total" : `${vendors.length} total`}>
+            <PanelHeader title="Vendor register" meta={vendorsErr ? "- total" : `${vendors.length} total`}
+                         className={hasPortfolio ? "flex-wrap gap-y-1" : undefined}>
               {/* The panel is already titled "Vendor register", so the noun
                   would be on screen twice and the button would wrap to two
                   lines in the 300px column. The accessible name keeps the full
@@ -1173,6 +1178,14 @@ export default function Vendors({ me }) {
                         aria-label="Register a vendor" onClick={() => setCreating(true)}>
                   Register
                 </Button>
+              ) : null}
+              {/* The 300px column has no room for it beside the title, the
+                  count and the button, so it takes a line of its own below
+                  them, after the button in the tab order as on the screen. */}
+              {hasPortfolio ? (
+                <div className="basis-full text-xs">
+                  <Link to="/pro/tprm" className="text-xs text-muted underline underline-offset-4 hover:text-ink">Portfolio view</Link>
+                </div>
               ) : null}
             </PanelHeader>
             {canManage && creating ? (

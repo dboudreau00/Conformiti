@@ -24,6 +24,8 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 
+from .ooxml import unescape_xstring
+
 MAX_PARAGRAPHS = 3000
 MAX_TABLE_ROWS = 500
 MAX_SHEET_ROWS = 1000
@@ -224,7 +226,7 @@ def _shared_strings(zf):
         return []
     out = []
     for si in root.findall(f"{S}si"):
-        out.append("".join(t.text or "" for t in si.iter(f"{S}t")))
+        out.append(unescape_xstring("".join(t.text or "" for t in si.iter(f"{S}t"))))
     return out
 
 
@@ -268,10 +270,12 @@ def _cell_value(cell, shared):
         except (ValueError, IndexError):
             return ""
     if kind == "inlineStr":
-        return "".join(t.text or "" for t in cell.iter(f"{S}t"))
+        return unescape_xstring("".join(t.text or "" for t in cell.iter(f"{S}t")))
     if kind == "b":
         return "TRUE" if (v is not None and v.text == "1") else "FALSE"
-    return v.text if v is not None and v.text is not None else ""
+    text = v.text if v is not None and v.text is not None else ""
+    # A formula that returns text carries it in <v> with the same escapes.
+    return unescape_xstring(text) if kind == "str" else text
 
 
 def render_xlsx(data):

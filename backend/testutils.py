@@ -5,9 +5,12 @@ controls, the matching folder spine) rather than seeding the full 217-control
 library, so a class-level fixture costs milliseconds. Suites that specifically
 exercise the seed commands call them explicitly.
 """
+import io
 import shutil
 import tempfile
 import warnings
+import zipfile
+from xml.sax.saxutils import escape
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -73,6 +76,46 @@ def make_doc(folder, owner, name="Policy", cadence="annual", days=30, content=b"
 
 def grant(folder, role=None, user=None, level=VIEW):
     return FolderPermission.objects.create(folder=folder, role=role, user=user, access_level=level)
+
+
+def make_xlsx(rows, storage="inline"):
+    """A one-sheet .xlsx built by hand, enough for the stdlib readers.
+
+    ``rows`` are lists of text, written as given: &, < and > are escaped and
+    an ``_xHHHH_`` escape is left alone, so a test can craft what Excel would
+    write. ``storage`` is how the cells hold it: ``inline`` (inlineStr),
+    ``shared`` (the shared-strings table) or ``formula`` (a cached text result).
+    """
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    shared = []
+
+    def cell(ref, value):
+        text = escape(value)
+        if storage == "shared":
+            shared.append(text)
+            return f'<c r="{ref}" t="s"><v>{len(shared) - 1}</v></c>'
+        if storage == "formula":
+            return f'<c r="{ref}" t="str"><f>"x"</f><v>{text}</v></c>'
+        return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'
+
+    body = "".join(
+        f'<row r="{r}">' + "".join(cell(f"{chr(65 + c)}{r}", v) for c, v in enumerate(row)) + "</row>"
+        for r, row in enumerate(rows, start=1)
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("xl/workbook.xml", f'<workbook xmlns="{ns}" xmlns:r="{rel}"><sheets>'
+                                       '<sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        zf.writestr("xl/_rels/workbook.xml.rels",
+                    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    '<Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/></Relationships>')
+        zf.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="{ns}"><sheetData>{body}</sheetData></worksheet>')
+        if shared:
+            zf.writestr("xl/sharedStrings.xml", f'<sst xmlns="{ns}">' + "".join(
+                f'<si><t xml:space="preserve">{t}</t></si>' for t in shared) + "</sst>")
+    return buf.getvalue()
 
 
 class APITestBase(TestCase):

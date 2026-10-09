@@ -2,10 +2,11 @@
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 
 from documents.models import EDIT, MANAGE, VIEW, Document, Folder, FolderPermission
-from testutils import APITestBase, grant, make_doc
+from documents.ooxml import unescape_xstring
+from testutils import APITestBase, grant, make_doc, make_xlsx
 from audit.models import AuditLog
 import socketserver
 import struct
@@ -1017,6 +1018,46 @@ def _xlsx_simple(rows):
     return buf.getvalue()
 
 
+class OoxmlEscapeTests(SimpleTestCase):
+    """What a workbook's _xHHHH_ escapes mean (ECMA-376 22.4.2.4), shared by
+    the spreadsheet importers and the preview."""
+
+    CASES = [
+        ("a carriage return", "line one_x000D_", "line one\r"),
+        ("a carriage return and a line feed", "a_x000D__x000A_b", "a\r\nb"),
+        ("a tab", "a_x0009_b", "a\tb"),
+        ("upper case hex digits", "caf_x00E9_", "café"),
+        ("lower case hex digits", "caf_x00e9_", "café"),
+        ("an ordinary letter", "_x0041_", "A"),
+        ("an escaped underscore in front of an escape", "_x005F_x0041_", "_x0041_"),
+        ("an escaped underscore in front of an escaped underscore", "_x005F_x005F_", "_x005F_"),
+        ("a surrogate pair", "_xD83D__xDE00_", "\U0001F600"),
+        ("a surrogate pair in lower case", "_xd83d__xde00_", "\U0001F600"),
+        ("a pair beside a lone high surrogate", "_xD83D__xD83D__xDE00_", "_xD83D_\U0001F600"),
+        ("a high surrogate on its own", "a_xD83D_b", "a_xD83D_b"),
+        ("a low surrogate on its own", "a_xDE00_b", "a_xDE00_b"),
+        ("a pair the wrong way round", "_xDE00__xD83D_", "_xDE00__xD83D_"),
+        ("a NUL", "a_x0000_b", "a_x0000_b"),
+        ("too few digits", "_x12_", "_x12_"),
+        ("digits that are not hex", "_xZZZZ_", "_xZZZZ_"),
+        ("too many digits", "_x00041_", "_x00041_"),
+        ("a capital X", "_X0041_", "_X0041_"),
+        ("no closing underscore", "_x0041", "_x0041"),
+        ("no opening underscore", "x0041_", "x0041_"),
+        ("plain text", "Quarterly access review", "Quarterly access review"),
+        ("nothing", "", ""),
+    ]
+
+    def test_each_escape_reads_as_the_spec_says(self):
+        for what, written, meant in self.CASES:
+            with self.subTest(what):
+                self.assertEqual(unescape_xstring(written), meant)
+
+    def test_a_long_run_of_almost_escapes_stays_fast(self):
+        text = "_x" * 50_000 + "004"
+        self.assertEqual(unescape_xstring(text), text)
+
+
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -1081,6 +1122,19 @@ class PreviewTests(APITestBase):
         self.assertEqual(r.data["kind"], "xlsx")
         self.assertEqual(r.data["sheets"][0]["name"], "Data")
         self.assertEqual(r.data["sheets"][0]["rows"], [["Control", "Owner"], ["TC1.1", "Owen"]])
+
+    def test_excel_text_comes_back_with_its_character_escapes_decoded(self):
+        """Excel writes a carriage return as _x000D_ and the underscore of a
+        literal _xHHHH_ as _x005F_: the preview shows the text, not the escape,
+        whichever way the cell holds it."""
+        written = ["Line one_x000D__x000A_Line two", "_x005F_x0041_", "_xD83D__xDE00_", "_x12_", "a_x0000_b"]
+        meant = ["Line one\r\nLine two", "_x0041_", "\U0001F600", "_x12_", "a_x0000_b"]
+        for storage in ("inline", "shared", "formula"):
+            with self.subTest(storage=storage):
+                doc = self._doc(f"escapes-{storage}.xlsx", make_xlsx([written], storage))
+                r = self._preview(doc)
+                self.assertEqual(r.status_code, 200, r.data)
+                self.assertEqual(r.data["sheets"][0]["rows"], [meant])
 
     def test_text_and_csv_preview(self):
         doc = self._doc("notes.txt", b"plain text evidence")

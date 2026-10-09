@@ -336,7 +336,7 @@ def check_css(files):
     for accent in ("pine", "azure", "violet", "ember"):
         if f'[data-accent="{accent}"]' not in css:
             err("css", f"accent pack '{accent}' is not defined in styles/index.css")
-    for token in ("--bg", "--surface", "--surface-2", "--line", "--ink", "--muted", "--faint", "--accent", "--accent-ink", "--success", "--warning", "--danger", "--info", "--grid"):
+    for token in ("--bg", "--surface", "--surface-2", "--line", "--ink", "--muted", "--faint", "--accent", "--accent-ink", "--success", "--warning", "--danger", "--danger-ink", "--info", "--grid"):
         if f"{token}:" not in css:
             err("css", f"token {token} is not defined in styles/index.css")
     if os.path.exists(os.path.join(FRONTEND, "styles", "app.css")):

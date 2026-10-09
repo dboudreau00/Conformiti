@@ -413,7 +413,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
         initial={asking?.kind === "provide" ? asking.request.response_note || "" : ""}
         required={asking?.kind === "return" || !(asking?.request?.items || []).length}
         submitLabel={asking?.kind === "return" ? "Return" : "Mark provided"}
-        tone={asking?.kind === "return" ? "danger" : "primary"}
+        tone={asking?.kind === "return" ? "danger-solid" : "primary"}
         onSubmit={submitNote}
       />
     </Panel>

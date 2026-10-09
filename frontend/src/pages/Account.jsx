@@ -1192,7 +1192,6 @@ function WorkspacesBlock({ me }) {
       title: `Archive “${ws.name}”?`,
       description: "Its people can no longer sign in and it drops out of every scheduled job. Nothing is deleted, and it can be made active again.",
       confirmLabel: "Archive the workspace",
-      tone: "danger",
       onConfirm: () => reallyArchive(ws),
     });
   }
@@ -1367,7 +1366,7 @@ function AboutSection() {
       : signingKey?.enabled === false ? "Off"
         : signingKey?.per_workspace ? "One key per workspace" : "No key configured"],
     ...(signingKey?.fingerprint ? [["Signing key fingerprint", `sha256:${signingKey.fingerprint}`]] : []),
-    ["Licence", "MIT"],
+    ["Core licence", "MIT"],
   ];
 
   return (

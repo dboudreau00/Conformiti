@@ -15,6 +15,40 @@ test.describe("vendor register", () => {
     await expect(page.getByText("no matrix", { exact: true })).toHaveCount(1);
   });
 
+  test.describe("the portfolio view link", () => {
+    // An add-on that scores the register sends the features it has switched on
+    // with the signed-in user. Answer the shell's own request for that user
+    // with the field added, as an installation carrying the add-on would.
+    async function withFeatures(page, features) {
+      await page.route("**/api/users/me/", async (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        const response = await route.fetch();
+        const body = await response.json();
+        await route.fulfill({ response, json: { ...body, pro: { installed: true, features } } });
+      });
+    }
+    const portfolio = (page) => page.getByRole("link", { name: "Portfolio view", exact: true });
+
+    test("a core-only install does not draw it", async ({ page }) => {
+      await open(page, "/vendors", "Vendors");
+      await expect(page.getByRole("heading", { name: "Vendor register" })).toBeVisible();
+      await expect(portfolio(page)).toHaveCount(0);
+    });
+
+    test("an add-on that scores the register gets a link to its portfolio view", async ({ page }) => {
+      await withFeatures(page, ["packs.hipaa", "tprm.advanced"]);
+      await open(page, "/vendors", "Vendors");
+      await expect(portfolio(page)).toHaveAttribute("href", "/pro/tprm");
+    });
+
+    test("an add-on without that feature switched on does not", async ({ page }) => {
+      await withFeatures(page, ["packs.hipaa"]);
+      await open(page, "/vendors", "Vendors");
+      await expect(page.getByRole("heading", { name: "Vendor register" })).toBeVisible();
+      await expect(portfolio(page)).toHaveCount(0);
+    });
+  });
+
   test("a vendor's overview shows assurance posture, review clock and register entry", async ({ page }) => {
     await open(page, "/vendors", "Vendors");
     await page.getByRole("button", { name: /Amazon Web Services/ }).click();

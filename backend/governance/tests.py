@@ -7,7 +7,7 @@ from django.test import override_settings
 
 from governance.models import AccessReviewItem, Risk
 from governance.risk_import import normalize, parse_upload
-from testutils import APITestBase
+from testutils import APITestBase, make_xlsx
 
 
 class AccessReviewTests(APITestBase):
@@ -146,6 +146,72 @@ class RiskRegisterTests(APITestBase):
         rows = list(csv.reader(io.StringIO(export.content.decode())))
         titles = [r[0] for r in rows[1:]]
         self.assertIn("'=cmd|' /C calc'!A0", titles)
+
+
+class SpreadsheetEscapeTests(APITestBase):
+    """Excel writes a character XML cannot carry as _xHHHH_ (a carriage return
+    in a cell is "_x000D_") and the underscore of a literal one as _x005F_.
+    The reader decodes them in shared strings, inline strings and cached
+    formula text, and leaves alone what only looks like an escape."""
+
+    STORAGES = ("inline", "shared", "formula")
+
+    def read(self, rows, storage):
+        return parse_upload("register.xlsx", make_xlsx(rows, storage))
+
+    def test_a_carriage_return_is_decoded(self):
+        for storage in self.STORAGES:
+            with self.subTest(storage=storage):
+                rows = self.read([["Title", "Description"], ["Backups", "Line one_x000D__x000A_Line two"]], storage)
+                self.assertEqual(rows[1], ["Backups", "Line one\r\nLine two"])
+
+    def test_a_carriage_return_after_a_header_does_not_hide_the_column(self):
+        for storage in self.STORAGES:
+            with self.subTest(storage=storage):
+                recs, _, fatal = normalize(self.read([["Title_x000D_", "Status"], ["Backups", "Open"]], storage))
+                self.assertIsNone(fatal)
+                self.assertEqual(recs[0]["title"], "Backups")
+
+    def test_an_escaped_literal_reads_as_the_text_it_stood_for(self):
+        for storage in self.STORAGES:
+            with self.subTest(storage=storage):
+                rows = self.read([["Ref"], ["_x005F_x0041_"], ["_x005F_x005F_"]], storage)
+                self.assertEqual(rows[1:], [["_x0041_"], ["_x005F_"]])
+
+    def test_a_surrogate_pair_becomes_one_character(self):
+        for storage in self.STORAGES:
+            with self.subTest(storage=storage):
+                rows = self.read([["Ref"], ["Alert _xD83D__xDE00_"], ["Alert _xd83d__xde00_"]], storage)
+                self.assertEqual(rows[1:], [["Alert \U0001F600"], ["Alert \U0001F600"]])
+
+    def test_text_that_only_looks_like_an_escape_is_left_alone(self):
+        lookalikes = ["_x12_", "_xZZZZ_", "_x00041_", "_X0041_", "_x0041", "x0041_"]
+        for storage in self.STORAGES:
+            with self.subTest(storage=storage):
+                rows = self.read([["Ref"], *[[t] for t in lookalikes]], storage)
+                self.assertEqual(rows[1:], [[t] for t in lookalikes])
+
+    def test_an_import_stores_the_decoded_text(self):
+        rows = [["Title", "Description", "Notes"],
+                ["Vendor _x005F_x0041_ outage", "First line_x000D__x000A_Second line", "Seen _xD83D__xDE00_"]]
+        r = self.client_for(self.manager).post(
+            "/api/risks/import/", {"file": SimpleUploadedFile("reg.xlsx", make_xlsx(rows, "shared"))},
+            format="multipart")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["created"], 1)
+        risk = Risk.objects.get(title="Vendor _x0041_ outage")
+        self.assertEqual(risk.description, "First line\r\nSecond line")
+        self.assertEqual(risk.notes.get().text, "Seen \U0001F600")
+
+    def test_an_escape_that_cannot_be_stored_does_not_break_the_import(self):
+        """A NUL is refused by PostgreSQL and a lone surrogate cannot be encoded
+        as UTF-8, so neither is decoded: each stays as written."""
+        rows = [["Title", "Description"], ["Nul_x0000_", "x"], ["Half_xD83D_", "y"]]
+        r = self.client_for(self.manager).post(
+            "/api/risks/import/", {"file": SimpleUploadedFile("reg.xlsx", make_xlsx(rows))}, format="multipart")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["created"], 2)
+        self.assertEqual(set(Risk.objects.values_list("title", flat=True)), {"Nul_x0000_", "Half_xD83D_"})
 
 
 class NamelessAccountExportTests(APITestBase):

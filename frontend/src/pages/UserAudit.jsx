@@ -270,7 +270,7 @@ export default function UserAudit({ me }) {
             ? "No account will be deactivated: your own row is the only one marked Revoke, and a review never revokes its reviewer's access. Every decision becomes read-only evidence, and nothing can be changed afterwards."
             : "No row is marked Revoke, so no account changes. Every decision becomes read-only evidence, and nothing can be changed afterwards."}
         confirmLabel="Complete review"
-        tone={deactivating.length ? "danger" : "primary"}
+        tone={deactivating.length ? "danger-solid" : "primary"}
         onConfirm={complete}
       >
         {revoking.length ? (

@@ -23,11 +23,14 @@ import { cn } from "../../utils/cn.js";
 import { Button, IconButton } from "./Button.jsx";
 import { Label } from "./Panel.jsx";
 
-const FOCUSABLE = 'input, textarea, select, button:not([data-dialog-close]), [href], [tabindex]:not([tabindex="-1"])';
+// Two sets. A dialog opens on its first field or action, never on the Close
+// button; Tab, though, wraps over every enabled control, Close included.
+const INITIAL_FOCUS = 'input, textarea, select, button:not([data-dialog-close]), [href], [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])';
 
 // A disabled control matches the selector but cannot take focus.
 function firstField(root) {
-  return Array.from(root.querySelectorAll(FOCUSABLE)).find((n) => !n.disabled) || null;
+  return Array.from(root.querySelectorAll(INITIAL_FOCUS)).find((n) => !n.disabled) || null;
 }
 
 export function Dialog({ open, title, description, onClose, children, size = "md", className, closeOnOverlay = true, placement = "center" }) {
@@ -77,12 +80,12 @@ export function Dialog({ open, title, description, onClose, children, size = "md
       } else if (e.key === "Tab" && frame.current) {
         // Keep Tab inside the dialog. The page behind it is not inert, so
         // focus that is anywhere but one of the dialog's own controls (the
-        // frame, the close button, the page) is brought back to the first or
-        // last one rather than left to walk onto the page. With none enabled
-        // (a request in flight, or a dialog that only informs) the close
-        // button, else the frame, holds it.
+        // frame, the page) is brought back to the first or last one rather
+        // than left to walk onto the page. The close button is one of them
+        // and comes first, so the cycle runs Close, fields, actions, Close.
+        // While a request is in flight it is the only enabled control left.
         let nodes = Array.from(frame.current.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled);
-        if (!nodes.length) nodes = [frame.current.querySelector("[data-dialog-close]") || frame.current];
+        if (!nodes.length) nodes = [frame.current];
         const first = nodes[0];
         const last = nodes[nodes.length - 1];
         const current = document.activeElement;
@@ -215,8 +218,8 @@ export function TextDialog({
         {error ? <p className="notice notice-err mt-3" role="alert">{error}</p> : null}
         <div className="mt-4 flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant={tone} size="sm" disabled={invalid || busy}>
-            {busy ? "Working…" : submitLabel}
+          <Button type="submit" variant={tone} size="sm" busy={busy} disabled={invalid}>
+            {submitLabel}
           </Button>
         </div>
       </form>
@@ -224,7 +227,7 @@ export function TextDialog({
   );
 }
 
-export function ConfirmDialog({ open, title, description, confirmLabel = "Confirm", tone = "danger", onConfirm, onClose, children }) {
+export function ConfirmDialog({ open, title, description, confirmLabel = "Confirm", tone = "danger-solid", onConfirm, onClose, children }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => { if (open) { setBusy(false); setError(""); } }, [open]);
@@ -247,8 +250,8 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "Confir
       {error ? <p className="notice notice-err mt-3" role="alert">{error}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button type="button" variant={tone} size="sm" onClick={confirm} disabled={busy}>
-          {busy ? "Working…" : confirmLabel}
+        <Button type="button" variant={tone} size="sm" onClick={confirm} busy={busy}>
+          {confirmLabel}
         </Button>
       </div>
     </Dialog>
@@ -273,7 +276,9 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "Confir
  * The browser's own prompt is unstyled, unlabelled, dismissed by one wrong
  * keystroke and impossible to word carefully. `onConfirm` may be async: the
  * dialog stays open and shows a working state until it settles, and reports
- * a failure in place rather than closing over it.
+ * a failure in place rather than closing over it. The confirm button is the
+ * solid danger one; pass `tone: "primary"` for a question that destroys
+ * nothing.
  */
 export function useConfirm() {
   const [request, setRequest] = useState(null);
@@ -283,7 +288,7 @@ export function useConfirm() {
       title={request?.title || ""}
       description={request?.description}
       confirmLabel={request?.confirmLabel || "Confirm"}
-      tone={request?.tone || "danger"}
+      tone={request?.tone}
       onClose={() => setRequest(null)}
       onConfirm={async () => { await request?.onConfirm?.(); }}
     >

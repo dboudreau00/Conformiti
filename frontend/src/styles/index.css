@@ -30,6 +30,7 @@
   --success: 71 190 132;
   --warning: 226 165 62;
   --danger: 240 108 105;
+  --danger-ink: 32 9 6;
   --info: 108 160 245;
   --grid: 32 36 44;
   --accent: 92 150 250;
@@ -49,6 +50,7 @@
   --success: 21 128 61;
   --warning: 180 108 12;
   --danger: 190 46 46;
+  --danger-ink: 255 255 255;
   --info: 29 105 189;
   --grid: 233 230 223;
   --shadow-panel: 0 1px 2px rgb(35 30 22 / 0.05), 0 10px 26px -16px rgb(35 30 22 / 0.16);
@@ -67,6 +69,7 @@
   --success: 15 122 88;
   --warning: 176 104 10;
   --danger: 198 44 58;
+  --danger-ink: 255 255 255;
   --info: 30 100 200;
   --grid: 231 237 245;
   --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.05), 0 12px 28px -18px rgb(15 23 42 / 0.22);
@@ -85,6 +88,7 @@
   --success: 71 190 132;
   --warning: 226 165 62;
   --danger: 240 108 105;
+  --danger-ink: 32 9 6;
   --info: 108 160 245;
   --grid: 32 36 44;
   --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 16px 34px -22px rgb(0 0 0 / 0.9);
@@ -103,6 +107,7 @@
   --success: 62 197 133;
   --warning: 235 172 58;
   --danger: 251 113 105;
+  --danger-ink: 32 9 6;
   --info: 96 156 250;
   --grid: 24 28 35;
   --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 20px 44px -26px rgb(0 0 0 / 1);

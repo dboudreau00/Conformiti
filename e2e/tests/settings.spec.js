@@ -42,6 +42,16 @@ test.describe("account settings", () => {
     await expect(page.locator("#acct-title")).toHaveValue(value);
   });
 
+  test("the About row says it is the core's licence", async ({ page }) => {
+    await section(page, "About").click();
+    await expect(heading(page, "About")).toBeVisible();
+    // An add-on can carry a licence of its own, so the row names what it covers.
+    const row = page.getByRole("main").locator("dl > div").filter({ hasText: "Core licence" });
+    await expect(row.getByRole("term")).toHaveText("Core licence");
+    await expect(row.getByRole("definition")).toHaveText("MIT");
+    await expect(page.getByRole("main").getByText("Licence", { exact: true })).toHaveCount(0);
+  });
+
   test("the role section reports the signed-in user's capabilities", async ({ page }) => {
     await section(page, "Role & access").click();
     // The section's own panel: the card above the nav names the role

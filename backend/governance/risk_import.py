@@ -4,7 +4,9 @@ CSV / XLSX ingestion for the risk register.
 Parsing is deliberately dependency-free (stdlib ``csv``, ``zipfile`` and
 ``xml.etree``) so the importer works everywhere the app runs. An .xlsx file is
 a zip of XML; we read the first worksheet plus the shared-strings table, which
-covers files produced by Excel, Google Sheets and LibreOffice.
+covers files produced by Excel, Google Sheets and LibreOffice. The text Excel
+wrote as ``_x000D_`` and its kin is decoded by documents/ooxml.py, which is
+stdlib-only too.
 
 This module is Django-free on purpose: it turns bytes into normalized row
 dicts plus per-row issues. Resolving owners/controls and creating rows happens
@@ -16,6 +18,8 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
+
+from documents.ooxml import unescape_xstring
 
 MAX_FILE_BYTES = 2 * 1024 * 1024        # request-level guard (2 MB)
 MAX_UNZIPPED_BYTES = 20 * 1024 * 1024   # zip-bomb guard for xlsx
@@ -150,12 +154,14 @@ def _cell_text(cell, shared):
         except (ValueError, IndexError):
             return ""
     if t == "inlineStr":
-        return "".join(node.text or "" for node in cell.iter(f"{_XLSX_NS}t"))
+        return unescape_xstring("".join(node.text or "" for node in cell.iter(f"{_XLSX_NS}t")))
     if t == "b":
         v = cell.find(f"{_XLSX_NS}v")
         return "TRUE" if v is not None and v.text == "1" else "FALSE"
     v = cell.find(f"{_XLSX_NS}v")  # numbers, dates-as-serials, formula results
-    return (v.text or "").strip() if v is not None and v.text else ""
+    text = (v.text or "").strip() if v is not None and v.text else ""
+    # A formula that returns text carries it in <v> with the same escapes.
+    return unescape_xstring(text) if t == "str" else text
 
 
 def _read_xlsx(data):
@@ -182,7 +188,7 @@ def _read_xlsx(data):
         if "xl/sharedStrings.xml" in zf.namelist():
             root = ET.fromstring(_bounded_read(zf, "xl/sharedStrings.xml"))
             for si in root.iter(f"{_XLSX_NS}si"):
-                shared.append("".join(node.text or "" for node in si.iter(f"{_XLSX_NS}t")))
+                shared.append(unescape_xstring("".join(node.text or "" for node in si.iter(f"{_XLSX_NS}t"))))
 
         root = ET.fromstring(_bounded_read(zf, sheet_names[0]))
     except ET.ParseError:

@@ -127,3 +127,75 @@ test.describe("users, meetings and groups", () => {
     await expect(page.getByText("Security Champions").first()).toBeVisible();
   });
 });
+
+test.describe("destructive confirmations", () => {
+  const rgb = (page, token) => page.evaluate((name) =>
+    `rgb(${getComputedStyle(document.documentElement).getPropertyValue(name).trim().split(" ").join(", ")})`, token);
+
+  test("the confirm is the heavy button and Close sits inside the Tab cycle", async ({ page }) => {
+    await open(page, "/groups", "Champion groups");
+    await page.getByRole("button", { name: "Delete group", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: /^Delete .+\?$/ });
+    await expect(dialog).toBeVisible();
+    const close = dialog.getByRole("button", { name: "Close", exact: true });
+    const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
+    const confirm = dialog.getByRole("button", { name: "Delete group", exact: true });
+
+    // An opaque danger fill with the theme's ink on it, not the pale wash an
+    // inline Delete button wears on the page behind.
+    await expect(confirm).toHaveCSS("background-color", await rgb(page, "--danger"));
+    await expect(confirm).toHaveCSS("color", await rgb(page, "--danger-ink"));
+
+    // It opens on the safe action, never on Close, and Tab still reaches Close:
+    // Close, Cancel, Delete group, and round again, in either direction.
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(confirm).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(cancel).toBeFocused();
+
+    await cancel.click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test("a confirm shows its work in the button and leaves the label alone", async ({ page }) => {
+    await open(page, "/groups", "Champion groups");
+    // A group of its own, so the seeded one stays for everything else.
+    await page.locator("#cg-name").fill("E2E busy check");
+    await page.getByRole("button", { name: "Create group", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "E2E busy check", level: 2 })).toBeVisible();
+
+    // Hold the delete until the button has been looked at.
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    await page.route(/\/api\/champion-groups\/\d+\/$/, async (route) => {
+      if (route.request().method() !== "DELETE") return route.fallback();
+      await gate;
+      return route.continue();
+    });
+    try {
+      await page.getByRole("button", { name: "Delete group", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Delete E2E busy check?" });
+      const confirm = dialog.getByRole("button", { name: "Delete group", exact: true });
+      await confirm.click();
+
+      await expect(confirm).toHaveAttribute("aria-busy", "true");
+      await expect(confirm).toBeDisabled();
+      await expect(confirm).toHaveText("Delete group");
+      await expect(confirm.locator("svg.animate-spin")).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+      // `busy` is a prop, not an attribute: it must not reach the DOM.
+      expect(await confirm.getAttribute("busy")).toBeNull();
+
+      release();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole("heading", { name: "E2E busy check", level: 2 })).toHaveCount(0);
+    } finally {
+      release();
+    }
+  });
+});

@@ -56,6 +56,11 @@ test.describe("PBC request list", () => {
     await openLine.getByRole("button", { name: "Mark provided" }).click();
     const ask = page.getByRole("dialog", { name: "Mark PBC-03 provided" });
     await expect(ask).toBeVisible();
+    // It opens on the field, not on Close, and Shift+Tab from the field
+    // reaches Close rather than skipping it for the last button.
+    await expect(ask.getByLabel("Note")).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(ask.getByRole("button", { name: "Close", exact: true })).toBeFocused();
     await ask.getByLabel("Note").fill("Q1-Q4 sign-offs are in the access review export already in the package.");
     await ask.getByRole("button", { name: "Mark provided" }).click();
     await expect(ask).toBeHidden();

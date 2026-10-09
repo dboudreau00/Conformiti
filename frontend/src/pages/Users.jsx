@@ -163,7 +163,6 @@ export default function Users({ me }) {
       title: `Reset two-factor for ${u.username}?`,
       description: "Their authenticator and backup codes stop working. They set it up again the next time they sign in.",
       confirmLabel: "Reset two-factor",
-      tone: "danger",
       onConfirm: async () => {
         setBusyId(u.id);
         try {

@@ -20,6 +20,7 @@ export default {
         success: "rgb(var(--success) / <alpha-value>)",
         warning: "rgb(var(--warning) / <alpha-value>)",
         danger: "rgb(var(--danger) / <alpha-value>)",
+        "danger-ink": "rgb(var(--danger-ink) / <alpha-value>)",
         info: "rgb(var(--info) / <alpha-value>)",
       },
       // Stacks, not downloads: Inter and JetBrains Mono are used when the
