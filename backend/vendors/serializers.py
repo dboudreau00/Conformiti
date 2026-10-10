@@ -54,6 +54,14 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"expires_at": "Cannot expire before it was issued."})
         return attrs
 
+    def validate_vendor(self, vendor):
+        """An assessment belongs to the vendor it was made for. Re-pointing it
+        would move a vendor's SOC report, or a questionnaire its own invite is
+        linked to, onto another vendor's file."""
+        if self.instance is not None and vendor != self.instance.vendor:
+            raise serializers.ValidationError("An assessment cannot be moved to another vendor.")
+        return vendor
+
     def validate_answers(self, value):
         """Answers are keyed by the shipped question ids; anything else is a
         client bug rather than data."""

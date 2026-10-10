@@ -151,14 +151,21 @@ def run_vendor_scan(dry_run=False):
     for vendor, report in bridge_letter_gaps():
         if report.bridge_reminded_at:
             continue
-        try:
-            if not dry_run:
+        if not dry_run:
+            # Claim, then send (as the document and request scans do): two
+            # runs at once would both see "not yet chased" and both email.
+            now = timezone.now()
+            model = type(report)
+            claimed = model.objects.filter(pk=report.pk, bridge_reminded_at__isnull=True).update(
+                bridge_reminded_at=now)
+            if not claimed:
+                continue
+            try:
                 _notify_bridge(vendor, report)
-                report.bridge_reminded_at = timezone.now()
-                report.save(update_fields=["bridge_reminded_at"])
-        except Exception:
-            logger.exception("Bridge-letter reminder failed for vendor %s; will retry next run", vendor.pk)
-            continue
+            except Exception:
+                logger.exception("Bridge-letter reminder failed for vendor %s; will retry next run", vendor.pk)
+                model.objects.filter(pk=report.pk, bridge_reminded_at=now).update(bridge_reminded_at=None)
+                continue
         chased += 1
     return chased
 
@@ -313,8 +320,13 @@ def run_digests(dry_run=False, today=None):
             continue
         if user.digest_sent_at and timezone.localtime(user.digest_sent_at).date() >= today:
             continue
-        with tenancy.scoped(user.workspace_id):
-            items = digest_items(user)
+        try:
+            with tenancy.scoped(user.workspace_id):
+                items = digest_items(user)
+        except Exception:
+            # One person's tray failing must not stop everyone else's digest.
+            logger.exception("Digest for %s could not be built; will retry next run", user.pk)
+            continue
         if not items:
             continue
         groups = [(sev, [i for i in items if i["severity"] == sev]) for sev in SEVERITY_ORDER]
@@ -325,14 +337,23 @@ def run_digests(dry_run=False, today=None):
         }
         needs = "needs" if len(items) == 1 else "need"
         subject = f"[Conformiti] {count_of(len(items), 'item')} {needs} your attention"
-        try:
-            if not dry_run:
+        if not dry_run:
+            # Claim today's digest before sending it: a second run at the same
+            # moment finds the stamp already moved and sends nothing.
+            now = timezone.now()
+            with tenancy.unscoped():
+                claimed = User.objects.filter(pk=user.pk, digest_sent_at=user.digest_sent_at).update(
+                    digest_sent_at=now)
+            if not claimed:
+                continue
+            try:
                 send_templated_email(subject, "digest", context, [user.email])
-                user.digest_sent_at = timezone.now()
-                user.save(update_fields=["digest_sent_at"])
-        except Exception:
-            logger.exception("Digest for %s failed; will retry next run", user.pk)
-            continue
+            except Exception:
+                logger.exception("Digest for %s failed; will retry next run", user.pk)
+                with tenancy.unscoped():
+                    User.objects.filter(pk=user.pk, digest_sent_at=now).update(
+                        digest_sent_at=user.digest_sent_at)
+                continue
         sent += 1
     return sent
 
@@ -375,13 +396,19 @@ def run_all_scans(dry_run=False):
     """The morning pass, once per workspace. Returns per-workspace counts."""
     result = {}
     for workspace in tenancy.for_each_workspace():
-        result[workspace.slug] = {
-            "documents": run_review_scan(dry_run=dry_run),
-            "vendors": run_vendor_scan(dry_run=dry_run),
-            "pbc": run_pbc_scan(dry_run=dry_run),
-        }
-        if not dry_run:
-            post_daily_summary()
+        # One organisation's failure is its own: the loop carries on, so the
+        # rest of the installation still gets its morning pass.
+        try:
+            result[workspace.slug] = {
+                "documents": run_review_scan(dry_run=dry_run),
+                "vendors": run_vendor_scan(dry_run=dry_run),
+                "pbc": run_pbc_scan(dry_run=dry_run),
+            }
+            if not dry_run:
+                post_daily_summary()
+        except Exception:
+            logger.exception("Morning scan failed for workspace %s", workspace.slug)
+            result[workspace.slug] = None
     return result
 
 

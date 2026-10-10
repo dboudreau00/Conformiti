@@ -157,3 +157,42 @@ class JiraTokenAtRestTests(APITestBase):
 
     def test_the_admin_change_form_does_not_render_the_token(self):
         self.assertIn("api_token", JiraIntegrationAdmin.exclude)
+
+
+class JiraTransportTests(APITestBase):
+    """A slow or oversized answer from Jira is a clean JiraError, not a 500."""
+
+    def config(self):
+        return JiraIntegration(base_url="https://team.atlassian.net", email="a@b.co",
+                               api_token="tok", enabled=True)
+
+    def opener_returning(self, body=None, exc=None):
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        if exc:
+            response.read.side_effect = exc
+        else:
+            response.read.side_effect = lambda n=-1: body[:n] if n >= 0 else body
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+        return mock.patch("integrations.jira.outbound.opener", return_value=opener)
+
+    def test_a_timeout_while_reading_the_body_is_a_jira_error(self):
+        from integrations import jira
+        with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"), \
+                self.opener_returning(exc=TimeoutError("timed out")):
+            with self.assertRaisesRegex(JiraError, "Could not reach Jira"):
+                jira.verify(self.config())
+
+    def test_an_oversized_answer_is_refused(self):
+        from integrations import jira
+        with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"), \
+                self.opener_returning(body=b" " * (jira.MAX_RESPONSE_BYTES + 10)):
+            with self.assertRaisesRegex(JiraError, "larger"):
+                jira.verify(self.config())
+
+    def test_a_normal_answer_still_parses(self):
+        from integrations import jira
+        with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"), \
+                self.opener_returning(body=b'{"displayName": "Ada"}'):
+            self.assertIn("Ada", jira.verify(self.config()))

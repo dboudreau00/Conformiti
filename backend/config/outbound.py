@@ -124,6 +124,30 @@ _ALSO_NOT_PUBLIC = tuple(ipaddress.ip_network(n) for n in (
 ))
 
 
+# NAT64's well-known prefix (RFC 6052): the last 32 bits are an IPv4 address a
+# gateway will connect to on the sender's behalf.
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _embedded_ipv4(ip):
+    """The IPv4 address an IPv6 address wraps, or None.
+
+    ``::ffff:a.b.c.d`` (mapped), ``2002::/16`` (6to4: the address sits in bits
+    16 to 48) and ``64:ff9b::/96`` (NAT64) each carry one, and a gateway or a
+    host on the path may reach that address, so it is judged instead of the
+    wrapper.
+    """
+    if ip.version != 6:
+        return None
+    if ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    if ip.sixtofour is not None:
+        return ip.sixtofour
+    if ip in _NAT64:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return None
+
+
 def ip_is_public(ip_str):
     """False for anything the deployment network can reach privately.
 
@@ -135,9 +159,15 @@ def ip_is_public(ip_str):
     # ::ffff:100.64.0.1 is 100.64.0.1 as an IPv6 address. Python reports it
     # as neither private nor in any v4 network (the version check below would
     # compare a v6 address with a v4 range), so unwrap it first: 100.64.0.0/10
-    # is the range hosting providers put tenant networks in.
-    if getattr(ip, "ipv4_mapped", None) is not None:
-        ip = ip.ipv4_mapped
+    # is the range hosting providers put tenant networks in. The same goes for
+    # 6to4 (2002:a00:1:: is 10.0.0.1) and NAT64 (64:ff9b::a00:1 is 10.0.0.1).
+    embedded = _embedded_ipv4(ip)
+    if embedded is not None:
+        ip = embedded
+    # Teredo (2001::/32) tunnels IPv6 over UDP through a server and hides the
+    # client's IPv4 address; there is no reason for a webhook to live there.
+    elif ip.version == 6 and ip.teredo is not None:
+        return False
     if (ip.is_private or ip.is_loopback or ip.is_link_local
             or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
         return False

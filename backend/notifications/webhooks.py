@@ -23,11 +23,12 @@ S-2).
 import json
 import logging
 import threading
+import time
 import urllib.error
 import urllib.request
 
 from django.conf import settings
-from django.db import connection
+from django.db import connection, transaction
 
 from config import outbound
 
@@ -178,7 +179,37 @@ def _record(event, channel, ok, code=None, error=""):
         logger.exception("Failed to record a webhook delivery")
 
 
-def _post(channel, url, payload, event):
+#: How long the delivery thread waits before its one retry. A constant, not a
+#: setting: it is a courtesy to a service that just hiccuped, nothing to tune.
+RETRY_DELAY_SECONDS = 2.0
+#: Answers worth a second try: the service was busy or in the middle of
+#: something. Anything else in the 4xx range will answer the same way again.
+_RETRYABLE_HTTP = {408, 429}
+
+
+def _attempt(request, timeout, pinned):
+    """One POST. Returns ``(ok, code, error, retryable)``."""
+    try:
+        with _open(request, timeout, pinned) as response:
+            code = getattr(response, "status", 200)
+            return 200 <= code < 300, code, "", False
+    except outbound.OutboundError as exc:  # a redirect, after every check passed
+        return False, None, f"refused: {exc}", False
+    except urllib.error.HTTPError as exc:
+        return False, exc.code, f"HTTP {exc.code}", exc.code >= 500 or exc.code in _RETRYABLE_HTTP
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        # Could not connect, or timed out: the service may simply be briefly away.
+        return False, None, str(exc), not isinstance(exc, ValueError)
+
+
+def _post(channel, url, payload, event, retry=False):
+    """Post one payload and record the outcome once.
+
+    ``retry`` allows one more attempt, after a short pause, when the first
+    failed in a way that may be passing (a connection error, a timeout, a 5xx,
+    a 429). Only the delivery thread asks for it: a caller that posts
+    synchronously wants its answer now.
+    """
     timeout = float(getattr(settings, "WEBHOOK_TIMEOUT", 5))
     if not url.lower().startswith("https://"):
         _record(event, channel, False, None, "refused: webhook URL is not https")
@@ -194,24 +225,20 @@ def _post(channel, url, payload, event):
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, method="POST", headers={
         "Content-Type": "application/json", "User-Agent": "Conformiti"})
-    try:
-        with _open(request, timeout, pinned) as response:
-            code = getattr(response, "status", 200)
-            _record(event, channel, 200 <= code < 300, code)
-            return 200 <= code < 300
-    except outbound.OutboundError as exc:  # a redirect, after every check passed
-        _record(event, channel, False, None, f"refused: {exc}")
-    except urllib.error.HTTPError as exc:
-        _record(event, channel, False, exc.code, f"HTTP {exc.code}")
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        _record(event, channel, False, None, str(exc))
-    return False
+    ok, code, error, retryable = _attempt(request, timeout, pinned)
+    if not ok and retry and retryable:
+        time.sleep(RETRY_DELAY_SECONDS)
+        ok, code, error, _ = _attempt(request, timeout, pinned)
+        if not ok:
+            error = f"{error} (after one retry)"
+    _record(event, channel, ok, code, error)
+    return ok
 
 
 def _deliver(jobs):
     try:
         for channel, url, payload, event in jobs:
-            _post(channel, url, payload, event)
+            _post(channel, url, payload, event, retry=True)
     finally:
         connection.close()
 
@@ -219,7 +246,12 @@ def _deliver(jobs):
 def post_event(event, title, text, *, facts=None, path="", severity="info", sync=None):
     """Post one event to every configured channel. Returns the channels
     attempted (an empty list when nothing is configured or the event is not
-    in the allow-list). Asynchronous unless ``sync`` (or WEBHOOK_SYNC)."""
+    in the allow-list). Asynchronous unless ``sync`` (or WEBHOOK_SYNC).
+
+    Asynchronously, delivery starts when the surrounding transaction commits,
+    so an event raised inside a request that later rolls back is never
+    announced, and each delivery gets one retry. Synchronously it is posted at
+    once, one attempt, whatever the transaction does."""
     if not allowed(event):
         return []
     targets = channels()
@@ -239,5 +271,10 @@ def post_event(event, title, text, *, facts=None, path="", severity="info", sync
         for channel, hook, payload, ev in jobs:
             _post(channel, hook, payload, ev)
     else:
-        threading.Thread(target=_deliver, args=(jobs,), daemon=True, name="conformiti-webhook").start()
+        def start():
+            threading.Thread(target=_deliver, args=(jobs,), daemon=True, name="conformiti-webhook").start()
+
+        # Runs at once outside a transaction; robust, so a failure to start
+        # the thread is logged and never breaks the request that raised it.
+        transaction.on_commit(start, robust=True)
     return [name for name, _ in targets]

@@ -208,6 +208,19 @@ class AssuranceTests(APITestBase):
         self.assertEqual(r.status_code, 400, r.data)
         self.assertIn("document", r.data)
 
+    def test_an_assessment_cannot_be_moved_to_another_vendor(self):
+        mine, other = _vendor(), _vendor(name="Other Co")
+        c = self.client_for(self.manager)
+        made = c.post("/api/vendor-assessments/", {"vendor": mine.pk, "kind": "soc2_type2"}, format="json")
+        self.assertEqual(made.status_code, 201, made.data)
+        url = f"/api/vendor-assessments/{made.data['id']}/"
+        r = c.patch(url, {"vendor": other.pk}, format="json")
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertIn("vendor", r.data)
+        # Saying the same vendor again is not a move.
+        self.assertEqual(c.patch(url, {"vendor": mine.pk, "title": "FY26"}, format="json").status_code, 200)
+        self.assertEqual(VendorAssessment.objects.get(pk=made.data["id"]).vendor_id, mine.pk)
+
     def test_questionnaire_answers_are_validated_against_the_shipped_questions(self):
         v = _vendor()
         c = self.client_for(self.manager)

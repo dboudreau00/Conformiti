@@ -43,8 +43,9 @@ export function ControlPicker({
       const rank = ref === needle ? 0 : ref.startsWith(needle) ? 1
         : title.startsWith(needle) ? 2
           : ref.includes(needle) || title.includes(needle) ? 3 : -1;
+      // Every match is ranked before the list is cut: stopping early let a
+      // few hundred loose matches crowd out the exact reference typed in full.
       if (rank >= 0) scored.push([rank, c]);
-      if (scored.length > limit * 6) break;
     }
     scored.sort((a, b) => a[0] - b[0]);
     return scored.slice(0, limit).map(([, c]) => c);

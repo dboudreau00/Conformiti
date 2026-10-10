@@ -16,8 +16,10 @@ says what changed and what to expect on upgrade.
 Plainer wording throughout, a clearer confirmation before something is
 deleted, a spreadsheet reader that decodes Excel's character escapes, macro
 scanning that reaches OpenDocument and renamed archives, a safer default
-for `DJANGO_DEBUG`, a tighter hand on who may change a risk, and signing
-that no longer fails silently. No migration and no stored data changed.
+for `DJANGO_DEBUG`, a tighter hand on who may change a risk, signing that no
+longer fails silently, chat messages that are retried and never announce a
+rolled-back change, and a wider guard on outbound addresses. No migration
+and no stored data changed.
 
 **On upgrade.** When `DJANGO_DEBUG` is not set anywhere, the application
 now starts with debug off, where it used to start with it on. The Docker
@@ -106,6 +108,44 @@ both ways.
 moved off no longer replaces the access list or the detail now on screen,
 and two requests that fail at once no longer clear each other's token
 refresh.
+
+**Chat messages.** A Slack or Teams message is sent when the change that
+raised it has been saved, so an event inside a request that then rolls back
+is never announced, and a failure that may pass (a connection error, a
+timeout, a 5xx, a 429 or a 408) is tried once more after two seconds. Each
+delivery is still one row in the delivery log, and a second failure says
+"after one retry". Refusals and other 4xx answers are not retried, and a
+message posted synchronously is still one attempt.
+
+**Outbound addresses.** The check on where the server may connect now looks
+through 6to4 (`2002::/16`) and NAT64 (`64:ff9b::/96`) addresses to the IPv4
+address inside, as it already did for IPv4-mapped ones, and refuses Teredo
+(`2001::/32`) outright, so none of them reaches a private address by being
+wrapped in IPv6. Jira answers are read up to 5 MB, and a timeout while the
+answer is being read is reported as Jira being unreachable.
+
+**Evidence bundles.** Every file in an exported bundle extracts as an
+ordinary readable file; before, `unzip` on Linux and macOS created them with
+no permissions and the auditor's first `sha256sum -c` failed. `trail.csv`
+holds up to 50,000 entries, oldest first, where it held 5,000, and when a
+package has more the README says how many it holds of how many, instead of
+cutting quietly. A bundle whose `verify.py` cannot be read now fails to
+export, where it used to leave the script out while the README sent the
+reader to it.
+
+**Scheduled work.** One workspace failing no longer stops the rest: the
+morning scans and the daily readiness snapshot log the failure and go on.
+A digest or bridge-letter reminder is claimed before it is sent, so two runs
+at once cannot both send it, and the claim is handed back when the send
+fails, so the next run tries again. A person whose digest cannot be built no
+longer stops everyone else's.
+
+**Vendors.** An assessment can no longer be moved to another vendor, which
+would have put one vendor's report on another's file, and the register's CSV
+export asks for its counts in the one query instead of two per vendor. After
+a base-URL change that switches the Jira integration off, the page says so.
+The control picker ranks every match before it cuts the list, so the
+reference typed in full is not crowded out by looser ones.
 
 **Signing.** The signing key registry finds a key by the whole public key,
 where it used to find it by the 16-character id, which stays as the label

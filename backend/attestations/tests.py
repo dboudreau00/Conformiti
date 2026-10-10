@@ -481,6 +481,12 @@ class BundleTests(PackageTestBase):
             digest, _, member = line.partition("  ")
             self.assertEqual(mf.sha256_hex(zf.read(member)), digest, member)
 
+    def test_every_member_extracts_as_a_readable_file(self):
+        _, zf = self._export()
+        for info in zf.infolist():
+            mode = (info.external_attr >> 16) & 0o777
+            self.assertEqual(mode & 0o400, 0o400, f"{info.filename} would extract unreadable (mode {mode:o})")
+
     def test_the_evidence_bytes_are_in_the_bundle_at_the_manifest_path(self):
         _, zf = self._export()
         manifest = json.loads(zf.read("manifest.json"))

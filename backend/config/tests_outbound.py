@@ -41,6 +41,30 @@ class PublicAddressTests(TestCase):
         for address in ("93.184.216.34", "1.1.1.1", "2606:4700::1111"):
             self.assertTrue(outbound.ip_is_public(address), address)
 
+    def test_an_ipv4_address_inside_an_ipv6_one_is_judged_as_the_ipv4_address(self):
+        # 6to4 (2002::/16): the IPv4 address is bits 16 to 48.
+        for address in ("2002:0a00:0001::1",        # 10.0.0.1
+                        "2002:7f00:0001::",         # 127.0.0.1
+                        "2002:a9fe:a9fe::1",        # 169.254.169.254
+                        "2002:c0a8:0101::1",        # 192.168.1.1
+                        # NAT64 (64:ff9b::/96): the last 32 bits.
+                        "64:ff9b::a00:1",           # 10.0.0.1
+                        "64:ff9b::7f00:1",          # 127.0.0.1
+                        "64:ff9b::a9fe:a9fe",       # 169.254.169.254
+                        # IPv4-mapped.
+                        "::ffff:10.0.0.1"):
+            self.assertFalse(outbound.ip_is_public(address), address)
+        for address in ("2002:5db8:d822::1",        # 93.184.216.34
+                        "64:ff9b::5db8:d822",       # 93.184.216.34
+                        "::ffff:93.184.216.34"):
+            self.assertTrue(outbound.ip_is_public(address), address)
+
+    def test_teredo_is_never_public(self):
+        for address in ("2001:0:4136:e378:8000:63bf:3fff:fdd2", "2001:0:5ef5:79fd:0:0:0:1"):
+            self.assertFalse(outbound.ip_is_public(address), address)
+        # The rest of 2001::/16 is ordinary address space.
+        self.assertTrue(outbound.ip_is_public("2001:4860:4860::8888"))
+
 
 class ShapeTests(TestCase):
     def refused(self, url, code, **kwargs):

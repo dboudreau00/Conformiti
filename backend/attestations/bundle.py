@@ -31,6 +31,20 @@ def _read_chunks(fh, size=64 * 1024):
         yield chunk
 
 
+def _member_info(name, stamp, compressed=False):
+    """A ZipInfo that extracts as an ordinary readable file.
+
+    A bare ``ZipInfo`` carries no permission bits, and ``unzip`` on Linux and
+    macOS then creates the member with mode 000: the auditor's first
+    ``sha256sum -c SHA256SUMS`` fails with "Permission denied" for every file.
+    """
+    info = zipfile.ZipInfo(name, date_time=stamp)
+    info.external_attr = 0o644 << 16
+    if compressed:
+        info.compress_type = zipfile.ZIP_DEFLATED
+    return info
+
+
 def _iso(value):
     return value.isoformat() if value else None
 
@@ -283,15 +297,23 @@ def evidence_csv(package, actual):
     return _csv_bytes(header, rows)
 
 
-def trail_csv(package):
-    """The audit-trail extract.
+#: The most audit entries trail.csv carries, oldest first. A package that has
+#: more says so in the README and in the export summary instead of cutting
+#: quietly.
+TRAIL_LIMIT = 50_000
+TRAIL_HEADER = ["Timestamp", "Actor", "Action", "Record type", "Record id", "Detail"]
+
+
+def trail_rows(package):
+    """``(rows, total)``: the audit entries for the package's documents in its
+    period, oldest first and at most TRAIL_LIMIT of them, and how many there
+    were.
 
     No IP addresses: this file is designed to leave the building, and staff
     network addresses have no business in it.
     """
     from audit.models import AuditLog
 
-    header = ["Timestamp", "Actor", "Action", "Record type", "Record id", "Detail"]
     document_ids = {
         str(pk) for pk in PackageEvidence.objects.filter(
             package_control__package=package, document__isnull=False
@@ -303,9 +325,15 @@ def trail_csv(package):
     rows = [
         [e.timestamp.isoformat(), e.user.get_username() if e.user_id else "",
          e.action, e.object_type, e.object_id, e.detail]
-        for e in entries.order_by("timestamp")[:5000]
+        for e in entries.select_related("user").order_by("timestamp", "pk")[:TRAIL_LIMIT]
     ]
-    return _csv_bytes(header, rows)
+    total = len(rows) if len(rows) < TRAIL_LIMIT else entries.count()
+    return rows, total
+
+
+def trail_csv(package):
+    """The audit-trail extract as CSV bytes."""
+    return _csv_bytes(TRAIL_HEADER, trail_rows(package)[0])
 
 
 def readme_text(package, digest, summary):
@@ -331,6 +359,9 @@ def readme_text(package, digest, summary):
         f"Evidence files   {summary['items']}",
         f"Not tested       {summary['not_tested']}",
         f"Sample items     {summary['samples']} ({summary['sample_exceptions']} exception(s))",
+        *([f"Audit trail      trail.csv holds the first {summary['trail_shown']} of "
+           f"{summary['trail_entries']} entries, oldest first; ask the organisation for the rest"]
+          if summary.get("trail_truncated") else []),
         "",
         "MANAGEMENT ASSERTION",
         "--------------------",
@@ -440,9 +471,7 @@ def write_bundle(package, fh):
 
     with zipfile.ZipFile(fh, "w", zipfile.ZIP_DEFLATED) as zf:
         def write(name, data):
-            info = zipfile.ZipInfo(name, date_time=stamp)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            zf.writestr(info, data)
+            zf.writestr(_member_info(name, stamp, compressed=True), data)
             members[name] = mf.sha256_hex(data)
 
         # Evidence first: writing streams the bytes and gives the digests
@@ -464,8 +493,7 @@ def write_bundle(package, fh):
             # The bytes this row sealed, not whatever the document holds now.
             sealed_file, _ = pinned_file(row)
             if sealed_file:
-                info = zipfile.ZipInfo(row.member_path, date_time=stamp)
-                info.compress_type = zipfile.ZIP_DEFLATED
+                info = _member_info(row.member_path, stamp, compressed=True)
                 try:
                     source = sealed_file.open("rb")
                 except (FileNotFoundError, OSError, ValueError):
@@ -523,19 +551,21 @@ def write_bundle(package, fh):
         write("controls.csv", controls_csv(package))
         write("evidence.csv", evidence_csv(package, actual))
         write("samples.csv", samples_csv(package))
-        write("trail.csv", trail_csv(package))
+        trail, trail_total = trail_rows(package)
+        summary["trail_entries"], summary["trail_shown"] = trail_total, len(trail)
+        summary["trail_truncated"] = trail_total > len(trail)
+        write("trail.csv", _csv_bytes(TRAIL_HEADER, trail))
         write("INTEGRITY.txt", (integrity_line + "\n").encode("utf-8"))
         write("README.txt", readme_text(package, digest, summary))
-        try:
-            write("verify.py", VERIFIER.read_bytes())
-        except OSError:
-            pass
+        # Not optional: the README tells the reader to run it, so a bundle
+        # without it is not one to hand over. Failing here is loud on purpose.
+        write("verify.py", VERIFIER.read_bytes())
 
         # Last, so it can describe everything else.
         checksums = "".join(
             f"{members[name]}  {name}\n" for name in sorted(members)
         ).encode("utf-8")
-        zf.writestr(zipfile.ZipInfo("SHA256SUMS", date_time=stamp), checksums)
+        zf.writestr(_member_info("SHA256SUMS", stamp), checksums)
 
         # Sign SHA256SUMS, which puts the rest of the bundle inside a
         # signature. The manifest signature is made at seal and covers only
@@ -547,9 +577,9 @@ def write_bundle(package, fh):
         sums_signature = signing.sign_bytes(checksums)
         if sums_signature is not None:
             signature_b64, _kid, public_b64 = sums_signature
-            zf.writestr(zipfile.ZipInfo("SHA256SUMS.sig", date_time=stamp),
+            zf.writestr(_member_info("SHA256SUMS.sig", stamp),
                         (signature_b64 + "\n").encode("ascii"))
-            zf.writestr(zipfile.ZipInfo("sums-key.pub", date_time=stamp),
+            zf.writestr(_member_info("sums-key.pub", stamp),
                         signing.public_pem(signing.public_from_b64(public_b64)).encode("ascii"))
 
     summary["manifest_sha256"] = digest

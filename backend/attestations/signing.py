@@ -244,6 +244,8 @@ def verify_bytes(raw, signature_b64, public_key_b64):
 def register_key(public_key_b64):
     """Record the key that just signed as current; anything else still marked
     current is retired as of now (a rotation made without the command)."""
+    from django.db import IntegrityError, transaction
+
     from .models import SigningKey
 
     from accounts import tenancy
@@ -253,8 +255,14 @@ def register_key(public_key_b64):
     # The row is found by the whole public key. The short id is a label for
     # people to compare and is unique, so a different key that happens to share
     # it makes this fail (an IntegrityError) rather than reuse the other key's row.
-    row, _ = SigningKey.objects.get_or_create(
-        public_key=public_key_b64, defaults={"key_id": kid, "workspace_id": workspace_id})
+    try:
+        with transaction.atomic():
+            row, _ = SigningKey.objects.get_or_create(
+                public_key=public_key_b64, defaults={"key_id": kid, "workspace_id": workspace_id})
+    except IntegrityError:
+        raise ImproperlyConfigured(
+            f"Signing key id {kid} is already registered for a different public key; "
+            "rotate the signing key.")
     if row.retired_at is not None or row.workspace_id != workspace_id:
         row.retired_at = None
         row.workspace_id = workspace_id

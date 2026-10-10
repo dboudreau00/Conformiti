@@ -327,8 +327,7 @@ class VendorViewSet(viewsets.ModelViewSet):
                 v.name, v.category, v.get_tier_display(), v.get_status_display(), v.data_handled,
                 person_name(v.owner), a["posture"], a["current"], a["expired"],
                 v.risk_rating(), v.next_review_date or "",
-                v.shared_responsibilities.values("control_id").distinct().count(),
-                v.risks.filter(status__in=("open", "mitigating")).count(),
+                v.n_controls, v.n_open_risks,     # annotated by get_queryset
             ]))
         return response
 

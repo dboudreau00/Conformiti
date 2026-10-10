@@ -366,6 +366,61 @@ class JobsTests(TwoWorkspaces):
         self.assertIn("Beta policy", body)
         self.assertNotIn("Alpha policy", body)
 
+    def test_one_workspace_failing_does_not_stop_the_others(self):
+        from unittest import mock
+
+        from analytics import tasks as analytics_tasks
+        from notifications import tasks as notify_tasks
+
+        real = notify_tasks.run_review_scan
+        calls = []
+
+        def flaky(dry_run=False):
+            calls.append(tenancy.current().slug)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return real(dry_run=dry_run)
+
+        with mock.patch.object(notify_tasks, "run_review_scan", flaky), \
+                self.assertLogs("notifications.tasks", "ERROR"):
+            result = notify_tasks.run_all_scans(dry_run=True)
+        self.assertEqual(sorted(calls), ["beta", "default"])
+        self.assertEqual(sum(v is None for v in result.values()), 1)
+        self.assertEqual(sum(v is not None for v in result.values()), 1)
+
+        seen = []
+        real_record = analytics_tasks.record_today
+
+        def flaky_record(force=False, scored=None):
+            seen.append(tenancy.current().slug)
+            if len(seen) == 1:
+                raise RuntimeError("boom")
+            return real_record(force=force, scored=scored)
+
+        with mock.patch.object(analytics_tasks, "record_today", flaky_record), \
+                self.assertLogs("analytics.tasks", "ERROR"):
+            out = analytics_tasks.record_readiness_snapshot()
+        self.assertEqual(sorted(seen), ["beta", "default"])
+        self.assertEqual(sum(v is None for v in out.values()), 1)
+
+    def test_a_failed_digest_send_hands_the_claim_back(self):
+        from unittest import mock
+
+        from notifications import tasks as notify_tasks
+        from notifications.tasks import run_digests
+
+        self.b_admin.digest = User.Digest.DAILY
+        self.b_admin.save(update_fields=["digest"])
+        with mock.patch.object(notify_tasks, "send_templated_email", side_effect=RuntimeError("smtp down")), \
+                self.assertLogs("notifications.tasks", "ERROR"):
+            self.assertEqual(run_digests(), 0)
+        self.b_admin.refresh_from_db()
+        self.assertIsNone(self.b_admin.digest_sent_at)
+        self.assertEqual(run_digests(), 1)          # retried, and sent once
+        self.assertEqual(run_digests(), 0)          # and not twice
+        self.b_admin.refresh_from_db()
+        self.assertIsNotNone(self.b_admin.digest_sent_at)
+
     def test_seed_frameworks_targets_one_workspace(self):
         call_command("seed_frameworks", "--roles-only", "--workspace", "beta", verbosity=0, stdout=StringIO())
         with tenancy.scoped(self.beta):

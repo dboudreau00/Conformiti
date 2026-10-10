@@ -51,3 +51,38 @@ class PointDecodingTests(SimpleTestCase):
         sig = key.sign(message)
         self.assertTrue(verifier.ed25519_verify(signing.public_raw(key.public_key()), message, sig))
         self.assertFalse(verifier.ed25519_verify(signing.public_raw(key.public_key()), message + b"x", sig))
+
+
+class KeyIdentityTests(SimpleTestCase):
+    def test_a_blank_key_file_is_an_error_not_silent_unsigned(self):
+        from django.core.exceptions import ImproperlyConfigured
+        from django.test import override_settings
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "blank.pem"
+            path.write_text("  \n", encoding="utf-8")
+            with override_settings(SIGNING_KEY="", SIGNING_KEY_FILE=str(path)):
+                signing._cache.update(path=None, mtime=None, key=None)
+                with self.assertRaises(ImproperlyConfigured):
+                    signing.load_private_key(create=True)
+                signing._cache.update(path=None, mtime=None, key=None)
+
+
+from attestations.tests import PackageTestBase  # noqa: E402
+
+
+class KeyRegistrationTests(PackageTestBase):
+    def test_a_colliding_short_id_cannot_take_over_a_registered_key(self):
+        from django.core.exceptions import ImproperlyConfigured
+        from unittest import mock
+
+        from attestations.models import SigningKey
+
+        mine = signing.active_private_key().public_key()
+        signing.register_key(signing.public_b64(mine))
+        other = signing.ed25519.Ed25519PrivateKey.generate().public_key()
+        with mock.patch.object(signing, "key_id", return_value=signing.key_id(mine)):
+            with self.assertRaises(ImproperlyConfigured):
+                signing.register_key(signing.public_b64(other))
+        row = SigningKey.objects.get(key_id=signing.key_id(mine))
+        self.assertEqual(row.public_key, signing.public_b64(mine))

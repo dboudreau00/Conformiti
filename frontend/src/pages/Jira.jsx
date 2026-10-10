@@ -117,8 +117,12 @@ export default function Jira({ me }) {
       if (form.api_token) payload.api_token = form.api_token;
       const { data } = await api.patch("/integrations/jira/config/", payload);
       setConfig(data);
-      setForm((f) => ({ ...f, api_token: "" }));
-      setMsg({ ok: true, text: "Configuration saved." });
+      // The server turns the integration off (and drops the saved token) when
+      // the base URL moves to another host; show what it kept, not what was sent.
+      setForm((f) => ({ ...f, api_token: "", enabled: !!data.enabled }));
+      setMsg(data.enabled === !!form.enabled
+        ? { ok: true, text: "Configuration saved." }
+        : { ok: true, text: "Configuration saved. The integration was switched off because the host changed: enter the API token again and re-enable it." });
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't save. Check the base URL format.") });
     } finally {

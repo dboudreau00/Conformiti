@@ -1,5 +1,6 @@
 """Slack / Teams webhooks and the emailed digest."""
 import json
+import urllib.error
 from io import StringIO
 from unittest import mock
 
@@ -56,6 +57,106 @@ class WebhookTests(PackageTestBase):
         self.patcher = mock.patch("notifications.webhooks._open", self.http)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
+
+    def failing(self, *outcomes):
+        """A stand-in for _open that answers each call with the next outcome:
+        an HTTP status, or an exception to raise."""
+        calls = []
+
+        def send(request, timeout=None, pinned_ip=None):
+            outcome = outcomes[min(len(calls), len(outcomes) - 1)]
+            calls.append(outcome)
+            if isinstance(outcome, Exception):
+                raise outcome
+            if outcome >= 400:
+                raise urllib.error.HTTPError(request.full_url, outcome, "x", {}, None)
+            fake = mock.MagicMock()
+            fake.__enter__.return_value.status = outcome
+            return fake
+
+        self.patcher.stop()
+        patcher = mock.patch("notifications.webhooks._open", send)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patch_sleep = mock.patch("notifications.webhooks.time.sleep")
+        self.sleep = patch_sleep.start()
+        self.addCleanup(patch_sleep.stop)
+        return calls
+
+    def test_a_failure_that_may_pass_is_tried_once_more(self):
+        for first in (503, 502, 429, 408, urllib.error.URLError("connection reset")):
+            with self.subTest(first=str(first)):
+                WebhookDelivery.objects.all().delete()
+                calls = self.failing(first, 200)
+                self.assertTrue(webhooks._post("slack", SLACK_HOOK, {"text": "x"}, "test", retry=True))
+                self.assertEqual(len(calls), 2)
+                rows = WebhookDelivery.objects.all()
+                self.assertEqual(rows.count(), 1)            # one delivery, one row
+                self.assertTrue(rows.get().ok)
+
+    def test_a_second_failure_is_recorded_with_the_retry_noted(self):
+        calls = self.failing(503)
+        self.assertFalse(webhooks._post("slack", SLACK_HOOK, {"text": "x"}, "test", retry=True))
+        self.assertEqual(len(calls), 2)
+        row = WebhookDelivery.objects.get()
+        self.assertFalse(row.ok)
+        self.assertEqual(row.response_code, 503)
+        self.assertIn("after one retry", row.error)
+        self.sleep.assert_called_once()
+
+    def test_what_will_answer_the_same_way_is_not_retried(self):
+        for status in (400, 401, 403, 404, 410):
+            with self.subTest(status=status):
+                calls = self.failing(status)
+                self.assertFalse(webhooks._post("slack", SLACK_HOOK, {"text": "x"}, "test", retry=True))
+                self.assertEqual(len(calls), 1)
+        self.sleep.assert_not_called()
+
+    def test_a_synchronous_post_makes_one_attempt(self):
+        calls = self.failing(503)
+        self.assertFalse(webhooks._post("slack", SLACK_HOOK, {"text": "x"}, "test"))
+        self.assertEqual(len(calls), 1)
+        self.sleep.assert_not_called()
+
+    def test_a_refused_host_is_not_retried_or_sent(self):
+        calls = self.failing(200)
+        self.assertFalse(webhooks._post("slack", "https://hooks.slack.com.attacker.example/x",
+                                        {"text": "x"}, "test", retry=True))
+        self.assertEqual(calls, [])
+
+    @override_settings(WEBHOOK_SYNC=False)
+    def test_an_event_is_posted_when_the_transaction_commits_not_before(self):
+        started = []
+
+        class Recorder:
+            def __init__(self, target, args, **kw):
+                started.append((target, args))
+
+            def start(self):
+                pass
+
+        with mock.patch("notifications.webhooks.threading.Thread", Recorder):
+            with self.captureOnCommitCallbacks(execute=False) as callbacks:
+                webhooks.post_event("test", "Hello", "Body")
+                self.assertEqual(started, [])        # nothing yet: the transaction is open
+            self.assertEqual(len(callbacks), 1)
+            callbacks[0]()                           # the commit
+            self.assertEqual(len(started), 1)
+
+    @override_settings(WEBHOOK_SYNC=False)
+    def test_a_rolled_back_event_is_never_posted(self):
+        from django.db import transaction
+
+        started = []
+        with mock.patch("notifications.webhooks.threading.Thread",
+                        lambda *a, **k: started.append(1) or mock.MagicMock()):
+            try:
+                with transaction.atomic():
+                    webhooks.post_event("test", "Hello", "Body")
+                    raise RuntimeError("roll back")
+            except RuntimeError:
+                pass
+        self.assertEqual(started, [])
 
     def test_payloads_fit_each_service_and_carry_the_link(self):
         attempted = webhooks.post_event("test", "Hello", "Body text", facts=[("Key", "Value")],

@@ -16,6 +16,9 @@ import urllib.request
 from config import outbound
 
 
+MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+
+
 class JiraError(Exception):
     """Raised for any configuration, network, or Jira-side failure; the
     message is safe to show to the user."""
@@ -73,7 +76,10 @@ def _request(config, path, params=None):
     sender = outbound.opener(pinned_ip)
     try:
         with sender.open(req, timeout=15) as resp:
-            return json.load(resp)
+            body = resp.read(MAX_RESPONSE_BYTES + 1)
+        if len(body) > MAX_RESPONSE_BYTES:
+            raise JiraError("Jira returned a response larger than this app will read.")
+        return json.loads(body)
     except outbound.OutboundError as exc:
         raise _translate(exc)
     except urllib.error.HTTPError as exc:
@@ -84,7 +90,10 @@ def _request(config, path, params=None):
         raise JiraError(f"Jira returned HTTP {exc.code}.")
     except urllib.error.URLError as exc:
         raise JiraError(f"Could not reach Jira: {getattr(exc, 'reason', exc)}")
-    except json.JSONDecodeError:
+    except OSError as exc:
+        # A timeout or reset while the body is being read is not a URLError.
+        raise JiraError(f"Could not reach Jira: {exc}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
         raise JiraError("Jira returned a response that wasn't JSON. Check the base URL.")
 
 
