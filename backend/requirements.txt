@@ -1,7 +1,7 @@
 # Floors are set to the versions this release was tested against. Django is
 # deliberately pinned to the 5.2 LTS line (see .github/dependabot.yml).
-Django>=5.2.17,<6.0
-djangorestframework>=3.18.1
+Django>=5.2.18,<6.0
+djangorestframework>=3.18.3
 djangorestframework-simplejwt>=5.5.1
 django-cors-headers>=4.9
 django-filter>=26.2
