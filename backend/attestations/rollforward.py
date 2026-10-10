@@ -49,19 +49,50 @@ def _control_key(row):
 
 
 def _evidence_diff(current, prior):
-    cur = {_evidence_key(e): e for e in current.evidence.all()}
-    old = {_evidence_key(e): e for e in prior.evidence.all()}
-    added = [cur[k] for k in cur if k not in old]
-    removed = [old[k] for k in old if k not in cur]
-    changed, same = [], []
-    for k in cur:
-        if k not in old:
-            continue
-        if cur[k].content_sha256 != old[k].content_sha256:
-            changed.append((old[k], cur[k]))
-        else:
-            same.append(cur[k])
+    """Pair this year's pinned artefacts with last year's.
+
+    More than one row can share a key (a document no longer on file that was
+    pinned twice, two files with one name), so each key holds a list and the
+    rows are paired off: identical content first, then what is left in order,
+    which is a change. Keyed by name alone, the second row overwrote the first
+    and every count came out low. Keyed by name and hash, a changed document
+    would stop being a change and read as one removed and one added.
+    """
+    def grouped(rows):
+        groups = {}
+        for e in rows:
+            groups.setdefault(_evidence_key(e), []).append(e)
+        return groups
+
+    cur, old = grouped(current.evidence.all()), grouped(prior.evidence.all())
+    added, changed, same, matched = [], [], [], set()
+    for k, rows in cur.items():
+        available = list(old.get(k, []))
+        unmatched = []
+        for row in rows:
+            twin = next((o for o in available if o.content_sha256 == row.content_sha256), None)
+            if twin is None:
+                unmatched.append(row)
+            else:
+                available.remove(twin)
+                matched.add(id(twin))
+                same.append(row)
+        for row in unmatched:
+            if available:
+                partner = available.pop(0)
+                matched.add(id(partner))
+                changed.append((partner, row))
+            else:
+                added.append(row)
+    removed = [o for rows in old.values() for o in rows if id(o) not in matched]
     return added, removed, changed, same
+
+
+def _exception_still_open(row):
+    """True unless this year's conclusions clear it: at least one is "no
+    exceptions" and neither one notes exceptions."""
+    conclusions = (row.design_conclusion, row.operating_conclusion)
+    return "exceptions" in conclusions or "no_exceptions" not in conclusions
 
 
 def _ev(row):
@@ -98,8 +129,10 @@ def diff(package):
         prior_exception = "exceptions" in (old.design_conclusion, old.operating_conclusion)
         if prior_exception:
             totals["prior_exceptions"] += 1
-            # Open until this year's auditor concludes otherwise.
-            if "no_exceptions" not in (row.design_conclusion, row.operating_conclusion):
+            # Open until this year's auditor concludes otherwise. One
+            # "no exceptions" does not close it while the other conclusion
+            # still notes exceptions.
+            if _exception_still_open(row):
                 totals["prior_exceptions_open"] += 1
         kept.append({
             "id": row.pk, "prior_id": old.pk, "control_ref": row.control_ref, "title": row.title,

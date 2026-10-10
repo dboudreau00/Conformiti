@@ -24,6 +24,9 @@ from .serializers import (
 
 # Control.Meta.ordering plus the id, so every page of the register is stable.
 CONTROL_ORDER = ("category", "order", "control_id", "id")
+MAX_BULK_DOCUMENTS = 500
+# The documents /control-evidence/choices/ lists; the front end names the same number.
+CHOICES_DOCUMENT_CAP = 500
 
 
 def _controls_with_evidence_counts(user, qs=None):
@@ -103,11 +106,20 @@ class ControlViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def export(self, request):
         """The control register as CSV (respects the same filters as the
-        list: framework, status, owner, search). Evidence counts are the
-        caller's visible counts, like the list."""
+        list: framework, status, owner, search). ``q`` is the register page's
+        own search box: the text must appear in the control's id and title as
+        the page shows them (``A.5.1 Policies for security``), whatever the
+        case. Evidence counts are the caller's visible counts, like the list."""
+        from django.db.models import Value
+        from django.db.models.functions import Concat
+
         from config.csvsafe import csv_safe
 
-        qs = self.filter_queryset(self.get_queryset()).order_by(
+        qs = self.filter_queryset(self.get_queryset())
+        q = (request.query_params.get("q") or "").strip()
+        if q:
+            qs = qs.annotate(_shown=Concat("control_id", Value(" "), "title")).filter(_shown__icontains=q)
+        qs = qs.order_by(
             "category__framework__name", "category__order", "category__key", "order", "control_id"
         )
         response = HttpResponse(content_type="text/csv")
@@ -262,9 +274,24 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             control = Control.objects.get(pk=request.data.get("control"))
         except (Control.DoesNotExist, TypeError, ValueError):
             raise ValidationError({"control": "Control not found."})
-        doc_ids = request.data.get("documents")
-        if not isinstance(doc_ids, list) or not doc_ids:
+        raw_ids = request.data.get("documents")
+        if not isinstance(raw_ids, list) or not raw_ids:
             raise ValidationError({"documents": "Provide a non-empty list of document ids."})
+        if len(raw_ids) > MAX_BULK_DOCUMENTS:
+            raise ValidationError({"documents": f"At most {MAX_BULK_DOCUMENTS} documents per call."})
+        # Whole numbers only (a numeric string is accepted). Anything else used
+        # to reach the query and raise a 500, and "5" never matched 5 below, so
+        # a document that was linked was also reported as not found.
+        doc_ids = []
+        for value in raw_ids:
+            if isinstance(value, bool) or not isinstance(value, (int, str)):
+                raise ValidationError({"documents": f"{value!r} is not a document id."})
+            try:
+                number = int(value)
+            except ValueError:
+                raise ValidationError({"documents": f"{value!r} is not a document id."})
+            if number not in doc_ids:
+                doc_ids.append(number)
         note = str(request.data.get("note") or "")[:255]
 
         visible = accessible_folder_ids(request.user)
@@ -297,7 +324,9 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def choices(self, request):
         """Unpaginated pick-lists for the link UIs: the caller's visible
-        documents and the full control catalog (small: ~217 rows)."""
+        documents (the first CHOICES_DOCUMENT_CAP by name, with
+        ``documents_truncated`` saying whether there were more) and the full
+        control catalog (small: ~217 rows)."""
         visible = accessible_folder_ids(request.user)
         q = (request.query_params.get("q") or "").strip()
         docs = (
@@ -309,11 +338,14 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
         controls = Control.objects.select_related(
             "category", "category__framework"
         ).order_by("category__framework__name", "category__order", "category__key", "order", "control_id")
+        # One more than the cap, so "there were more" is known rather than guessed.
+        listed = list(docs[:CHOICES_DOCUMENT_CAP + 1])
         return Response({
             "documents": [
                 {"id": d.id, "name": d.name, "path": d.folder.path, "status": d.status}
-                for d in docs[:500]
+                for d in listed[:CHOICES_DOCUMENT_CAP]
             ],
+            "documents_truncated": len(listed) > CHOICES_DOCUMENT_CAP,
             "controls": [
                 {
                     "id": c.id, "label": c.control_id, "title": c.title,

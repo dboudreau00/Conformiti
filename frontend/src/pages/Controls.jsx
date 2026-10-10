@@ -38,10 +38,15 @@ export default function Controls({ me }) {
   // to seed a framework they already have.
   const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // The notice a failed controls fetch put up, so a later good fetch (another
+  // framework tab) can take it down again without touching other notices.
+  const controlsNotice = useRef("");
 
   // Pick-lists shared by every expanded row.
   const [users, setUsers] = useState(null); // null = not loaded / unavailable
   const [docChoices, setDocChoices] = useState(null);
+  // Whether the server held back documents beyond the ones it listed.
+  const [docsTruncated, setDocsTruncated] = useState(undefined);
   const [choicesError, setChoicesError] = useState("");
   const choicesRequested = useRef(false);
 
@@ -96,17 +101,24 @@ export default function Controls({ me }) {
     let alive = true;
     setLoading(true);
     setExpanded(null);
-    Promise.all(keys.map((k) => api.get(`/frameworks/${k}/controls/`)))
+    Promise.all(keys.map((k) => api.get(`/frameworks/${encodeURIComponent(k)}/controls/`)))
       .then((rs) => {
         if (!alive) return;
         setControls(rs.flatMap((r) => r.data.results || r.data));
         setLoadedFor(framework);
+        if (keys.length) {
+          // A failure on another tab is over once this one has loaded.
+          setLoadFailed(false);
+          setPageError((p) => (p === controlsNotice.current ? "" : p));
+          controlsNotice.current = "";
+        }
       })
       .catch((e) => {
         if (!alive) return;
         setControls([]);
         setLoadFailed({ reason: loadFailReason(e) });
-        setPageError(errorText(e, "Couldn't load controls."));
+        controlsNotice.current = errorText(e, "Couldn't load controls.");
+        setPageError(controlsNotice.current);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -149,6 +161,7 @@ export default function Controls({ me }) {
       .then((r) => {
         setChoicesError("");
         setDocChoices(r.data.documents || []);
+        setDocsTruncated(r.data.documents_truncated);
       })
       .catch((e) => {
         choicesRequested.current = false;
@@ -183,6 +196,8 @@ export default function Controls({ me }) {
       const params = new URLSearchParams();
       if (framework !== "all") params.set("category__framework__key", framework);
       if (status !== "all") params.set("status", status);
+      // The search box filters the rows on screen; the file holds the same rows.
+      if (query.trim()) params.set("q", query.trim());
       const qs = params.toString();
       await downloadFile(`/controls/export/${qs ? `?${qs}` : ""}`, "controls.csv");
     } catch (e) {
@@ -327,6 +342,7 @@ export default function Controls({ me }) {
                           canLink={canLink}
                           users={users}
                           docChoices={docChoices}
+                          docsTruncated={docsTruncated}
                           choicesError={choicesError}
                           onPatch={patchControl}
                           onEvidenceDelta={bumpEvidence}

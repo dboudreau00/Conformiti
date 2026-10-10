@@ -75,6 +75,23 @@ class RollForwardTests(PackageTestBase):
         r = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/diff/")
         self.assertEqual(r.status_code, 400)
 
+    def test_a_prior_exception_stays_open_while_either_conclusion_still_notes_one(self):
+        new_id = self.roll().data["id"]
+        row = PackageControl.objects.get(package_id=new_id, control=self.tree.c1)
+
+        def open_count():
+            d = self.manager_client.get(f"/api/evidence-packages/{new_id}/diff/").data
+            return d["totals"]["prior_exceptions_open"]
+
+        self.assertEqual(open_count(), 1)                      # not concluded yet
+        row.design_conclusion = "no_exceptions"
+        row.operating_conclusion = "exceptions"
+        row.save()
+        self.assertEqual(open_count(), 1)                      # one half still excepts
+        row.operating_conclusion = "no_exceptions"
+        row.save()
+        self.assertEqual(open_count(), 0)                      # cleared
+
     def test_the_sealed_manifest_names_its_predecessor(self):
         new_id = self.roll().data["id"]
         r = self.manager_client.post(f"/api/evidence-packages/{new_id}/seal/",

@@ -98,6 +98,8 @@ def _decode(raw):
     if y >= _P:
         raise ValueError("bad point")
     x = _xrecover(y)
+    if x == 0 and sign:
+        raise ValueError("bad point")      # RFC 8032 5.1.3: -0 is not an encoding
     if x & 1 != sign:
         x = _P - x
     if (-x * x + y * y - 1 - _D * x * x * y * y) % _P != 0:

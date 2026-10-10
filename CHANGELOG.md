@@ -16,8 +16,8 @@ says what changed and what to expect on upgrade.
 Plainer wording throughout, a clearer confirmation before something is
 deleted, a spreadsheet reader that decodes Excel's character escapes, macro
 scanning that reaches OpenDocument and renamed archives, a safer default
-for `DJANGO_DEBUG`, and a tighter hand on who may change a risk. No
-migration and no stored data changed.
+for `DJANGO_DEBUG`, a tighter hand on who may change a risk, and signing
+that no longer fails silently. No migration and no stored data changed.
 
 **On upgrade.** When `DJANGO_DEBUG` is not set anywhere, the application
 now starts with debug off, where it used to start with it on. The Docker
@@ -28,7 +28,11 @@ real key (or `DJANGO_SECRET_KEY_FILE`), or set `DJANGO_DEBUG=true` for local
 development only. The owner of a risk can now change only its status,
 mitigation plan, due date and Jira key; its title, rating, treatment, owner
 and control need a framework manager, and the Risks page greys those
-fields out for an owner who is not one.
+fields out for an owner who is not one. A signing key file that exists but
+is empty now stops signing with an error that says so (the health check and
+Settings show it), where it used to be read as "no key" and left every new
+package unsigned without a word. Restore the file from a backup, or delete
+it to have a new key generated.
 
 **Dialogs.** The main button of a dialog that deletes, removes, withdraws or
 returns something, or records an exception, is now a solid red button, so it
@@ -102,6 +106,28 @@ both ways.
 moved off no longer replaces the access list or the detail now on screen,
 and two requests that fail at once no longer clear each other's token
 refresh.
+
+**Signing.** The signing key registry finds a key by the whole public key,
+where it used to find it by the 16-character id, which stays as the label
+people compare; a different key that shares an id is refused instead of
+reusing the other key's row. A key file is created whole and linked into
+place, so a second worker never reads half of it. The standalone verifier
+refuses "negative zero", which RFC 8032 does not allow as a point encoding.
+A bundle's two signatures may still come from different keys, as they do
+after a rotation; the verifier prints both.
+
+**Year over year.** Pinned evidence with one name and no live document is
+paired row by row, identical content first, so the added, removed and
+changed counts no longer come out low. A prior exception stays open while
+either conclusion still notes one.
+
+**Controls.** Attaching documents to a control in bulk refuses anything that
+is not a whole number and more than 500 at a time, with a message, where a
+bad value used to reach the query and fail with a server error; a numeric
+string counts as the same document. The document list a control offers says
+when it was cut at 500 (`documents_truncated`), the register's CSV export
+holds the rows the search box shows, and the readiness breakdown on an
+open control refreshes after a change that moves its score.
 
 **Settings and vendors.** The licence row under *Settings › About* is now
 called Core licence, so it cannot be mistaken for the licence page of an

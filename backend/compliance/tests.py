@@ -1,5 +1,8 @@
 """Control library, evidence mapping RBAC and seed idempotence."""
+import csv
+import io
 from io import StringIO
+from unittest import mock
 
 from django.core.management import call_command
 
@@ -98,6 +101,41 @@ class EvidenceMappingTests(APITestBase):
         r = self.client_for(self.owner).post("/api/control-evidence/bulk/", {"control": self.tree.c2.pk, "documents": [self.doc.pk]}, format="json")
         self.assertEqual(len(r.data["created"]), 1)
         self.assertEqual(self.client_for(self.owner).post("/api/control-evidence/bulk/", {"control": 0, "documents": [1]}, format="json").status_code, 400)
+
+    def test_bulk_attach_validates_the_id_list(self):
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        post = lambda docs: self.client_for(self.owner).post(
+            "/api/control-evidence/bulk/", {"control": self.tree.c2.pk, "documents": docs}, format="json")
+        for bad in (["abc"], [[1]], [None], [True], [{"id": 1}], list(range(1, 502))):
+            with self.subTest(bad=str(bad)[:30]):
+                self.assertEqual(post(bad).status_code, 400)
+        # A numeric string is the same document, and repeats count once.
+        r = post([str(self.doc.pk), self.doc.pk])
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(len(r.data["created"]), 1)
+        self.assertEqual(r.data["skipped"], [])
+
+    def test_choices_says_when_it_held_documents_back(self):
+        from compliance import views as compliance_views
+
+        make_doc(self.tree.ctrl2, self.manager, name="Other")
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        grant(self.tree.ctrl2, user=self.viewer, level=VIEW)
+        c = self.client_for(self.viewer)
+        r = c.get("/api/control-evidence/choices/")
+        self.assertEqual(r.status_code, 200)
+        self.assertIs(r.data["documents_truncated"], False)
+        total = len(r.data["documents"])
+        self.assertGreaterEqual(total, 2)
+        # Exactly at the cap is not truncated; one over it is.
+        with mock.patch.object(compliance_views, "CHOICES_DOCUMENT_CAP", total):
+            r = c.get("/api/control-evidence/choices/")
+            self.assertIs(r.data["documents_truncated"], False)
+            self.assertEqual(len(r.data["documents"]), total)
+        with mock.patch.object(compliance_views, "CHOICES_DOCUMENT_CAP", total - 1):
+            r = c.get("/api/control-evidence/choices/")
+            self.assertIs(r.data["documents_truncated"], True)
+            self.assertEqual(len(r.data["documents"]), total - 1)
 
     def test_choices_only_lists_visible_documents(self):
         make_doc(self.tree.ctrl2, self.manager, name="Other")
@@ -364,6 +402,25 @@ class ReadinessScoringTests(APITestBase):
         for column in ("Readiness", "Band", "Last tested"):
             self.assertIn(column, header)
         self.assertIn("Ready", body)
+
+    def test_the_export_follows_the_register_search_box(self):
+        c = self.client_for(self.manager)
+        everything = list(csv.reader(io.StringIO(c.get("/api/controls/export/").content.decode("utf-8"))))
+        ids = [row[everything[0].index("Control ID")] for row in everything[1:]]
+        self.assertGreater(len(ids), 1)
+        keep = Control.objects.get(pk=self.tree.c1.pk)
+        # The id, then a space, then the title: the text the page matches on.
+        shown = f"{keep.control_id} {keep.title}"
+        for term in (keep.control_id, f"  {shown.upper()}  ", shown[2:12]):
+            with self.subTest(term=term):
+                rows = list(csv.reader(io.StringIO(
+                    c.get("/api/controls/export/", {"q": term}).content.decode("utf-8"))))
+                got = [r[rows[0].index("Control ID")] for r in rows[1:]]
+                self.assertIn(keep.control_id, got)
+                self.assertLessEqual(len(got), len(ids))
+        none = list(csv.reader(io.StringIO(
+            c.get("/api/controls/export/", {"q": "zz-no-such-control"}).content.decode("utf-8"))))
+        self.assertEqual(len(none), 1)   # the header row alone
 
     def test_the_crosswalk_does_not_score_and_does_not_regress_into_n_plus_one(self):
         self._perfect()

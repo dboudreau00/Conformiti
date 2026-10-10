@@ -466,7 +466,7 @@ class SigningKeysView(APIView):
                 "fingerprint": signing.fingerprint(k.public_key), "label": k.label,
                 "workspace": k.workspace.slug if k.workspace_id else None,
                 "created_at": k.created_at, "retired_at": k.retired_at,
-                "current": k.key_id == current.get("key_id"),
+                "current": k.public_key == current.get("public_key"),
             } for k in rows]
         return Response({"algorithm": signing.ALGORITHM, "enabled": current["enabled"],
                          "workspace": workspace.slug if workspace else None,

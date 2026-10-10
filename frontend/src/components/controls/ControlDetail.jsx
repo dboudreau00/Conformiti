@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PaperclipIcon } from "lucide-react";
 import api, { fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
@@ -30,6 +30,7 @@ export function ControlDetail({
   canLink,
   users,
   docChoices,
+  docsTruncated,
   choicesError,
   onPatch,
   onEvidenceDelta,
@@ -96,16 +97,25 @@ export function ControlDetail({
   }, [id]);
 
   const [readiness, setReadiness] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    api.get(`/controls/${id}/readiness/`)
-      .then(({ data }) => { if (alive) setReadiness(data); })
-      .catch(() => { if (alive) setReadiness(null); });
-    return () => { alive = false; };
+  const readinessReq = useRef(0);
+  // The breakdown is read again after anything that moves the score (status,
+  // owner, test date, evidence), so it never disagrees with the row's number.
+  // A reply that has been overtaken by a newer request is dropped.
+  const loadReadiness = useCallback(() => {
+    const req = ++readinessReq.current;
+    return api.get(`/controls/${id}/readiness/`)
+      .then(({ data }) => { if (req === readinessReq.current) setReadiness(data); })
+      .catch(() => { if (req === readinessReq.current) setReadiness(null); });
   }, [id]);
+  useEffect(() => {
+    loadReadiness();
+    return () => { readinessReq.current += 1; };
+  }, [loadReadiness]);
 
   const linkedIds = useMemo(() => new Set(links.map((l) => l.document)), [links]);
-  const capped = (docChoices || []).length >= CHOICES_CAP;
+  // The server says when it held documents back; a server that does not say
+  // (an older one) is guessed at from the length.
+  const capped = docsTruncated ?? (docChoices || []).length >= CHOICES_CAP;
   const available = useMemo(
     () => (docChoices || []).filter((d) => !linkedIds.has(d.id)),
     [docChoices, linkedIds]
@@ -158,6 +168,7 @@ export function ControlDetail({
     setNotice(null);
     try {
       await onPatch(id, { [field]: value });
+      loadReadiness();
       setNotice({ ok: {
         status: "Status updated.",
         owner: "Owner updated.",
@@ -193,6 +204,7 @@ export function ControlDetail({
       // Re-read the list so each new link carries its server-computed
       // can_unlink flag (the bulk response is serialized without it).
       await loadLinks();
+      if (created.length) loadReadiness();
       setNotice({
         ok: `${created.length} attached`,
         skipped: skipped.map((s) => `${docName(s.document)}: ${s.reason}`),
@@ -211,6 +223,7 @@ export function ControlDetail({
       await api.delete(`/control-evidence/${link.id}/`);
       setLinks((ls) => ls.filter((l) => l.id !== link.id));
       onEvidenceDelta(id, -1);
+      loadReadiness();
       setNotice({ ok: `Unlinked ${link.document_name}.` });
     } catch (ex) {
       setNotice({ err: errorText(ex) });

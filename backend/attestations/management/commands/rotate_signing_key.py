@@ -51,7 +51,7 @@ class Command(BaseCommand):
             retired = path.with_name(f"{path.name}.retired-{info['key_id']}")
             shutil.copy2(path, retired)
             os.chmod(retired, 0o600)
-            SigningKey.objects.filter(key_id=info["key_id"], retired_at__isnull=True).update(
+            SigningKey.objects.filter(public_key=info["public_key"], retired_at__isnull=True).update(
                 retired_at=timezone.now())
             path.unlink()
             self.stdout.write(f"Retired     : {info['key_id']} (kept as {retired.name})")

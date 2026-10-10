@@ -67,6 +67,20 @@ def _parse_private(text, where):
     return key
 
 
+def _read_key_file(path, where):
+    """The key in an existing key file. A file that is there but blank is a
+    damaged install, not a choice: reading it as "no key" would leave every
+    package unsigned without a word, so it stops the boot of anything that
+    needs to sign instead."""
+    key = _parse_private(path.read_text(encoding="utf-8"), where)
+    if key is None:
+        raise ImproperlyConfigured(
+            f"{where}: the file exists but is empty, so nothing can be signed. Restore it "
+            "from a backup, or delete it to have a new key generated (packages sealed under "
+            "the lost key then verify only against the fingerprint published for it).")
+    return key
+
+
 def _generate_into(path):
     """Create a new key file at 0600, or return None if another worker got
     there first (the caller re-reads)."""
@@ -74,12 +88,35 @@ def _generate_into(path):
     pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                             serialization.NoEncryption())
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Written in full to a private temporary name and then linked into place,
+    # so a second worker that sees the file sees all of it. Creating the final
+    # name first and writing after leaves a window in which another process
+    # reads an empty file, which parses as "no key" and silently leaves the
+    # package unsigned.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        return None
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(pem)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(pem)
+            fh.flush()
+            os.fsync(fh.fileno())
+        try:
+            os.link(str(tmp), str(path))     # atomic, and refuses an existing name
+        except FileExistsError:
+            return None
+        except OSError:
+            # A filesystem without hard links: fall back to exclusive create.
+            try:
+                fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                return None
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(pem)
+    finally:
+        try:
+            os.unlink(str(tmp))
+        except OSError:
+            pass
     return key
 
 
@@ -101,10 +138,9 @@ def load_private_key(create=True):
             mtime = path.stat().st_mtime_ns
             if _cache["path"] == str(path) and _cache["mtime"] == mtime and _cache["key"] is not None:
                 return _cache["key"]
-            key = _parse_private(path.read_text(encoding="utf-8"), f"SIGNING_KEY_FILE={location}")
+            key = _read_key_file(path, f"SIGNING_KEY_FILE={location}")
         elif create:
-            key = _generate_into(path) or _parse_private(path.read_text(encoding="utf-8"),
-                                                          f"SIGNING_KEY_FILE={location}")
+            key = _generate_into(path) or _read_key_file(path, f"SIGNING_KEY_FILE={location}")
             mtime = path.stat().st_mtime_ns
         else:
             return None
@@ -214,8 +250,11 @@ def register_key(public_key_b64):
 
     workspace_id = tenancy.current_id()
     kid = key_id(public_key_b64)
+    # The row is found by the whole public key. The short id is a label for
+    # people to compare and is unique, so a different key that happens to share
+    # it makes this fail (an IntegrityError) rather than reuse the other key's row.
     row, _ = SigningKey.objects.get_or_create(
-        key_id=kid, defaults={"public_key": public_key_b64, "workspace_id": workspace_id})
+        public_key=public_key_b64, defaults={"key_id": kid, "workspace_id": workspace_id})
     if row.retired_at is not None or row.workspace_id != workspace_id:
         row.retired_at = None
         row.workspace_id = workspace_id
@@ -223,7 +262,7 @@ def register_key(public_key_b64):
     # Only this workspace's other keys are retired: each organisation has its
     # own current key, and retiring theirs would misreport the published list.
     (SigningKey.objects.filter(retired_at__isnull=True, workspace_id=workspace_id)
-     .exclude(key_id=kid).update(retired_at=timezone.now()))
+     .exclude(pk=row.pk).update(retired_at=timezone.now()))
     return row
 
 
@@ -261,15 +300,16 @@ def signature_status(package):
 
     if not package.manifest_signature:
         return "unsigned"
-    known = SigningKey.objects.filter(key_id=package.signing_key_id).first()
-    if known is None:
+    if not package.signing_public_key:
+        return "invalid"
+    # Found by the whole key, not by the short id the package also carries.
+    known = SigningKey.objects.filter(public_key=package.signing_public_key).first()
+    if known is None or known.key_id != package.signing_key_id:
         return "invalid"  # signed by a key this installation never published
     # Keys recorded before per-workspace signing (0.9.3) carry no workspace
     # and stay acceptable; a key belonging to another organisation does not.
     if known.workspace_id is not None and package.workspace_id is not None \
             and known.workspace_id != package.workspace_id:
-        return "invalid"
-    if (known.public_key or "") != (package.signing_public_key or ""):
         return "invalid"
     ok = verify_bytes((package.manifest_json or "").encode("utf-8"),
                       package.manifest_signature, known.public_key)
