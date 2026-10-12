@@ -46,10 +46,11 @@ function PartyChip({ x, role, canManage, onRemove }) {
       )}
     >
       <span className="truncate">{x.name}</span>
-      {x.kind === "vendor" ? <span className="text-[9px] uppercase tracking-label opacity-70">vendor</span> : null}
+      {x.kind === "vendor" ? <span className="text-[10px] uppercase tracking-label">vendor</span> : null}
       {!x.implicit && canManage && x.id ? (
+        // 24px to the finger, drawn no larger than the chip.
         <button type="button" aria-label={`Remove ${x.name} as ${role}`} onClick={() => onRemove(x)}
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full opacity-70 transition-opacity hover:opacity-100">
+                className="-my-1 -mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full opacity-80 transition-opacity hover:opacity-100">
           <XIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />
         </button>
       ) : null}

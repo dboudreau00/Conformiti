@@ -57,7 +57,7 @@ export function InfoTip({ label = "More about this", children, align = "left", c
           }
         }}
         onClick={() => setPinned((v) => !v)}
-        className="flex h-5 w-5 items-center justify-center rounded-full text-faint transition-colors duration-150 ease-out hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="flex h-6 w-6 items-center justify-center rounded-full text-faint transition-colors duration-150 ease-out hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <InfoIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
       </button>

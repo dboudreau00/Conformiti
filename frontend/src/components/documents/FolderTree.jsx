@@ -122,7 +122,7 @@ export function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, cl
                 type="button"
                 tabIndex={-1}
                 aria-hidden="true"
-                className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded text-faint transition-colors duration-150 ease-out hover:bg-line-strong/30 hover:text-ink"
+                className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint transition-colors duration-150 ease-out hover:bg-line-strong/30 hover:text-ink"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggle(node.id, !open);
@@ -134,7 +134,7 @@ export function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, cl
                 />
               </button>
             ) : (
-              <span className="relative h-5 w-5 shrink-0" aria-hidden="true" />
+              <span className="relative h-6 w-6 shrink-0" aria-hidden="true" />
             )}
             {open ? (
               <FolderOpenIcon className="relative h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />

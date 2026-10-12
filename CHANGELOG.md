@@ -272,6 +272,27 @@ past the edge of its card and, with some fonts, the request list's Add request.
 A new browser spec checks every control on every page at 390, 1024 and 1440
 pixels for both.
 
+**Every screen, walked.** Each page was opened on every theme pack at phone,
+tablet and desktop widths and read with an accessibility checker, and each
+job was done end to end. What that found is fixed. The status colours on the
+two light packs are a shade deeper, so a badge and the red overdue date in
+the risk register read at 4.5:1 on their own wash and on a selected row; the
+danger colour on the dark packs is a shade lighter for the same reason. An
+external auditor who types or bookmarks an address the menu never offers
+them, such as the control register, now sees one plain notice and a button to
+their packages, where the page used to ask the server, be refused, and show
+the refusal twice under a Try again that could not succeed. On a phone the
+control register scrolls sideways instead of squeezing its columns to a
+word each, and the heatmap's legend wraps instead of running off the card.
+Choosing a file for an upload fills in the document's name from the file's,
+when none was typed. The vendor tag in the responsibility matrix, the
+folder tree's chevrons, a chip's remove button and the information tips are
+large enough to tap. Every bubble on the risk heatmap is named with its risk,
+every day on the compliance calendar says its date and how many items it
+holds, the "more" button of a segmented control sits outside its tab list,
+and each control's samples table is labelled with its framework as well as
+its reference, so two frameworks' 12.1 are told apart.
+
 **Changed.** Code comments and docstrings say why the code is the way it is
 instead of retelling earlier fixes, and keep every review finding they cite.
 Documents, interface hints, email templates and test messages drop filler,

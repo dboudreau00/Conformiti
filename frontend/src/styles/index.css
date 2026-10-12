@@ -29,7 +29,7 @@
   --faint: 146 153 164;
   --success: 71 190 132;
   --warning: 226 165 62;
-  --danger: 240 108 105;
+  --danger: 241 119 116;
   --danger-ink: 32 9 6;
   --info: 108 160 245;
   --grid: 32 36 44;
@@ -47,11 +47,13 @@
   --ink: 26 27 29;
   --muted: 82 83 87;
   --faint: 97 97 100;
-  --success: 21 128 61;
-  --warning: 180 108 12;
-  --danger: 190 46 46;
+  /* Status colours are read as 11px text on their own wash (a badge) and on a
+     selected row's accent wash under it; each clears 4.5:1 on all of them. */
+  --success: 18 112 53;
+  --warning: 134 80 8;
+  --danger: 175 42 42;
   --danger-ink: 255 255 255;
-  --info: 29 105 189;
+  --info: 27 96 173;
   --grid: 233 230 223;
   --shadow-panel: 0 1px 2px rgb(35 30 22 / 0.05), 0 10px 26px -16px rgb(35 30 22 / 0.16);
 }
@@ -66,11 +68,11 @@
   --ink: 15 23 36;
   --muted: 72 84 104;
   --faint: 88 98 114;
-  --success: 15 122 88;
-  --warning: 176 104 10;
-  --danger: 198 44 58;
+  --success: 13 108 78;
+  --warning: 138 82 8;
+  --danger: 175 39 51;
   --danger-ink: 255 255 255;
-  --info: 30 100 200;
+  --info: 28 93 187;
   --grid: 231 237 245;
   --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.05), 0 12px 28px -18px rgb(15 23 42 / 0.22);
 }
@@ -87,7 +89,7 @@
   --faint: 146 153 164;
   --success: 71 190 132;
   --warning: 226 165 62;
-  --danger: 240 108 105;
+  --danger: 241 119 116;
   --danger-ink: 32 9 6;
   --info: 108 160 245;
   --grid: 32 36 44;
@@ -114,7 +116,7 @@
 }
 /* ---------- Accent packs ---------- */
 [data-accent="pine"] { --accent: 17 110 96; --accent-ink: 255 255 255; }
-[data-accent="azure"] { --accent: 37 99 216; --accent-ink: 255 255 255; }
+[data-accent="azure"] { --accent: 34 92 200; --accent-ink: 255 255 255; }
 [data-accent="violet"] { --accent: 118 74 226; --accent-ink: 255 255 255; }
 [data-accent="ember"] { --accent: 194 61 52; --accent-ink: 255 255 255; }
 /* Dark packs get brighter accents so they stay legible on near-black */

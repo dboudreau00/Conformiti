@@ -41,7 +41,9 @@ test.describe("dashboard", () => {
     // its own, and at least one of them lands on this month's grid.
     const day = calendar.getByRole("button", { name: /, 1 item$/ }).filter({ hasText: "Review due:" }).first();
     await expect(day).toBeVisible();
-    const date = (await day.getAttribute("aria-label")).replace(/, 1 item$/, "");
+    // The cell's name is its own text, then the date and the count for a screen
+    // reader; the date is in that last, visually hidden, part.
+    const date = (await day.locator("span.sr-only").last().textContent()).replace(/^,\s*/, "").replace(/, 1 item$/, "").trim();
     const title = await day.locator("[title]").getAttribute("title");
     const doc = title.replace(/^Review due: /, "");
     await day.click();
@@ -376,6 +378,24 @@ test.describe("documents", () => {
     await page.getByText("CC6 - Logical and Physical Access Controls", { exact: true }).first().click();
     await page.waitForLoadState("networkidle");
     await expect(page.getByText("Pick a folder on the left")).toHaveCount(0);
+  });
+
+  test("choosing a file names the upload after it, unless a name was typed first", async ({ page }) => {
+    await open(page, "/documents", "Documents");
+    await page.getByText("CC6 - Logical and Physical Access Controls", { exact: true }).first().click();
+    await page.getByRole("button", { name: "Upload document" }).click();
+    const name = page.locator("#upload-name");
+    const file = page.getByLabel("Document file");
+    const upload = page.getByRole("button", { name: "Upload", exact: true });
+    await expect(upload).toBeDisabled();
+    await file.setInputFiles({ name: "Access Review Q3.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n") });
+    await expect(name).toHaveValue("Access Review Q3");
+    await expect(upload).toBeEnabled();
+    // A name already typed is the person's, and a second file does not replace it.
+    await name.fill("Quarterly access review");
+    await file.setInputFiles({ name: "scan-0042.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n") });
+    await expect(name).toHaveValue("Quarterly access review");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
   });
 });
 

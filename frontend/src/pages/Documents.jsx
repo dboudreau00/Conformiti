@@ -1070,7 +1070,12 @@ export default function Documents({ me }) {
                             type="file"
                             className="sr-only"
                             aria-label="Document file"
-                            onChange={(e) => setUpload((u) => ({ ...u, file: e.target.files?.[0] || null }))}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              // A blank name takes the file's own, minus the
+                              // extension; a name already typed is kept.
+                              setUpload((u) => ({ ...u, file, name: u.name.trim() || !file ? u.name : file.name.replace(/\.[^.]*$/, "") }));
+                            }}
                           />
                           <Button
                             size="sm"

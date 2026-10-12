@@ -13,7 +13,9 @@ export const TONE_TEXT = {
   info: "text-info",
   muted: "text-muted",
   faint: "text-faint",
-  "line-strong": "text-line-strong",
+  // The line colour is a border, not an ink: as text it is 1.5:1 on a dark
+  // pack. A line-strong badge keeps its grey wash and ring and reads in muted.
+  "line-strong": "text-muted",
 };
 
 /** Low-alpha wash used behind badges and chips. */

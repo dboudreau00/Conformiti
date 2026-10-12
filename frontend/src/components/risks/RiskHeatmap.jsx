@@ -67,7 +67,7 @@ export function RiskHeatmap({ risks, stats, loading, selectedId, onSelect }) {
                               type="button"
                               onClick={() => onSelect(r)}
                               title={r.title}
-                              aria-label={`Select risk: ${r.title}`}
+                              aria-label={`Risk ${r.id}: ${r.title}`}
                               aria-pressed={active}
                               initial={{ scale: 0.6, opacity: 0 }}
                               animate={{ scale: 1, opacity: 1 }}
@@ -109,7 +109,7 @@ export function RiskHeatmap({ risks, stats, loading, selectedId, onSelect }) {
                 </span>
               ))}
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <Label>Impact ↑ · Likelihood →</Label>
               <Label>Open &amp; mitigating only</Label>
             </div>

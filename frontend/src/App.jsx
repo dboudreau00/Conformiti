@@ -3,9 +3,11 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { AnimatePresence } from "framer-motion";
 import api, { cookieMode, isAuthed, loadAuthConfig, logout, session } from "./api/client.js";
 import ErrorBoundary, { ChromeFallback } from "./components/ErrorBoundary.jsx";
+import { NotForAuditors } from "./components/layout/NotForAuditors.jsx";
 import { SideMenu } from "./components/layout/SideMenu.jsx";
 import { SkipLink } from "./components/layout/SkipLink.jsx";
 import { TopBar } from "./components/layout/TopBar.jsx";
+import { openToAuditor } from "./nav.js";
 import { ShellContext } from "./shell.js";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -36,6 +38,9 @@ function Protected({ me, setMe }) {
   // the shell during that window would fire every page's queries as an
   // anonymous user and fill the console with 401s.
   const [signedIn, setSignedIn] = useState(() => (cookieMode() ? null : isAuthed()));
+  // Whether /users/me/ has answered, or failed. Who is signed in decides what
+  // a page may ask for, so no routed page is drawn before then.
+  const [meKnown, setMeKnown] = useState(!!me);
 
   useEffect(() => {
     let alive = true;
@@ -55,7 +60,11 @@ function Protected({ me, setMe }) {
       }
       if (!me) {
         const r = await api.get("/users/me/").catch(() => null);
-        if (alive && r) setMe(r.data);
+        if (!alive) return;
+        if (r) setMe(r.data);
+        // A failed answer still lets the pages draw: each shows its own
+        // refusal, as before, rather than nothing at all.
+        setMeKnown(true);
       }
     })();
     return () => { alive = false; };
@@ -100,6 +109,16 @@ function Protected({ me, setMe }) {
   if (signedIn === null) return null;   // still asking
   if (!signedIn) return <Navigate to="/login" replace />;
 
+  // A page waits for the session before it is drawn and asks for anything.
+  // An external auditor at an address the menu never offers them (typed, or
+  // an old bookmark) then sees one plain notice: the API refuses the request
+  // either way, and the page used to show that refusal twice under a Try
+  // again that could not succeed.
+  const page = (path, element) => {
+    if (!me && !meKnown) return null;
+    return me?.capabilities?.auditor && !openToAuditor(path) ? <NotForAuditors /> : element;
+  };
+
   return (
     <ShellContext.Provider value={{ me, health, counts, refreshCounts }}>
       <div className="min-h-screen w-full bg-bg">
@@ -121,20 +140,20 @@ function Protected({ me, setMe }) {
                   <Route path="/" element={me?.capabilities?.auditor
                     ? <Navigate to="/packages" replace />
                     : <Dashboard me={me} />} />
-                  <Route path="/analytics" element={<Analytics me={me} />} />
-                  <Route path="/controls" element={<Controls me={me} />} />
-                  <Route path="/documents" element={<Documents me={me} />} />
-                  <Route path="/users" element={<Users me={me} />} />
-                  <Route path="/user-audit" element={<UserAudit me={me} />} />
-                  <Route path="/packages" element={<Packages me={me} />} />
-                  <Route path="/audit-log" element={<AuditLog me={me} />} />
-                  <Route path="/meetings" element={<Meetings me={me} />} />
-                  <Route path="/groups" element={<Groups me={me} />} />
-                  <Route path="/risks" element={<Risks me={me} />} />
-                  <Route path="/jira" element={<Jira me={me} />} />
-                  <Route path="/vendors" element={<Vendors me={me} />} />
-                  <Route path="/responsibilities" element={<Responsibilities me={me} />} />
-                  <Route path="/settings" element={<Account me={me} onUpdate={setMe} />} />
+                  <Route path="/analytics" element={page("/analytics", <Analytics me={me} />)} />
+                  <Route path="/controls" element={page("/controls", <Controls me={me} />)} />
+                  <Route path="/documents" element={page("/documents", <Documents me={me} />)} />
+                  <Route path="/users" element={page("/users", <Users me={me} />)} />
+                  <Route path="/user-audit" element={page("/user-audit", <UserAudit me={me} />)} />
+                  <Route path="/packages" element={page("/packages", <Packages me={me} />)} />
+                  <Route path="/audit-log" element={page("/audit-log", <AuditLog me={me} />)} />
+                  <Route path="/meetings" element={page("/meetings", <Meetings me={me} />)} />
+                  <Route path="/groups" element={page("/groups", <Groups me={me} />)} />
+                  <Route path="/risks" element={page("/risks", <Risks me={me} />)} />
+                  <Route path="/jira" element={page("/jira", <Jira me={me} />)} />
+                  <Route path="/vendors" element={page("/vendors", <Vendors me={me} />)} />
+                  <Route path="/responsibilities" element={page("/responsibilities", <Responsibilities me={me} />)} />
+                  <Route path="/settings" element={page("/settings", <Account me={me} onUpdate={setMe} />)} />
                   {/* Routes from earlier releases */}
                   <Route path="/account" element={<Navigate to="/settings" replace />} />
                   <Route path="/audit" element={<Navigate to="/audit-log" replace />} />

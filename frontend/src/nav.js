@@ -50,6 +50,13 @@ export function navSections(me) {
     .filter((section) => section.items.length > 0);
 }
 
+/** Whether the shell opens `path` for an external auditor at all. A path the
+ *  core does not list (an add-on's, or none) is left to its own page. */
+export function openToAuditor(path) {
+  const item = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.path === path);
+  return !item || AUDITOR_NAV.has(item.id);
+}
+
 export const NAV_LOOKUP = {
   "/": { title: "Dashboard", caption: "Compliance posture across every framework in this workspace" },
   "/analytics": { title: "Analytics", caption: "Readiness, coverage and ownership breakdowns" },

@@ -312,7 +312,9 @@ export default function Controls({ me }) {
             </PanelHeader>
 
             <div className="overflow-x-auto">
-              <div className={cn("grid min-w-[860px] items-center gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
+              {/* Below this width the fixed columns leave the title nothing,
+                  so the register scrolls sideways instead (a phone). */}
+              <div className={cn("grid min-w-[960px] items-center gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
                 {["Ref", "Control", "Framework", "Status", "Owner", "Readiness", "Evidence"].map((h) => (
                   <Label key={h} className={h === "Evidence" ? "text-right" : undefined}>
                     {h}
@@ -333,7 +335,7 @@ export default function Controls({ me }) {
                   Install a compliance pack, or load the framework library, to populate the control register.
                 </Empty>
               ) : (
-                <ul className="min-w-[860px] divide-y divide-line">
+                <ul className="min-w-[960px] divide-y divide-line">
                   <AnimatePresence initial={false}>
                     {page.visible.map((control) => (
                       <ControlRow

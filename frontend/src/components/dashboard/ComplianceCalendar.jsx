@@ -257,9 +257,6 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                   type="button"
                   onClick={() => select(isSelected ? null : key)}
                   aria-pressed={isSelected}
-                  aria-label={`${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}, ${
-                    unknown ? "items not loaded" : `${dayEvents.length} ${dayEvents.length === 1 ? "item" : "items"}`
-                  }`}
                   className={cn(
                     "relative flex h-[92px] flex-col gap-1 border-b border-r border-line p-1.5 text-left",
                     "transition-colors duration-150 ease-out",
@@ -277,6 +274,11 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                   >
                     {day.getDate()}
                   </span>
+                  {/* The name is the cell's own text, then the date and the count
+                      for a screen reader. A label of its own left out the entries
+                      a sighted person reads, which a voice user has to say. The
+                      space keeps the day apart from the first entry's words. */}
+                  {" "}
                   <span className="flex flex-col gap-1 overflow-hidden">
                     {dayEvents.slice(0, 2).map((event) => {
                       const tone = eventTone(event);
@@ -301,6 +303,11 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                       );
                     })}
                     {dayEvents.length > 2 ? <span className="px-1.5 font-mono text-2xs text-faint">+{dayEvents.length - 2} more</span> : null}
+                  </span>
+                  <span className="sr-only">
+                    , {day.getDate()} {MONTHS[day.getMonth()]} {day.getFullYear()}, {
+                      unknown ? "items not loaded" : `${dayEvents.length} ${dayEvents.length === 1 ? "item" : "items"}`
+                    }
                   </span>
                   {isSelected ? (
                     <motion.span

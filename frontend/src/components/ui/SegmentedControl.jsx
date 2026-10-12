@@ -22,16 +22,17 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
     if (selected && !shown.includes(selected)) shown = [...shown, selected];
     hidden = options.length - shown.length;
   }
+  // The strip is one box; the tab list inside it holds tabs and nothing else,
+  // so the "+N more" button, which is not a tab, sits beside it.
   return (
     <div
-      role="tablist"
-      aria-label={ariaLabel}
       className={cn(
         "inline-flex items-center gap-0.5 rounded-lg border border-line bg-surface-2 p-0.5",
         collapsible && open ? "max-w-full flex-wrap" : "max-w-full overflow-x-auto",
         className
       )}
     >
+      <div role="tablist" aria-label={ariaLabel} className={cn("flex items-center gap-0.5", collapsible && open && "flex-wrap")}>
       {shown.map((opt) => {
         const active = opt.id === value;
         return (
@@ -61,6 +62,7 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
           </button>
         );
       })}
+      </div>
       {collapsible ? (
         <button
           type="button"

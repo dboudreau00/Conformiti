@@ -79,4 +79,26 @@ test.describe("authentication", () => {
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     }
   });
+
+  test("an auditor at an address the menu never offers is told so, and sent to their packages", async ({ page }) => {
+    await page.goto("/login");
+    await page.evaluate(() => localStorage.clear());
+    await signIn(page, DEMO.auditor);
+    await expect(page.getByRole("heading", { name: "Audit packages" })).toBeVisible();
+    // The API refuses an auditor the register, so the page must not even ask:
+    // one plain answer in place of the refusal's two red notices.
+    for (const path of ["/controls", "/risks"]) {
+      await page.goto(path);
+      await expect(page.getByText("Not available to an auditor account")).toBeVisible();
+      await expect(page.getByText("You do not have permission")).toHaveCount(0);
+    }
+    await page.getByRole("button", { name: "Go to your packages" }).click();
+    await expect(page.getByRole("heading", { name: "Audit packages" })).toBeVisible();
+    // The pages the menu does offer still open.
+    await page.goto("/audit-log");
+    await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
+    await expect(page.getByText("Not available to an auditor account")).toHaveCount(0);
+    await page.waitForLoadState("networkidle");
+    await signOut(page);
+  });
 });

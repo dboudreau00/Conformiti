@@ -915,8 +915,10 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
     }, "Population recorded.");
   };
 
+  // Two libraries can both have a 12.1, so the framework is part of the name.
   return (
-    <section className="mt-3 rounded-lg border border-line bg-surface-2 p-3" aria-label={`Samples for ${row.control_ref}`}>
+    <section className="mt-3 rounded-lg border border-line bg-surface-2 p-3"
+             aria-label={`Samples for ${row.framework_name ? `${row.framework_name} ` : ""}${row.control_ref}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex flex-wrap items-center gap-1.5">
           <Label>Samples</Label>
