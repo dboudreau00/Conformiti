@@ -1391,7 +1391,7 @@ function AboutSection() {
       : signingKey?.enabled === false ? "Off"
         : signingKey?.per_workspace ? "One key per workspace" : "No key configured"],
     ...(signingKey?.fingerprint ? [["Signing key fingerprint", `sha256:${signingKey.fingerprint}`]] : []),
-    ["Core licence", "MIT"],
+    ["Core licence", "AGPL-3.0"],
   ];
 
   return (
@@ -1462,7 +1462,7 @@ function AboutSection() {
           Documentation &amp; source
           <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
         </a>
-        <span className="text-xs text-muted">Released under the MIT licence.</span>
+        <span className="text-xs text-muted">Released under the GNU AGPL-3.0 licence.</span>
       </div>
     </Panel>
   );

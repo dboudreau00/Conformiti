@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml/badge.svg)](https://github.com/dboudreau00/Conformiti/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/release-v0.9.5me-1D6FE0.svg)](CHANGELOG.md)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%20to%203.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
@@ -197,8 +197,8 @@ to the programme. The programme's figures are snapshotted daily. No percentage i
 entered by hand.
 
 There is no telemetry, no phone-home, no licence server, and no seat meter in
-the code. It is MIT, and it is meant to be run by the organisation that uses
-it.
+the code. It is AGPL-3.0, and it is meant to be run by the organisation that
+uses it.
 
 ---
 
@@ -1551,7 +1551,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
 
 ## Licence and legal notes
 
-[MIT](LICENSE) © 2026 elemosecurity.
+[GNU AGPL-3.0](LICENSE) © 2026 elemosecurity.
+
+You may run, study, change and share it. If you offer a modified version to
+other people over a network, the licence asks you to offer them its source;
+running it for your own organisation asks nothing of you.
 
 > **Control text and copyright.** Control identifiers and short titles are
 > functional identifiers. The `objective` fields shipped in the seed packs are

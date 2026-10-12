@@ -2,7 +2,7 @@
 
 **A self-hosted system of record for a compliance programme.** Controls,
 evidence, vendors, risk and access reviews in one place, ending in a sealed
-package an assessor can verify without you. MIT licensed, run on your own
+package an assessor can verify without you. AGPL-3.0 licensed, run on your own
 infrastructure, with no telemetry, no phone-home and no licence server.
 
 ---
@@ -122,5 +122,5 @@ Then read [GETTING_STARTED.md](../GETTING_STARTED.md) for
 a guided first hour, [SECURITY.md](../SECURITY.md) for the posture and the
 residual risks to weigh, [INSTALL.md](../INSTALL.md) for production.
 
-MIT © 2026 elemosecurity. See [conformiti.app](https://conformiti.app) for
+AGPL-3.0 © 2026 elemosecurity. See [conformiti.app](https://conformiti.app) for
 what is offered around it; nothing in this repository is gated behind it.

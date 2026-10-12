@@ -48,7 +48,7 @@ test.describe("account settings", () => {
     // An add-on can carry a licence of its own, so the row names what it covers.
     const row = page.getByRole("main").locator("dl > div").filter({ hasText: "Core licence" });
     await expect(row.getByRole("term")).toHaveText("Core licence");
-    await expect(row.getByRole("definition")).toHaveText("MIT");
+    await expect(row.getByRole("definition")).toHaveText("AGPL-3.0");
     await expect(page.getByRole("main").getByText("Licence", { exact: true })).toHaveCount(0);
   });
 

@@ -97,6 +97,10 @@ Rules of thumb:
   object: an add-on extends both.
 - **Control text is paraphrased.** Do not paste normative ISO/PCI text into the
   seed data: it is copyrighted.
+- **Your change comes under the project's licence.** By sending a change you
+  confirm you wrote it or may share it, and that it is distributed under the
+  GNU AGPL-3.0 in `LICENSE`; the copyright holder may also license the code
+  under other terms.
 
 ## Project map
 
