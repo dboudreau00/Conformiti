@@ -259,7 +259,8 @@ test.describe("the account menu", () => {
   test("holds the person, Settings and Sign out", async ({ page }) => {
     await open(page, "/", "Dashboard");
     const button = accountButton(page);
-    await expect(button).toHaveAccessibleName("Account: Ada Admin, Administrator");
+    // The name starts with the words a sighted user reads on the button.
+    await expect(button).toHaveAccessibleName("Ada Admin Administrator account menu");
     await expect(button).toHaveAttribute("aria-haspopup", "menu");
     await expect(button).toHaveAttribute("aria-expanded", "false");
     await button.click();

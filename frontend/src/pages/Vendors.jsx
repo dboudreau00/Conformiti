@@ -11,7 +11,7 @@
  * anything is written.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Building2Icon, DownloadIcon, FileUpIcon, SparklesIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
@@ -422,7 +422,7 @@ function SendToVendor({ vendor, busy, act, refresh }) {
                 <th className="py-2 pr-3 font-normal" scope="col">Valid until</th>
                 <th className="py-2 pr-3 font-normal" scope="col">Status</th>
                 <th className="py-2 pr-3 font-normal" scope="col">Answered by</th>
-                <th className="py-2 pr-5 font-normal" scope="col"><span className="sr-only">Actions</span></th>
+                <th className="relative py-2 pr-5 font-normal" scope="col"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -1037,6 +1037,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
 export default function Vendors({ me }) {
   const { ask, confirmDialog } = useConfirm();
   const [params, setParams] = useSearchParams();
+  const { pathname } = useLocation();
   const [vendors, setVendors] = useState(null);
   const [vendorsErr, setVendorsErr] = useState(false);
   const [selectedId, setSelectedId] = useState(() => Number(params.get("vendor")) || null);
@@ -1121,6 +1122,12 @@ export default function Vendors({ me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
   useEffect(() => {
+    // The router changes the address before it draws the next page, so for a
+    // moment this page is still on screen under another page's address. A
+    // replace from here in that moment sends the person back to the vendors
+    // they just left, which is what a click made while the list was still
+    // loading used to do.
+    if (window.location.pathname !== pathname) return;
     const next = new URLSearchParams();
     if (selectedId) next.set("vendor", String(selectedId));
     if (tab !== "overview") next.set("tab", tab);
@@ -1285,7 +1292,7 @@ export default function Vendors({ me }) {
                     <h2 className="truncate text-[15px] font-semibold text-ink">{detail.name}</h2>
                     <p className="mt-0.5 text-xs text-muted">
                       {detail.category || "Third party"}{detail.website ? " · " : ""}
-                      {detail.website ? <a href={detail.website} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">{hostOf(detail.website)}</a> : null}
+                      {detail.website ? <a href={detail.website} target="_blank" rel="noreferrer noopener" className="text-accent underline underline-offset-2 hover:opacity-80">{hostOf(detail.website)}</a> : null}
                       {detail.owner_name ? ` · owned by ${detail.owner_name}` : ""}
                     </p>
                   </div>

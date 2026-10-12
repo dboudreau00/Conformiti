@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -142,6 +143,129 @@ class SecretKeyBootTests(SimpleTestCase):
             self.assertTrue(all(r.returncode == 0 for r in results), [r.stderr[-300:] for r in results])
             self.assertEqual(len(keys), 1, keys)
             self.assertEqual(keys.pop(), key_file.read_text().strip())
+
+
+class KeyFilePublishTests(SimpleTestCase):
+    """The key files every worker reads at boot, created by whichever worker
+    gets there first and agreed on by the rest."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "nested" / "key"
+
+    def leftovers(self):
+        return sorted(p.name for p in self.path.parent.iterdir() if p.name != "key")
+
+    def test_a_missing_file_is_created_whole_and_leaves_nothing_behind(self):
+        from config import keyfile
+
+        self.assertEqual(keyfile.publish(self.path, "alpha\n"), "alpha\n")
+        self.assertEqual(self.path.read_text(), "alpha\n")
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_key_that_is_there_is_never_replaced(self):
+        from config import keyfile
+
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("kept\n")
+        self.assertEqual(keyfile.publish(self.path, "other\n"), "kept\n")
+        self.assertEqual(self.path.read_text(), "kept\n")
+
+    def test_an_empty_file_is_filled(self):
+        from config import keyfile
+
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("  \n")
+        self.assertEqual(keyfile.publish(self.path, "filled\n"), "filled\n")
+        self.assertEqual(self.path.read_text(), "filled\n")
+        self.assertEqual(self.leftovers(), [])
+
+    def agree(self, start_empty):
+        from concurrent.futures import ThreadPoolExecutor
+
+        from config import keyfile
+
+        if start_empty:
+            self.path.parent.mkdir(parents=True)
+            self.path.write_text("")
+        with ThreadPoolExecutor(8) as pool:
+            held = list(pool.map(lambda n: keyfile.publish(self.path, f"key-{n}\n"), range(8)))
+        self.assertEqual(len(set(held)), 1, held)
+        self.assertEqual(self.path.read_text(), held[0])
+        self.assertEqual(self.leftovers(), [])
+
+    def test_eight_workers_creating_the_file_at_once_agree_on_one_key(self):
+        for _ in range(5):
+            with self.subTest():
+                self._tmp.cleanup()
+                self._tmp = tempfile.TemporaryDirectory()
+                self.path = Path(self._tmp.name) / "nested" / "key"
+                self.agree(start_empty=False)
+
+    def test_eight_workers_filling_an_empty_file_at_once_agree_on_one_key(self):
+        """Each used to replace the file with its own key and return that key, so
+        the workers disagreed and only the last was on disk."""
+        for _ in range(5):
+            with self.subTest():
+                self._tmp.cleanup()
+                self._tmp = tempfile.TemporaryDirectory()
+                self.path = Path(self._tmp.name) / "nested" / "key"
+                self.agree(start_empty=True)
+
+    def test_a_claim_left_by_a_process_that_died_is_cleared(self):
+        from config import keyfile
+
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("")
+        claim = self.path.with_name(f".{self.path.name}.fill")
+        claim.write_text("")
+        old = time.time() - keyfile.STALE_SECONDS - 5
+        os.utime(claim, (old, old))
+        self.assertEqual(keyfile.publish(self.path, "after\n"), "after\n")
+        self.assertFalse(claim.exists())
+
+    def test_a_claim_that_is_held_is_waited_for_and_then_reported(self):
+        from config import keyfile
+
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("")
+        self.path.with_name(f".{self.path.name}.fill").write_text("")
+        with mock.patch.object(keyfile, "WAIT_SECONDS", 0.2):
+            with self.assertRaises(OSError) as caught:
+                keyfile.publish(self.path, "never\n")
+        self.assertIn("another process is filling", str(caught.exception))
+        self.assertEqual(self.path.read_text(), "")
+
+    def test_a_filesystem_without_hard_links_still_creates_the_file_once(self):
+        from config import keyfile
+
+        with mock.patch.object(keyfile.os, "link", side_effect=OSError("no hard links here")):
+            self.assertEqual(keyfile.publish(self.path, "plain\n"), "plain\n")
+            self.assertEqual(keyfile.publish(self.path, "second\n"), "plain\n")
+        self.assertEqual(self.path.read_text(), "plain\n")
+
+    def test_workers_booting_together_agree_on_one_field_encryption_key(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        key_file = Path(self._tmp.name) / "fields" / "django_field_encryption_key"
+        code = ("import os; os.environ['DJANGO_SETTINGS_MODULE']='config.settings'; "
+                "from django.conf import settings; print(settings.FIELD_ENCRYPTION_KEYS[0])")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("DJANGO_")}
+        env.update({"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY": "k" * 40,
+                    "DJANGO_FIELD_ENCRYPTION_KEY_FILE": str(key_file),
+                    "EMAIL_PROVIDER": "console", "PYTHONIOENCODING": "utf-8"})
+
+        def boot(_):
+            return subprocess.run([sys.executable, "-c", code], cwd=BACKEND, env=env,
+                                  capture_output=True, text=True, timeout=120)
+
+        with ThreadPoolExecutor(4) as pool:
+            results = list(pool.map(boot, range(4)))
+        self.assertTrue(all(r.returncode == 0 for r in results), [r.stderr[-300:] for r in results])
+        keys = {r.stdout.strip() for r in results}
+        self.assertEqual(len(keys), 1, keys)
+        self.assertEqual(keys.pop(), key_file.read_text().strip())
 
 
 @mock.patch.dict(os.environ, {"DEMO_PASSWORD": "DemoPass123!"})

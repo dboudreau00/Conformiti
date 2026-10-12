@@ -364,6 +364,41 @@ class DocumentLifecycleTests(APITestBase):
         # An ordinary archive is not penalised for folder names it happens to use.
         self.assertEqual(up("backup.zip", package("scripts/run.sh", "embeddings/model.bin")), 201)
 
+    def test_the_macro_rules_by_shape_hold_where_they_used_to_have_gaps(self):
+        """SECURITY.md promises "any zip, under any name" and ODF packages with
+        Basic/ or Scripts/. Three ways round that: bytes in front of the zip
+        (Office still opens it), an .odt with no mimetype or manifest entry,
+        and, the other way, an ordinary archive refused for a folder or a file
+        whose name merely mentions macros."""
+        import io as _io
+        import zipfile
+
+        def package(members, prefix=b""):
+            buffer = _io.BytesIO(prefix)
+            buffer.seek(0, 2)
+            with zipfile.ZipFile(buffer, "w") as archive:
+                for name in members:
+                    archive.writestr(name, b"\x00\x01")
+            return buffer.getvalue()
+
+        c = self.client_for(self.manager)
+        up = lambda name, content: self._upload(c, self.tree.ctrl1, filename=name,
+                                                content=content).status_code
+        # (a) Junk in front of the archive does not hide it, whatever it is called.
+        junk = b"JUNKJUNKJUNKJUNK"
+        self.assertEqual(up("evidence.dat", package(["word/vbaProject.bin"], junk)), 400)
+        self.assertEqual(up("evidence.docx", package(["word/vbaProject.bin"], junk)), 400)
+        self.assertEqual(up("evidence.dat", package(["notes.txt"], junk)), 201)
+        # (b) An .odt is judged by its name too, not only by carrying a mimetype.
+        self.assertEqual(up("macro.odt", package(["Basic/Standard/Module1.xml", "content.xml"])), 400)
+        self.assertEqual(up("macro.odt", package(["mimetype", "Scripts/python/x.py"])), 400)
+        self.assertEqual(up("clean.odt", package(["content.xml"])), 201)
+        # (c) A folder or a file that only talks about macros is not a macro.
+        self.assertEqual(up("evidence.zip", package(["Excel macros/VBA review.pdf",
+                                                      "old_macros/vba_notes.txt"])), 201)
+        self.assertEqual(up("evidence.zip", package(["Macros/VBA/Module1.bas"])), 400)
+        self.assertEqual(up("evidence.zip", package(["export/xl/vbaProject.bin"])), 400)
+
     def test_a_macro_part_past_the_old_scan_limit_is_found(self):
         """The scan reads every name, not the first two thousand, so entry
         2001 is not a place to hide. Reading the central directory is what
@@ -1117,6 +1152,20 @@ class SafeXmlTests(SimpleTestCase):
         root = safe_fromstring(b"<a>the &lt;!DOCTYPE a&gt; line</a>")
         self.assertEqual(root.text, "the <!DOCTYPE a> line")
 
+    def test_a_part_with_more_elements_than_a_document_needs_is_refused_before_a_tree_is_built(self):
+        """A few megabytes of empty rows expand to a tree many times their size.
+        Every caller gets the bound, so the importers are held to it as the
+        preview is."""
+        from unittest import mock
+
+        from documents import ooxml
+
+        with mock.patch.object(ooxml, "MAX_ELEMENTS", 50):
+            self.assertEqual(safe_fromstring(b"<a>" + b"<b/>" * 20 + b"</a>").tag, "a")
+            with self.assertRaises(XmlRefused) as caught:
+                safe_fromstring(b"<a>" + b"<b/>" * 60 + b"</a>")
+        self.assertIn("more elements", str(caught.exception))
+
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
@@ -1225,6 +1274,22 @@ class PreviewTests(APITestBase):
         doc = self._doc("bomb.docx", buf.getvalue())
         r = self._preview(doc)
         self.assertEqual(r.status_code, 415)
+
+    def test_a_docx_with_a_doctype_is_not_parsed(self):
+        """The preview parses through safe_fromstring: a part that declares a
+        DOCTYPE (the start of an entity-expansion attack) is a read failure,
+        and the entity is never expanded."""
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        doc_xml = ('<?xml version="1.0"?><!DOCTYPE w [<!ENTITY a "expanded">]>'
+                   f'<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:t>&a;</w:t></w:r></w:p>'
+                   '</w:body></w:document>').encode()
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("[Content_Types].xml", "<Types/>")
+            zf.writestr("word/document.xml", doc_xml)
+        r = self._preview(self._doc("entities.docx", buf.getvalue()))
+        self.assertEqual(r.status_code, 415, r.data)
+        self.assertNotIn("expanded", str(r.data))
 
     def test_a_small_docx_that_expands_into_a_forest_of_tags_is_refused(self):
         """The zip header's declared sizes can be accurate and the part still

@@ -5,7 +5,8 @@ import io
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
-from governance.models import AccessReviewItem, Risk
+from accounts.models import User
+from governance.models import AccessReview, AccessReviewItem, Risk
 from governance.risk_import import normalize, parse_upload
 from testutils import APITestBase, make_xlsx
 
@@ -125,6 +126,43 @@ class RiskRegisterTests(APITestBase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(AccessReviewItem.objects.get(pk=items[0]["id"]).decision, "keep")
 
+    def test_a_completed_review_cannot_be_renamed_or_deleted(self):
+        admin = self.client_for(self.admin)
+        rid = admin.post("/api/access-reviews/", {"name": "R"}, format="json").data["id"]
+        for it in admin.get(f"/api/access-review-items/?review={rid}").data:
+            admin.patch(f"/api/access-review-items/{it['id']}/", {"decision": "keep"}, format="json")
+        self.assertEqual(admin.post(f"/api/access-reviews/{rid}/complete/").status_code, 200)
+        self.assertEqual(admin.patch(f"/api/access-reviews/{rid}/", {"name": "Edited"}, format="json").status_code, 400)
+        self.assertEqual(admin.delete(f"/api/access-reviews/{rid}/").status_code, 400)
+        review = AccessReview.objects.get(pk=rid)
+        self.assertEqual((review.name, review.status), ("R", "completed"))
+
+    def test_a_failure_half_way_through_completing_leaves_nothing_revoked(self):
+        """The completion is one transaction: when applying the second revocation
+        fails, the first account is active again and the review is still open."""
+        from unittest import mock
+
+        admin = self.client_for(self.admin)
+        rid = admin.post("/api/access-reviews/", {"name": "R"}, format="json").data["id"]
+        items = admin.get(f"/api/access-review-items/?review={rid}").data
+        revoked = [it for it in items if it["username"] in (self.viewer.username, self.owner.username)]
+        self.assertEqual(len(revoked), 2)
+        for it in items:
+            decision = "revoke" if it in revoked else "keep"
+            admin.patch(f"/api/access-review-items/{it['id']}/", {"decision": decision}, format="json")
+        calls = []
+
+        def second_one_fails(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                raise RuntimeError("the audit write failed")
+
+        with mock.patch("audit.events.record_auth_event", side_effect=second_one_fails):
+            with self.assertRaises(RuntimeError):
+                admin.post(f"/api/access-reviews/{rid}/complete/")
+        self.assertTrue(User.objects.filter(pk__in=[self.viewer.pk, self.owner.pk], is_active=True).count() == 2)
+        self.assertEqual(AccessReview.objects.get(pk=rid).status, "open")
+
     def test_xlsx_with_a_doctype_is_refused(self):
         import zipfile
         good = make_xlsx([["Title"], ["Backups"]])
@@ -139,6 +177,21 @@ class RiskRegisterTests(APITestBase):
         with self.assertRaises(ValueError):
             parse_upload("register.xlsx", out.getvalue())
         self.assertEqual(parse_upload("register.xlsx", good)[1], ["Backups"])
+
+    def test_a_sheet_with_more_elements_than_a_register_needs_is_refused_before_it_is_parsed(self):
+        """The preview bounded the number of tags and the importer did not: a
+        29 KB workbook whose sheet was megabytes of empty rows peaked at hundreds
+        of megabytes before the row limit applied."""
+        from unittest import mock
+
+        from documents import ooxml
+
+        rows = [["Title"]] + [[f"Risk {n}"] for n in range(40)]
+        data = make_xlsx(rows)
+        self.assertEqual(len(parse_upload("register.xlsx", data)), 41)    # the header and 40 rows
+        with mock.patch.object(ooxml, "MAX_ELEMENTS", 30):
+            with self.assertRaises(ValueError):
+                parse_upload("register.xlsx", data)
 
     def test_import_creates_dedupes_and_warns(self):
         csv_bytes = (

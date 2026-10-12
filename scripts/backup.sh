@@ -59,9 +59,17 @@ umask 077
 owner_uid="$(id -u)"
 owner_gid="$(id -g)"
 
+# Everything is written beside its destination and moved in only when all four
+# archives exist. A run that fails half way then leaves the previous backup in
+# this directory whole, instead of a mixture of two runs.
+tmp="$out/.in-progress"
+rm -rf "$tmp"
+mkdir "$tmp"
+trap 'rm -rf "$tmp"' EXIT
+
 echo "backup: database"
-docker compose exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$out/db.sql"
-gzip -f "$out/db.sql"
+docker compose exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$tmp/db.sql"
+gzip -f "$tmp/db.sql"
 
 for v in media secrets tree; do
   echo "backup: $v volume"
@@ -73,10 +81,14 @@ for v in media secrets tree; do
   #
   # The chown is the other half. Without it the archive is 600 root:root and
   # the operator who ran this cannot read their own backup without sudo.
-  docker run --rm -v "${project}_${v}:/src:ro" -v "$out:/out" alpine:3.20 \
+  docker run --rm -v "${project}_${v}:/src:ro" -v "$tmp:/out" alpine:3.20 \
     sh -c "umask 077 && tar czf /out/$v.tgz -C /src . \
            && chown ${owner_uid}:${owner_gid} /out/$v.tgz \
            && chmod 600 /out/$v.tgz"
+done
+
+for f in db.sql.gz media.tgz secrets.tgz tree.tgz; do
+  mv -f "$tmp/$f" "$out/$f"
 done
 
 # The directory too, and not quietly: if this cannot be set, the archives are

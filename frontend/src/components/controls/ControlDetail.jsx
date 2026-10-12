@@ -34,6 +34,7 @@ export function ControlDetail({
   choicesError,
   onPatch,
   onEvidenceDelta,
+  onScore,
 }) {
   const [links, setLinks] = useState([]);
   const [linksLoading, setLinksLoading] = useState(true);
@@ -99,14 +100,20 @@ export function ControlDetail({
   const [readiness, setReadiness] = useState(null);
   const readinessReq = useRef(0);
   // The breakdown is read again after anything that moves the score (status,
-  // owner, test date, evidence), so it never disagrees with the row's number.
-  // A reply that has been overtaken by a newer request is dropped.
+  // owner, test date, evidence), so it never disagrees with the row's number:
+  // the new score goes up to the register row as well, which only a patch of
+  // the control itself used to refresh. A reply that has been overtaken by a
+  // newer request is dropped.
   const loadReadiness = useCallback(() => {
     const req = ++readinessReq.current;
     return api.get(`/controls/${id}/readiness/`)
-      .then(({ data }) => { if (req === readinessReq.current) setReadiness(data); })
+      .then(({ data }) => {
+        if (req !== readinessReq.current) return;
+        setReadiness(data);
+        onScore?.(id, { readiness_score: data.score, readiness_band: data.band, readiness_band_label: data.band_label });
+      })
       .catch(() => { if (req === readinessReq.current) setReadiness(null); });
-  }, [id]);
+  }, [id, onScore]);
   useEffect(() => {
     loadReadiness();
     return () => { readinessReq.current += 1; };

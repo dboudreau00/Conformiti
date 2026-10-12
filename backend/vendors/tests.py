@@ -114,6 +114,28 @@ class VendorRegisterTests(APITestBase):
             self.assertEqual(self.client_for(self.viewer).get("/api/vendors/").status_code, 200)
         self.assertLess(len(ctx.captured_queries), 12, len(ctx.captured_queries))
 
+    def test_the_list_and_the_export_cost_the_same_queries_for_one_vendor_and_for_many(self):
+        """A bound of "fewer than twelve" passes a query per vendor for the
+        first few vendors. Equal counts for one and for six do not."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        client = self.client_for(self.manager)
+
+        def queries(path):
+            with CaptureQueriesContext(connection) as ctx:
+                self.assertEqual(client.get(path).status_code, 200)
+            return len(ctx.captured_queries)
+
+        _vendor(name="Vendor 0")
+        paths = ("/api/vendors/", "/api/vendors/export/")
+        few = {path: queries(path) for path in paths}
+        for i in range(1, 6):
+            _vendor(name=f"Vendor {i}")
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertEqual(queries(path), few[path])
+
     def test_export_is_csv(self):
         _vendor()
         r = self.client_for(self.manager).get("/api/vendors/export/")
@@ -675,6 +697,51 @@ class VendorRiskAndFeedTests(APITestBase):
         self.assertIn(v.name, mail.outbox[0].body)
         self.assertIn(self.owner.email, mail.outbox[0].to)
         self.assertEqual(run_vendor_scan(), 0, "one email per lapse, not one per day")
+
+    def lapsed_report(self):
+        v = _vendor(owner=self.owner)
+        return VendorAssessment.objects.create(
+            vendor=v, kind="soc2_type2", result="satisfactory",
+            expires_at=timezone.localdate() - timedelta(days=3))
+
+    def test_a_failed_bridge_letter_send_hands_the_claim_back_for_the_next_run(self):
+        from unittest import mock
+
+        from django.core import mail
+
+        from notifications import tasks as notify_tasks
+
+        report = self.lapsed_report()
+        with mock.patch.object(notify_tasks, "_notify_bridge", side_effect=RuntimeError("smtp down")), \
+                self.assertLogs("notifications.tasks", "ERROR"):
+            self.assertEqual(notify_tasks.run_vendor_scan(), 0)
+        report.refresh_from_db()
+        self.assertIsNone(report.bridge_reminded_at, "a reminder that did not go is still owed")
+        self.assertEqual(notify_tasks.run_vendor_scan(), 1)          # retried, and sent once
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(notify_tasks.run_vendor_scan(), 0)          # and not twice
+
+    def test_two_overlapping_bridge_letter_runs_send_one_reminder(self):
+        """The second run read "not yet chased" before the first claimed it. The
+        claim is one UPDATE that only one of them wins."""
+        from unittest import mock
+
+        from django.core import mail
+
+        from notifications import tasks as notify_tasks
+        from vendors import assurance
+
+        report = self.lapsed_report()
+        stale_view = list(assurance.bridge_letter_gaps())
+        self.assertEqual(len(stale_view), 1)
+        self.assertIsNone(stale_view[0][1].bridge_reminded_at)
+        # Both runs hold the same stale view of the gaps.
+        with mock.patch.object(assurance, "bridge_letter_gaps", return_value=stale_view):
+            first = notify_tasks.run_vendor_scan()
+            second = notify_tasks.run_vendor_scan()
+        report.refresh_from_db()
+        self.assertEqual((first, second), (1, 0))
+        self.assertEqual(len(mail.outbox), 1)
 
     def test_expiring_and_missing_assurance_surface_to_the_owner(self):
         v = _vendor(owner=self.owner, tier="critical")

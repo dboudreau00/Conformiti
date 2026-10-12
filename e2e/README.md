@@ -118,6 +118,8 @@ e2e/
     laptop.spec.js        a 1366 by 768 laptop and a 1024 wide window: tables, the
                           dashboard and the top bar stay on screen
     phone.spec.js         a 390 by 844 phone: the Menu sheet, menus that fit the screen
+    fit.spec.js           every control on every page at 390, 1024 and 1440: no label cut
+                          off in a box one line high, nothing clipped by its card
     packages.spec.js      evidence packages: digest, export, auditor, samples
     passkeys.spec.js      passkey enrolment and sign-in (virtual authenticator)
     pbc.spec.js           the PBC request list: organisation, auditor, assignee

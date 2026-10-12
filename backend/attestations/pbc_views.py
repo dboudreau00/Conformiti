@@ -103,7 +103,11 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         check and the save one step, so an accept racing a withdraw (or two
         accepts) cannot both pass the check."""
         req = self.get_object()
-        return (PbcRequest.objects.select_for_update()
+        # Of the request row only: a plain FOR UPDATE would lock the package
+        # row the select_related joins in, queueing every request action behind
+        # a seal that is hashing files and inviting a deadlock with a control
+        # being removed from a draft.
+        return (PbcRequest.objects.select_for_update(of=("self",))
                 .select_related("package").get(pk=req.pk))
 
     # ------------------------------------------------------------- create
@@ -237,7 +241,8 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
     def return_(self, request, pk=None):
         req = self._locked()
         if not self._may_judge(request.user, req):
-            raise PermissionDenied("Only the issued auditor, or the organisation, can return an answer.")
+            raise PermissionDenied("Only the issued auditor, or the organisation closing a transcribed "
+                                   "request, can return an answer.")
         if req.status != PbcRequest.Status.PROVIDED:
             raise ValidationError({"detail": "Only a provided request can be returned."})
         note = str(request.data.get("returned_note") or "").strip()[:4000]
@@ -276,7 +281,12 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _may_judge(user, req):
-        return access.live_grant(user, req.package) is not None or access.can_assemble(user)
+        # The issued auditor judges any line. The organisation judges only a
+        # line it raised itself (one it transcribed from the auditor's email);
+        # a line the auditor raised is theirs to accept or return.
+        if access.live_grant(user, req.package) is not None:
+            return True
+        return access.can_assemble(user) and req.requested_by_side == PbcRequest.Side.ORGANISATION
 
     @action(detail=False, methods=["get"])
     def export(self, request):
@@ -346,23 +356,30 @@ class PbcItemViewSet(viewsets.ModelViewSet):
                              f"{req.reference}: attached '{item.document_name}' v{item.version}")
 
     def perform_destroy(self, instance):
-        req = instance.request
-        if not self._may_answer(self.request.user, req):
-            raise PermissionDenied("You cannot change this request's answer.")
-        if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
-            raise ValidationError({"detail": f"This request is {req.get_status_display().lower()}."})
-        record_package_event(self.request, req.package, "update",
-                             f"{req.reference}: detached '{instance.document_name}'")
-        instance.delete()
-        # An answer with nothing attached and no note saying why is no answer:
-        # `provide` would have refused it, so the request goes back to open.
-        if (req.status == PbcRequest.Status.PROVIDED and not req.response_note
-                and not req.items.exists()):
-            req.status = PbcRequest.Status.OPEN
-            req.provided_at = None
-            req.save(update_fields=["status", "provided_at", "updated_at"])
+        # One step under the request's row lock, the one accept, return and
+        # withdraw take: an accept that lands between the check and the
+        # reopening must not be overwritten with "open", nor an accepted
+        # request lose its attachment.
+        with transaction.atomic():
+            req = (PbcRequest.objects.select_for_update(of=("self",))
+                   .select_related("package").get(pk=instance.request_id))
+            if not self._may_answer(self.request.user, req):
+                raise PermissionDenied("You cannot change this request's answer.")
+            if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
+                raise ValidationError({"detail": f"This request is {req.get_status_display().lower()}."})
             record_package_event(self.request, req.package, "update",
-                                 f"{req.reference}: reopened, its last document was detached")
+                                 f"{req.reference}: detached '{instance.document_name}'")
+            instance.delete()
+            # An answer with nothing attached and no note saying why is no
+            # answer: `provide` would have refused it, so the request goes back
+            # to open.
+            if (req.status == PbcRequest.Status.PROVIDED and not req.response_note
+                    and not req.items.exists()):
+                req.status = PbcRequest.Status.OPEN
+                req.provided_at = None
+                req.save(update_fields=["status", "provided_at", "updated_at"])
+                record_package_event(self.request, req.package, "update",
+                                     f"{req.reference}: reopened, its last document was detached")
 
     def _touch_grant(self, request, package):
         grant = access.live_grant(request.user, package)

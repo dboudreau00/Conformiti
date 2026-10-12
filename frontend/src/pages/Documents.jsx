@@ -1116,7 +1116,7 @@ export default function Documents({ me }) {
 
                 <div className="overflow-x-auto">
                   <div style={{ minWidth: cols.minWidth }}>
-                    <div className="grid gap-3 border-b border-line bg-surface-2 px-5 py-2" style={{ gridTemplateColumns: cols.template }}>
+                    <div className="relative grid gap-3 border-b border-line bg-surface-2 px-5 py-2" style={{ gridTemplateColumns: cols.template }}>
                       <Label>Document</Label>
                       <Label>Status</Label>
                       <Label>Review due</Label>

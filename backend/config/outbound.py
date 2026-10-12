@@ -166,6 +166,8 @@ def ip_is_public(ip_str):
         ip = embedded
     # Teredo (2001::/32) tunnels IPv6 over UDP through a server and hides the
     # client's IPv4 address; there is no reason for a webhook to live there.
+    # Python's is_private covers 2001::/23 today, so this is the second lock on
+    # the same door, kept so a change to that list cannot reopen it.
     elif ip.version == 6 and ip.teredo is not None:
         return False
     if (ip.is_private or ip.is_loopback or ip.is_link_local
@@ -191,7 +193,7 @@ def host_matches(host, allowed):
 
 
 def check_shape(url, *, allowed_hosts=None, allowed_ports=(443,),
-                deny_internal_names=True, allowed_schemes=("https",)):
+                deny_internal_names=True, allowed_schemes=("https",), allow_userinfo=False):
     """Everything that can be judged from the URL text alone, returning
     ``(host, port)``.
 
@@ -208,7 +210,9 @@ def check_shape(url, *, allowed_hosts=None, allowed_ports=(443,),
     if parsed.scheme not in allowed_schemes or not parsed.hostname:
         raise OutboundError(
             "scheme", f"The URL must start with {allowed_schemes[0]}:// and name a host.")
-    if parsed.username or parsed.password:
+    # A target must not carry credentials. The operator's own proxy may: an
+    # authenticated egress proxy is written http://user:password@host:port.
+    if (parsed.username or parsed.password) and not allow_userinfo:
         raise OutboundError(
             "userinfo", "The URL must not carry a username or password before the host.")
     host = parsed.hostname.lower().rstrip(".")
@@ -224,6 +228,21 @@ def check_shape(url, *, allowed_hosts=None, allowed_ports=(443,),
         raise OutboundError(
             "host", "Expected one of: " + ", ".join(allowed_hosts) + ".")
     return host, port
+
+
+def legacy_ipv4(host):
+    """The IPv4 address a host spelled as one number, in hex or octal, or as a
+    short dotted form (``2852039166``, ``0x7f.1``, ``127.1``) denotes, or None.
+
+    ``ipaddress`` reads only the canonical four-part form. A proxy, like libc,
+    reads the older forms too, so on a URL it will resolve for us this is the
+    only place the real address can be read before the request is sent."""
+    if not host or not all(c in "0123456789abcdefx." for c in host):
+        return None
+    try:
+        return ipaddress.IPv4Address(socket.inet_aton(host))
+    except (OSError, ValueError):
+        return None
 
 
 def proxy_for(url, proxies=None):
@@ -281,7 +300,8 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
     if proxy:
         # Check the proxy itself: it is the address this process will dial.
         check_shape(proxy, allowed_hosts=None, allowed_ports=None,
-                    deny_internal_names=False, allowed_schemes=("http", "https"))
+                    deny_internal_names=False, allowed_schemes=("http", "https"),
+                    allow_userinfo=True)
         # A proxy resolves names; it does not change what a literal address
         # is. Returning here unconditionally would let https://169.254.169.254/
         # through the proxy unexamined, on a URL a tenant administrator typed
@@ -290,7 +310,7 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
             try:
                 literal = ipaddress.ip_address(host.strip("[]"))
             except ValueError:
-                literal = None
+                literal = legacy_ipv4(host)
             if literal is not None and not ip_is_public(str(literal)):
                 raise OutboundError("private", "The host must resolve to a public address.")
         return None

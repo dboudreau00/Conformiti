@@ -58,23 +58,18 @@ OOXML_EXTENSIONS = {".docx", ".dotx", ".xlsx", ".xltx", ".pptx", ".potx", ".ppsx
 ODF_EXTENSIONS = {".odt", ".ott", ".ods", ".ots", ".odp", ".otp", ".odg", ".otg", ".odf", ".odb"}
 ODF_SCRIPT_PREFIXES = ("basic/", "scripts/")
 
-# A zip starts with a local-file header, or with the end record when empty.
-ZIP_MAGIC = (b"PK\x03\x04", b"PK\x05\x06")
-
-
 # Not covered, deliberately: a macro file one archive level down (a .docm
 # inside a .zip, anything inside a .7z or .rar). Looking inside means
 # decompressing attacker-chosen containers, which is the ClamAV scan's job
 # (documents/scanning.py) rather than something to hand-roll here.
-def _holds_macros(uploaded, strict=True):
-    """True if this is a zip container with a macro part inside it.
+def _zip_names(uploaded):
+    """The lower-cased member names of a zip, or None when this is not one.
 
-    ``strict`` adds the packaged-object rule (``embeddings/*.bin``). A file
-    that only *looks* like a zip, with no Office or OpenDocument name, is
-    checked without it: an ordinary archive may hold a folder of that name.
-
-    Unreadable or non-zip files are not this function's business: they are
-    not OOXML, and the scanner and the rest of validation still apply.
+    Whether a file is a zip is zipfile's call, made from the end of the file the
+    way Office reads a package: bytes in front of the first local-file header do
+    not stop one opening, so the first four bytes are not the test. Unreadable
+    or non-zip files are not this module's business: they are not OOXML, and the
+    scanner and the rest of validation still apply.
     """
     try:
         position = uploaded.tell()
@@ -86,42 +81,54 @@ def _holds_macros(uploaded, strict=True):
             # Every name, not a prefix. Reading the central directory is what
             # costs, and namelist() has already done it, so a slice would save
             # nothing and leave a place to hide a macro part (entry 2001).
-            names = [n.lower() for n in archive.namelist()]
+            return [n.lower() for n in archive.namelist()]
     except (zipfile.BadZipFile, OSError, ValueError, AttributeError, NotImplementedError):
-        return False
+        return None
     finally:
         try:
             uploaded.seek(position or 0)
         except (AttributeError, OSError):
             pass
-    if any(any(part in name for part in MACRO_PARTS) for name in names):
+
+
+def _is_macro_part(name):
+    """Whether a member of an ordinary archive is a macro part: the VBA project
+    or its data by file name, or a ``macros/vba`` folder, each matched as whole
+    path segments so a folder that merely mentions macros is left alone."""
+    parts = name.split("/")
+    if parts[-1] in ("vbaproject.bin", "vbadata.xml"):
         return True
-    # An OpenDocument package is recognised by its own members, not its name,
-    # so an ordinary archive with a ``scripts/`` folder is left alone.
-    is_odf = "mimetype" in names and "meta-inf/manifest.xml" in names
+    return any(parts[i] == "macros" and parts[i + 1] == "vba" for i in range(len(parts) - 1))
+
+
+def _holds_macros(uploaded, named=False, odf=False):
+    """True if this is a zip container with a macro part inside it.
+
+    ``named`` says the file's own name is an Office or OpenDocument one, and
+    ``odf`` that it is OpenDocument. Those get the strict rules: the macro parts
+    are looked for anywhere in a member's name, and so is the packaged-object
+    rule (``embeddings/*.bin``). A file that only *looks* like a zip is checked
+    by whole path segments and without the packaged-object rule, because an
+    ordinary archive may hold a folder of that name, or a document that talks
+    about macros.
+    """
+    names = _zip_names(uploaded)
+    if names is None:
+        return False
+    if named:
+        found = any(any(part in name for part in MACRO_PARTS) for name in names)
+    else:
+        found = any(_is_macro_part(name) for name in names)
+    if found:
+        return True
+    # An OpenDocument package is recognised by its name or by its own members,
+    # so an ordinary archive with a ``scripts/`` folder is left alone, and an
+    # .odt is not let through for lacking the ``mimetype`` entry.
+    is_odf = odf or ("mimetype" in names and "meta-inf/manifest.xml" in names)
     if is_odf and any(name.startswith(ODF_SCRIPT_PREFIXES) for name in names):
         return True
-    return strict and any(EMBEDDED_OBJECT in name and name.endswith(EMBEDDED_OBJECT_SUFFIXES)
-               for name in names)
-
-
-def _is_zip(uploaded):
-    """True if the file begins with a zip signature, whatever it is called."""
-    try:
-        position = uploaded.tell()
-    except (AttributeError, OSError):
-        position = None
-    try:
-        uploaded.seek(0)
-        head = bytes(uploaded.read(4))
-    except (AttributeError, OSError, ValueError):
-        return False
-    finally:
-        try:
-            uploaded.seek(position or 0)
-        except (AttributeError, OSError):
-            pass
-    return head.startswith(ZIP_MAGIC)
+    return named and any(EMBEDDED_OBJECT in name and name.endswith(EMBEDDED_OBJECT_SUFFIXES)
+                         for name in names)
 
 
 def _is_ole2(uploaded):
@@ -171,8 +178,9 @@ def validate_upload(uploaded):
         )
     # By name for the Office and OpenDocument formats, and by shape for
     # anything else: a macro document renamed to .zip or .dat is still one.
-    named_office = ext in OOXML_EXTENSIONS or ext in ODF_EXTENSIONS
-    if (named_office or _is_zip(uploaded)) and _holds_macros(uploaded, strict=named_office):
+    named_odf = ext in ODF_EXTENSIONS
+    named_office = ext in OOXML_EXTENSIONS or named_odf
+    if _holds_macros(uploaded, named=named_office, odf=named_odf):
         raise serializers.ValidationError(
             "That file carries macros, whatever its name says. Remove them, or save "
             "it as PDF, and upload that instead."

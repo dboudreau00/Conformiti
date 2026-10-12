@@ -12,7 +12,7 @@ from rest_framework.test import APIClient
 from accounts import mfa as mfa_lib
 from accounts.models import MfaDevice, Role, Workspace
 from attestations.tests import PackageTestBase
-from attestations.views import PackageWorkThrottle
+from attestations.views import PackageVerifyThrottle, PackageWorkThrottle
 from audit.middleware import _client_ip
 from audit.models import AuditLog
 from testutils import PASSWORD, APITestBase
@@ -158,6 +158,29 @@ class PackageWorkThrottleTests(PackageTestBase):
             # Per account: another person with the capability is unaffected.
             other = self.client_for(self.admin)
             self.assertEqual(other.get(url).status_code, 200)
+
+
+class PackageVerifyThrottleTests(PackageTestBase):
+    """The integrity check re-hashes every pinned file for any reader of the
+    package. Unthrottled, an external auditor's grant was a way to spend the
+    server's time at will."""
+
+    def test_verify_has_its_own_per_account_limit(self):
+        with mock.patch.object(PackageVerifyThrottle, "THROTTLE_RATES", {"package_verify": "3/min"}):
+            self.add_control()
+            self.seal()
+            url = f"/api/evidence-packages/{self.package.pk}/verify/"
+            for _ in range(3):
+                self.assertEqual(self.manager_client.get(url).status_code, 200)
+            self.assertEqual(self.manager_client.get(url).status_code, 429)
+            self.assertEqual(self.client_for(self.admin).get(url).status_code, 200)
+
+    def test_opening_a_dozen_packages_in_a_minute_is_not_refused(self):
+        self.add_control()
+        self.seal()
+        url = f"/api/evidence-packages/{self.package.pk}/verify/"
+        for _ in range(12):
+            self.assertEqual(self.manager_client.get(url).status_code, 200)
 
 
 class AuditClientAddressTests(APITestBase):

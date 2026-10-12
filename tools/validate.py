@@ -367,7 +367,7 @@ PIP_NAME = {
     "rest_framework_simplejwt": "djangorestframework-simplejwt",
     "corsheaders": "django-cors-headers", "django_filters": "django-filter",
     "dotenv": "python-dotenv", "celery": "celery", "redis": "redis",
-    "boto3": "boto3", "gunicorn": "gunicorn", "psycopg": "psycopg",
+    "boto3": "boto3", "botocore": "boto3", "gunicorn": "gunicorn", "psycopg": "psycopg",
     "dateutil": "python-dateutil",
     "psycopg2": "psycopg2-binary",
     "cryptography": "cryptography",
@@ -567,8 +567,11 @@ def check_notifications_wiring():
     cmd = os.path.join(BACKEND, "notifications", "management", "commands", "send_review_reminders.py")
     if not os.path.exists(cmd):
         err("notify", "send_review_reminders management command missing")
-    elif "run_review_scan" not in read(cmd):
-        err("notify", "send_review_reminders does not call run_review_scan")
+    elif not ("run_all_scans" in read(cmd) or "run_review_scan" in read(cmd)):
+        # run_all_scans is the morning pass the Celery task makes (every
+        # workspace, one failure isolated, the daily summary); the command
+        # calls it rather than carrying a loop of its own.
+        err("notify", "send_review_reminders calls neither run_all_scans nor run_review_scan")
 
     # 4. both email templates exist
     for ext in ("html", "txt"):

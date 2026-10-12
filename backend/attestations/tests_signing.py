@@ -181,6 +181,55 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         call_command("rotate_signing_key", "--show", stdout=show)
         self.assertIn(new_id, show.getvalue())
 
+    def test_only_the_key_in_force_is_listed_as_current_whatever_the_registry_still_says(self):
+        """After a rotation a workspace's old key stays unretired until that
+        workspace seals again, so the retired mark cannot be what says which
+        key is current: the key in force is."""
+        from accounts import tenancy
+
+        self.seal()
+        stale = signing.public_b64(signing.ed25519.Ed25519PrivateKey.generate().public_key())
+        SigningKey.objects.create(public_key=stale, key_id=signing.key_id(stale),
+                                  workspace=tenancy.current())
+        listed = APIClient().get("/api/signing-keys/", {"workspace": "default"}).data
+        flags = {k["key_id"]: k["current"] for k in listed["keys"]}
+        self.assertIs(flags[signing.key_id(stale)], False)
+        self.assertEqual(sum(flags.values()), 1)
+        self.assertTrue(flags[listed["current"]["key_id"]])
+
+    def test_rotation_run_from_the_command_line_rotates_every_workspaces_key(self):
+        """A command line has no workspace active. It used to read the
+        installation key, print that as the new key, retire nothing and register
+        a key no package carries, so the fingerprint an operator handed to
+        auditors was never the one on their bundles."""
+        from accounts import tenancy
+        from accounts.models import Workspace
+
+        self.seal()
+        old_id = self.package.signing_key_id
+        out = StringIO()
+        with tenancy.unscoped():
+            call_command("rotate_signing_key", "--label", "FY27", stdout=out)
+        # Every key row belongs to a workspace: none is registered for the installation.
+        self.assertFalse(SigningKey.objects.filter(workspace__isnull=True).exists())
+        self.assertIsNotNone(SigningKey.objects.get(key_id=old_id).retired_at)
+        current = SigningKey.objects.filter(retired_at__isnull=True)
+        self.assertEqual(current.count(), Workspace.objects.count())
+        listed = APIClient().get("/api/signing-keys/", {"workspace": "default"}).data
+        new_id = listed["current"]["key_id"]
+        self.assertNotEqual(new_id, old_id)
+        self.assertEqual(SigningKey.objects.get(key_id=new_id).label, "FY27")
+        # The fingerprint printed for the workspace is the one its packages now carry.
+        self.assertIn(f"default", out.getvalue())
+        self.assertIn(new_id, out.getvalue())
+        other = EvidencePackage.objects.create(name="Next", created_by=self.manager,
+                                               created_by_name="Mia")
+        self.manager_client.post(f"/api/evidence-packages/{other.pk}/add_controls/",
+                                 {"controls": [self.tree.c2.pk]}, format="json")
+        r = self.manager_client.post(f"/api/evidence-packages/{other.pk}/seal/",
+                                     {"assertion": ASSERTION}, format="json")
+        self.assertEqual(r.data["signing_key_id"], new_id)
+
     def test_health_publishes_the_key(self):
         body = APIClient().get("/api/health/").data["signing"]
         self.assertTrue(body["enabled"])

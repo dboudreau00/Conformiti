@@ -27,7 +27,11 @@ stack and `.env.example` already say what they mean, so they behave as
 before. A bare-metal installation that never set the variable and never
 set a strong `DJANGO_SECRET_KEY` now refuses to start and says why: set a
 real key (or `DJANGO_SECRET_KEY_FILE`), or set `DJANGO_DEBUG=true` for local
-development only. The owner of a risk can now change only its status,
+development only. An installation that has a strong key and never set the
+variable now behaves as production: `BEHIND_TLS` defaults on, so plain HTTP is
+redirected to HTTPS and cookies are secure; `EMAIL_PROVIDER` defaults to `ses`;
+and the browsable API is off. If you serve plain HTTP on purpose, set
+`DJANGO_DEBUG=false` and `BEHIND_TLS=false` before upgrading. The owner of a risk can now change only its status,
 mitigation plan, due date and Jira key; its title, rating, treatment, owner
 and control need a framework manager, and the Risks page greys those
 fields out for an owner who is not one. A signing key file that exists but
@@ -66,7 +70,9 @@ is no longer overwritten with a new key (which would have signed everyone
 out and left encrypted secrets unreadable): the application refuses to
 start and says so. A file that is empty is still filled. A new key is
 written whole and linked into place, so workers that boot together agree
-on one key. `READINESS_BANDS`, `REVIEW_ALERT_LEAD_DAYS` and
+on one key; the field-encryption key file is created the same way (it was
+overwritten by whichever worker wrote last), and an empty file is filled by
+one process while the others wait for it. `READINESS_BANDS`, `REVIEW_ALERT_LEAD_DAYS` and
 `REVIEW_SCAN_HOUR` name themselves when they hold anything but
 whole numbers, or an hour outside 0 to 23.
 
@@ -75,13 +81,20 @@ whole numbers, or an hour outside 0 to 23.
 `Scripts/` folders, and it looks at any file that is a zip whatever it is
 called, so a macro document renamed to `.zip` or `.dat` is refused too.
 An ordinary archive that happens to hold a folder called `scripts` is left
-alone.
+alone. The check finds an archive whatever bytes come before it, as Office
+does, and judges an OpenDocument file by its name as well as by its members,
+so an `.odt` with a `Basic/` folder and no `mimetype` entry is refused. In an
+archive that only looks like a package, a macro part is matched by whole path
+segments, so a PDF in a folder called "Excel macros" is no longer refused as
+a macro file.
 
 **Access reviews.** Completing a review is one transaction under a row
 lock. Two clicks, or two reviewers, can no longer both apply the
 revocations, and a failure half way no longer leaves some accounts revoked
 on a review that still reads as open. A decision can no longer be saved on
-a review that is completed, or between the check and the revocations.
+a review that is completed, or between the check and the revocations, and a
+change or a delete that read the review while it was open can no longer reopen
+it or remove it once it has been completed.
 
 **Risks.** The owner of a risk was allowed through to every field, so an
 owner could hand the risk to someone else, lower its rating or change its
@@ -96,18 +109,25 @@ account on an address another account already uses is refused with a
 message, rather than creating a second account that makes the next
 email-linked sign-in ambiguous. The entries the `link_oidc_identity`
 command writes to the audit trail now belong to the account's workspace,
-so that workspace's administrators can see who linked a sign-in.
+so that workspace's administrators can see who linked a sign-in. The sign-in
+page says when the address is already in use by another account, where it
+said the identity provider declined.
 
 **Evidence requests.** Accepting, returning, withdrawing and providing an
 answer each run in one transaction under a row lock, so an accept racing a
 withdraw cannot both pass the status check. Detaching the last document of
 an answer that has no note puts the request back to open, since that is not
 an answer. An auditor's access count rises by one in the database, so two
-reads at once both count.
+reads at once both count. The organisation can accept or return only a line it
+transcribed for the auditor, and an action locks the request row alone, so a
+seal that is hashing files does not hold every request action behind it.
 
 **Spreadsheets and documents.** A part that declares a DOCTYPE, and with it
 any entity, is refused in an imported spreadsheet and in the document
-preview before anything is expanded, using the standard library only.
+preview before anything is expanded, using the standard library only. The risk register and vendor importers also
+refuse a sheet with more tags than a document needs before a tree is built
+from it, as the preview does, so a small file of empty rows cannot cost
+hundreds of megabytes.
 
 **Backup codes.** Migration `accounts` 0006 can now be reversed: the codes go
 back to the person's authenticator, and a person with none (a passkey-only
@@ -117,7 +137,9 @@ both ways.
 **Stale replies.** A slow answer for a folder or a vendor you have already
 moved off no longer replaces the access list or the detail now on screen,
 and two requests that fail at once no longer clear each other's token
-refresh.
+refresh. Choosing another page while the vendor list was still loading no
+longer sends you back to Vendors: the page used to rewrite the address after
+you had already moved on.
 
 **Chat messages.** A Slack or Teams message is sent when the change that
 raised it has been saved, so an event inside a request that then rolls back
@@ -132,11 +154,16 @@ through 6to4 (`2002::/16`) and NAT64 (`64:ff9b::/96`) addresses to the IPv4
 address inside, as it already did for IPv4-mapped ones, and refuses Teredo
 (`2001::/32`) outright, so none of them reaches a private address by being
 wrapped in IPv6. Jira answers are read up to 5 MB, and a timeout while the
-answer is being read is reported as Jira being unreachable.
+answer is being read is reported as Jira being unreachable, as is an answer cut short or too
+deeply nested to read. Behind an HTTPS proxy, a host written as a single
+number or in hexadecimal (`2130706433`, `0x7f.1`, `127.1`) is refused as its
+canonical form is, and a proxy address that carries a username and password
+is no longer refused as though it were the destination.
 
-**Evidence bundles.** Every file in an exported bundle extracts as an
-ordinary readable file; before, `unzip` on Linux and macOS created them with
-no permissions and the auditor's first `sha256sum -c` failed. `trail.csv`
+**Evidence bundles.** Every file in an exported bundle is marked as an
+ordinary readable file (mode 0644, where Python writes 0600 for a member with
+no mode of its own), so a bundle opened by a different account than the one
+that unzipped it can still be read. `trail.csv`
 holds up to 50,000 entries, oldest first, where it held 5,000, and when a
 package has more the README says how many it holds of how many, instead of
 cutting quietly. A bundle whose `verify.py` cannot be read now fails to
@@ -152,7 +179,11 @@ longer stops everyone else's. The notice that a stored file was
 quarantined, raised by the sweep that rescans files, is posted from the
 file's own workspace, so on a shared installation it reaches that
 workspace's chat channels or none, and never names the file to a channel
-that belongs to another organisation.
+that belongs to another organisation. The cron commands `send_review_reminders`
+and `record_readiness`, which installations without Celery use, now do the
+same: they carry on past a workspace that fails, name it, and exit with an
+error once the rest have run, and the first posts the daily summary as the
+task does.
 
 **Vendors.** An assessment can no longer be moved to another vendor, which
 would have put one vendor's report on another's file, and the register's CSV
@@ -168,7 +199,24 @@ reusing the other key's row. A key file is created whole and linked into
 place, so a second worker never reads half of it. The standalone verifier
 refuses "negative zero", which RFC 8032 does not allow as a point encoding.
 A bundle's two signatures may still come from different keys, as they do
-after a rotation; the verifier prints both.
+after a rotation; the verifier prints both. `manage.py rotate_signing_key`,
+run from a command line, rotates the key of every workspace, retires each
+workspace's previous one and prints the fingerprint its packages now carry; it
+used to read the installation key, which signs nothing sealed in a workspace,
+so the fingerprint handed to auditors was never the one on their bundles.
+Control characters in anything `verify.py` prints from a bundle are written as
+escapes, so a forged package name cannot hide the lines after it. Verifying a
+package re-hashes every pinned file, so it is rate limited like exporting
+(`THROTTLE_PACKAGE_VERIFY`, 60 a minute).
+
+**Sealed packages under concurrency.** Saving a package's details, deleting a
+draft, withdrawing, changing a control's snapshot fields and every sample and
+evidence edit now re-read the package under a row lock before they check it is
+still open. A save that raced a seal on PostgreSQL could write the draft state
+and an empty manifest over a sealed package while the audit trail and the chat
+message still said it was sealed. Adding controls with an id that is not a
+number, or rolling forward with an engagement that is not text, answers 400
+where it answered 500.
 
 **Year over year.** Pinned evidence with one name and no live document is
 paired row by row, identical content first, so the added, removed and
@@ -190,7 +238,38 @@ register panel offers a quiet Portfolio view link to it; a standard
 installation shows nothing new. When the notification channels or the
 current workspace cannot be read, the Account page says so with a Try
 again link, where it used to say Slack and Teams were not configured; a
-digest choice that fails to save returns to what is saved.
+digest choice that fails to save returns to what is saved. On the workspace
+channels, a workspace answer that arrives late no longer empties the webhook
+or reminder box a person has started to fill, and Save stays disabled until
+the workspace has loaded, where it used to do nothing.
+
+**Email.** Amazon SES is asked once, with five seconds to connect and fifteen to
+answer, where boto3's defaults are a minute for each and up to five attempts. A
+mail service that does not answer holds the request that sends for seconds, not
+minutes, and a slow answer is never sent twice.
+
+**Installers.** `scripts/restore.sh` reads all four archives before it drops
+anything and asks for `yes` (`--yes` for a script); `scripts/backup.sh` writes
+to temporary names and moves them in when all four are whole. Both installers
+refuse a Docker `.env` run locally, a checkout path with brackets or one too
+long for Windows, and two mode flags at once; `install.sh` also tries
+`python3.14`, accepts `--port=N`, bypasses a proxy to check `localhost` and
+names the failing step. `--reset` names the database and uploads it will
+delete, refuses paths outside the checkout and asks you to type `reset`
+(`--yes` or `-Yes` answers for a script). The Docker banner says where the data
+lives and that the setup is a trial. PREREQUISITES.md covers proxies, offline
+installs, synced folders and long paths.
+
+**Interface.** Muted and faint text meet contrast on every theme pack, scroll
+regions take keyboard focus, the account button, Mark reviewed and the vendor
+links say what they do, and a table's header cells sit above their
+screen-reader text. Attaching or unlinking evidence on a control refreshes the
+score in its row as well as in the breakdown. A button's label now stays on one
+line: New package, New series, Add request, Edit group and Delete group had
+wrapped inside their one-line boxes and shown half a word at some widths, and
+on a phone Delete group ran past the edge of the screen and the matrix's
+Export past the edge of its card. A new browser spec checks every control on
+every page at 390, 1024 and 1440 pixels for both.
 
 **Changed.** Code comments and docstrings say why the code is the way it is
 instead of retelling earlier fixes, and keep every review finding they cite.

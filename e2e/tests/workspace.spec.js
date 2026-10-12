@@ -52,7 +52,7 @@ test.describe("dashboard", () => {
     await expect(calendar.getByRole("heading", { level: 3, name: date })).toBeVisible();
     const entry = calendar.getByRole("listitem");
     await expect(entry).toHaveCount(1);
-    await expect(entry.getByRole("button", { name: `Mark ${doc} reviewed`, exact: true })).toBeVisible();
+    await expect(entry.getByRole("button", { name: `Mark reviewed: ${doc}`, exact: true })).toBeVisible();
 
     // A review entry names a document, and opens it.
     const preview = page.waitForResponse((r) => r.url().includes("/preview/"));
@@ -103,7 +103,7 @@ test.describe("dashboard", () => {
   test("the review queue marks a document reviewed", async ({ page }) => {
     const queue = panel(page, "Reviews coming up");
     await expect(queue).toBeVisible();
-    const button = queue.getByRole("button", { name: /^Mark .* reviewed$/ }).first();
+    const button = queue.getByRole("button", { name: /^Mark reviewed: / }).first();
     const label = await button.getAttribute("aria-label");
     await button.click();
     await page.waitForLoadState("networkidle");

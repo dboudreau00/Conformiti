@@ -106,7 +106,10 @@ class EvidenceMappingTests(APITestBase):
         grant(self.tree.ctrl1, user=self.owner, level=EDIT)
         post = lambda docs: self.client_for(self.owner).post(
             "/api/control-evidence/bulk/", {"control": self.tree.c2.pk, "documents": docs}, format="json")
-        for bad in (["abc"], [[1]], [None], [True], [{"id": 1}], list(range(1, 502))):
+        # Past the database's integer type is a wrong id, not a server error.
+        too_big = [2 ** 63, 2 ** 70, -2 ** 70, str(2 ** 80)]
+        for bad in (["abc"], [[1]], [None], [True], [{"id": 1}], list(range(1, 502)),
+                    *([big] for big in too_big)):
             with self.subTest(bad=str(bad)[:30]):
                 self.assertEqual(post(bad).status_code, 400)
         # A numeric string is the same document, and repeats count once.

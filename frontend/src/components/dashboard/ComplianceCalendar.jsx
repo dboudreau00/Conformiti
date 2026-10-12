@@ -388,7 +388,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                             size="sm"
                             className="shrink-0"
                             disabled={busyId != null}
-                            aria-label={`Mark ${docName} reviewed`}
+                            aria-label={`Mark reviewed: ${docName}`}
                             onClick={() => markReviewed(event)}
                             icon={<CheckIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />}
                           >

@@ -352,3 +352,20 @@ class CountWordingTests(SimpleTestCase):
         self.assertEqual(count_of(1, "question"), "1 question")
         self.assertEqual(count_of(0, "question"), "0 questions")
         self.assertEqual(count_of(3, "item"), "3 items")
+
+
+class SesClientTests(SimpleTestCase):
+    def test_the_ses_client_gives_up_in_seconds_and_tries_once(self):
+        """A message is sent while somebody waits for the page. boto3's defaults
+        (a minute to connect, a minute to read, five attempts) would hold that
+        request for minutes when the service does not answer."""
+        import boto3
+
+        from notifications import ses
+
+        with override_settings(AWS_SES_REGION="eu-west-1", AWS_SES_CONFIGURATION_SET=""):
+            with mock.patch.object(boto3, "client") as make:
+                ses.send_ses_email("Subject", "<p>Body</p>", "Body", ["a@example.com"])
+        config = make.call_args.kwargs["config"]
+        self.assertEqual((config.connect_timeout, config.read_timeout), (5, 15))
+        self.assertEqual(config.retries["total_max_attempts"], 1)

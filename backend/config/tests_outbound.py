@@ -185,6 +185,32 @@ class ProxyTests(TestCase):
             with self.assertRaises(outbound.OutboundError):
                 outbound.assert_safe_url("http://api.example.com/v1", allowed_hosts=None)
 
+    def test_an_address_written_the_old_way_is_judged_as_the_address_it_means(self):
+        """A proxy resolves 2852039166 and 0x7f.1 as the numbers they are; the
+        canonical-form parser read them as names and let them through."""
+        proxied = [mock.patch("config.outbound.urllib.request.getproxies",
+                              return_value={"https": self.PROXY}),
+                   mock.patch("config.outbound.urllib.request.proxy_bypass", return_value=False)]
+        with proxied[0], proxied[1]:
+            for host in ("2852039166", "2130706433", "0x7f.1", "127.1", "017700000001",
+                         "3232235777", "0"):
+                with self.subTest(host=host):
+                    with self.assertRaises(outbound.OutboundError) as caught:
+                        outbound.assert_safe_url(f"https://{host}/", allowed_hosts=None)
+                    self.assertEqual(caught.exception.code, "private")
+            # A public address written the old way, and ordinary names, still pass.
+            self.assertIsNone(outbound.assert_safe_url("https://1561097786/", allowed_hosts=None))
+            self.assertIsNone(outbound.assert_safe_url("https://example.com/", allowed_hosts=None))
+            self.assertIsNone(outbound.assert_safe_url("https://deadbeef.example/", allowed_hosts=None))
+
+    def test_an_authenticated_proxy_is_accepted_and_an_authenticated_target_is_not(self):
+        with mock.patch("config.outbound.urllib.request.getproxies",
+                        return_value={"https": "http://user:secret@egress.internal:3128"}),                 mock.patch("config.outbound.urllib.request.proxy_bypass", return_value=False):
+            self.assertIsNone(outbound.assert_safe_url(self.URL, allowed_hosts=None))
+            with self.assertRaises(outbound.OutboundError) as caught:
+                outbound.assert_safe_url("https://user:secret@api.example.com/v1", allowed_hosts=None)
+            self.assertEqual(caught.exception.code, "userinfo")
+
     def test_a_bypassed_host_is_resolved_and_pinned_as_usual(self):
         """`no_proxy` names what the operator excluded, a model server on the
         LAN being the obvious case."""

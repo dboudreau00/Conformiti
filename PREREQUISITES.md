@@ -62,6 +62,30 @@ script extracted from a downloaded ZIP is refused under `RemoteSigned` too.
 `-ExecutionPolicy Bypass` lifts that for the one run and changes nothing on
 the machine.
 
+## Where it runs badly
+
+- **A folder that a sync client watches** (OneDrive, Dropbox, iCloud Drive,
+  Google Drive for desktop). `node_modules` and `.venv` hold tens of thousands
+  of small files, and the sync client locks and rewrites them while pip, npm and
+  Vite are using them, which shows up as installs that fail halfway or hang.
+  Clone into a plain local folder (for example `C:\conformiti` or
+  `~/conformiti`). The same goes for a network share.
+- **A long path on Windows.** The evidence folder tree goes up to 150
+  characters below the checkout, and Windows stops at 259 unless long paths are
+  switched on. `install.ps1` refuses a folder that is too deep and says so; a
+  short path such as `C:\conformiti` avoids it.
+- **A proxy.** pip and npm follow `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` (or
+  npm's own `proxy` and `https-proxy` settings). The Docker daemon needs its
+  own proxy settings to pull images and build; a shell variable does not reach
+  it. The installers' own check of `localhost` ignores the proxy.
+- **No internet.** Both installers download packages (pip, npm) or images
+  (Docker). On a machine without access, fetch them elsewhere and bring them
+  across: for pip, `pip download -r backend/requirements.txt -d wheelhouse` and
+  then `PIP_NO_INDEX=1 PIP_FIND_LINKS=wheelhouse`; for Docker,
+  `docker compose config --images` lists the images to `docker save` and
+  `docker load`. A bare-metal install can take a prebuilt `frontend/dist` in
+  place of an npm build.
+
 ## Bare metal (Linux, without Docker)
 
 Everything the local development path needs, plus PostgreSQL 16, Redis 7 and

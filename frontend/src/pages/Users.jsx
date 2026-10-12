@@ -55,7 +55,10 @@ const FIELD_LABELS = {
 };
 
 const cell = "px-5 py-3 align-middle";
-const headCell = "table-head px-5 py-2 text-left font-normal";
+// `relative` contains the screen-reader-only header text: sr-only is absolutely
+// positioned, and with no positioned ancestor it escapes the scrolling wrapper
+// and stretches the whole page sideways.
+const headCell = "table-head relative px-5 py-2 text-left font-normal";
 
 export default function Users({ me }) {
   const { ask, confirmDialog } = useConfirm();
@@ -356,7 +359,7 @@ export default function Users({ me }) {
             ) : shown.length === 0 ? (
               <Empty title="No users match">Try a shorter word: the search matches usernames, names, email addresses and job titles.</Empty>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" role="region" aria-label="Users" tabIndex={0}>
                 <table className="w-full min-w-[1080px] border-collapse text-[13px]">
                   <thead>
                     <tr className="border-b border-line bg-surface-2">
@@ -408,7 +411,7 @@ export default function Users({ me }) {
             ) : roles.length === 0 ? (
               <Empty title="No roles defined">Roles are seeded on first install.</Empty>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" role="region" aria-label="Roles and permissions" tabIndex={0}>
                 <table className="w-full min-w-[720px] border-collapse text-[13px]">
                   <thead>
                     <tr className="border-b border-line bg-surface-2">

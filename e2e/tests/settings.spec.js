@@ -236,6 +236,43 @@ test.describe("workspace chat channels", () => {
         .toHaveCount(0);
     });
 
+  /** The page asks for the workspace as the section opens, and the answer used
+   *  to empty the webhook box when it landed. A slow answer therefore ate what
+   *  a person had already typed, and Save then sent the form without it. */
+  test("a webhook typed before the workspace has loaded is kept, and Save waits for the answer",
+    async ({ page }) => {
+      await open(page, "/settings", "Settings");
+      const hold = async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      };
+      await page.route("**/api/workspaces/current/", hold);
+      await section(page, "Role & access").click();
+
+      const slack = page.locator("#workspace-slack");
+      await expect(slack).toBeVisible();
+      await slack.fill("https://hooks.slack.com/services/T000/B000/e2eslow");
+      const saveButton = page.getByRole("button", { name: "Save", exact: true });
+      await expect(saveButton).toBeDisabled();
+
+      // The held answer arrives; the box still holds what was typed.
+      await expect(saveButton).toBeEnabled({ timeout: 10_000 });
+      await page.unroute("**/api/workspaces/current/", hold);
+      await expect(slack).toHaveValue("https://hooks.slack.com/services/T000/B000/e2eslow");
+      expect((await save(page)).status()).toBe(200);
+
+      await page.reload();
+      await page.waitForLoadState("networkidle");
+      await section(page, "Role & access").click();
+      await expect(page.getByText(/Configured\. Type a new URL to replace it\./).first())
+        .toBeVisible();
+
+      const removed = page.waitForResponse((r) =>
+        r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
+      await page.getByRole("button", { name: "Remove", exact: true }).first().click();
+      expect((await removed).status()).toBe(200);
+    });
+
   test("a webhook on someone else's host is refused", async ({ page }) => {
     await open(page, "/settings", "Settings");
     await section(page, "Role & access").click();

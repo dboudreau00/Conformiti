@@ -278,7 +278,7 @@ export default function AuditLog({ me }) {
                 </Empty>
               )
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" role="region" aria-label="Audit log entries" tabIndex={0}>
                 <table className="w-full min-w-[1040px] border-collapse text-left">
                   <thead className="border-b border-line bg-surface-2">
                     <tr>

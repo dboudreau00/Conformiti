@@ -34,9 +34,10 @@ def _read_chunks(fh, size=64 * 1024):
 def _member_info(name, stamp, compressed=False):
     """A ZipInfo that extracts as an ordinary readable file.
 
-    A bare ``ZipInfo`` carries no permission bits, and ``unzip`` on Linux and
-    macOS then creates the member with mode 000: the auditor's first
-    ``sha256sum -c SHA256SUMS`` fails with "Permission denied" for every file.
+    A member given no mode of its own is written by Python as 0600, owner
+    only. An auditor who unzips as themselves can read that, but a bundle
+    opened by a different account (a shared review host, a service user) cannot,
+    so every member is marked 0644 here.
     """
     info = zipfile.ZipInfo(name, date_time=stamp)
     info.external_attr = 0o644 << 16
@@ -305,9 +306,11 @@ TRAIL_HEADER = ["Timestamp", "Actor", "Action", "Record type", "Record id", "Det
 
 
 def trail_rows(package):
-    """``(rows, total)``: the audit entries for the package's documents in its
-    period, oldest first and at most TRAIL_LIMIT of them, and how many there
-    were.
+    """``(rows, total)``: the audit entries for the package's documents from
+    the start of its period (all of them when it has none) up to now, oldest
+    first and at most TRAIL_LIMIT of them, and how many there were. Nothing
+    cuts it off at the period's end: what happened to the evidence afterwards
+    is part of what an auditor weighs.
 
     No IP addresses: this file is designed to leave the building, and staff
     network addresses have no business in it.

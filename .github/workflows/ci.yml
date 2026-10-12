@@ -412,7 +412,8 @@ jobs:
 
       # An image that answers is not the same as an image that is safe to
       # answer with. Nothing in this repository ever ran it without
-      # DJANGO_DEBUG, so nothing noticed that the code default is on (0.9.5f).
+      # DJANGO_DEBUG, so nothing noticed that the code default was on (0.9.5f).
+      # It is off since 0.9.5me, and this job keeps it that way.
       - name: That container is not in DEBUG
         run: |
           set -euo pipefail

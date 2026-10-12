@@ -12,9 +12,11 @@ const displayName = (u) => u.full_name || u.username || `User ${u.id}`;
 const day = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
 /**
- * The selected risk: description, the treatment fields (editable for a
- * framework manager or the risk's owner: the same rule as RiskPermission),
- * the mitigation plan and the progress-note thread (anyone may add a note).
+ * The selected risk: description, the treatment fields, the mitigation plan
+ * and the progress-note thread (anyone may add a note). A framework manager
+ * edits every field. The risk's owner edits only the status, the mitigation
+ * plan, the due date and the Jira key (the server refuses the rest), so the
+ * other fields are shown but disabled for them (`canManage`).
  */
 export function RiskDetail({
   risk,

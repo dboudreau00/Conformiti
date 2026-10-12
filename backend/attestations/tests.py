@@ -82,6 +82,25 @@ class PackageTestBase(APITestBase):
 # Assembling and sealing
 # --------------------------------------------------------------------------- #
 class AssembleTests(PackageTestBase):
+    def test_add_controls_and_roll_forward_refuse_values_that_are_not_what_they_ask_for(self):
+        """A text id, a float, a number past the database's integer, a boolean:
+        each used to reach the query and answer 500. Now each is a clear 400."""
+        url = f"/api/evidence-packages/{self.package.pk}/add_controls/"
+        for bad in (["abc"], [1.5], [2 ** 63], [-2 ** 70], [True], [[1]], [None], "5"):
+            with self.subTest(bad=str(bad)[:20]):
+                r = self.manager_client.post(url, {"controls": bad}, format="json")
+                self.assertEqual(r.status_code, 400, r.data)
+                self.assertIn("controls", r.data)
+        self.assertEqual(self.manager_client.post(url, {"controls": [str(self.tree.c1.pk)]},
+                                                  format="json").status_code, 201)
+        self.seal()
+        for bad in (123, ["a"], {"x": 1}):
+            with self.subTest(engagement=str(bad)):
+                r = self.manager_client.post(f"/api/evidence-packages/{self.package.pk}/roll_forward/",
+                                             {"engagement": bad}, format="json")
+                self.assertEqual(r.status_code, 400, r.data)
+                self.assertIn("engagement", r.data)
+
     def test_adding_a_control_snapshots_it_with_its_linked_evidence(self):
         self.add_control()
         row = PackageControl.objects.get(package=self.package)
@@ -210,6 +229,23 @@ class DisclosureBoundaryTests(PackageTestBase):
         grant_row = PackageGrant.objects.get()
         self.assertEqual(grant_row.access_count, 1)
         self.assertIsNotNone(grant_row.last_accessed_at)
+
+    def test_the_access_counter_is_incremented_by_the_database_not_by_the_request(self):
+        """Two auditors reading at once must both be counted. A count read into
+        the request and written back loses one of them; the statement has to
+        add one to what the row holds."""
+        import re
+
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            self.auditor_client.get(f"/api/package-evidence/{self.item.pk}/file/")
+        updates = [q["sql"] for q in ctx.captured_queries
+                   if q["sql"].startswith("UPDATE") and "access_count" in q["sql"]]
+        self.assertEqual(len(updates), 1, updates)
+        self.assertTrue(re.search(r'"access_count" = \(?"\w+"\."access_count" \+ 1\)?', updates[0]),
+                        updates[0])
 
     def test_withdrawing_closes_access_on_the_next_request(self):
         r = self.manager_client.post(
@@ -481,11 +517,13 @@ class BundleTests(PackageTestBase):
             digest, _, member = line.partition("  ")
             self.assertEqual(mf.sha256_hex(zf.read(member)), digest, member)
 
-    def test_every_member_extracts_as_a_readable_file(self):
+    def test_every_member_is_marked_as_an_ordinary_readable_file(self):
+        """Every member carries mode 0644 of its own, group-readable as well as
+        owner-readable (Python's default for a member with no mode is 0600)."""
         _, zf = self._export()
         for info in zf.infolist():
             mode = (info.external_attr >> 16) & 0o777
-            self.assertEqual(mode & 0o400, 0o400, f"{info.filename} would extract unreadable (mode {mode:o})")
+            self.assertEqual(mode, 0o644, f"{info.filename} is marked mode {mode:o}")
 
     def test_the_evidence_bytes_are_in_the_bundle_at_the_manifest_path(self):
         _, zf = self._export()

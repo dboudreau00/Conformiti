@@ -159,14 +159,30 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
         review = serializer.save(created_by=self.request.user)
         _snapshot_items(review)
 
-    def perform_destroy(self, instance):
-        # Deleting removes every row with it, so a completed review, the
-        # evidence that the control operated, must not be deletable.
+    def perform_update(self, serializer):
+        # Under the row lock ``complete`` takes. The instance was read before
+        # the lock, so a completion that committed in between would otherwise
+        # be written back as open, with its revocations still applied.
         from rest_framework.exceptions import ValidationError
 
-        if instance.status == AccessReview.Status.COMPLETED:
-            raise ValidationError({"detail": "This review is completed and read-only."})
-        instance.delete()
+        with transaction.atomic():
+            locked = AccessReview.objects.select_for_update().get(pk=serializer.instance.pk)
+            if locked.status == AccessReview.Status.COMPLETED:
+                raise ValidationError({"detail": "This review is completed and read-only."})
+            serializer.save()
+
+    def perform_destroy(self, instance):
+        # Deleting removes every row with it, so a completed review, the
+        # evidence that the control operated, must not be deletable, and the
+        # status is read again under the lock rather than trusted from a
+        # request that may have started before a completion.
+        from rest_framework.exceptions import ValidationError
+
+        with transaction.atomic():
+            locked = AccessReview.objects.select_for_update().get(pk=instance.pk)
+            if locked.status == AccessReview.Status.COMPLETED:
+                raise ValidationError({"detail": "This review is completed and read-only."})
+            locked.delete()
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):

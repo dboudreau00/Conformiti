@@ -183,6 +183,12 @@ export default function Controls({ me }) {
     [refreshCounts]
   );
 
+  // A control's score after something moved it (evidence attached or unlinked),
+  // so the row and the breakdown open beneath it agree.
+  const applyScore = useCallback((id, score) => {
+    setControls((cs) => cs.map((c) => (c.id === id ? { ...c, ...score } : c)));
+  }, []);
+
   const bumpEvidence = useCallback((id, delta) => {
     setControls((cs) =>
       cs.map((c) => (c.id === id ? { ...c, evidence_count: Math.max(0, (c.evidence_count || 0) + delta) } : c))
@@ -346,6 +352,7 @@ export default function Controls({ me }) {
                           choicesError={choicesError}
                           onPatch={patchControl}
                           onEvidenceDelta={bumpEvidence}
+                          onScore={applyScore}
                         />
                       </ControlRow>
                     ))}

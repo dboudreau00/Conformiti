@@ -43,8 +43,8 @@ are correct; they count different things.
 
 ## 2. Backend test suite: `python manage.py test`
 
-Runs on SQLite by default, with DEBUG on (the code default, and CI sets
-`DJANGO_DEBUG=true`); CI runs it on Python 3.11 to 3.14 and once more against
+Runs on SQLite by default, with DEBUG on (CI sets `DJANGO_DEBUG=true`, as the
+installers write it to `.env`; the code default is off); CI runs it on Python 3.11 to 3.14 and once more against
 PostgreSQL 16. Settings that differ with DEBUG off are covered by tests that
 start the settings module with DEBUG off in a subprocess, and by the Docker
 job below. What it covers:

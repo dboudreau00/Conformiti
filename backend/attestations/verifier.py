@@ -146,6 +146,17 @@ def read_public_key(text):
     raise ValueError("signing-key.pub is not an Ed25519 public key")
 
 
+def _safe(value):
+    """Text that came from the bundle, with anything a terminal would act on
+    written out instead. A forged manifest can name its package, or a file, with
+    an escape sequence that hides the lines below it (colour set to the
+    background, a screen clear), and the real FAIL with them."""
+    return "".join(
+        ch if ch.isprintable()
+        else ("%sx%02x" % (chr(92), ord(ch)) if ord(ch) < 256 else "%su%04x" % (chr(92), ord(ch)))
+        for ch in str(value))
+
+
 def fingerprint(public_key):
     return hashlib.sha256(public_key).hexdigest()
 
@@ -322,14 +333,14 @@ def main(root, allow_unsigned=False):
     sums_signature, sums_fp = check_sums_signature(root, problems)
 
     package = manifest.get("package", {})
-    print(f"package      : {package.get('name', '?')}")
-    print(f"sealed       : {package.get('sealed_at') or 'not sealed'} "
-          f"by {package.get('sealed_by') or '?'}")
+    print(f"package      : {_safe(package.get('name', '?'))}")
+    print(f"sealed       : {_safe(package.get('sealed_at') or 'not sealed')} "
+          f"by {_safe(package.get('sealed_by') or '?')}")
     prior = package.get("prior")
     if prior:
-        print(f"predecessor  : {prior.get('name', '?')} (manifest {str(prior.get('manifest_sha256', ''))[:16]}…)")
-    print(f"controls     : {manifest.get('totals', {}).get('controls', '?')}")
-    print(f"evidence     : {manifest.get('totals', {}).get('evidence', '?')}")
+        print(f"predecessor  : {_safe(prior.get('name', '?'))} (manifest {_safe(str(prior.get('manifest_sha256', ''))[:16])}…)")
+    print(f"controls     : {_safe(manifest.get('totals', {}).get('controls', '?'))}")
+    print(f"evidence     : {_safe(manifest.get('totals', {}).get('evidence', '?'))}")
     print(f"files checked: {checked}")
     if signature == "unsigned":
         print("signature    : none (compare the manifest digest with the one published to you)")
@@ -347,7 +358,7 @@ def main(root, allow_unsigned=False):
     if problems:
         print(f"\nFAIL: {len(problems)} problem(s):")
         for problem in problems:
-            print(f"  - {problem}")
+            print(f"  - {_safe(problem)}")
         return 1
 
     missing = [name for name, state in (("manifest.sig", signature),

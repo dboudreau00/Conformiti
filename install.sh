@@ -12,7 +12,11 @@
 #                               http://localhost:8080 and wait until healthy.
 #   ./install.sh --test         Run the backend test suite, the static
 #                               validator and a production frontend build.
-#   ./install.sh --reset        Local only: wipe db.sqlite3 + uploads, reseed.
+#   ./install.sh --reset        Local only: wipe the SQLite database and the
+#                               uploads, reseed. It says what it would delete
+#                               (the paths the application is set to use,
+#                               which must lie inside this checkout) and asks;
+#                               --yes answers for a script.
 #
 # Flags that combine with the above: --demo (load the sample organisation;
 # off by default, and an installation carrying it says so on its sign-in
@@ -27,6 +31,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# set -e stops at a failed pip or npm and says nothing of its own; this does
+# (install.ps1 names the failed command the same way).
+trap 'printf "%s\n" "Error: a step failed (exit code $?, install.sh line $LINENO). The output above says which; fix that and run this again." >&2' ERR
+
 BOLD=$(printf '\033[1m'); DIM=$(printf '\033[2m'); GREEN=$(printf '\033[32m'); RED=$(printf '\033[31m'); YEL=$(printf '\033[33m'); RESET=$(printf '\033[0m')
 say()  { printf "%s\n" "${BOLD}==>${RESET} $*"; }
 ok()   { printf "%s\n" "${GREEN}  ✓${RESET} $*"; }
@@ -35,16 +43,24 @@ die()  { printf "%s\n" "${RED}Error:${RESET} $*" >&2; exit 1; }
 
 # DEMO_SET / PORT_SET record that the flag was given, so an existing .env is
 # only changed when the user asked for it (a plain re-run leaves it alone).
-MODE="run"; DEMO="false"; DEMO_SET=""; OPEN="no"; PORT="8080"; PORT_SET=""
+MODE="run"; DEMO="false"; DEMO_SET=""; OPEN="no"; PORT="8080"; PORT_SET=""; ASSUME_YES=""
+# One mode per run: the last of two would silently win (--docker --reset ran a
+# local reset and never started Docker).
+set_mode() {
+  [ "$MODE" = "run" ] || [ "$MODE" = "$1" ] || die "choose one of --setup-only, --docker, --test and --reset, not two"
+  MODE="$1"
+}
 while [ $# -gt 0 ]; do
   case "$1" in
-    --setup-only) MODE="setup" ;;
-    --docker)     MODE="docker" ;;
-    --test)       MODE="test" ;;
-    --reset)      MODE="reset" ;;
+    --setup-only) set_mode setup ;;
+    --docker)     set_mode docker ;;
+    --test)       set_mode test ;;
+    --reset)      set_mode reset ;;
     --demo)       DEMO="true"; DEMO_SET="yes" ;;
     --no-demo)    DEMO="false"; DEMO_SET="yes" ;;   # kept: it is what older notes say
     --open)       OPEN="yes" ;;
+    --yes|-y)     ASSUME_YES="yes" ;;
+    --port=*)     PORT="${1#--port=}"; PORT_SET="yes" ;;
     --port)       [ $# -ge 2 ] || die "--port needs a port number"; shift; PORT="$1"; PORT_SET="yes" ;;
     -h|--help)    sed -n '2,/^# ====/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
@@ -177,7 +193,7 @@ origin_warning() {  # $1 = the web app's dev port
 wait_for_health() {  # $1 = url, $2 = seconds
   local url="$1" limit="${2:-180}" i=0
   while [ $i -lt "$limit" ]; do
-    if curl -fsS "$url" >/dev/null 2>&1; then return 0; fi
+    if curl -fsS --noproxy '*' "$url" >/dev/null 2>&1; then return 0; fi
     sleep 2; i=$((i + 2))
     [ $((i % 20)) -eq 0 ] && printf "%s\n" "${DIM}  … still starting (${i}s)${RESET}"
   done
@@ -200,7 +216,7 @@ if [ "$MODE" = "docker" ]; then
   else
     warn "could not read the Docker Compose version; the compose file needs 2.24.0 or newer."
   fi
-  docker info >/dev/null 2>&1 || die "The Docker daemon is not running or not reachable."
+  docker info >/dev/null 2>&1 || die "The Docker daemon is not running, or this account may not use it. Start Docker; on Linux, run this with sudo or add your account to the docker group (sudo usermod -aG docker \$USER, then sign in again)."
   command -v curl >/dev/null 2>&1 || die "curl is required to wait for the stack to become healthy."
 
   if [ ! -f .env ]; then
@@ -298,7 +314,7 @@ ENV
   CONFORMITI_PORT="$PORT" BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose up -d --build
   say "Waiting for the API to report healthy…"
   if wait_for_health "http://localhost:${PORT}/api/health/" 240; then
-    HEALTH=$(curl -fsS "http://localhost:${PORT}/api/health/")
+    HEALTH=$(curl -fsS --noproxy '*' "http://localhost:${PORT}/api/health/")
     ok "healthy: ${HEALTH}"
   else
     docker compose ps
@@ -350,6 +366,9 @@ BANNER
   # A re-run rebuilds the checkout on disk, nothing more. An upgrade is a
   # backup and a checkout of the new release first (README, "Upgrading").
   printf "%s\n" "  ${DIM}Logs: docker compose logs -f    Stop: docker compose down    Rebuild: ./install.sh --docker${RESET}"
+  printf "%s\n" "  ${DIM}Data: the Docker volumes pgdata, media, secrets and tree, and the .env in this folder. Back up all of them.${RESET}"
+  printf "%s\n" "  ${DIM}A trial setup: the database password is the default and email goes to the log. Before real use,${RESET}"
+  printf "%s\n" "  ${DIM}INSTALL.md section 1, \"Going to production\".${RESET}"
   printf "%s\n" "  ${DIM}Upgrade: scripts/backup.sh, then git fetch --tags && git checkout <new release tag>,${RESET}"
   printf "%s\n" "  ${DIM}         then ./install.sh --docker (README, \"Upgrading\")${RESET}"
   open_url "http://localhost:${PORT}"
@@ -358,7 +377,7 @@ fi
 
 # --- Prerequisites (local paths) -------------------------------------------
 PY=""
-for cand in python3.13 python3.12 python3.11 python3 python; do
+for cand in python3.14 python3.13 python3.12 python3.11 python3 python; do
   if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)' 2>/dev/null; then
     PY="$cand"; break
   fi
@@ -389,12 +408,14 @@ fi
 # --- .env (generate a secret key on first run) -----------------------------
 ENV_CREATED=""
 if [ ! -f .env ]; then
-  cp .env.example .env
+  # Created private from the first byte, and the key reaches Python through the
+  # environment, not the command line, where `ps` would show it.
+  (umask 077; cp .env.example .env)
   SECRET=$(gen_secret "$PY")
-  "$PY" - "$SECRET" <<'PY'
-import sys, re, pathlib
+  NEW_SECRET="$SECRET" "$PY" - <<'PY'
+import os, re, pathlib
 p = pathlib.Path(".env"); t = p.read_text(encoding="utf-8")
-t = re.sub(r'^DJANGO_SECRET_KEY=.*$', 'DJANGO_SECRET_KEY=' + sys.argv[1], t, flags=re.M)
+t = re.sub(r'^DJANGO_SECRET_KEY=.*$', 'DJANGO_SECRET_KEY=' + os.environ["NEW_SECRET"], t, flags=re.M)
 p.write_text(t, encoding="utf-8")
 PY
   chmod 600 .env 2>/dev/null || true
@@ -402,6 +423,13 @@ PY
   ok ".env created (SQLite + console email; a secret key was generated, mode 600)"
 else
   ok ".env already present: leaving it untouched"
+  # The Docker installers write a .env that sets CONFORMITI_DEBUG and neither
+  # DJANGO_DEBUG nor a key. Run locally on it, the first Django command stops
+  # on a key it was never given, after pip and npm have run. Say so now.
+  if [ -z "${DJANGO_DEBUG:-}" ] && [ -z "${DJANGO_SECRET_KEY:-}" ] \
+     && ! grep -Eq '^DJANGO_DEBUG=' .env && ! grep -Eq '^DJANGO_SECRET_KEY=.{32,}' .env; then
+    die ".env sets neither DJANGO_DEBUG nor a DJANGO_SECRET_KEY. It looks like the Docker stack's file, and a local run on it starts with debug off and no key. Add DJANGO_DEBUG=true to .env for local development, or run this from another checkout."
+  fi
 fi
 # Sign-in is refused from any origin CSRF_TRUSTED_ORIGINS does not list, and
 # .env.example lists http://localhost:5173 only. A .env this run created is
@@ -453,9 +481,38 @@ say "Installing backend dependencies…"
 ok "backend dependencies installed"
 
 if [ "$MODE" = "reset" ]; then
+  # What is wiped is what the application is set to use, which is not always
+  # backend/db.sqlite3 (SQLITE_PATH, MEDIA_ROOT) and not always SQLite.
+  RESET_INFO=$(cd backend && "../$VPY" -c '
+import os
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+import django
+django.setup()
+from django.conf import settings
+db = settings.DATABASES["default"]
+print(db["ENGINE"].rsplit(".", 1)[-1])
+print(db["NAME"])
+print(settings.MEDIA_ROOT)') || die "Could not read the database settings, so --reset does not know what it would delete."
+  RESET_ENGINE=$(printf '%s\n' "$RESET_INFO" | sed -n 1p)
+  RESET_DB=$(printf '%s\n' "$RESET_INFO" | sed -n 2p)
+  RESET_MEDIA=$(printf '%s\n' "$RESET_INFO" | sed -n 3p)
+  [ "$RESET_ENGINE" = "sqlite3" ] || die "--reset resets the SQLite development database only. This .env uses $RESET_ENGINE ($RESET_DB): reset that one yourself, or point .env at SQLite."
+  for target in "$RESET_DB" "$RESET_MEDIA"; do
+    case "$target" in
+      "$(pwd -P)"/?*) ;;
+      *) die "--reset will not delete $target: it is outside this checkout. Remove it yourself if you mean to." ;;
+    esac
+  done
+  if [ "$ASSUME_YES" != "yes" ]; then
+    [ -t 0 ] || die "--reset deletes $RESET_DB and $RESET_MEDIA. Run it from a terminal, or add --yes."
+    warn "--reset deletes $RESET_DB and $RESET_MEDIA (every account, document and setting in them)."
+    printf "Type 'reset' to continue: "
+    read -r RESET_ANSWER
+    [ "$RESET_ANSWER" = "reset" ] || die "Nothing was changed."
+  fi
   say "Resetting the local database and uploads…"
-  rm -f backend/db.sqlite3
-  rm -rf backend/media
+  rm -f "$RESET_DB"
+  rm -rf "$RESET_MEDIA"
   ok "clean slate"
   MODE="setup"
 fi

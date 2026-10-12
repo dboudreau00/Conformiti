@@ -906,12 +906,17 @@ manage.py test_mailbox --to you@example.com       # sample reminder through EMAI
 
 ```bash
 scripts/backup.sh                 # → backups/<UTC timestamp>/
-scripts/backup.sh /mnt/nightly    # or a directory of your choosing
+scripts/backup.sh /mnt/backups/$(date -u +%Y%m%dT%H%M%SZ)   # a directory of your choosing, new each run
 ```
 
 One script, run from the checkout while the Docker stack is up. (It drives
 the compose containers, so on bare metal it does not apply: see
-[INSTALL.md, Backups on bare metal](INSTALL.md#backups-on-bare-metal).) It
+[INSTALL.md, Backups on bare metal](INSTALL.md#backups-on-bare-metal). On
+Windows, run it from Git Bash or WSL: the scripts are shell scripts.) Give
+each run its own directory. The archives are written beside the destination and
+moved in only when all four exist, so a run that fails leaves an earlier backup
+in the same directory whole, but a fixed directory still has the newest good
+backup replaced the next time one succeeds. It
 writes the database dump (`db.sql.gz`), the evidence files (`media.tgz`: a
 restored database without these points at files that are gone), the
 secrets volume (`secrets.tgz`: the Django secret key, the field-encryption
@@ -939,10 +944,13 @@ work.
 ### Restore
 
 ```bash
-scripts/restore.sh backups/<UTC timestamp>
+scripts/restore.sh [--yes] backups/<UTC timestamp>
 ```
 
-On the same machine or a fresh one (clone the same release first). `.env` is
+It reads every archive end to end first, and stops before changing anything if
+one is damaged. On a terminal it then asks you to type `yes`; `--yes`, or no
+terminal (a script, CI), goes straight on. On the same machine or a fresh one
+(clone the same release first). `.env` is
 not in the backup, so on a fresh machine write it back from your own records
 before the restore: the database and Redis passwords, the host names and
 origin lists, `PUBLIC_URL`, the mail settings, and `COMPOSE_PROJECT_NAME` or
@@ -998,6 +1006,14 @@ docker compose pull && docker compose up -d --build
 Checking out the tag leaves the working copy on a detached HEAD at that
 release, which is intended: each upgrade names the release it moves to, where
 `git pull` would follow the branch past it.
+
+Upgrade in the folder the stack was started from. Docker Compose names the
+stack's volumes after that folder, or after `COMPOSE_PROJECT_NAME` in `.env`, so
+unpacking a newer release into a differently named folder and running `up`
+creates a second, empty installation and leaves your data in the first. If you
+must use a new folder, set `COMPOSE_PROJECT_NAME` in its `.env` to the old name
+first (`docker compose ls` lists it). On Windows, `scripts/backup.sh` runs from
+Git Bash or WSL.
 
 Local edits to tracked files get in the way. `frontend/nginx.conf` edited for
 a larger upload limit is the usual one: when the release changes that file,
@@ -1059,7 +1075,12 @@ they are.
 **0.9.5me** has no migration. With `DJANGO_DEBUG` unset the application now
 starts with debug off, so a bare-metal install with no strong
 `DJANGO_SECRET_KEY` refuses to start until it has one (the Docker stack and
-.env.example already say what they mean). The owner of a risk can now change only its status, plan, due date and Jira
+.env.example already say what they mean). An installation that does have a
+strong key and never set the variable now behaves as production: `BEHIND_TLS`
+defaults on, so plain HTTP is redirected to HTTPS and cookies are secure;
+`EMAIL_PROVIDER` defaults to `ses`; and the browsable API is off. If you serve
+plain HTTP on purpose, set `DJANGO_DEBUG=false` and `BEHIND_TLS=false` in `.env`
+before upgrading. The owner of a risk can now change only its status, plan, due date and Jira
 key. The button that confirms a delete, removal or
 withdrawal in a dialog is solid red, a dialog's button keeps its label and
 shows a spinner while its request runs, and Tab reaches a dialog's Close
@@ -1108,6 +1129,20 @@ after the checkout is what starts it. **0.9.0** is ten migrations, one per
 app: each adds the workspace column, moves every row into the *Default*
 workspace and makes the column required, inside one transaction on
 PostgreSQL. Budget a few seconds per hundred thousand rows.
+
+### Going back, and taking it away
+
+To go back to an earlier release after an upgrade, check out its tag, rebuild
+the images from it (`docker compose build`; on the published images move the
+pin in `.env` back first), and restore the backup you took before the upgrade
+(`scripts/restore.sh backups/<that timestamp>`). A migration cannot be assumed
+reversible, so the backup is the way back, not the older code on its own.
+
+To remove an installation, `docker compose down` stops it and keeps its data in
+the named volumes; `docker compose down -v` deletes the database, the uploaded
+evidence, the keys and the folder tree for good, so take a backup you can find
+again first. A local installation is its folder: delete it. Its database and
+uploads live inside it unless `SQLITE_PATH` or `MEDIA_ROOT` point elsewhere.
 
 ---
 

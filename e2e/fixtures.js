@@ -132,7 +132,7 @@ export function governanceButton(page) {
   return page.getByRole("button", { name: /^Governance\b/ });
 }
 export function accountButton(page) {
-  return page.getByRole("button", { name: /^Account:/ });
+  return page.getByRole("button", { name: / account menu$/ });
 }
 export function appearanceButton(page) {
   // The colon matters: the Settings page has an "Appearance" section button too.

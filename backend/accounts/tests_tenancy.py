@@ -403,6 +403,76 @@ class JobsTests(TwoWorkspaces):
         self.assertEqual(sorted(seen), ["beta", "default"])
         self.assertEqual(sum(v is None for v in out.values()), 1)
 
+    def test_the_cron_scan_command_isolates_a_failing_workspace_like_the_task(self):
+        """INSTALL.md sends installations without Celery to this command, and it
+        walked the workspaces with no isolation: one failure ended the pass."""
+        from unittest import mock
+
+        from django.core.management.base import CommandError
+        from notifications import tasks as notify_tasks
+
+        real = notify_tasks.run_review_scan
+        calls = []
+
+        def flaky(dry_run=False):
+            calls.append(tenancy.current().slug)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return real(dry_run=dry_run)
+
+        out, err = StringIO(), StringIO()
+        with mock.patch.object(notify_tasks, "run_review_scan", flaky), \
+                self.assertLogs("notifications.tasks", "ERROR"), \
+                self.assertRaises(CommandError) as caught:
+            call_command("send_review_reminders", "--dry-run", stdout=out, stderr=err)
+        self.assertEqual(sorted(calls), ["beta", "default"])
+        failed = calls[0]
+        survivor = "beta" if failed == "default" else "default"
+        self.assertIn(failed, str(caught.exception))
+        self.assertNotIn(survivor, str(caught.exception))
+        self.assertIn(f"The morning scan failed for {failed}", err.getvalue())
+        self.assertIn(f"({survivor})", out.getvalue())
+        self.assertIn("Documents would be notified: 1", out.getvalue())
+
+    def test_the_cron_scan_command_posts_the_daily_summary_as_the_task_does(self):
+        from unittest import mock
+
+        from notifications import tasks as notify_tasks
+
+        with mock.patch.object(notify_tasks, "post_daily_summary") as summary:
+            call_command("send_review_reminders", "--dry-run", stdout=StringIO())
+            summary.assert_not_called()
+            call_command("send_review_reminders", stdout=StringIO())
+        self.assertEqual(summary.call_count, 2, "once for each workspace")
+
+    def test_the_cron_snapshot_command_isolates_a_failing_workspace_too(self):
+        from unittest import mock
+
+        from django.core.management.base import CommandError
+
+        from analytics.management.commands import record_readiness as command
+
+        real = command.record_today
+        seen = []
+
+        def flaky(force=False, scored=None):
+            seen.append(tenancy.current().slug)
+            if len(seen) == 1:
+                raise RuntimeError("boom")
+            return real(force=force, scored=scored)
+
+        out, err = StringIO(), StringIO()
+        with mock.patch.object(command, "record_today", flaky), \
+                self.assertLogs("analytics.management.commands.record_readiness", "ERROR"), \
+                self.assertRaises(CommandError) as caught:
+            call_command("record_readiness", stdout=out, stderr=err)
+        self.assertEqual(sorted(seen), ["beta", "default"])
+        self.assertIn(seen[0], str(caught.exception))
+        self.assertIn("snapshot not recorded", err.getvalue())
+        self.assertIn(seen[1], out.getvalue())
+        with tenancy.unscoped():
+            self.assertEqual(ReadinessSnapshot.objects.filter(date=timezone.localdate()).count(), 1)
+
     def test_a_failed_digest_send_hands_the_claim_back(self):
         from unittest import mock
 

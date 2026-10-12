@@ -52,6 +52,12 @@ class _ReachedRoot(Exception):
     pass
 
 
+# A part with more tags than this is not a document, it is a bomb: a few
+# megabytes of empty rows expand to a tree many times their size. Shared by the
+# preview and the spreadsheet importers, which used to bound only one of them.
+MAX_ELEMENTS = 400_000
+
+
 def safe_fromstring(raw):
     """``ElementTree.fromstring`` for a part that came from an upload.
 
@@ -61,7 +67,10 @@ def safe_fromstring(raw):
     element, so a first pass with expat stops at the root: it costs nothing
     for a part without one, and reads encodings (UTF-16 included) the way the
     real parse will. A malformed part is left for ``ElementTree`` to report.
+    A part with more than ``MAX_ELEMENTS`` tags is refused before a tree is built.
     """
+    if raw.count(b"<") > MAX_ELEMENTS:
+        raise XmlRefused("The part has more elements than a document needs.")
     probe = expat.ParserCreate()
 
     def refuse(*_args):

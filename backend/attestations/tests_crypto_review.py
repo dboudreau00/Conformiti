@@ -19,11 +19,31 @@ class KeyFileCreationTests(SimpleTestCase):
             def worker():
                 results.append(signing._generate_into(path))
 
+            # A reader that polls while the workers generate: what it finds is
+            # either no file or a whole key, never the empty or half-written file
+            # that a create-then-write would show, which parses as "no key".
+            seen, stop = [], threading.Event()
+
+            def reader():
+                while not stop.is_set():
+                    try:
+                        text = path.read_text(encoding="utf-8")
+                    except (FileNotFoundError, NotADirectoryError):
+                        continue
+                    seen.append(text)
+
+            watcher = threading.Thread(target=reader)
+            watcher.start()
             threads = [threading.Thread(target=worker) for _ in range(8)]
             for t in threads:
                 t.start()
             for t in threads:
                 t.join()
+            stop.set()
+            watcher.join()
+            partial = [text for text in seen
+                       if "BEGIN PRIVATE KEY" not in text or "END PRIVATE KEY" not in text]
+            self.assertEqual(partial, [], "a reader saw a key file that was not whole")
             winners = [r for r in results if r is not None]
             self.assertEqual(len(winners), 1)
             # What is on disk is the winner's key, whole, mode 0600.

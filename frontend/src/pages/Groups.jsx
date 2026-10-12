@@ -409,8 +409,8 @@ export default function Groups({ me }) {
                 transition={{ duration: 0.22, ease: EASE }}
               >
                 <Panel className="overflow-hidden">
-                  <PanelHeader title={active.name}>
-                    <div className="flex items-center gap-3">
+                  <PanelHeader className="flex-wrap" title={active.name}>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <Label className="flex items-center gap-1">
                         <UserIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
                         Owner: {active.owner_name || "unassigned"}
@@ -492,7 +492,7 @@ export default function Groups({ me }) {
                             <th scope="col" className="table-head px-5 py-2 font-normal">Champion</th>
                             <th scope="col" className="table-head px-5 py-2 font-normal">Department</th>
                             <th scope="col" className="table-head px-5 py-2 font-normal">Note</th>
-                            {canEdit ? <th scope="col" className="table-head w-[170px] px-5 py-2 text-right font-normal"><span className="sr-only">Actions</span></th> : null}
+                            {canEdit ? <th scope="col" className="table-head relative w-[170px] px-5 py-2 text-right font-normal"><span className="sr-only">Actions</span></th> : null}
                           </tr>
                         </thead>
                         <tbody>

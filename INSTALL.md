@@ -759,7 +759,8 @@ Useful flags:
 | `--setup-only` / `-SetupOnly` | install and seed, don't start servers |
 | `--test` / `-Test` | run the validator, the backend test suite and a production frontend build |
 | `--demo` / `-Demo` | also load the sample organisation and its five demo accounts |
-| `--reset` / `-Reset` | wipe `db.sqlite3` and uploads and reseed, without starting the servers |
+| `--reset` / `-Reset` | wipe the SQLite database and the uploads the application is set to use (`db.sqlite3` and `media/` unless `SQLITE_PATH` or `MEDIA_ROOT` say otherwise, and only inside the checkout) and reseed, without starting the servers. It names what it will delete and asks you to type `reset` first |
+| `--yes` / `-Yes` | answer that question for a script |
 | `--no-demo` / `-NoDemo` | the default (no demo data); kept because older notes use it |
 | `--open` / `-Open` | open the browser when ready |
 
@@ -865,7 +866,7 @@ Then set, in `.env`:
   (`python3 -c "import secrets; print(secrets.token_urlsafe(50))"`);
 - `DJANGO_FIELD_ENCRYPTION_KEY_FILE=/srv/conformiti/backend/.field-encryption-key`,
   before the first `manage.py` command. The file is generated there at mode
-  0600 and holds the key that encrypts, at rest, the authenticator-app (TOTP)
+  0600 (Linux; on Windows the folder's permissions apply) and holds the key that encrypts, at rest, the authenticator-app (TOTP)
   secrets, a stored Jira token and each workspace's own Slack and Teams
   webhook addresses.
   Without it that key is derived from `DJANGO_SECRET_KEY`, which ties the two

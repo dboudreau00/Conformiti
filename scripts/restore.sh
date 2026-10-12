@@ -2,7 +2,11 @@
 # Restore a backup made by scripts/backup.sh into a Docker Compose
 # installation, replacing whatever is there. Run it from the checkout:
 #
-#   scripts/restore.sh backups/<timestamp>
+#   scripts/restore.sh [--yes] backups/<timestamp>
+#
+# Every archive is read end to end first, so a damaged one stops the run before
+# anything is changed. On a terminal it then asks you to type yes; --yes (or no
+# terminal, as in a script or CI) goes straight on.
 #
 # The application containers are stopped, the database is emptied and
 # reloaded from db.sql.gz, the media, secrets and tree volumes are replaced
@@ -17,11 +21,32 @@
 set -eu
 export MSYS_NO_PATHCONV=1   # Git Bash on Windows: leave /dst and /in alone
 
-src="${1:?usage: scripts/restore.sh <backup directory>}"
+assume_yes=0
+if [ "${1:-}" = "--yes" ]; then
+  assume_yes=1
+  shift
+fi
+src="${1:?usage: scripts/restore.sh [--yes] <backup directory>}"
 src="$(cd "$src" && pwd)"
 for f in db.sql.gz media.tgz secrets.tgz tree.tgz; do
   if [ ! -f "$src/$f" ]; then
     echo "restore: $src/$f is missing" >&2
+    exit 1
+  fi
+done
+
+# The steps below empty the database and three volumes before they read an
+# archive. A truncated or corrupt one would be found after the damage was done,
+# and a pipe into psql reports psql's status, not gunzip's. So read them all
+# first.
+echo "restore: checking the archives"
+if ! gunzip -t "$src/db.sql.gz" 2>/dev/null; then
+  echo "restore: $src/db.sql.gz is damaged: it does not decompress. Nothing was changed." >&2
+  exit 1
+fi
+for v in media secrets tree; do
+  if ! tar tzf "$src/$v.tgz" >/dev/null 2>&1; then
+    echo "restore: $src/$v.tgz is damaged: it cannot be read. Nothing was changed." >&2
     exit 1
   fi
 done
@@ -47,6 +72,19 @@ if [ ! -f .env ]; then
   if [ -t 0 ]; then
     printf 'restore: press Enter to restore on the defaults, or Ctrl-C to stop. ' >&2
     read -r _answer
+  fi
+fi
+
+# Replacing a database and three volumes is not undoable, so on a terminal say
+# what is about to happen and wait for a yes.
+if [ "$assume_yes" -ne 1 ] && [ -t 0 ]; then
+  echo "restore: this replaces the database and the media, secrets and tree volumes of the stack" >&2
+  echo "restore: in $(pwd) with the contents of $src." >&2
+  printf 'restore: type yes to go on: ' >&2
+  read -r _answer
+  if [ "$_answer" != "yes" ]; then
+    echo "restore: stopped. Nothing was changed." >&2
+    exit 1
   fi
 fi
 

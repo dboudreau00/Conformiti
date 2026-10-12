@@ -290,6 +290,10 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
                 number = int(value)
             except ValueError:
                 raise ValidationError({"documents": f"{value!r} is not a document id."})
+            # Bigger than the database's integer type reaches the query and
+            # raises OverflowError there, a 500 for what is only a wrong id.
+            if abs(number) >= 2 ** 63:
+                raise ValidationError({"documents": f"{value!r} is not a document id."})
             if number not in doc_ids:
                 doc_ids.append(number)
         note = str(request.data.get("note") or "")[:255]

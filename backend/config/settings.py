@@ -15,6 +15,8 @@ from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
+from config import keyfile
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / ".env")
 
@@ -88,42 +90,16 @@ def _load_secret_key():
                         "Restore the key it held, or delete the file to have a new one generated "
                         "(which signs everyone out and makes encrypted secrets unreadable)."
                     )
-            path.parent.mkdir(parents=True, exist_ok=True)
-            generated = secrets.token_urlsafe(64)
-            # Written whole to a private temporary name, then linked into
-            # place: two workers booting together cannot each write their own
-            # key (the last would win and the other would sign with a key that
-            # is no longer on disk), and nobody reads a half-written file.
-            tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
-            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                    fh.write(generated + "\n")
-                    fh.flush()
-                    os.fsync(fh.fileno())
-                try:
-                    if path.exists() and not path.read_text(encoding="utf-8").strip():
-                        os.replace(str(tmp), str(path))     # an empty file is replaced
-                    else:
-                        os.link(str(tmp), str(path))        # atomic; refuses an existing name
-                except FileExistsError:
-                    winner = path.read_text(encoding="utf-8").strip()
-                    if len(winner) >= 32:
-                        return winner
-                    raise ImproperlyConfigured(
-                        f"DJANGO_SECRET_KEY_FILE={key_file!r} was created by another process "
-                        "but holds no usable key.")
-                except OSError:
-                    # No hard links on this filesystem: exclusive create instead.
-                    fd2 = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    with os.fdopen(fd2, "w", encoding="utf-8") as fh:
-                        fh.write(generated + "\n")
-            finally:
-                try:
-                    os.unlink(str(tmp))
-                except OSError:
-                    pass
-            return generated
+            # Two workers booting together must end up with one key (the last
+            # to write would win and the other would sign with a key that is no
+            # longer on disk): config/keyfile.py writes it whole, links it into
+            # place, and hands back whichever key the file ended up holding.
+            held = keyfile.publish(path, secrets.token_urlsafe(64) + "\n").strip()
+            if len(held) >= 32:
+                return held
+            raise ImproperlyConfigured(
+                f"DJANGO_SECRET_KEY_FILE={key_file!r} was created by another process "
+                "but holds no usable key.")
         except OSError as exc:
             raise ImproperlyConfigured(
                 f"DJANGO_SECRET_KEY_FILE={key_file!r} is not readable/writable: {exc}"
@@ -196,12 +172,16 @@ def _load_field_encryption_keys():
                 stored = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
                 if stored:
                     return stored, "file"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            generated = secrets.token_urlsafe(32)
-            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(generated + "\n")
-            return [generated], "file"
+            # As for the secret key above: a key file two workers create at
+            # once is created once. An O_TRUNC write by the loser would leave
+            # the other's TOTP, Jira and webhook ciphertext unreadable after
+            # the next restart.
+            held = keyfile.publish(path, secrets.token_urlsafe(32) + "\n")
+            stored = [ln.strip() for ln in held.splitlines() if ln.strip()]
+            if not stored:
+                raise ImproperlyConfigured(
+                    f"DJANGO_FIELD_ENCRYPTION_KEY_FILE={key_file!r} holds no usable key.")
+            return stored, "file"
         except OSError as exc:
             raise ImproperlyConfigured(
                 f"DJANGO_FIELD_ENCRYPTION_KEY_FILE={key_file!r} is not readable/writable: {exc}"
@@ -392,7 +372,7 @@ COMPLIANCE_TREE_ROOT = os.getenv(
 
 # --- Malware scanning for uploaded evidence ---------------------------------
 # Off by default: it needs a ClamAV daemon. `docker compose --profile scanning
-# up` starts one, and install.sh --scan turns it on. When it is on it fails
+# up` starts one, with CONFORMITI_SCANNING=true in .env. When it is on it fails
 # closed: an upload is refused if the scanner cannot be reached, because
 # "is evidence scanned?" must not depend on whether the daemon answered. A scan
 # occupies a gunicorn worker for its duration, which is why the API runs
@@ -524,6 +504,9 @@ REST_FRAMEWORK = {
         "refresh": os.getenv("THROTTLE_REFRESH", "30/min"),
         # Sealing and exporting hash every pinned file.
         "package_work": os.getenv("THROTTLE_PACKAGE_WORK", "6/min"),
+        # The integrity check re-hashes them too, and the Packages page runs it
+        # each time a package is opened, so it gets a roomier limit of its own.
+        "package_verify": os.getenv("THROTTLE_PACKAGE_VERIFY", "60/min"),
         # The vendor's side of the questionnaire: public, keyed by the link.
         "questionnaire": os.getenv("THROTTLE_QUESTIONNAIRE", "20/min"),
     },
@@ -909,7 +892,9 @@ TEST_RUNNER = "config.testrunner.Runner"
 # a FILE, never in the database: SIGNING_KEY_FILE is generated at 0600 on
 # first use (the compose stack keeps it in the `secrets` volume beside the
 # Django secret key), or SIGNING_KEY carries the key itself (PEM, or a base64
-# 32-byte seed). Unset both and packages seal unsigned.
+# 32-byte seed). With neither set, the key file defaults to
+# backend/.package-signing-key and is generated there; packages seal unsigned
+# only when SIGNING_ENABLED is false.
 # Back the key up with the secrets volume (scripts/backup.sh takes it); on
 # bare metal the file is backend/.package-signing-key unless SIGNING_KEY_FILE
 # says otherwise, and belongs in the backup beside the database dump. Rotate

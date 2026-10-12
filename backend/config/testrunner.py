@@ -12,9 +12,12 @@ from django.test.runner import DiscoverRunner
 class Runner(DiscoverRunner):
     def setup_databases(self, **kwargs):
         result = super().setup_databases(**kwargs)
-        from accounts import tenancy
+        # With only database-free tests selected there is no test database, and
+        # looking the Default workspace up would query the developer's own one.
+        if result:
+            from accounts import tenancy
 
-        tenancy.activate(tenancy.default_workspace())
+            tenancy.activate(tenancy.default_workspace())
         return result
 
     def teardown_databases(self, old_config, **kwargs):

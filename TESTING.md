@@ -243,6 +243,9 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Reset   # local path, Wi
 docker compose down -v && docker compose up -d --build   # Docker (destroys data)
 ```
 
+The local reset names the database and the uploads it will delete and asks you
+to type `reset` first; add `--yes` (`-Yes` on Windows) to answer for a script.
+
 On Docker, `down -v` removes every volume: the database and the uploads, and
 also the `secrets` volume, which holds the Django secret key, the
 field-encryption keys and the package-signing key. The next start generates

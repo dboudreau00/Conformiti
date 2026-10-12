@@ -17,7 +17,10 @@
                   http://localhost:8080 and wait until healthy.
     -Test         Run the backend tests, the validator and a production
                   frontend build.
-    -Reset        Local only: wipe db.sqlite3 + uploads, reseed.
+    -Reset        Local only: wipe the SQLite database and the uploads,
+                  reseed. It says what it would delete (the paths the
+                  application is set to use, which must lie inside this
+                  checkout) and asks; -Yes answers for a script.
 
   Combine with -Demo (load the sample organisation; off by default), -Open
   (launch the browser when ready) and -Port N (Docker host port). With -Docker
@@ -32,18 +35,25 @@ param(
   [switch]$Docker,
   [switch]$Test,
   [switch]$Reset,
+  [switch]$Yes,
   [switch]$Demo,
   [switch]$NoDemo,
   [switch]$Open,
   [int]$Port = 8080
 )
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
+Set-Location -LiteralPath $PSScriptRoot
 
 function Say($m)  { Write-Host "==> $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "  * $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "  ! $m" -ForegroundColor Yellow }
 function Fail($m) { Write-Host "Error: $m" -ForegroundColor Red; exit 1 }
+
+# One mode per run, as install.sh insists: the switches are independent, and
+# -Docker -Reset would otherwise run one of them and quietly drop the other.
+if (@(@($SetupOnly, $Docker, $Test, $Reset) | Where-Object { $_ }).Count -gt 1) {
+  Fail "choose one of -SetupOnly, -Docker, -Test and -Reset, not two"
+}
 function Run {
   # Run a native command and stop on a non-zero exit code. A plain function on
   # purpose: an advanced one binds "-d" (docker compose up -d) to -Debug and
@@ -257,7 +267,7 @@ if ($Docker) {
   } else {
     Warn "could not read the Docker Compose version; the compose file needs 2.24.0 or newer."
   }
-  if ((Probe docker info) -ne 0) { Fail "The Docker daemon is not running (start Docker Desktop, or use WSL)." }
+  if ((Probe docker info) -ne 0) { Fail "The Docker daemon is not running, or this account may not use it. Start Docker Desktop (or use WSL); if it is running, add your Windows account to the docker-users group and sign in again." }
 
   if (-not (Test-Path ".env")) {
     $hosts = "localhost,127.0.0.1,backend,$($env:COMPUTERNAME.ToLower())"
@@ -406,8 +416,11 @@ if ($Docker) {
   # A re-run rebuilds the checkout on disk, nothing more. An upgrade is a
   # backup and a checkout of the new release first (README, "Upgrading").
   Write-Host "  Logs: docker compose logs -f    Stop: docker compose down" -ForegroundColor DarkGray
+  Write-Host "  Data: the Docker volumes pgdata, media, secrets and tree, and the .env in this folder. Back up all of them." -ForegroundColor DarkGray
+  Write-Host "  A trial setup: the database password is the default and email goes to the log. Before real use," -ForegroundColor DarkGray
+  Write-Host "  INSTALL.md section 1, `"Going to production`"." -ForegroundColor DarkGray
   Write-Host "  Rebuild: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker" -ForegroundColor DarkGray
-  Write-Host "  Upgrade: back up with scripts/backup.sh, check out the new release tag, then rebuild" -ForegroundColor DarkGray
+  Write-Host "  Upgrade: back up with scripts/backup.sh (from Git Bash or WSL), check out the new release tag, then rebuild" -ForegroundColor DarkGray
   Write-Host "           (README, `"Upgrading`", has the commands)" -ForegroundColor DarkGray
   if ($Open) { Start-Process "http://localhost:$Port" }
   exit 0
@@ -443,6 +456,18 @@ if (-not $Test) {
   $devPort = Get-DevPort "CONFORMITI_DEV_PORT" 5173
 }
 
+# --- the install path ---------------------------------------------------------
+# The folder tree Conformiti writes goes up to 150 characters below this folder,
+# and Windows stops at 259 unless long paths are switched on, so a deep install
+# would fail inside seeding with a bare "filename too long".
+$longPaths = $false
+try {
+  $longPaths = ((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -ErrorAction Stop).LongPathsEnabled -eq 1)
+} catch { }
+if (-not $longPaths -and (($PSScriptRoot.Length + 150) -gt 259)) {
+  Fail "this folder's path is $($PSScriptRoot.Length) characters long. The folder tree Conformiti creates goes up to 150 characters below it, past the 259 that Windows allows unless long paths are on. Install under a shorter path (for example C:\conformiti), or turn on Windows long paths (LongPathsEnabled) and run this again."
+}
+
 # --- .env with a generated secret key ---------------------------------------
 $envCreated = $false
 if (-not (Test-Path ".env")) {
@@ -451,8 +476,18 @@ if (-not (Test-Path ".env")) {
   (Get-Content ".env") -replace '^DJANGO_SECRET_KEY=.*$', "DJANGO_SECRET_KEY=$secret" | Set-Content ".env"
   $envCreated = $true
   Ok ".env created (SQLite + console email; secret key generated)"
+  # No chmod here either: NTFS gives the file the folder's permissions.
+  Warn ".env now holds the secret key, with the folder's permissions (Windows has no 0600). Keep this folder out of a shared location."
 } else {
   Ok ".env already present: leaving it untouched"
+  # The Docker installers write a .env that sets CONFORMITI_DEBUG and neither
+  # DJANGO_DEBUG nor a key. Run locally on it, the first Django command stops
+  # on a key it was never given, after pip and npm have run. Say so now.
+  $envText = (Get-Content ".env" -Raw)
+  if (-not $env:DJANGO_DEBUG -and -not $env:DJANGO_SECRET_KEY -and
+      $envText -notmatch '(?m)^DJANGO_DEBUG=' -and $envText -notmatch '(?m)^DJANGO_SECRET_KEY=.{32,}') {
+    Fail ".env sets neither DJANGO_DEBUG nor a DJANGO_SECRET_KEY. It looks like the Docker stack's file, and a local run on it starts with debug off and no key. Add DJANGO_DEBUG=true to .env for local development, or run this from another checkout."
+  }
 }
 # Sign-in is refused from any origin CSRF_TRUSTED_ORIGINS does not list, and
 # .env.example lists http://localhost:5173 only. A .env this run created is
@@ -484,11 +519,11 @@ if (-not $Test -and $devPort -ne 5173) {
 # part way leaves a python.exe with no pip, and every later run would die at
 # the pip step below.
 $pyexe = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-if ((Test-Path $pyexe) -and (Probe $pyexe -m pip --version) -ne 0) {
+if ((Test-Path -LiteralPath $pyexe) -and (Probe $pyexe -m pip --version) -ne 0) {
   Warn "the existing .venv has no working pip (an earlier creation probably stopped part way): recreating it"
   Remove-Item -Recurse -Force ".venv"
 }
-if (-not (Test-Path $pyexe)) {
+if (-not (Test-Path -LiteralPath $pyexe)) {
   Say "Creating Python virtual environment (.venv)..."
   if (Test-Path ".venv") { Remove-Item -Recurse -Force ".venv" }
   Run $py -m venv .venv
@@ -503,9 +538,45 @@ Run $pyexe -m pip install --quiet -r backend/requirements.txt
 Ok "backend dependencies installed"
 
 if ($Reset) {
+  # What is wiped is what the application is set to use, which is not always
+  # backend\db.sqlite3 (SQLITE_PATH, MEDIA_ROOT) and not always SQLite. The code
+  # has no double quotes: Windows PowerShell 5.1 strips them from a native argument.
+  $resetCode = @'
+import os
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+import django
+django.setup()
+from django.conf import settings
+db = settings.DATABASES['default']
+print(db['ENGINE'].rsplit('.', 1)[-1])
+print(db['NAME'])
+print(settings.MEDIA_ROOT)
+'@
+  Push-Location -LiteralPath "backend"
+  try { $resetInfo = @(& $pyexe -c $resetCode) } finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0 -or $resetInfo.Count -lt 3) {
+    Fail "Could not read the database settings, so -Reset does not know what it would delete."
+  }
+  $resetEngine, $resetDb, $resetMedia = $resetInfo[0], $resetInfo[1], $resetInfo[2]
+  if ($resetEngine -ne "sqlite3") {
+    Fail "-Reset resets the SQLite development database only. This .env uses $resetEngine ($resetDb): reset that one yourself, or point .env at SQLite."
+  }
+  $here = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\'
+  foreach ($target in @($resetDb, $resetMedia)) {
+    $full = [System.IO.Path]::GetFullPath($target)
+    if (-not $full.StartsWith($here, [System.StringComparison]::OrdinalIgnoreCase) -or $full.Length -le $here.Length) {
+      Fail "-Reset will not delete ${target}: it is outside this checkout. Remove it yourself if you mean to."
+    }
+  }
+  if (-not $Yes) {
+    Warn "-Reset deletes $resetDb and $resetMedia (every account, document and setting in them)."
+    if ([Console]::IsInputRedirected) { Fail "-Reset needs a terminal to ask in. Add -Yes to answer for a script." }
+    $answer = Read-Host "Type 'reset' to continue"
+    if ($answer -ne "reset") { Fail "Nothing was changed." }
+  }
   Say "Resetting the local database and uploads..."
-  Remove-Item -Force "backend\db.sqlite3" -ErrorAction SilentlyContinue
-  Remove-Item -Recurse -Force "backend\media" -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $resetDb -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $resetMedia -Recurse -Force -ErrorAction SilentlyContinue
   Ok "clean slate"
   $SetupOnly = $true
 }
@@ -650,6 +721,9 @@ if ($SetupOnly) {
   exit 0
 }
 
+if (Test-PortListened $devApiPort) {
+  Warn "port $devApiPort is already in use (the Docker stack's API, or another runserver, is the usual holder): the API window will close at once and the web app would talk to whatever answers there. Stop it, or set CONFORMITI_DEV_API_PORT to a free port."
+}
 Say "Starting servers: API on :$devApiPort (CONFORMITI_DEV_API_PORT), web app on :$devPort (CONFORMITI_DEV_PORT)."
 Say "Open http://localhost:$devPort in your browser. Close the two windows to stop."
 if ($originMissing) { Show-OriginWarning $devPort }

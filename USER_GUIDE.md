@@ -225,8 +225,10 @@ Administrators and Compliance Managers hold manage on every folder.
 ### Risks
 Chips filter live / closed / all; the toolbar offers a CSV template, **Import
 CSV/XLSX** and **New risk** (managers) and **Export**. Select a row to edit
-status, treatment, scores, owner, due date, Jira key and the mitigation plan
-(managers, or the risk's owner) and to add notes (anyone). Import recognises
+it and to add notes (anyone). A manager can change every field. The risk's
+owner, who is not necessarily a manager, can change only its status, mitigation
+plan, due date and Jira key; the title, scores, treatment, owner and control
+need a manager, and the page greys those fields out for the owner. Import recognises
 common column names (Title/Risk, Likelihood/Probability, Impact/Severity,
 Owner, Control, Due date, Status, Notes…), word scales (High, Likely…), and
 skips duplicates by title.

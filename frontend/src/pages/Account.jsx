@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BellIcon,
@@ -1119,19 +1119,26 @@ function WorkspacesBlock({ me }) {
   const superuser = !!me?.is_superuser;
   const [currentErr, setCurrentErr] = useState(null);
 
+  // Only the newest answer counts: a slower, older one must not put back what a
+  // newer one has replaced.
+  const asked = useRef(0);
   const load = () => {
     setCurrentErr(null);
+    const mine = ++asked.current;
     api.get("/workspaces/current/")
       .then((r) => {
+        if (mine !== asked.current) return;
         setCurrent(r.data || null);
-        setInbox(r.data?.notification_email || "");
-        // A webhook URL is a credential and never comes back from the API.
-        // The boxes start empty and say whether one is already configured;
-        // typing in one replaces it, and Remove clears it.
-        setSlack("");
-        setTeams("");
+        // The reminder address is filled in once and never over what has been
+        // typed since: an answer that lands late used to empty the boxes under
+        // a person's hands. A webhook URL is a credential and never comes back
+        // from the API, so those boxes are not filled at all. They say whether
+        // one is already configured; typing in one replaces it, and Remove
+        // clears it.
+        setInbox((typed) => typed || r.data?.notification_email || "");
       })
       .catch((e) => {
+        if (mine !== asked.current) return;
         setCurrent(null);
         setCurrentErr(errorText(e, "Couldn't load the workspace."));
       });
@@ -1177,6 +1184,11 @@ function WorkspacesBlock({ me }) {
       if (slack.trim()) body.slack_webhook_url = slack.trim();
       if (teams.trim()) body.teams_webhook_url = teams.trim();
       await api.patch(`/workspaces/${current.id}/`, body);
+      // What was sent is what is stored. The URLs are never shown again, so
+      // their boxes empty and the hint above them takes over.
+      setInbox(inbox.trim());
+      setSlack("");
+      setTeams("");
       setMsg({ ok: true, text: inbox.trim()
         ? `Reminders for ${current.name} now go to ${inbox.trim()}${slack.trim() || teams.trim() ? ", and its chat events to its own channel" : ""}.`
         : `Reminders for ${current.name} fall back to the installation address.` });
@@ -1278,7 +1290,7 @@ function WorkspacesBlock({ me }) {
               ) : null}
             </Field>
             <div className="sm:col-span-2">
-              <Button type="submit" size="sm" variant="secondary" disabled={busy}>Save</Button>
+              <Button type="submit" size="sm" variant="secondary" disabled={busy || !current}>Save</Button>
             </div>
           </form>
           <p className="mt-2 max-w-[62ch] text-xs text-muted">

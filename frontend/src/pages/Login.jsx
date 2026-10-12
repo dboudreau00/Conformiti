@@ -20,6 +20,8 @@ const SSO_ERRORS = {
   domain: "That email domain is not allowed to sign in here.",
   privileged: "Administrator accounts sign in with their password.",
   ambiguous_email: "More than one account uses that email address. Ask an administrator to link your identity.",
+  email_taken: "An account already uses that email address. Ask an administrator to link your identity.",
+  workspace: "Single sign-on is not set up for a workspace on this server. Ask an administrator.",
   unknown_user: "No account is linked to that identity. Ask an administrator to link it.",
   inactive: "That account is deactivated.",
   role: "The server's default single sign-on role is misconfigured.",

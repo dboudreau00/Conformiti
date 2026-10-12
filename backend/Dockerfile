@@ -5,13 +5,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# The code default is DEBUG on, because the code's usual caller is a developer
-# running `manage.py runserver`. This image's caller is `docker run`, which is
-# a server. Compose and both installers set this explicitly; pinning it here
-# covers a published image run on its own, which would otherwise start with the
-# browsable API, session authentication on every route, and MEDIA_ROOT served
-# around the X-Accel check. Override it on purpose through compose with
-# CONFORMITI_DEBUG; nothing else should.
+# The code default is DEBUG off (since 0.9.5me), and it is pinned here as well
+# so the image says what it means: a change to the code default must never let
+# a published image run on its own with the browsable API, session
+# authentication on every route, and MEDIA_ROOT served around the X-Accel
+# check. Compose and both installers set it explicitly too. Override it on
+# purpose through compose with CONFORMITI_DEBUG; nothing else should.
 ENV DJANGO_DEBUG=false
 
 # BEHIND_TLS defaults to "not DEBUG", so pinning DEBUG off would turn

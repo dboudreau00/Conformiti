@@ -43,7 +43,9 @@ export const Button = forwardRef(function Button(
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       className={cn(
-        "inline-flex items-center justify-center font-medium",
+        // A button is one line high, so a label that wraps is a label that is
+        // cut off: keep it on one line and let the row around it give way.
+        "inline-flex items-center justify-center whitespace-nowrap font-medium",
         "transition-[background-color,border-color,color,filter] duration-150 ease-out",
         "disabled:cursor-not-allowed disabled:opacity-50",
         VARIANTS[variant] || VARIANTS.secondary,

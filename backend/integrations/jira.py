@@ -8,6 +8,7 @@ Authentication is HTTP Basic with an Atlassian API token (email and token;
 create one at id.atlassian.com under Security > API tokens).
 """
 import base64
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -90,10 +91,12 @@ def _request(config, path, params=None):
         raise JiraError(f"Jira returned HTTP {exc.code}.")
     except urllib.error.URLError as exc:
         raise JiraError(f"Could not reach Jira: {getattr(exc, 'reason', exc)}")
-    except OSError as exc:
-        # A timeout or reset while the body is being read is not a URLError.
+    except (OSError, http.client.HTTPException) as exc:
+        # A timeout or reset while the body is being read is not a URLError, and
+        # neither is a chunked body cut short (IncompleteRead) or a garbled
+        # status line: all of them are Jira not answering properly.
         raise JiraError(f"Could not reach Jira: {exc}")
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
         raise JiraError("Jira returned a response that wasn't JSON. Check the base URL.")
 
 

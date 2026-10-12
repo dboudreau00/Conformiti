@@ -198,3 +198,42 @@ class BundleFindingsTests(PackageTestBase):
         with mock.patch.object(bundle, "VERIFIER", Path("/nonexistent/verify.py")):
             with self.assertRaises(OSError):
                 bundle.write_bundle(self.package, io.BytesIO())
+
+
+class VerifierOutputTests(SimpleTestCase):
+    """verify.py prints the package's name and the names of files from a bundle
+    it has no reason to trust. An escape sequence in either can hide the FAIL
+    lines that follow it (set the colour to the background, clear the screen)."""
+
+    HOSTILE = "x\x1b[2J\x1b[8my\x07z"
+
+    def test_unprintable_characters_are_written_out(self):
+        from attestations import verifier
+
+        out = verifier._safe(self.HOSTILE)
+        self.assertNotIn("\x1b", out)
+        self.assertNotIn("\x07", out)
+        self.assertEqual(out, "x\\x1b[2J\\x1b[8my\\x07z")
+        self.assertEqual(verifier._safe("Ordinary name, 100% (v2) é"), "Ordinary name, 100% (v2) é")
+        self.assertEqual(verifier._safe("a‮b"), "a\\u202eb")          # a right-to-left override
+
+    def test_a_forged_bundle_cannot_print_raw_control_characters(self):
+        import contextlib
+        import io
+        import json
+
+        from attestations import verifier
+
+        with tempfile.TemporaryDirectory() as root:
+            Path(root, "manifest.json").write_text(json.dumps({
+                "package": {"name": self.HOSTILE, "sealed_at": "2026-01-01", "sealed_by": self.HOSTILE},
+                "totals": {"controls": 1, "evidence": 0},
+            }), encoding="utf-8")
+            Path(root, "SHA256SUMS").write_text("0" * 64 + "  " + self.HOSTILE + ".csv\n", encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = verifier.main(root)
+        self.assertEqual(code, 1)
+        self.assertNotIn("\x1b", out.getvalue())
+        self.assertNotIn("\x07", out.getvalue())
+        self.assertIn("\\x1b[2J", out.getvalue())

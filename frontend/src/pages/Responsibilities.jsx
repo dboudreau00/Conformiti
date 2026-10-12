@@ -161,7 +161,7 @@ export default function Responsibilities({ me }) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Panel className="overflow-hidden">
-          <PanelHeader title="Responsibility matrix" meta={data ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}` : "-"}>
+          <PanelHeader className="flex-wrap" title="Responsibility matrix" meta={data ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}` : "-"}>
             <Button size="sm" variant="ghost" icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                     onClick={exportCsv}>
               Export

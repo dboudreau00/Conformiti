@@ -107,7 +107,8 @@ class PbcRequestSerializer(serializers.ModelSerializer):
             "answer": not closed and obj.is_actionable and (assembler or obj.assignee_id == user.pk),
             "attach": (not closed and obj.status not in ("accepted", "withdrawn")
                        and (assembler or obj.assignee_id == user.pk)),
-            "judge": not closed and obj.status == "provided" and (grantee or assembler),
+            "judge": (not closed and obj.status == "provided"
+                      and (grantee or (assembler and obj.requested_by_side == "organisation"))),
             "withdraw": (not closed and obj.status not in ("accepted", "withdrawn") and (assembler or own)),
         }
 

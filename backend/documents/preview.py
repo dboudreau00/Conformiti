@@ -24,7 +24,7 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 
-from .ooxml import XmlRefused, safe_fromstring, unescape_xstring
+from .ooxml import MAX_ELEMENTS, XmlRefused, safe_fromstring, unescape_xstring
 
 MAX_PARAGRAPHS = 3000
 MAX_TABLE_ROWS = 500
@@ -33,7 +33,6 @@ MAX_SHEET_COLS = 64
 MAX_SHEETS = 12
 MAX_UNZIPPED_BYTES = 40 * 1024 * 1024
 MAX_PART_BYTES = 12 * 1024 * 1024      # one XML part, read in bounded chunks, never trusting the header
-MAX_ELEMENTS = 400_000                 # a part with more tags than this is not a document, it is a bomb
 MAX_TEXT_BYTES = 512 * 1024
 
 PDF_MAGIC = b"%PDF-"

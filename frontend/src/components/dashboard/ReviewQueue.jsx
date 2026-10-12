@@ -86,7 +86,7 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
                   size="sm"
                   className="shrink-0"
                   disabled={busyId != null}
-                  aria-label={`Mark ${r.name} reviewed`}
+                  aria-label={`Mark reviewed: ${r.name}`}
                   onClick={() => markReviewed(r)}
                   icon={<CheckIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />}
                 >

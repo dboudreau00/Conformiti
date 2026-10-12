@@ -93,6 +93,15 @@ class PackageWorkThrottle(UserRateThrottle):
     scope = "package_work"
 
 
+class PackageVerifyThrottle(UserRateThrottle):
+    """THROTTLE_PACKAGE_VERIFY, per account, for the integrity check. It
+    re-hashes every pinned file for anyone who can read the package, an external
+    auditor with a grant included, so it is bounded; but the Packages page runs
+    it whenever a package is opened, so the bucket is larger than the one for
+    sealing and exporting."""
+    scope = "package_verify"
+
+
 class EvidencePackageViewSet(viewsets.ModelViewSet):
     serializer_class = EvidencePackageSerializer
     permission_classes = [IsAuthenticated, CanAssemble]
@@ -137,11 +146,15 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                              f"opened evidence package {package.pk}: {package.name}")
 
     def perform_update(self, serializer):
-        package = self.get_object()
-        assert_open(package)
-        if "prior_package" in serializer.validated_data:
-            self._check_prior(serializer.validated_data.get("prior_package"), package)
-        serializer.save()
+        # Locked and read again. DRF loaded the instance before this lock, and a
+        # seal that committed in between would otherwise be written back as a
+        # draft with an empty manifest, digest and signature.
+        with transaction.atomic():
+            package = lock_open(serializer.instance)
+            if "prior_package" in serializer.validated_data:
+                self._check_prior(serializer.validated_data.get("prior_package"), package)
+            serializer.instance = package
+            serializer.save()
 
     # ------------------------------------------------------------ roll-forward
     @action(detail=True, methods=["post"])
@@ -152,10 +165,13 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         prior = self.get_object()
         if not access.can_assemble(request.user):
             raise PermissionDenied("You need the frameworks capability to roll a package forward.")
+        engagement = request.data.get("engagement")
+        if engagement is not None and not isinstance(engagement, str):
+            raise ValidationError({"engagement": "Give the engagement as text."})
         try:
             package, skipped = rollforward.roll_forward(
                 prior, request.user, name=str(request.data.get("name") or "").strip() or None,
-                engagement=request.data.get("engagement"))
+                engagement=engagement)
         except ValueError as exc:
             raise ValidationError({"detail": str(exc)})
         record_package_event(request, package, "create",
@@ -178,10 +194,11 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         # A sealed package is a record of a disclosure. Withdraw it instead.
-        assert_open(instance)
-        record_package_event(self.request, instance, "delete",
-                             f"deleted draft evidence package {instance.pk}: {instance.name}")
-        instance.delete()
+        with transaction.atomic():
+            package = lock_open(instance)
+            record_package_event(self.request, package, "delete",
+                                 f"deleted draft evidence package {package.pk}: {package.name}")
+            package.delete()
 
     # ---------------------------------------------------------------- assemble
     @action(detail=True, methods=["post"])
@@ -199,6 +216,14 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
         ids = request.data.get("controls") or []
         if not isinstance(ids, list) or not ids:
+            raise ValidationError({"controls": "Give a list of control ids."})
+        # Whole numbers that fit the database's integer, as the bulk attach
+        # insists: anything else reached the query and raised a 500.
+        try:
+            if any(isinstance(i, (bool, float)) or abs(int(i)) >= 2 ** 63 for i in ids):
+                raise ValueError
+            ids = [int(i) for i in ids]
+        except (TypeError, ValueError):
             raise ValidationError({"controls": "Give a list of control ids."})
         with_evidence = bool(request.data.get("with_evidence", True))
 
@@ -328,16 +353,21 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         package = self.get_object()
         if not access.can_assemble(request.user):
             raise PermissionDenied("You need the frameworks capability to withdraw a package.")
-        if package.status == EvidencePackage.Status.WITHDRAWN:
-            raise ValidationError({"detail": "Already withdrawn."})
 
-        now = timezone.now()
-        revoked = package.grants.filter(revoked_at__isnull=True).update(
-            revoked_at=now, revoked_by=request.user)
-        package.status = EvidencePackage.Status.WITHDRAWN
-        package.withdrawn_reason = str(request.data.get("reason", ""))[:255]
-        stamp(package, request.user, "withdrawn")
-        package.save()
+        with transaction.atomic():
+            # Held for update and read again: a seal in progress finishes first,
+            # so the withdrawn row carries its manifest instead of being written
+            # over by a copy read before it.
+            package = EvidencePackage.objects.select_for_update().get(pk=package.pk)
+            if package.status == EvidencePackage.Status.WITHDRAWN:
+                raise ValidationError({"detail": "Already withdrawn."})
+            now = timezone.now()
+            revoked = package.grants.filter(revoked_at__isnull=True).update(
+                revoked_at=now, revoked_by=request.user)
+            package.status = EvidencePackage.Status.WITHDRAWN
+            package.withdrawn_reason = str(request.data.get("reason", ""))[:255]
+            stamp(package, request.user, "withdrawn")
+            package.save()
         record_package_event(request, package, "withdraw",
                              f"withdrew package {package.pk}, revoking {revoked} grant(s)")
         webhooks.post_event(
@@ -348,7 +378,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         return Response(EvidencePackageSerializer(package).data)
 
     # ------------------------------------------------------------------ verify
-    @action(detail=True, methods=["get"])
+    @action(detail=True, methods=["get"], throttle_classes=[PackageVerifyThrottle])
     def verify(self, request, pk=None):
         """Re-hash the live files and compare with what was sealed."""
         package = self.get_object()
@@ -549,7 +579,16 @@ class PackageControlViewSet(viewsets.ModelViewSet):
             extra.update(responded_by=row.responded_by,
                          responded_by_name=row.responded_by_name,
                          responded_at=row.responded_at)
-        serializer.save(**extra)
+        if snapshot_fields:
+            # Snapshot data is in the signed manifest, so the write queues behind
+            # a seal like every other write that changes it, and goes against the
+            # row as it is now, not as it was before the lock.
+            with transaction.atomic():
+                lock_open(row.package)
+                serializer.instance = type(row).objects.select_for_update().get(pk=row.pk)
+                serializer.save(**extra)
+        else:
+            serializer.save(**extra)
 
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
@@ -641,9 +680,13 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
                              tested_by_name=(user.get_full_name() or user.get_username())[:200])
         else:
             assert_open(package)
-        sample = serializer.save(
-            selected_by=user, selected_at=timezone.now(),
-            selected_by_name=(user.get_full_name() or user.get_username())[:200], **extra)
+        with transaction.atomic():
+            if package.is_open:
+                # A sample item listed on an open package is in the manifest.
+                lock_open(package)
+            sample = serializer.save(
+                selected_by=user, selected_at=timezone.now(),
+                selected_by_name=(user.get_full_name() or user.get_username())[:200], **extra)
         record_package_event(self.request, package, "update",
                              f"listed sample item '{sample.identifier}' on {row.control_ref} "
                              f"in package {package.pk}")
@@ -683,7 +726,11 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
             if "evidence" in data:
                 self._check_evidence(row, data.get("evidence"))
                 extra["evidence_name"] = data["evidence"].document_name if data.get("evidence") else ""
-        serializer.save(**extra)
+        with transaction.atomic():
+            if touching_item and package.is_open:
+                lock_open(package)
+                serializer.instance = type(sample).objects.select_for_update().get(pk=sample.pk)
+            serializer.save(**extra)
         if touching_result:
             record_package_event(self.request, package, "update",
                                  f"sample '{sample.identifier}' on {row.control_ref}: "
@@ -700,7 +747,10 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied("Sample items in the sealed manifest cannot be removed.")
         else:
             assert_open(package)
-        instance.delete()
+        with transaction.atomic():
+            if package.is_open:
+                lock_open(package)
+            instance.delete()
 
 
 class PackageEvidenceViewSet(viewsets.ModelViewSet):
@@ -747,7 +797,10 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         if repointed is not None and repointed.pk != row.document_id:
             raise ValidationError(
                 {"document": "Pin a new artefact instead of re-pointing this one."})
-        serializer.save()
+        with transaction.atomic():
+            lock_open(row.package_control.package)
+            serializer.instance = type(row).objects.select_for_update().get(pk=row.pk)
+            serializer.save()
 
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):

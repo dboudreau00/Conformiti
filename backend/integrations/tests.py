@@ -184,6 +184,23 @@ class JiraTransportTests(APITestBase):
             with self.assertRaisesRegex(JiraError, "Could not reach Jira"):
                 jira.verify(self.config())
 
+    def test_a_body_cut_short_or_a_garbled_one_is_a_jira_error(self):
+        """A chunked body that ends early (IncompleteRead), a garbled status line
+        and JSON nested past the parser's depth are not OSErrors; each used to
+        escape and answer 500."""
+        import http.client
+        from integrations import jira
+        cases = (
+            (dict(exc=http.client.IncompleteRead(b"{", 100)), "Could not reach Jira"),
+            (dict(exc=http.client.BadStatusLine("garbage")), "Could not reach Jira"),
+            (dict(body=b"[" * 200000), "wasn't JSON"),
+        )
+        for kwargs, message in cases:
+            with self.subTest(message=message, kind=type(kwargs.get("exc")).__name__):
+                with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"),                         self.opener_returning(**kwargs):
+                    with self.assertRaisesRegex(JiraError, message):
+                        jira.verify(self.config())
+
     def test_an_oversized_answer_is_refused(self):
         from integrations import jira
         with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"), \

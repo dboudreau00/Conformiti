@@ -222,6 +222,26 @@ class AnswerTests(PbcBase):
         self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/withdraw/").status_code, 400)
         self.assertEqual(self.manager_client.delete(f"/api/pbc-items/{PbcItem.objects.first().pk}/").status_code, 400)
 
+    def test_the_organisation_judges_only_a_line_it_raised_itself(self):
+        """The documented rule: the organisation closes a line it transcribed
+        from the auditor's email; a line the auditor raised is theirs to accept
+        or return. Any frameworks manager used to be able to accept it."""
+        lid = self.line["id"]                                   # raised by the auditor
+        self.attach(self.manager_client, self.doc)
+        self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "Attached."}, format="json")
+        self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/accept/").status_code, 403)
+        self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/return/",
+                                                  {"returned_note": "No."}, format="json").status_code, 403)
+        self.assertEqual(PbcRequest.objects.get(pk=lid).status, "provided")
+        # The line the organisation raised itself, it may close.
+        mine = self.raise_line(self.manager_client, title="Transcribed from the auditor's email").data
+        self.manager_client.post("/api/pbc-items/", {"request": mine["id"], "document": self.doc.pk}, format="json")
+        self.manager_client.post(f"/api/pbc-requests/{mine['id']}/provide/", {"response_note": "Done."}, format="json")
+        r = self.manager_client.post(f"/api/pbc-requests/{mine['id']}/accept/")
+        self.assertEqual((r.status_code, r.data["status"]), (200, "accepted"))
+        # And the auditor judges the line they raised.
+        self.assertEqual(self.auditor_client.post(f"/api/pbc-requests/{lid}/accept/").status_code, 200)
+
     def test_detaching_the_last_document_reopens_a_provided_line_with_no_note(self):
         lid = self.line["id"]
         item = self.attach(self.manager_client, self.doc).data
@@ -242,9 +262,37 @@ class AnswerTests(PbcBase):
         self.attach(self.manager_client, self.doc)
         self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "x"}, format="json")
         self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/withdraw/").status_code, 200)
-        for action in ("accept", "provide"):
-            self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/{action}/").status_code, 400, action)
+        # The line is the auditor's, so the auditor judges it; the organisation answers it.
+        for action, client in (("accept", self.auditor_client), ("provide", self.manager_client)):
+            self.assertEqual(client.post(f"/api/pbc-requests/{lid}/{action}/").status_code, 400, action)
         self.assertEqual(PbcRequest.objects.get(pk=lid).status, "withdrawn")
+
+    def test_a_judgement_is_decided_on_the_status_read_under_the_lock_not_on_the_first_read(self):
+        """The requests above run one after another, so they would pass with no
+        lock at all. Here a withdrawal lands between the handler's first read of
+        the request and its locked re-read: the accept must see it."""
+        from unittest import mock
+
+        from attestations import pbc_views
+
+        lid = self.line["id"]
+        self.attach(self.manager_client, self.doc)
+        self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "x"}, format="json")
+        real = pbc_views.PbcRequestViewSet.get_object
+
+        def another_request_lands_after_the_first_read(viewset):
+            req = real(viewset)
+            PbcRequest.objects.filter(pk=req.pk).update(status="withdrawn")
+            return req
+
+        with mock.patch.object(pbc_views.PbcRequestViewSet, "get_object",
+                               another_request_lands_after_the_first_read):
+            r = self.auditor_client.post(f"/api/pbc-requests/{lid}/accept/")
+        # Refused, and for the right reason. (The competing write above shares
+        # the request's transaction in a test, so the refusal rolls it back; on a
+        # real server it is another connection's and stays.)
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertIn("Only a provided request can be accepted", str(r.data))
 
     def test_withdrawal_and_a_withdrawn_package_close_the_list(self):
         lid = self.line["id"]
