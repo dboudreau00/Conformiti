@@ -868,10 +868,19 @@ function ChannelsBlock({ me, onUpdate }) {
   const [busy, setBusy] = useState(false);
   const admin = !!(me?.is_superuser || me?.capabilities?.manage_users);
 
-  const load = () => api.get("/notifications/channels/").then((r) => { setInfo(r.data); setDigest(r.data.digest); }).catch(() => setInfo({ slack: false, teams: false, events: [] }));
+  // A failed read is not "nothing configured": saying "Slack not configured"
+  // would send an administrator off to set up a channel that works.
+  const [loadErr, setLoadErr] = useState(null);
+  const load = () => {
+    setLoadErr(null);
+    return api.get("/notifications/channels/")
+      .then((r) => { setInfo(r.data); setDigest(r.data.digest); })
+      .catch((e) => setLoadErr(errorText(e, "Couldn't load the notification channels.")));
+  };
   useEffect(() => { load(); }, []);
 
   async function saveDigest(value) {
+    const before = digest;
     setDigest(value);
     setMsg(null);
     setBusy(true);
@@ -880,6 +889,7 @@ function ChannelsBlock({ me, onUpdate }) {
       onUpdate?.(data);
       setMsg({ ok: true, text: value === "off" ? "Digest emails are off." : `You'll get a ${value} digest of your tray by email.` });
     } catch (e) {
+      setDigest(before); // the select must show what is actually saved
       setMsg({ ok: false, text: errorText(e, "Couldn't save the preference.") });
     } finally {
       setBusy(false);
@@ -919,7 +929,12 @@ function ChannelsBlock({ me, onUpdate }) {
       <div className="grid grid-cols-1 gap-1 border-t border-line px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
         <span className="text-[13px] font-medium text-ink">Chat channels</span>
         <span className="text-[13px] leading-snug text-muted">
-          {!info ? "…" : (
+          {loadErr ? (
+            <span role="alert">
+              {loadErr}{" "}
+              <button type="button" className="link" onClick={load}>Try again</button>
+            </span>
+          ) : !info ? "…" : (
             <>
               <span className="flex flex-wrap items-center gap-1.5">
                 <Badge tone={info.slack ? "success" : "muted"} dot>Slack {info.slack ? "configured" : "not configured"}</Badge>
@@ -1102,8 +1117,10 @@ function WorkspacesBlock({ me }) {
   const [slack, setSlack] = useState("");
   const [teams, setTeams] = useState("");
   const superuser = !!me?.is_superuser;
+  const [currentErr, setCurrentErr] = useState(null);
 
   const load = () => {
+    setCurrentErr(null);
     api.get("/workspaces/current/")
       .then((r) => {
         setCurrent(r.data || null);
@@ -1114,7 +1131,10 @@ function WorkspacesBlock({ me }) {
         setSlack("");
         setTeams("");
       })
-      .catch(() => setCurrent(null));
+      .catch((e) => {
+        setCurrent(null);
+        setCurrentErr(errorText(e, "Couldn't load the workspace."));
+      });
     if (superuser) api.get("/workspaces/", { params: { page_size: 100 } }).then((r) => setList(r.data.results || r.data)).catch(() => setList([]));
   };
   useEffect(() => { load(); }, [superuser]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1219,6 +1239,11 @@ function WorkspacesBlock({ me }) {
             <span className="font-semibold">{current.name}</span>
             <span className="ml-2 font-mono text-xs text-muted">{current.slug}</span>
           </>
+        ) : currentErr ? (
+          <span role="alert" className="text-danger">
+            {currentErr}{" "}
+            <button type="button" className="link" onClick={load}>Try again</button>
+          </span>
         ) : "…"}
       </p>
       <p className="mt-1.5 max-w-[62ch] text-xs leading-snug text-muted">
@@ -1343,7 +1368,7 @@ function AboutSection() {
       .then((r) => {
         if (alive) setWorkspaceKey(r.data);
       })
-      .catch(() => {});
+      .catch((e) => console.warn("Conformiti: signing key unavailable", e?.message));
     return () => {
       alive = false;
     };

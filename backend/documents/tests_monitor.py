@@ -69,6 +69,22 @@ class MonitorTests(ClamdMixin, APITestBase):
             body = anon.get("/api/health/").data["scanning"]
             self.assertEqual((body["enabled"], body["reachable"]), (True, True))
 
+    def test_the_quarantine_notice_is_posted_from_the_documents_own_workspace(self):
+        from unittest import mock
+
+        from accounts import tenancy
+        from notifications import webhooks
+
+        doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Tenant file", content=b"benign")
+        seen = []
+        real_workspace = doc.workspace_id
+        with self.scanning(), tenancy.unscoped(), \
+                mock.patch.object(webhooks, "post_event",
+                                  side_effect=lambda *a, **k: seen.append(tenancy.current_id())):
+            self.clamd.forced = b"stream: Win.Test.EICAR_HDB-1 FOUND\0"
+            monitor.scan_document(doc)
+        self.assertEqual(seen, [real_workspace])
+
     def test_a_rescan_quarantines_an_infected_file_on_every_route(self):
         doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Innocent then not", content=b"benign")
         with self.scanning():

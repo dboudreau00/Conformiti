@@ -193,6 +193,12 @@ class OidcFlowTests(APITestBase):
         call_command("link_oidc_identity", "ada", "sub-ada", "--allow-privileged",
                      stdout=StringIO())
         self.assertEqual(OidcIdentity.objects.get(subject="sub-ada").user, self.admin)
+        # The audit row belongs to the account's workspace, or its own
+        # administrators could never see who linked a sign-in to it.
+        from audit.models import AuditLog
+        row = AuditLog.objects.get(detail__startswith="sso identity linked for ada")
+        self.assertEqual(row.workspace_id, self.admin.workspace_id)
+        self.assertIsNotNone(row.workspace_id)
         ticket = self.sign_in()
         self.assertTrue(ticket)
 

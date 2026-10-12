@@ -68,6 +68,7 @@ class SecretKeyBootTests(SimpleTestCase):
         r = _run_check({"EMAIL_PROVIDER": "console"}, debug_default=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("DJANGO_SECRET_KEY must be set", r.stderr)
+
     def test_production_refuses_placeholder_key(self):
         r = _run_check({"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY": "change-me-to-a-long-random-string"})
         self.assertNotEqual(r.returncode, 0)
@@ -87,6 +88,60 @@ class SecretKeyBootTests(SimpleTestCase):
             r = _run_check(env)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(key_file.read_text().strip(), first)  # stable across boots
+
+    def test_list_and_hour_settings_fail_with_their_names(self):
+        base = {"EMAIL_PROVIDER": "console"}
+        for name, value in (("READINESS_BANDS", "a,b,c"), ("REVIEW_ALERT_LEAD_DAYS", "7,x"),
+                            ("REVIEW_SCAN_HOUR", "25")):
+            with self.subTest(name):
+                r = _run_check({**base, name: value})
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn(name, r.stderr)
+                self.assertIn("ImproperlyConfigured", r.stderr)
+
+    def test_a_short_key_file_is_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            key_file = Path(tmp) / "django_secret_key"
+            key_file.write_text("truncated-by-accident\n")
+            env = {"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY_FILE": str(key_file),
+                   "DJANGO_SECRET_KEY": "", "EMAIL_PROVIDER": "console"}
+            r = _run_check(env)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("fewer than 32 characters", r.stderr)
+            self.assertEqual(key_file.read_text(), "truncated-by-accident\n")
+
+    def test_an_empty_key_file_is_filled_and_no_temporary_is_left(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            key_file = Path(tmp) / "django_secret_key"
+            key_file.write_text("")
+            env = {"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY_FILE": str(key_file),
+                   "DJANGO_SECRET_KEY": "", "EMAIL_PROVIDER": "console"}
+            r = _run_check(env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertGreaterEqual(len(key_file.read_text().strip()), 64)
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], ["django_secret_key"])
+
+    def test_workers_booting_together_agree_on_one_key(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            key_file = Path(tmp) / "nested" / "django_secret_key"
+            code = ("import os,sys; os.environ['DJANGO_SETTINGS_MODULE']='config.settings'; "
+                    "from django.conf import settings; print(settings.SECRET_KEY)")
+            env = {k: v for k, v in os.environ.items() if not k.startswith("DJANGO_")}
+            env.update({"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY_FILE": str(key_file),
+                        "EMAIL_PROVIDER": "console", "PYTHONIOENCODING": "utf-8"})
+
+            def boot(_):
+                return subprocess.run([sys.executable, "-c", code], cwd=BACKEND, env=env,
+                                      capture_output=True, text=True, timeout=120)
+
+            with ThreadPoolExecutor(4) as pool:
+                results = list(pool.map(boot, range(4)))
+            keys = {r.stdout.strip() for r in results}
+            self.assertTrue(all(r.returncode == 0 for r in results), [r.stderr[-300:] for r in results])
+            self.assertEqual(len(keys), 1, keys)
+            self.assertEqual(keys.pop(), key_file.read_text().strip())
 
 
 @mock.patch.dict(os.environ, {"DEMO_PASSWORD": "DemoPass123!"})

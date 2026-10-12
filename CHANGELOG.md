@@ -60,7 +60,15 @@ a surrogate pair, which cannot be stored.
 debug off, so a bare-metal run with no `.env` cannot come up with the
 development signing key. Local development opts in with
 `DJANGO_DEBUG=true`, which `.env.example` and both installers already do.
-`.env.example`, the README and SECURITY.md say so, and a test holds it.
+`.env.example`, the README and SECURITY.md say so, and a test holds it. A
+`DJANGO_SECRET_KEY_FILE` that holds some text but fewer than 32 characters
+is no longer overwritten with a new key (which would have signed everyone
+out and left encrypted secrets unreadable): the application refuses to
+start and says so. A file that is empty is still filled. A new key is
+written whole and linked into place, so workers that boot together agree
+on one key. `READINESS_BANDS`, `REVIEW_ALERT_LEAD_DAYS` and
+`REVIEW_SCAN_HOUR` name themselves when they hold anything but
+whole numbers, or an hour outside 0 to 23.
 
 **Uploads.** The macro check now also looks inside OpenDocument files
 (`.odt`, `.ods`, `.odp` and the rest), which keep macros in `Basic/` and
@@ -86,7 +94,9 @@ string "true" (AWS Cognito does) is accepted as verified; "false" and
 anything else still is not. With linking by email off, provisioning an
 account on an address another account already uses is refused with a
 message, rather than creating a second account that makes the next
-email-linked sign-in ambiguous.
+email-linked sign-in ambiguous. The entries the `link_oidc_identity`
+command writes to the audit trail now belong to the account's workspace,
+so that workspace's administrators can see who linked a sign-in.
 
 **Evidence requests.** Accepting, returning, withdrawing and providing an
 answer each run in one transaction under a row lock, so an accept racing a
@@ -138,7 +148,11 @@ morning scans and the daily readiness snapshot log the failure and go on.
 A digest or bridge-letter reminder is claimed before it is sent, so two runs
 at once cannot both send it, and the claim is handed back when the send
 fails, so the next run tries again. A person whose digest cannot be built no
-longer stops everyone else's.
+longer stops everyone else's. The notice that a stored file was
+quarantined, raised by the sweep that rescans files, is posted from the
+file's own workspace, so on a shared installation it reaches that
+workspace's chat channels or none, and never names the file to a channel
+that belongs to another organisation.
 
 **Vendors.** An assessment can no longer be moved to another vendor, which
 would have put one vendor's report on another's file, and the register's CSV
@@ -173,7 +187,10 @@ open control refreshes after a change that moves its score.
 called Core licence, so it cannot be mistaken for the licence page of an
 add-on. When an add-on that scores the vendor register is installed, the
 register panel offers a quiet Portfolio view link to it; a standard
-installation shows nothing new.
+installation shows nothing new. When the notification channels or the
+current workspace cannot be read, the Account page says so with a Try
+again link, where it used to say Slack and Teams were not configured; a
+digest choice that fails to save returns to what is saved.
 
 **Changed.** Code comments and docstrings say why the code is the way it is
 instead of retelling earlier fixes, and keep every review finding they cite.

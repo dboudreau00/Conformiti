@@ -30,6 +30,16 @@ def env_int(key, default):
         raise ImproperlyConfigured(f"{key} must be an integer (got {os.getenv(key)!r})")
 
 
+def env_int_list(key, default):
+    """A comma-separated list of integers, or a plain ImproperlyConfigured
+    naming the variable (a bare ValueError from int() names nothing)."""
+    raw = os.getenv(key, default)
+    try:
+        return [int(x) for x in raw.split(",") if x.strip()]
+    except ValueError:
+        raise ImproperlyConfigured(f"{key} must be comma-separated integers (got {raw!r})")
+
+
 # --- Core -------------------------------------------------------------------
 # Off unless asked for: a bare-metal run with no .env must not start in debug.
 # Local development opts in with DJANGO_DEBUG=true (./install.sh writes it to .env).
@@ -69,11 +79,50 @@ def _load_secret_key():
                 stored = path.read_text(encoding="utf-8").strip()
                 if len(stored) >= 32:
                     return stored
+                if stored:
+                    # Never replace a key that has something in it: every
+                    # session, every JWT and (through the derived field key)
+                    # every encrypted secret was made under it.
+                    raise ImproperlyConfigured(
+                        f"DJANGO_SECRET_KEY_FILE={key_file!r} holds fewer than 32 characters. "
+                        "Restore the key it held, or delete the file to have a new one generated "
+                        "(which signs everyone out and makes encrypted secrets unreadable)."
+                    )
             path.parent.mkdir(parents=True, exist_ok=True)
             generated = secrets.token_urlsafe(64)
-            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(generated + "\n")
+            # Written whole to a private temporary name, then linked into
+            # place: two workers booting together cannot each write their own
+            # key (the last would win and the other would sign with a key that
+            # is no longer on disk), and nobody reads a half-written file.
+            tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(generated + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                try:
+                    if path.exists() and not path.read_text(encoding="utf-8").strip():
+                        os.replace(str(tmp), str(path))     # an empty file is replaced
+                    else:
+                        os.link(str(tmp), str(path))        # atomic; refuses an existing name
+                except FileExistsError:
+                    winner = path.read_text(encoding="utf-8").strip()
+                    if len(winner) >= 32:
+                        return winner
+                    raise ImproperlyConfigured(
+                        f"DJANGO_SECRET_KEY_FILE={key_file!r} was created by another process "
+                        "but holds no usable key.")
+                except OSError:
+                    # No hard links on this filesystem: exclusive create instead.
+                    fd2 = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(fd2, "w", encoding="utf-8") as fh:
+                        fh.write(generated + "\n")
+            finally:
+                try:
+                    os.unlink(str(tmp))
+                except OSError:
+                    pass
             return generated
         except OSError as exc:
             raise ImproperlyConfigured(
@@ -398,7 +447,7 @@ READINESS_WEIGHTS = {
     "risk_penalty": env_int("SCORE_W_RISK_PENALTY", 20),
 }
 # Ascending lower bounds for the at-risk / nearly / ready bands.
-READINESS_BANDS = [int(x) for x in os.getenv("READINESS_BANDS", "40,70,90").split(",") if x.strip()]
+READINESS_BANDS = env_int_list("READINESS_BANDS", "40,70,90")
 if len(READINESS_BANDS) != 3 or sorted(READINESS_BANDS) != READINESS_BANDS \
         or len(set(READINESS_BANDS)) != 3 or not all(0 <= b <= 100 for b in READINESS_BANDS):
     raise ImproperlyConfigured(
@@ -585,9 +634,7 @@ elif EMAIL_PROVIDER == "console":
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # Review-reminder lead times (days before next_review_date) that trigger alerts.
-REVIEW_ALERT_LEAD_DAYS = [
-    int(x) for x in os.getenv("REVIEW_ALERT_LEAD_DAYS", "30,14,7,1").split(",") if x.strip()
-]
+REVIEW_ALERT_LEAD_DAYS = env_int_list("REVIEW_ALERT_LEAD_DAYS", "30,14,7,1")
 
 # --- Celery -----------------------------------------------------------------
 from celery.schedules import crontab  # noqa: E402
@@ -600,14 +647,17 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 # The review scan runs once a day at a fixed local hour (REVIEW_SCAN_HOUR, 24h)
 # rather than "24h after the worker started", so operators know when mail goes
 # out and a worker restart never skips or double-runs a day.
+REVIEW_SCAN_HOUR = env_int("REVIEW_SCAN_HOUR", 6)
+if not 0 <= REVIEW_SCAN_HOUR <= 23:
+    raise ImproperlyConfigured(f"REVIEW_SCAN_HOUR must be an hour from 0 to 23 (got {REVIEW_SCAN_HOUR}).")
 CELERY_BEAT_SCHEDULE = {
     "scan-document-reviews-daily": {
         "task": "notifications.tasks.scan_document_reviews",
-        "schedule": crontab(hour=env_int("REVIEW_SCAN_HOUR", 6), minute=0),
+        "schedule": crontab(hour=REVIEW_SCAN_HOUR, minute=0),
     },
     "record-readiness-snapshot-daily": {
         "task": "analytics.tasks.record_readiness_snapshot",
-        "schedule": crontab(hour=env_int("REVIEW_SCAN_HOUR", 6), minute=5),
+        "schedule": crontab(hour=REVIEW_SCAN_HOUR, minute=5),
     },
     "flush-expired-jwt-blacklist-weekly": {
         "task": "accounts.tasks.flush_expired_tokens",
@@ -622,7 +672,7 @@ CELERY_BEAT_SCHEDULE = {
     # The emailed digests, after the review scan has refreshed the trays.
     "send-notification-digests-daily": {
         "task": "notifications.tasks.send_digests",
-        "schedule": crontab(hour=env_int("REVIEW_SCAN_HOUR", 6), minute=20),
+        "schedule": crontab(hour=REVIEW_SCAN_HOUR, minute=20),
     },
 }
 

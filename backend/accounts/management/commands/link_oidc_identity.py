@@ -36,7 +36,7 @@ class Command(BaseCommand):
         if opts["unlink"]:
             n, _ = OidcIdentity.objects.filter(user=user).delete()
             AuditLog.objects.create(user=None, action="delete", object_type="auth",
-                                    object_id=str(user.pk),
+                                    object_id=str(user.pk), workspace_id=user.workspace_id,
                                     detail=f"sso identities unlinked from {user.get_username()} (CLI)")
             self.stdout.write(self.style.SUCCESS(f"Removed {n} identity record(s) from {user.get_username()}."))
             return
@@ -65,7 +65,7 @@ class Command(BaseCommand):
                       "privileged_ok": bool(opts["allow_privileged"])},
         )
         AuditLog.objects.create(user=None, action="create" if created else "update", object_type="auth",
-                                object_id=str(user.pk),
+                                object_id=str(user.pk), workspace_id=user.workspace_id,
                                 detail=f"sso identity {'linked' if created else 'updated'} for "
                                        f"{user.get_username()} at {issuer} (CLI)"[:255])
         self.stdout.write(self.style.SUCCESS(
