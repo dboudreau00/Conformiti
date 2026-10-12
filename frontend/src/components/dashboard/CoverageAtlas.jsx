@@ -335,7 +335,8 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
                 )}
               >
                 {t.fw.name}
-                <span className="tabular font-mono text-2xs opacity-80">{t.controls.length.toLocaleString()}</span>
+                {/* Full opacity: at 80% the accent count on its own wash reads under 4.5:1. */}
+                <span className="tabular font-mono text-2xs">{t.controls.length.toLocaleString()}</span>
               </button>
             );
           })}

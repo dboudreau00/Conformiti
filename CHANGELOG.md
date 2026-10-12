@@ -277,7 +277,8 @@ tablet and desktop widths and read with an accessibility checker, and each
 job was done end to end. What that found is fixed. The status colours on the
 two light packs are a shade deeper, so a badge and the red overdue date in
 the risk register read at 4.5:1 on their own wash and on a selected row; the
-danger colour on the dark packs is a shade lighter for the same reason. An
+danger colour on the dark packs is a shade lighter for the same reason, and
+the count on a drawn framework chip in the coverage atlas is no longer faded. An
 external auditor who types or bookmarks an address the menu never offers
 them, such as the control register, now sees one plain notice and a button to
 their packages, where the page used to ask the server, be refused, and show
