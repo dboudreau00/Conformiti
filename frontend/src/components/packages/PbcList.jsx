@@ -193,7 +193,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   return (
     <Panel className="overflow-hidden" aria-label={title} role="region">
       {confirmDialog}
-      <PanelHeader title={title} meta={failed ? "- lines" : rows ? `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}` : ""}>
+      <PanelHeader className="flex-wrap" title={title} meta={failed ? "- lines" : rows ? `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}` : ""}>
         <span className="flex items-center gap-2">
           {!mine && rows && rows.length ? (
             <Button size="sm" variant="ghost" onClick={exportCsv}

@@ -267,9 +267,10 @@ screen-reader text. Attaching or unlinking evidence on a control refreshes the
 score in its row as well as in the breakdown. A button's label now stays on one
 line: New package, New series, Add request, Edit group and Delete group had
 wrapped inside their one-line boxes and shown half a word at some widths, and
-on a phone Delete group ran past the edge of the screen and the matrix's
-Export past the edge of its card. A new browser spec checks every control on
-every page at 390, 1024 and 1440 pixels for both.
+on a phone Delete group ran past the edge of the screen, the matrix's Export
+past the edge of its card and, with some fonts, the request list's Add request.
+A new browser spec checks every control on every page at 390, 1024 and 1440
+pixels for both.
 
 **Changed.** Code comments and docstrings say why the code is the way it is
 instead of retelling earlier fixes, and keep every review finding they cite.

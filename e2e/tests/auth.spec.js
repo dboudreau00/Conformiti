@@ -72,6 +72,9 @@ test.describe("authentication", () => {
       // may not: they land on the packages issued to them instead.
       const landing = persona === "auditor" ? "Audit packages" : "Dashboard";
       await expect(page.getByRole("heading", { name: landing })).toBeVisible();
+      // A request still on its way when the person signs out is refused, and the
+      // browser logs the refusal as an error: let the page finish loading first.
+      await page.waitForLoadState("networkidle");
       await signOut(page);
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     }
