@@ -183,12 +183,12 @@ test("workspaces", async ({ page }) => {
 
   // A fresh install has only Default, and a switcher with nothing to switch
   // to says nothing. Make the second organisation through the real form.
-  if (!(await block.getByText("northwind-health").count())) {
-    await page.locator("#new-workspace").fill("Northwind Health");
+  if (!(await block.getByText("blackbox-company").count())) {
+    await page.locator("#new-workspace").fill("Blackbox Company");
     await page.getByRole("button", { name: "Create", exact: true }).click();
     // The create seeds the framework library into the new workspace, which
     // takes appreciably longer than an ordinary request.
-    await expect(block.getByText("northwind-health")).toBeVisible({ timeout: 90_000 });
+    await expect(block.getByText("blackbox-company")).toBeVisible({ timeout: 90_000 });
   }
   await settle(page, 800);
   // To the foot of the page rather than just far enough to reveal the block:
