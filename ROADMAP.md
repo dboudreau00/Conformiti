@@ -82,7 +82,7 @@
   token, the signing-key directory no longer lists the organisations on a
   server and answers a name it does not know exactly as it answers one that
   has never signed, and the demo dataset is no longer seeded by default.
-- **0.9.5c to 0.9.5md** are maintenance revisions. 0.9.5f, 0.9.5h and 0.9.5i
+- **0.9.5c to 0.9.5mf** are maintenance revisions. 0.9.5f, 0.9.5h and 0.9.5i
   closed the fourth, fifth and sixth independent reviews
   ([REVIEWS.md](REVIEWS.md)); [CHANGELOG.md](CHANGELOG.md) has each revision.
 
