@@ -11,6 +11,38 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5mg], 2026-10-20
+
+The crosswalk behind the dashboard's coverage atlas is completed, and the seed
+that runs at every start no longer undoes links it did not make. No migration
+and no stored data changed.
+
+**On upgrade.** Nothing to do. The next start adds 34 links to the shared
+themes, and a control that another library has linked into a shared theme is
+left where it is from now on.
+
+**Seeding.** `seed_frameworks`, which the container runs at every start, set
+each shared theme to whatever `crosswalk.json` listed, matching control ids
+alone. A control of any other library that had been linked into a theme was
+dropped at the next start, and a clause number that libraries share (6.2 is a
+PCI DSS requirement and a clause of most other standards) pulled in a control
+from the wrong one. It now reads each list against the library it is named
+for, adds what the file lists, and takes out only controls of its own three
+libraries that the file no longer lists.
+
+**Crosswalk.** Thirty-three controls that sat in no theme are placed in the
+nearest of the twenty: three SOC 2 criteria (C1.2, PI1.1, PI1.5), eleven
+ISO 27001 controls (A.5.11, A.6.2, A.6.5, A.6.6, A.7.3, A.7.4, A.7.6, A.7.9,
+A.8.4, A.8.17, A.8.34) and nineteen PCI DSS requirements (the "processes"
+requirements such as 1.1 and 4.1, key management, log protection and time
+synchronisation among them). The shipped set is a starter set: 109 of the 217
+controls now share a theme with another control of the three libraries (76
+before), and the rest have no theme among them yet. The table in
+`tools/build_seed_data.py` is the source of the file and carries the same
+links.
+
+---
+
 ## [0.9.5mf], 2026-10-13
 
 A review of the core, its installers and its interface. Two writers can no

@@ -1,6 +1,8 @@
 """Control library, evidence mapping RBAC and seed idempotence."""
 import csv
 import io
+import json
+import os
 from io import StringIO
 from unittest import mock
 
@@ -166,6 +168,60 @@ class SeedTests(APITestBase):
         self.assertEqual(Folder.objects.filter(is_framework_root=True).count(), 4)  # 3 real + the test one
         # the ISO root name carries no path separator
         self.assertFalse(Folder.objects.filter(is_framework_root=True, name__contains="/").exists())
+
+    def _theme_with_a_soc2_criterion(self):
+        """A shipped theme that lists a SOC 2 criterion, and the controls the file puts in it."""
+        from compliance.management.commands.seed_frameworks import DATA_DIR
+
+        call_command("seed_frameworks", verbosity=0, stdout=StringIO())
+        with open(os.path.join(DATA_DIR, "crosswalk.json"), encoding="utf-8") as fh:
+            entry = next(m for m in json.load(fh)["mappings"] if m.get("soc2"))
+        theme = ControlMapping.objects.get(theme=entry["theme"])
+        shipped = set(theme.controls.values_list("pk", flat=True))
+        self.assertTrue(shipped)
+        return entry, theme, shipped
+
+    def test_the_core_framework_keys_are_the_keys_the_data_files_carry(self):
+        from compliance.management.commands.seed_frameworks import CORE_FRAMEWORK_KEYS, DATA_DIR, DATA_FILES
+
+        keys = []
+        for name in DATA_FILES:
+            with open(os.path.join(DATA_DIR, name), encoding="utf-8") as fh:
+                keys.append(json.load(fh)["key"])
+        self.assertEqual(tuple(keys), CORE_FRAMEWORK_KEYS)
+
+    def test_a_reseed_keeps_what_another_library_put_in_a_theme(self):
+        """The container runs seed_frameworks on every boot, in every workspace. A
+        control of a library this command does not ship, linked into a shared
+        theme some other way, must still be there afterwards, and a clause number
+        that merely matches must not pull one in."""
+        entry, theme, shipped = self._theme_with_a_soc2_criterion()
+        other = Framework.objects.create(key="other_lib", name="Other library")
+        category = other.categories.create(key="ol", name="Other library controls")
+        mine = Control.objects.create(category=category, control_id="OL-1", title="A control of another library")
+        clash = Control.objects.create(category=category, control_id=entry["soc2"][0],
+                                       title="Same number, another library")
+        theme.controls.add(mine)
+
+        call_command("seed_frameworks", verbosity=0, stdout=StringIO())
+
+        linked = set(ControlMapping.objects.get(pk=theme.pk).controls.values_list("pk", flat=True))
+        self.assertIn(mine.pk, linked, "a link this command did not make is not its to drop")
+        self.assertNotIn(clash.pk, linked, "a matching clause number in another library is not the same control")
+        self.assertEqual(linked - {mine.pk}, shipped, "the shipped libraries keep exactly what the file lists")
+
+    def test_a_reseed_still_corrects_the_shipped_libraries_own_links(self):
+        """The file stays the authority over its own libraries: a control of theirs
+        that it does not list in a theme is taken out again."""
+        _entry, theme, shipped = self._theme_with_a_soc2_criterion()
+        stray = Control.objects.filter(category__framework__key="soc2").exclude(pk__in=shipped).first()
+        theme.controls.add(stray)
+
+        call_command("seed_frameworks", verbosity=0, stdout=StringIO())
+
+        linked = set(ControlMapping.objects.get(pk=theme.pk).controls.values_list("pk", flat=True))
+        self.assertNotIn(stray.pk, linked)
+        self.assertEqual(linked, shipped)
 
 
 class ReadinessScoringTests(APITestBase):

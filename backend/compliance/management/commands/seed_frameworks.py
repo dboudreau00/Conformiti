@@ -11,6 +11,7 @@ import os
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Q
 
 from accounts import tenancy
 from accounts.models import Role
@@ -19,6 +20,10 @@ from compliance.models import Control, ControlCategory, ControlMapping, Framewor
 DATA_DIR = os.path.join(settings.BASE_DIR, "compliance", "data")
 
 DATA_FILES = ["soc2.json", "iso27001.json", "pci_dss_v4.json"]
+
+# The libraries those files seed, by framework key: the keys crosswalk.json
+# names its lists by, and the only controls this command places in a theme.
+CORE_FRAMEWORK_KEYS = ("soc2", "iso27001", "pci_dss_v4")
 
 # Built-in roles and their capability flags.
 BUILTIN_ROLES = [
@@ -158,9 +163,24 @@ class Command(BaseCommand):
 
         for m in mappings:
             mapping, _ = ControlMapping.objects.get_or_create(theme=m["theme"])
-            control_ids = m.get("soc2", []) + m.get("iso27001", []) + m.get("pci_dss_v4", [])
-            controls = Control.objects.filter(control_id__in=control_ids)
-            mapping.controls.set(controls)
+            # Each list belongs to the library it is named for. A clause number
+            # is not an identity: "6.2" is a PCI DSS requirement and a clause of
+            # every other standard that numbers its clauses, so matching the id
+            # alone pins a theme to whatever else is installed.
+            wanted = Q()
+            for key in CORE_FRAMEWORK_KEYS:
+                ids = m.get(key, [])
+                if ids:
+                    wanted |= Q(category__framework__key=key, control_id__in=ids)
+            controls = list(Control.objects.filter(wanted)) if wanted else []
+            # The file decides which of the shipped libraries' controls sit in a
+            # theme, and nothing else. A control of any other library that joined
+            # the theme by another route is not this command's to drop, which
+            # set() did on every boot.
+            stale = mapping.controls.filter(category__framework__key__in=CORE_FRAMEWORK_KEYS).exclude(
+                pk__in=[c.pk for c in controls])
+            mapping.controls.remove(*stale)
+            mapping.controls.add(*controls)
         self.stdout.write(f"  Crosswalk: {ControlMapping.objects.count()} themes")
 
     # ---------------------------------------------------------------- folders
