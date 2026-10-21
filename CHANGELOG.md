@@ -36,6 +36,11 @@ the auditor the digest, or your key fingerprint, through another channel.
 - Attaching a document to a request no longer offers one already attached.
 - Error messages name a field in words, not by its key.
 
+**Dependencies.** The front end's lockfile moves `follow-redirects`, which
+axios depends on and the built interface does not include, from 1.16.0 to
+1.16.1. It fixes two advisories (GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c)
+that `npm audit` reports as high.
+
 ## [0.9.5mg], 2026-10-20
 
 The crosswalk behind the dashboard's coverage atlas is completed, and the seed
