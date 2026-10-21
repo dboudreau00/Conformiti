@@ -277,16 +277,14 @@ export default function Groups({ me }) {
         {/* ---- Group list + new-group form ---- */}
         <StackItem className="col-span-12 lg:col-span-4">
           <Panel className="overflow-hidden">
-            <PanelHeader title="Champion groups" meta={!loading ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : "Inter-departmental"} />
+            <PanelHeader title="Champion groups" meta={!loading ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : undefined} />
 
             {loadErr ? <div className="px-4 pt-3"><div className="notice notice-err" role="alert">{loadErr}</div></div> : null}
 
             {loading ? (
               <Loading />
             ) : groups.length === 0 ? (
-              <Empty title="No champion groups yet">
-                {canEdit ? "Create the first group below." : "Nothing has been set up yet."}
-              </Empty>
+              <Empty title="No champion groups yet" />
             ) : (
               <ul className="p-2" aria-label="Champion groups">
                 {groups.map((g) => {
@@ -376,10 +374,6 @@ export default function Groups({ me }) {
               </form>
             ) : null}
 
-            <p className="border-t border-line px-5 py-3 text-xs leading-snug text-faint">
-              Each group has one accountable owner; members are champions who carry security practices into the department
-              they are tagged with.
-            </p>
           </Panel>
         </StackItem>
 
@@ -391,13 +385,7 @@ export default function Groups({ me }) {
             </Panel>
           ) : !active ? (
             <Panel>
-              <Empty title="No group selected">
-                {groups.length === 0
-                  ? canEdit
-                    ? "Create a champion group to start assigning departmental champions."
-                    : "No champion groups have been defined yet."
-                  : "Pick a group to see its champions."}
-              </Empty>
+              <Empty title="No group selected" />
             </Panel>
           ) : (
             <AnimatePresence mode="wait">
@@ -581,16 +569,13 @@ export default function Groups({ me }) {
                         </tbody>
                       </table>
                       {members.length === 0 ? (
-                        <Empty title="No champions in this group yet">
-                          {canEdit ? "Add the first champion below." : "Nobody has been assigned to this group."}
-                        </Empty>
+                        <Empty title="No champions in this group yet" />
                       ) : null}
                     </div>
                   )}
 
                   <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-2.5">
                     <Label>{membersLoading ? "Loading…" : memberLabel(members.length)}</Label>
-                    {active.owner_name ? <Label>Accountable: {active.owner_name}</Label> : null}
                   </div>
                 </Panel>
               </motion.div>

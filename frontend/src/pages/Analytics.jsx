@@ -40,7 +40,7 @@ function coverageTone(pct) {
   return "danger";
 }
 
-function DonutPanel({ title, meta, slices, centerValue, centerLabel, emptyTitle, children }) {
+function DonutPanel({ title, meta, slices, centerValue, centerLabel, emptyTitle }) {
   const total = slices.reduce((s, x) => s + x.value, 0);
   return (
     <Panel className="flex h-full flex-col">
@@ -50,7 +50,7 @@ function DonutPanel({ title, meta, slices, centerValue, centerLabel, emptyTitle,
           <DonutLegend slices={slices} centerValue={centerValue} centerLabel={centerLabel} />
         </div>
       ) : (
-        <Empty title={emptyTitle}>{children}</Empty>
+        <Empty title={emptyTitle} />
       )}
     </Panel>
   );
@@ -98,7 +98,7 @@ export default function Analytics({ me }) {
   if (loading) {
     return (
       <PanelTransition>
-        <Loading>Crunching analytics…</Loading>
+        <Loading>Loading analytics…</Loading>
       </PanelTransition>
     );
   }
@@ -154,7 +154,6 @@ export default function Analytics({ me }) {
 
   const bars = timeline.map((t) => ({ label: t.label, value: t.count || 0 }));
   const sixMonthTotal = timeline.reduce((s, t) => s + (t.count || 0), 0);
-  const peak = timeline.reduce((best, t) => ((t.count || 0) > (best?.count || 0) ? t : best), null);
   const noSchedule = revs.no_schedule || 0;
 
   const unownedControls = controls.unowned ?? Math.max(0, controlTotal - (controls.owned || 0));
@@ -204,9 +203,9 @@ export default function Analytics({ me }) {
         {/* Per-framework readiness */}
         <StackItem>
           <Panel>
-            <PanelHeader title="Framework readiness" meta="Least ready first" />
+            <PanelHeader title="Framework readiness" />
             {frameworks.length === 0 ? (
-              <Empty title="No frameworks loaded">Readiness per standard appears once a framework is imported.</Empty>
+              <Empty title="No frameworks loaded" />
             ) : (
               <div className="p-5">
                 <ShowMore total={sortedFrameworks.length} initial={8} noun="frameworks">
@@ -252,19 +251,14 @@ export default function Analytics({ me }) {
             centerValue={String(controlTotal)}
             centerLabel="controls"
             emptyTitle="No controls yet"
-          >
-            Controls arrive with the first imported framework.
-          </DonutPanel>
+          />
           <DonutPanel
             title="Document status"
-            meta="Visible to you"
             slices={docSlices}
             centerValue={String(docs.total || 0)}
             centerLabel="documents"
             emptyTitle="No documents visible"
-          >
-            Nothing in the folders you can see has been uploaded yet.
-          </DonutPanel>
+          />
         </StackItem>
 
         {/* Review load + ownership */}
@@ -272,22 +266,20 @@ export default function Analytics({ me }) {
           <Panel className="flex h-full flex-col">
             <PanelHeader title="Review load" meta="Next 6 months" />
             {bars.length === 0 ? (
-              <Empty title="No review timeline">Schedule a document review to populate the next six months.</Empty>
+              <Empty title="No review timeline" />
             ) : (
               <div className="flex flex-1 flex-col p-5">
                 <BarChart bars={bars} ariaLabel="Scheduled document reviews per month for the next six months" />
                 <p className="mt-3 text-xs leading-snug text-muted">
-                  {sixMonthTotal === 0
-                    ? "No reviews fall due in the next six months."
-                    : `${sixMonthTotal} ${sixMonthTotal === 1 ? "review falls" : "reviews fall"} due in the next six months; ${peak.month} is the heaviest with ${peak.count}.`}
-                  {noSchedule ? ` ${noSchedule} ${noSchedule === 1 ? "document has" : "documents have"} no review date.` : ""}
+                  {sixMonthTotal === 0 ? "None due in the next six months" : `${sixMonthTotal} due in the next six months`}
+                  {noSchedule ? ` · ${noSchedule} without a review date` : ""}
                 </p>
               </div>
             )}
           </Panel>
 
           <Panel className="flex h-full flex-col">
-            <PanelHeader title="Ownership coverage" meta="Assigned owners" />
+            <PanelHeader title="Ownership coverage" />
             <div className="space-y-4 p-5">
               <CoverageRow label="Controls with an owner" owned={controls.owned || 0} total={controlTotal} delay={0} />
               <CoverageRow label="Documents with an owner" owned={docs.owned || 0} total={docs.total || 0} delay={0.06} />
@@ -305,9 +297,9 @@ export default function Analytics({ me }) {
         {/* Overdue sample */}
         <StackItem>
           <Panel className="overflow-hidden">
-            <PanelHeader title="Most overdue documents" meta="Oldest review dates" />
+            <PanelHeader title="Most overdue documents" />
             {overdueSample.length === 0 ? (
-              <Empty title="No overdue documents">Every scheduled review is within its window.</Empty>
+              <Empty title="No overdue documents" />
             ) : (
               <ul className="divide-y divide-line">
                 {overdueSample.map((d) => (

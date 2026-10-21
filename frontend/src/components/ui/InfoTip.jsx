@@ -1,6 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { InfoIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
+
+// The least room left between the box and the edge of the screen.
+const EDGE = 8;
 
 /**
  * A small "i" that explains a figure on request rather than at first glance.
@@ -22,7 +25,35 @@ export function InfoTip({ label = "More about this", children, align = "left", c
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const wrap = useRef(null);
+  const box = useRef(null);
   const visible = open || pinned;
+
+  // The box hangs from the icon, so beside a long label on a phone it ran
+  // past the edge of the screen, open or closed, and the page scrolled
+  // sideways. It is moved back inside, measured from where it would sit.
+  const place = useCallback(() => {
+    const el = box.current;
+    if (!el) return;
+    const side = align === "right" ? "marginRight" : "marginLeft";
+    el.style[side] = "";
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    const width = document.documentElement.clientWidth;
+    let shift = 0;
+    if (r.right > width - EDGE) shift = width - EDGE - r.right;
+    if (r.left + shift < EDGE) shift = EDGE - r.left;
+    if (shift) el.style[side] = `${align === "right" ? -shift : shift}px`;
+  }, [align]);
+
+  useLayoutEffect(() => {
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [place]);
+
+  useLayoutEffect(() => {
+    if (visible) place();
+  }, [visible, place]);
 
   useEffect(() => {
     if (!pinned) return undefined;
@@ -62,6 +93,7 @@ export function InfoTip({ label = "More about this", children, align = "left", c
         <InfoIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
       </button>
       <span
+        ref={box}
         role="tooltip"
         id={id}
         aria-hidden={!visible}

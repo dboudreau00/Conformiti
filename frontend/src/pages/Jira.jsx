@@ -259,10 +259,6 @@ export default function Jira({ me }) {
                       value={form.api_token}
                       onChange={(e) => setForm({ ...form, api_token: e.target.value })}
                     />
-                    <p className="mt-1.5 text-2xs leading-snug text-faint">
-                      Create a scoped token at id.atlassian.com → Security → API tokens. It is stored server-side and never sent to the
-                      browser.
-                    </p>
                   </div>
                   <label htmlFor="jira-enabled" className="flex cursor-pointer items-center gap-2.5 pt-1 text-[13px] text-ink">
                     <input
@@ -299,7 +295,7 @@ export default function Jira({ me }) {
                     </AnimatePresence>
                   </div>
                   {dirty ? (
-                    <p className="text-2xs leading-snug text-faint">Test connection checks the saved configuration. Save first to test these changes.</p>
+                    <p className="text-2xs leading-snug text-faint">Test connection checks the saved configuration, so save first.</p>
                   ) : null}
                 </form>
               )}
@@ -317,9 +313,7 @@ export default function Jira({ me }) {
                 </div>
               </div>
             ) : boards.length === 0 ? (
-              <Empty title="No boards tracked yet">
-                {isManager ? "Track a board below to bring its issues in." : "Ask an administrator to track a board; the form appears here for them."}
-              </Empty>
+              <Empty title="No boards tracked yet" />
             ) : (
               <ul className="p-2">
                 <AnimatePresence initial={false}>
@@ -451,19 +445,15 @@ export default function Jira({ me }) {
               <Loading>Loading boards…</Loading>
             ) : !active ? (
               boardsErr ? (
-                <Empty title="No board to show">The tracked boards did not load. Reload the page to try again.</Empty>
+                <Empty title="No board to show" />
               ) : connected === false ? (
-                <Empty title="Jira isn't connected yet">
-                  Enter the workspace URL, account email and API token on the left, then enable the integration.
-                </Empty>
+                <Empty title="Jira isn't connected yet" />
               ) : connected ? (
-                <Empty title="No board selected">Track a board on the left to see its issues here.</Empty>
+                <Empty title="No board selected" />
               ) : isManager && !configErr ? (
                 <Loading>Loading configuration…</Loading>
               ) : (
-                <Empty title="No board to show">
-                  {isManager ? "Track a board on the left to see its issues here." : "Issues appear here once an administrator tracks a Jira board."}
-                </Empty>
+                <Empty title="No board to show" />
               )
             ) : issueErr ? (
               <div className="p-5">
@@ -474,7 +464,7 @@ export default function Jira({ me }) {
             ) : !issues ? (
               <Loading>Fetching issues from Jira…</Loading>
             ) : issues.issues.length === 0 ? (
-              <Empty title="No issues on this board">Jira returned nothing for board #{active.board_id}.</Empty>
+              <Empty title="No issues on this board" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] table-fixed border-collapse">

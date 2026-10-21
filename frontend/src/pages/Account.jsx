@@ -56,25 +56,17 @@ const isHex = (v) => /^#[0-9a-f]{6}$/i.test(v || "");
 
 /* ---------- small page-private helpers ---------- */
 
-function SectionTitle({ title, badge, children }) {
+function SectionTitle({ title, badge }) {
   return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">{title}</h2>
-        {badge}
-      </div>
-      {children ? <p className="mt-1 max-w-[62ch] text-[13px] leading-snug text-muted">{children}</p> : null}
-    </>
+    <div className="flex flex-wrap items-center gap-2">
+      <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">{title}</h2>
+      {badge}
+    </div>
   );
 }
 
-function SubTitle({ title, children }) {
-  return (
-    <>
-      <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-ink">{title}</h3>
-      {children ? <p className="mt-1 max-w-[62ch] text-[13px] leading-snug text-muted">{children}</p> : null}
-    </>
-  );
+function SubTitle({ title }) {
+  return <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-ink">{title}</h3>;
 }
 
 function Field({ id, label, hint, error = false, className, children }) {
@@ -119,10 +111,8 @@ const pickProfile = (u) => ({
 function AdminWhere() {
   return (
     <>
-      the Django admin, under Users. With Docker, or any install behind nginx, that
-      is <span className="font-mono">/admin/</span> on this site's address. On a local install it is on the
-      API's port instead: <span className="font-mono">{"http://127.0.0.1:8000/admin/"}</span> by default, since the
-      dev server does not serve it.
+      the Django admin, under Users: <span className="font-mono">/admin/</span> on this site's address, or
+      on a local install <span className="font-mono">{"http://127.0.0.1:8000/admin/"}</span>.
     </>
   );
 }
@@ -165,7 +155,7 @@ function ProfileSection({ me, onUpdate }) {
 
   return (
     <Panel className="p-5">
-      <SectionTitle title="Profile">How you appear across the workspace and on documents you own.</SectionTitle>
+      <SectionTitle title="Profile" />
       <form onSubmit={save} noValidate className="mt-5 grid max-w-[640px] grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="acct-first" label="First name">
           <input id="acct-first" className="input" autoComplete="given-name" value={form.first_name} onChange={set("first_name")} />
@@ -175,8 +165,8 @@ function ProfileSection({ me, onUpdate }) {
         </Field>
         <Field id="acct-email" label="Email" className="sm:col-span-2"
                hint={me.is_superuser
-                 ? <>Single sign-on matches on this address, so it is not edited here. As a superuser, change it in <AdminWhere /></>
-                 : "Your address is managed by an administrator: single sign-on matches on it."}>
+                 ? <>Change it in <AdminWhere /></>
+                 : "Managed by an administrator."}>
           <input id="acct-email" type="email" className="input" value={me.email || ""} disabled />
         </Field>
         <Field id="acct-title" label="Job title" className="sm:col-span-2">
@@ -184,8 +174,8 @@ function ProfileSection({ me, onUpdate }) {
         </Field>
         <Field id="acct-username" label="Username" className="sm:col-span-2"
                hint={me.is_superuser
-                 ? <>Not edited here. As a superuser, change it in <AdminWhere /></>
-                 : "Usernames are managed by an administrator."}>
+                 ? <>Change it in <AdminWhere /></>
+                 : "Managed by an administrator."}>
           <input id="acct-username" className="input font-mono" value={me.username || ""} disabled />
         </Field>
         <div className="flex flex-col items-start gap-3 sm:col-span-2">
@@ -215,11 +205,7 @@ function AppearanceSection() {
 
   return (
     <Panel className="p-5">
-      <SectionTitle title="Appearance">
-        Theme packs recolour every surface and chart at once; the accent recolours primary buttons, active navigation and
-        highlights. Status colours (success, warning, overdue) stay fixed so they remain meaningful in evidence exports.
-        Changes apply instantly and are remembered on this device.
-      </SectionTitle>
+      <SectionTitle title="Appearance" />
 
       <Label as="p" className="mb-2.5 mt-5">Theme pack</Label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="Theme pack">
@@ -248,7 +234,6 @@ function AppearanceSection() {
                     {pack.mode}
                   </Badge>
                 </span>
-                <span className="mt-0.5 block text-xs leading-snug text-muted">{pack.blurb}</span>
               </span>
               {on ? (
                 <motion.span
@@ -379,7 +364,7 @@ function PasswordBlock() {
 
   return (
     <>
-      <SubTitle title="Password">Change your password. Requires your current password.</SubTitle>
+      <SubTitle title="Password" />
       <form onSubmit={submit} noValidate className="mt-4 grid max-w-[640px] grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="pw-current" label="Current password" className="sm:col-span-2">
           <input id="pw-current" type="password" autoComplete="current-password" className="input sm:max-w-[312px]" value={form.current_password} onChange={set("current_password")} />
@@ -422,7 +407,7 @@ function BackupCodes({ codes }) {
   return (
     <div className="mt-4 max-w-[640px] rounded-xl border border-success/25 bg-success/10 p-4" role="status">
       <p className="text-[13px] font-semibold text-success">Save your backup codes</p>
-      <p className="mt-1 text-xs leading-snug text-muted">Each code can be used once if you lose your authenticator. They won't be shown again.</p>
+      <p className="mt-1 text-xs leading-snug text-muted">Each code works once. They won't be shown again.</p>
       <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 font-mono text-[13px] tracking-wide text-ink sm:grid-cols-3">
         {codes.map((c) => (
           <li key={c} className="tabular select-all">
@@ -538,9 +523,7 @@ function MfaBlock() {
 
   return (
     <>
-      <SubTitle title="Two-factor authentication">
-        Add a one-time code from an authenticator app (Google Authenticator, Authy, 1Password, Microsoft Authenticator) to your sign-in.
-      </SubTitle>
+      <SubTitle title="Two-factor authentication" />
 
       {statusErr ? (
         <div className="mt-4 flex max-w-[640px] flex-wrap items-center gap-3">
@@ -595,7 +578,7 @@ function MfaBlock() {
             />
           </Field>
           <p className="mt-2 text-xs text-muted">
-            Signed in through your organisation's identity provider, so you have no password here? Leave this empty.
+            No password here (single sign-on)? Leave this empty.
           </p>
         </div>
       ) : null}
@@ -603,10 +586,7 @@ function MfaBlock() {
       {/* Enrolment in progress */}
       {setup ? (
         <form onSubmit={confirm} noValidate className="mt-4 max-w-[640px] rounded-xl border border-line bg-surface-2 p-4">
-          <p className="text-[13px] leading-snug text-muted">
-            In your authenticator app, add an account and enter this setup key (or paste the URI below). Then type the 6-digit code it shows to confirm.
-          </p>
-          <div className="mt-4 grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div>
               <Label as="p" className="mb-1.5">Setup key</Label>
               <p className="select-all rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[13px] tracking-[0.14em] text-ink">{secretGrouped}</p>
@@ -662,9 +642,6 @@ function MfaBlock() {
               </Button>
             ) : null}
           </div>
-          {!status.enabled ? (
-            <p className="mt-2 text-xs text-muted">Backup codes belong to your account: they work beside your passkeys too.</p>
-          ) : null}
         </div>
       ) : null}
     </>
@@ -712,8 +689,8 @@ function PasskeysBlock() {
       setCodes(done.data?.backup_codes || null);
       load();
       setMsg({ ok: true, text: done.data?.backup_codes
-        ? "Passkey enrolled. Save the backup codes below: they are the way back in if you lose this key."
-        : "Passkey enrolled. Signing in now takes your password and this key." });
+        ? "Passkey enrolled. Save the backup codes below."
+        : "Passkey enrolled." });
     } catch (err) {
       setMsg({ ok: false, text: passkeyErrorText(err) });
     } finally {
@@ -754,9 +731,7 @@ function PasskeysBlock() {
 
   return (
     <>
-      <SubTitle title="Passkeys and security keys">
-        Phishing-resistant sign-in with a passkey (Touch ID, Windows Hello, a phone) or a hardware security key. Works alongside, or instead of, the authenticator app.
-      </SubTitle>
+      <SubTitle title="Passkeys and security keys" />
       {loadErr ? (
         <div className="mt-4 flex max-w-[640px] flex-wrap items-center gap-3">
           <div className="notice notice-err flex-1" role="alert">{loadErr}</div>
@@ -771,18 +746,10 @@ function PasskeysBlock() {
               <input id="passkey-password" type="password" autoComplete="current-password" className="input sm:max-w-[312px]"
                      value={password} onChange={(e) => setPassword(e.target.value)} />
             </Field>
-            <p className="mt-2 text-xs text-muted">
-              Changing which keys can sign you in is itself a security change, so it takes your password either way.
-            </p>
-            {rows.length ? (
-              <p className="mt-2 text-xs text-muted">
-                Recovery if you lose this key: your backup codes (issued with your first factor; regenerate them under the authenticator block), a second passkey, the authenticator app, or an administrator's reset.
-              </p>
-            ) : null}
           </div>
           {suspect ? (
             <div className="notice notice-err mt-4 max-w-[640px]" role="alert">
-              {suspect === 1 ? "One passkey was" : `${suspect} passkeys were`} disabled because the signature counter went backwards, which means a copy of the key may exist. Remove {suspect === 1 ? "it" : "them"} with your password and enrol a fresh key.
+              {suspect === 1 ? "One passkey was" : `${suspect} passkeys were`} disabled: the signature counter went backwards, so a copy of the key may exist. Remove {suspect === 1 ? "it" : "them"} and enrol a fresh key.
             </div>
           ) : null}
           <ul className="mt-4 max-w-[640px] divide-y divide-line rounded-xl border border-line" aria-label="Enrolled passkeys">
@@ -830,7 +797,6 @@ function PasskeysBlock() {
         open={!!renaming}
         onClose={() => setRenaming(null)}
         title="Rename passkey"
-        description="The name is only a label for this list. Changing it does not touch the key."
         label="Name"
         initial={renaming?.name || ""}
         maxLength={80}
@@ -844,7 +810,7 @@ function PasskeysBlock() {
 function SecuritySection() {
   return (
     <Panel className="p-5">
-      <SectionTitle title="Security">Authentication factors on this account: your password, an optional authenticator app, and optional passkeys or security keys.</SectionTitle>
+      <SectionTitle title="Security" />
       <div className="mt-5">
         <PasswordBlock />
       </div>
@@ -923,7 +889,6 @@ function ChannelsBlock({ me, onUpdate }) {
                   onChange={(e) => saveDigest(e.target.value)}>
             {choices.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
-          <span className="mt-1.5 block text-xs">Everything in your notification tray, by email, at the morning scan. Nothing is sent when the tray is empty.</span>
         </span>
       </div>
       <div className="grid grid-cols-1 gap-1 border-t border-line px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
@@ -943,13 +908,6 @@ function ChannelsBlock({ me, onUpdate }) {
                   <Button size="sm" onClick={sendTest} disabled={busy}>{busy ? "Sending…" : "Send a test message"}</Button>
                 ) : null}
               </span>
-              <span className="mt-1.5 block text-xs">
-                {info.source === "workspace"
-                  ? "Sealed and issued packages, the auditor's returns and requests, returned questionnaires and a daily summary are posted to this workspace's own channels, set under Workspace below."
-                  : info.multi_workspace && !info.shared_across_workspaces
-                    ? `This installation serves several organisations, so this workspace's events go only to channels set for it under Workspace below${info.installation_channels?.length ? `, the installation's ${info.installation_channels.join(" and ")} channel carries only installation-level events (scanner outages) unless WEBHOOKS_SHARED_ACROSS_WORKSPACES is set` : ""}.`
-                    : "Sealed and issued packages, the auditor's returns and requests, returned questionnaires, scanner outages, quarantined files and a daily summary are posted to the channels an operator configures with SLACK_WEBHOOK_URL / TEAMS_WEBHOOK_URL, or to this workspace's own channels set under Workspace below."}
-              </span>
               {admin && info.deliveries?.length ? (
                 <span className="mt-2 block font-mono text-2xs text-faint">
                   Last deliveries: {info.deliveries.slice(0, 5).map((d) => `${d.channel} ${d.event} ${d.ok ? "ok" : `failed${d.error ? ` (${d.error})` : ""}`}`).join(" · ")}
@@ -964,7 +922,7 @@ function ChannelsBlock({ me, onUpdate }) {
   );
 }
 
-function NotificationsSection({ me, onGoProfile, onUpdate }) {
+function NotificationsSection({ me, onUpdate }) {
   if (!me) {
     return (
       <Panel>
@@ -978,24 +936,17 @@ function NotificationsSection({ me, onGoProfile, onUpdate }) {
       v: me.email ? (
         <span className="font-mono text-xs text-ink">{me.email}</span>
       ) : (
+        // The Profile tab cannot set it: an administrator does, in the
+        // Django admin (see AdminWhere).
         <span>
-          No email on file -{" "}
-          <button type="button" className="link" onClick={onGoProfile}>
-            add one on the Profile tab
-          </button>
+          No email on file. {me.is_superuser ? <>Add it in <AdminWhere /></> : "Ask an administrator to add one."}
         </span>
       ),
     },
-    { k: "Documents you own", v: "Email before each document's review date, and again if it goes overdue." },
-    {
-      k: "When reminders fire",
-      v: "Scheduled automatically from each document's review cadence. An administrator sets the lead times (e.g. 30, 14, 7 and 1 days before due).",
-    },
-    { k: "Delivery channel", v: "Email, sent from the workspace mailbox (IMAP/POP3 + SMTP) or Amazon SES, per deployment." },
   ];
   return (
     <Panel className="overflow-hidden">
-      <PanelHeader title="Notifications" meta="Reminders, digests and chat" />
+      <PanelHeader title="Notifications" />
       <ul className="divide-y divide-line">
         {rows.map((r, i) => (
           <motion.li
@@ -1013,9 +964,6 @@ function NotificationsSection({ me, onGoProfile, onUpdate }) {
       <div className="border-t border-line">
         <ChannelsBlock me={me} onUpdate={onUpdate} />
       </div>
-      <p className="border-t border-line px-5 py-3 text-xs text-muted">
-        Review reminders are configured per deployment by an administrator; the digest is yours to switch on.
-      </p>
     </Panel>
   );
 }
@@ -1035,7 +983,7 @@ function AccessSection({ me }) {
   const superuser = !!me.is_superuser;
   return (
     <Panel className="p-5">
-      <SectionTitle title="Role & access">Your role determines what you can manage and which folders you can open.</SectionTitle>
+      <SectionTitle title="Role & access" />
       <dl className="mt-5 grid max-w-[720px] grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-xl border border-line bg-surface-2 p-4">
           <dt>
@@ -1051,11 +999,6 @@ function AccessSection({ me }) {
               ) : null}
             </span>
             {role?.description ? <p className="mt-2 text-[13px] leading-snug text-muted">{role.description}</p> : null}
-            {superuser ? (
-              <p className="mt-2 text-[13px] leading-snug text-muted">
-                A superuser holds every management capability and sees every folder, with or without a role.
-              </p>
-            ) : null}
           </dd>
         </div>
         <div className="rounded-xl border border-line bg-surface-2 p-4">
@@ -1063,7 +1006,6 @@ function AccessSection({ me }) {
             <Label>Signs in as</Label>
           </dt>
           <dd className="mt-1.5 font-mono text-[13px] text-ink">{me.username}</dd>
-          <p className="mt-2 text-xs leading-snug text-muted">Usernames and roles are assigned by an administrator.</p>
         </div>
       </dl>
 
@@ -1094,10 +1036,6 @@ function AccessSection({ me }) {
           );
         })}
       </ul>
-      <p className="mt-5 max-w-[62ch] text-xs leading-snug text-muted">
-        Folder access is granted separately, per role or per user, and inherits down the folder tree. Contact an administrator to change your
-        role or folder permissions.
-      </p>
       <WorkspacesBlock me={me} />
     </Panel>
   );
@@ -1161,7 +1099,7 @@ function WorkspacesBlock({ me }) {
     try {
       const { data } = await api.post("/workspaces/", { name: name.trim(), with_frameworks: withFrameworks });
       setName("");
-      setMsg({ ok: true, text: `Workspace “${data.name}” created${withFrameworks ? " with the framework library" : ""}. Switch to it to add its people.` });
+      setMsg({ ok: true, text: `Workspace “${data.name}” created${withFrameworks ? " with the framework library" : ""}.` });
       load();
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't create the workspace.") });
@@ -1222,7 +1160,7 @@ function WorkspacesBlock({ me }) {
   function archive(ws) {
     ask({
       title: `Archive “${ws.name}”?`,
-      description: "Its people can no longer sign in and it drops out of every scheduled job. Nothing is deleted, and it can be made active again.",
+      description: "Its people can no longer sign in. Nothing is deleted, and it can be made active again.",
       confirmLabel: "Archive the workspace",
       onConfirm: () => reallyArchive(ws),
     });
@@ -1258,9 +1196,6 @@ function WorkspacesBlock({ me }) {
           </span>
         ) : "…"}
       </p>
-      <p className="mt-1.5 max-w-[62ch] text-xs leading-snug text-muted">
-        Everything you see (frameworks, documents, risks, vendors, packages, people) belongs to this workspace. Other organisations on the same installation see only their own.
-      </p>
       {superuser ? (
         <>
           <form onSubmit={saveInbox} className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -1293,13 +1228,6 @@ function WorkspacesBlock({ me }) {
               <Button type="submit" size="sm" variant="secondary" disabled={busy || !current}>Save</Button>
             </div>
           </form>
-          <p className="mt-2 max-w-[62ch] text-xs text-muted">
-            Review, vendor and auditor-request reminders name this organisation's documents and vendors, so they go here rather than to one address for the whole installation. Leave the address blank to use the installation's own.
-            Chat events (sealed packages, auditor requests, returned questionnaires) go to this workspace's own channels; on an installation with several organisations they go nowhere else, so one shared channel never shows every tenant the others' affairs.
-          </p>
-          <p className="mt-2 max-w-[62ch] text-xs text-muted">
-            Single sign-on is configured once per installation (<code className="font-mono">SSO_WORKSPACE</code> names the workspace it signs people into), not per workspace. An installation whose organisations each need their own identity provider should run one installation per organisation.
-          </p>
           <ul className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2">
             {(list || []).map((ws) => (
               <li key={ws.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-[13px]">
@@ -1332,7 +1260,6 @@ function WorkspacesBlock({ me }) {
             </label>
             <Button type="submit" size="sm" disabled={busy || !name.trim()}>{busy ? "Working…" : "Create"}</Button>
           </form>
-          <p className="mt-2 text-xs text-muted">Switching reloads the app in that workspace; sign out to come back to your own.</p>
         </>
       ) : null}
       {msg ? <Notice msg={msg} className="mt-3" /> : null}
@@ -1417,16 +1344,14 @@ function AboutSection() {
             </Badge>
           ) : null
         }
-      >
-        Conformiti tracks control implementation, document lifecycle and risk treatment against the frameworks loaded in this workspace.
-        Self-hosted, with role-based access and folder-level permissions inherited down the tree.
-      </SectionTitle>
+      />
 
       <dl className="mt-5 grid max-w-[560px] grid-cols-1 gap-3 sm:grid-cols-2">
         {rows.map(([k, v]) => (
           <div key={k} className="flex justify-between gap-4 border-b border-line pb-2">
             <dt className="text-xs text-muted">{k}</dt>
-            <dd className="tabular font-mono text-xs text-ink">{v}</dd>
+            {/* A fingerprint is one 71-character word: it breaks to fit. */}
+            <dd className="tabular min-w-0 break-words text-right font-mono text-xs text-ink">{v}</dd>
           </div>
         ))}
       </dl>
@@ -1439,7 +1364,7 @@ function AboutSection() {
       ) : frameworks === null ? (
         <Loading className="py-6 text-left" />
       ) : frameworks.length === 0 ? (
-        <Empty title="No frameworks loaded">An administrator can load a framework to start tracking controls.</Empty>
+        <Empty title="No frameworks loaded" />
       ) : (
         <ShowMore total={frameworks.length} initial={8} noun="frameworks" className="max-w-[640px]">
           {(n) => (
@@ -1474,7 +1399,6 @@ function AboutSection() {
           Documentation &amp; source
           <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
         </a>
-        <span className="text-xs text-muted">Released under the GNU AGPL-3.0 licence.</span>
       </div>
     </Panel>
   );
@@ -1549,7 +1473,7 @@ export default function Account({ me, onUpdate }) {
               {section === "profile" ? <ProfileSection me={me} onUpdate={onUpdate} /> : null}
               {section === "appearance" ? <AppearanceSection /> : null}
               {section === "security" ? <SecuritySection /> : null}
-              {section === "notifications" ? <NotificationsSection me={me} onUpdate={onUpdate} onGoProfile={() => setSection("profile")} /> : null}
+              {section === "notifications" ? <NotificationsSection me={me} onUpdate={onUpdate} /> : null}
               {section === "access" ? <AccessSection me={me} /> : null}
               {section === "about" ? <AboutSection /> : null}
             </motion.div>

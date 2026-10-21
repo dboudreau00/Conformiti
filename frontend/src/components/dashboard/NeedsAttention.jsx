@@ -7,7 +7,7 @@ import { Meter } from "../ui/Meter.jsx";
 import { Label, Panel, PanelHeader } from "../ui/Panel.jsx";
 
 const BIG = "tabular text-[30px] font-semibold leading-none tracking-[-0.03em]";
-const UNKNOWN = "Unavailable until the analytics summary loads.";
+const UNKNOWN = "Unavailable.";
 
 function Cell({ label, children }) {
   return (
@@ -52,7 +52,7 @@ export function NeedsAttention({ overdue, due30, risks, controls, docs, docTotal
             <span className="text-xs text-muted">overdue</span>
           </div>
           <p className="text-xs leading-snug text-muted">
-            {due30 != null ? `${due30} due in the next 30 days` : "Unavailable until upcoming reviews load"}
+            {due30 != null ? `${due30} due in the next 30 days` : "Unavailable"}
           </p>
           <ArrowLink href="#review-queue">Open the review queue</ArrowLink>
         </Cell>
@@ -102,7 +102,7 @@ export function NeedsAttention({ overdue, due30, risks, controls, docs, docTotal
             <span className="text-xs text-muted">on file</span>
           </div>
           <p className="text-xs leading-snug text-muted">
-            {docs ? `${by.approved || 0} approved · ${by.in_review || 0} in review · ${by.expired || 0} expired` : "Policies, procedures and evidence"}
+            {docs ? `${by.approved || 0} approved · ${by.in_review || 0} in review · ${by.expired || 0} expired` : "Unavailable"}
           </p>
           <ArrowLink to="/documents">Open folders</ArrowLink>
         </Cell>

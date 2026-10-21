@@ -304,17 +304,12 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                   <Button type="submit" size="sm" variant="primary" disabled={busy}>{busy ? "Filing…" : "File"}</Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
                 </div>
-                <p className="text-2xs text-faint sm:col-span-2">
-                  Upload the AOC or matrix into a folder on the Documents page first; then pick it here so the copy is filed against the vendor.
-                </p>
               </form>
             </Collapse>
           ) : null}
         </AnimatePresence>
         {rows.length === 0 ? (
-          <Empty title="Nothing on file">
-            {canManage ? "File their SOC 2 report, PCI AOC, pen test or a copy of their responsibility matrix." : "No assurance has been filed for this vendor."}
-          </Empty>
+          <Empty title="Nothing on file" />
         ) : (
           <ul className="divide-y divide-line">
             {rows.map((r) => (
@@ -323,7 +318,7 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                   <p className="text-[13px] font-medium text-ink">
                     {KIND_LABEL[r.kind] || r.kind_display}{r.title ? `, ${r.title}` : ""}
                   </p>
-                  <Label className="mt-0.5 block">
+                  <Label className="mt-0.5 block whitespace-normal">
                     {r.period_start || r.period_end ? `Period ${fmtDate(r.period_start)} → ${fmtDate(r.period_end)} · ` : ""}
                     {r.issued_at ? `Issued ${fmtDate(r.issued_at)} · ` : ""}
                     {r.expires_at ? `${r.is_expired ? "Expired" : "Expires"} ${fmtDate(r.expires_at)}` : "No expiry"}
@@ -445,7 +440,7 @@ function SendToVendor({ vendor, busy, act, refresh }) {
           </table>
         </div>
       ) : (
-        <p className="px-5 py-3 text-xs text-muted">Nothing sent yet. The vendor gets an email with a personal link, answers in their browser, and the result lands here as a pending assessment for you to review.</p>
+        <p className="px-5 py-3 text-xs text-muted">Nothing sent yet.</p>
       )}
     </Panel>
   );
@@ -481,10 +476,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
     {canManage ? <SendToVendor vendor={vendor} busy={busy} act={act} refresh={refresh} /> : null}
     {returned ? (
       <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
-        <span>
-          <span className="font-medium">Returned by {returned.respondent_name || returned.sent_to}{returned.respondent_title ? ` (${returned.respondent_title})` : ""} on {fmtDate(latest.created_at)}.</span>{" "}
-          Review the answers below and record the outcome.
-        </span>
+        <span className="font-medium">Returned by {returned.respondent_name || returned.sent_to}{returned.respondent_title ? ` (${returned.respondent_title})` : ""} on {fmtDate(latest.created_at)}.</span>
         {canManage ? (
           <span className="flex flex-wrap gap-2">
             {OUTCOMES.map(([k, l]) => (
@@ -498,7 +490,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
       </div>
     ) : null}
     <Panel className="overflow-hidden">
-      <PanelHeader title="Security questionnaire" meta={lastMeta}>
+      <PanelHeader className="flex-wrap" title="Security questionnaire" meta={lastMeta}>
         <div className="flex items-center gap-3">
           <Meter value={answered} total={questions.length || 1} className="w-32" ariaLabel="Questions answered" />
           <Label>{answered}/{questions.length}</Label>
@@ -514,7 +506,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
                   <p className="text-[13px] text-ink">{q.text}</p>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {ANSWERS.map(([k, l]) => (
-                      <Chip key={k} active={answers[q.id]?.answer === k} onClick={() => canManage && setAnswer(q.id, { answer: k })}>{l}</Chip>
+                      <Chip key={k} active={answers[q.id]?.answer === k} disabled={!canManage} onClick={() => canManage && setAnswer(q.id, { answer: k })}>{l}</Chip>
                     ))}
                     <input className="input input-sm w-48" placeholder="Note" aria-label={`Note for: ${q.text}`} value={answers[q.id]?.note || ""}
                            disabled={!canManage} onChange={(e) => setAnswer(q.id, { note: e.target.value })} />
@@ -531,7 +523,6 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
                   onClick={() => onSubmit({ vendor: vendor.id, kind: "questionnaire", title: `Questionnaire ${new Date().toISOString().slice(0, 10)}`, result: suggested, answers })}>
             {busy ? "Saving…" : "Save questionnaire"}
           </Button>
-          <Label>Saved as a dated assessment; a "No" marks it as exceptions noted.</Label>
         </div>
       ) : null}
     </Panel>
@@ -709,7 +700,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[13px] font-medium text-ink">Import {vendor.name}'s responsibility matrix</p>
-          <Label className="block">CSV or XLSX, in whatever layout they sent. Columns and values are recognised, then you confirm before anything is written.</Label>
+          <Label className="block">CSV or XLSX</Label>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="import-framework" className="sr-only">Framework in the file</label>
@@ -796,7 +787,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                         )}>
                   {busy ? "Importing…" : `Import ${ready.length} row(s)`}
                 </Button>
-                <Label>Rows already stated for this vendor are replaced; everything else is left alone. Their column layout is remembered, so the matrix can go back to them the same way.</Label>
+                <Label>Rows already stated for this vendor are replaced.</Label>
               </div>
             </>
           ) : null}
@@ -900,7 +891,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
         <StatCard label="Stated" value={s.stated} tone="success" detail={`${s.controls ? Math.round((s.stated / s.controls) * 100) : 0}% of the matrix`}>
           <Meter value={s.stated} total={s.controls || 1} tone="success" className="mt-2" ariaLabel="Matrix completion" />
         </StatCard>
-        <StatCard label="Unstated" value={s.unstated} tone={s.unstated ? "warning" : "muted"} detail="Controls nobody has claimed yet" />
+        <StatCard label="Unstated" value={s.unstated} tone={s.unstated ? "warning" : "muted"} />
       </div>
 
       {mode === "prompt" ? (
@@ -912,7 +903,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
       ) : null}
 
       <Panel className="overflow-hidden">
-        <PanelHeader title="Shared responsibility matrix" meta={`${visible.length} of ${merged.length} controls`}>
+        <PanelHeader className="flex-wrap" title="Shared responsibility matrix" meta={`${visible.length} of ${merged.length} controls`}>
           <div className="flex flex-wrap items-center gap-2">
             {canManage ? (
               <>
@@ -965,13 +956,9 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
                 <tr><td colSpan={5}>
                   {fw || onlyUnstated || q ? (
                     <Empty title="No controls match"
-                           action={<Button size="sm" onClick={() => { setFw(""); setOnlyUnstated(false); setQ(""); }}>Clear filters</Button>}>
-                      Clear the filters, or pick another framework.
-                    </Empty>
+                           action={<Button size="sm" onClick={() => { setFw(""); setOnlyUnstated(false); setQ(""); }}>Clear filters</Button>} />
                   ) : (
-                    <Empty title="No controls in scope">
-                      Install a compliance pack, or load the framework library, to state what {vendor.name} covers. Controls marked not applicable are left out.
-                    </Empty>
+                    <Empty title="No controls in scope" />
                   )}
                 </td></tr>
               ) : visible.map((r) => (
@@ -1024,7 +1011,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
               <span className="text-xs text-warning" role="status">
                 {orphaned.map((r) => r.control_id).join(", ")}: pick a responsibility for the statement, or clear it.
               </span>
-            ) : <Label>Clearing a responsibility removes the row and its statements.</Label>}
+            ) : <Label className="whitespace-normal">Clearing a responsibility removes the row and its statements.</Label>}
           </div>
         ) : null}
       </Panel>
@@ -1212,7 +1199,7 @@ export default function Vendors({ me }) {
                               await loadVendors(data.id);
                               setTab("matrix");
                               setIntent("prompt");
-                            }, "Vendor registered. Next: state which controls they cover.")} />
+                            }, "Vendor registered.")} />
               </div>
             ) : null}
             <div className="space-y-2 border-b border-line bg-surface-2 px-3 py-2.5">
@@ -1226,12 +1213,7 @@ export default function Vendors({ me }) {
             {vendorsErr ? (
               <LoadError what="The vendor register" onRetry={() => { setMsg(null); loadRegister(); }} />
             ) : filtered.length === 0 ? (
-              <Empty title={vendors.length ? "No vendors match" : "No vendors yet"}>
-                {vendors.length ? "Try another filter."
-                  : !canManage ? "Nothing has been registered yet."
-                  : creating ? "Register the third parties that touch your data or run your controls, starting with the form above."
-                  : "Register the third parties that touch your data or run your controls. Start with Register above."}
-              </Empty>
+              <Empty title={vendors.length ? "No vendors match" : "No vendors yet"} />
             ) : (
               <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto">
                 {filtered.map((v) => {
@@ -1277,7 +1259,7 @@ export default function Vendors({ me }) {
           {!selectedId || !detail ? (
             <Panel>
               {!selectedId ? (
-                <Empty title="Select a vendor">Pick a vendor on the left to see their assurance and responsibility matrix.</Empty>
+                <Empty title="Select a vendor" />
               ) : detailErr ? (
                 <LoadError what="This vendor" onRetry={() => loadDetail(selectedId)} />
               ) : (
@@ -1304,10 +1286,7 @@ export default function Vendors({ me }) {
                 </div>
                 {needsMatrix ? (
                   <div className="notice notice-warn mt-4 flex flex-wrap items-center justify-between gap-3" role="status">
-                    <span>
-                      <span className="font-medium">New vendor, no responsibilities stated yet.</span>{" "}
-                      Record which controls {detail.name} covers, or import their shared responsibility matrix, so the RACI view and audit packages can name them.
-                    </span>
+                    <span className="font-medium">New vendor, no responsibilities stated yet.</span>
                     {canManage ? (
                       <span className="flex gap-2">
                         <Button size="sm" variant="primary" onClick={() => { setTab("matrix"); setIntent("prompt"); }}>Walk me through it</Button>
@@ -1324,7 +1303,7 @@ export default function Vendors({ me }) {
               {tab === "overview" ? (
                 <OverviewTab vendor={detail} users={users} canManage={canManage} busy={busy}
                              onSave={(body) => act(async () => { await api.patch(`/vendors/${detail.id}/`, body); await refresh(); }, "Vendor updated.")}
-                             onReviewed={() => act(async () => { await api.post(`/vendors/${detail.id}/mark_reviewed/`); await refresh(); }, "Review recorded; the next one is scheduled.")} />
+                             onReviewed={() => act(async () => { await api.post(`/vendors/${detail.id}/mark_reviewed/`); await refresh(); }, "Review recorded.")} />
               ) : tab === "assessments" ? (
                 <AssessmentsTab vendor={detail} docs={docs} canManage={canManage} busy={busy} onOpen={openAssessmentDoc}
                                 onFile={(body) => act(async () => { await api.post("/vendor-assessments/", body); await refresh(); }, "Filed.")}

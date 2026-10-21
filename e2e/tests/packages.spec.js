@@ -30,7 +30,8 @@ test.describe("audit packages", () => {
     await expect(page.getByText("Controls in scope")).toBeVisible();
     await expect(page.getByText(/Design: /).first()).toBeVisible();
     await expect(page.getByText(/Operating: /).first()).toBeVisible();
-    await expect(page.getByText(/nobody at this organisation can edit them/i)).toBeVisible();
+    // The organisation reads the conclusions; only the issued auditor records them.
+    await expect(page.getByRole("button", { name: "No exceptions", exact: true })).toHaveCount(0);
   });
 
   test("exporting downloads a bundle", async ({ page }) => {
@@ -54,7 +55,7 @@ test.describe("audit packages", () => {
 
     // ...but the folder tree it came from is not.
     await open(page, "/documents", "Documents");
-    await expect(page.getByText("Pick a folder on the left")).toBeVisible();
+    await expect(page.getByText("Select a folder", { exact: true })).toBeVisible();
   });
 
   test("the sample workpaper shows the population and every item's result", async ({ page }) => {
@@ -86,6 +87,6 @@ test.describe("audit packages", () => {
     await page.evaluate(() => localStorage.clear());
     await signIn(page, DEMO.viewer);
     await open(page, "/packages", "Audit packages");
-    await expect(page.getByText("No packages yet")).toBeVisible();
+    await expect(page.getByText("No packages visible to you")).toBeVisible();
   });
 });

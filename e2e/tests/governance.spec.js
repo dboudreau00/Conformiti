@@ -22,7 +22,7 @@ test.describe("audit trail", () => {
 
   test("filtering by action narrows the trail", async ({ page }) => {
     const table = page.getByRole("table");
-    await expect(page.getByText(/APPEND-ONLY · \d+ ENTRIES/i)).toBeVisible();
+    await expect(page.getByText(/^[\d,]+ entries$/i)).toBeVisible();
     await expect(table.getByText("DELETE").first()).toBeVisible();
 
     await page.getByRole("combobox", { name: "Action", exact: true }).selectOption("login");

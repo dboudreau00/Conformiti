@@ -1,6 +1,6 @@
 import { passwordMinLength } from "../../api/client.js";
 import { Button } from "../ui/Button.jsx";
-import { Label, Panel, PanelHeader } from "../ui/Panel.jsx";
+import { Panel, PanelHeader } from "../ui/Panel.jsx";
 
 export const BLANK_USER_FORM = { username: "", first: "", last: "", email: "", job: "", role: "", password: "" };
 
@@ -13,9 +13,7 @@ export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, bus
 
   return (
     <Panel as="div" id={id}>
-      <PanelHeader title="New user">
-        <Label>Password required · share it securely</Label>
-      </PanelHeader>
+      <PanelHeader title="New user" />
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
         <div>
           <label htmlFor="nu-username" className="field-label">Username *</label>
@@ -59,7 +57,7 @@ export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, bus
             onChange={set("password")}
           />
           <p className="mt-1.5 text-2xs text-faint">
-            At least {minLength} characters. The user should change it after their first sign-in.
+            At least {minLength} characters.
           </p>
         </div>
         <div className="flex items-end gap-2 md:justify-end">

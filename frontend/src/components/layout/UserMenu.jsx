@@ -16,7 +16,7 @@ export function workspaceNote(me) {
   return {
     switched,
     text: `${switched ? "Viewing " : "Workspace · "}${ws.name}`,
-    title: switched ? `Switched into ${ws.slug}, not your own workspace` : "The workspace you are working in",
+    title: switched ? `Switched into ${ws.slug}, not your own workspace` : undefined,
   };
 }
 

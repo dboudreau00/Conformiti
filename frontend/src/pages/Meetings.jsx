@@ -460,11 +460,7 @@ export default function Meetings({ me }) {
             {loading ? (
               <Loading>Loading cadences…</Loading>
             ) : series.length === 0 ? (
-              <Empty title="No meeting cadences yet">
-                {canEdit
-                  ? "Create a series to start tracking how often each governance forum meets."
-                  : "Nothing has been set up yet. Ask a document manager to add the first series."}
-              </Empty>
+              <Empty title="No meeting cadences yet" />
             ) : (
               <ul className="divide-y divide-line">
                 {series.map((s) => {
@@ -520,10 +516,6 @@ export default function Meetings({ me }) {
               </ul>
             )}
 
-            <p className="border-t border-line px-5 py-3 text-xs leading-snug text-faint">
-              “Expected” pro-rates the yearly requirement by the current month, so a quarterly meeting shows behind if
-              fewer sessions were held than the calendar demands.
-            </p>
           </Panel>
         </StackItem>
 
@@ -544,9 +536,7 @@ export default function Meetings({ me }) {
                 </Panel>
               ) : !active ? (
                 <Panel>
-                  <Empty title="No cadence selected">
-                    Meeting cadences track how often each governance forum meets and keep the minutes as evidence.
-                  </Empty>
+                  <Empty title="No cadence selected" />
                 </Panel>
               ) : (
                 <>
@@ -692,11 +682,7 @@ export default function Meetings({ me }) {
                       <Loading>Loading minutes…</Loading>
                     ) : minutes.length === 0 ? (
                       minutesErr ? null : (
-                        <Empty title="No minutes recorded yet">
-                          {canEdit
-                            ? "Record the first meeting below; its date counts toward this year's cadence."
-                            : "Minutes will appear here once a document manager records a meeting."}
-                        </Empty>
+                        <Empty title="No minutes recorded yet" />
                       )
                     ) : (
                       <ul
@@ -834,8 +820,7 @@ export default function Meetings({ me }) {
 
                         <Notice msg={minuteMsg} className="mt-4" />
 
-                        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                          <Label>Counts toward {active.name}</Label>
+                        <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
                           <Button type="submit" variant="primary" disabled={minuteBusy || !mf.date}>
                             {minuteBusy ? "Saving…" : "Save minutes"}
                           </Button>

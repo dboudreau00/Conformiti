@@ -129,7 +129,7 @@ export default function Users({ me }) {
   function removeUser(u) {
     ask({
       title: `Delete ${u.username}?`,
-      description: "This cannot be undone. Deactivating the account is usually safer: it keeps their history and stops them signing in.",
+      description: "This cannot be undone. Deactivating keeps their history and stops them signing in.",
       confirmLabel: "Delete the account",
       onConfirm: async () => {
         setBusyId(u.id);
@@ -151,7 +151,7 @@ export default function Users({ me }) {
     setBusyId(u.id);
     try {
       await api.patch(`/users/${u.id}/`, { password: pwValue });
-      ok(`Password set for ${u.username}. Share it with them securely.`);
+      ok(`Password set for ${u.username}.`);
       setPwFor(null);
       setPwValue("");
     } catch (e) {
@@ -235,10 +235,7 @@ export default function Users({ me }) {
     return (
       <PanelTransition>
         <Panel>
-          <Empty title="User management is restricted">
-            User management needs the <b className="font-medium text-ink">manage users</b> capability (Administrator role).
-            Ask an administrator for access.
-          </Empty>
+          <Empty title="User management is restricted" />
         </Panel>
       </PanelTransition>
     );
@@ -266,14 +263,12 @@ export default function Users({ me }) {
           <StatCard
             label="Superusers"
             value={loading ? "-" : superusers}
-            detail="Workspace-wide grants, managed only by superusers"
           />
           <StatCard
             label="Two-factor"
             value={loading ? "-" : mfaOn}
             suffix={loading ? undefined : `/ ${total}`}
             tone={!loading && total > 0 && mfaOn < total ? "warning" : undefined}
-            detail="Accounts with an authenticator enrolled"
           />
         </StackItem>
 
@@ -355,9 +350,9 @@ export default function Users({ me }) {
             {loading ? (
               <Loading>Loading users…</Loading>
             ) : users.length === 0 ? (
-              <Empty title="No users yet">Create the first account with New user.</Empty>
+              <Empty title="No users yet" />
             ) : shown.length === 0 ? (
-              <Empty title="No users match">Try a shorter word: the search matches usernames, names, email addresses and job titles.</Empty>
+              <Empty title="No users match" />
             ) : (
               <div className="overflow-x-auto" role="region" aria-label="Users" tabIndex={0}>
                 <table className="w-full min-w-[1080px] border-collapse text-[13px]">
@@ -403,13 +398,13 @@ export default function Users({ me }) {
 
         <StackItem>
           <Panel className="overflow-hidden">
-            <PanelHeader title="Roles & permissions" meta="What each role can do" />
+            <PanelHeader title="Roles & permissions" />
             {rolesErr ? (
               <div className="p-5">
                 <div className="notice notice-err" role="alert">{rolesErr}</div>
               </div>
             ) : roles.length === 0 ? (
-              <Empty title="No roles defined">Roles are seeded on first install.</Empty>
+              <Empty title="No roles defined" />
             ) : (
               <div className="overflow-x-auto" role="region" aria-label="Roles and permissions" tabIndex={0}>
                 <table className="w-full min-w-[720px] border-collapse text-[13px]">
@@ -440,7 +435,7 @@ export default function Users({ me }) {
                                 ))}
                               </span>
                             ) : (
-                              <span className="text-xs text-faint">read-only · folder grants apply</span>
+                              <span className="text-xs text-faint">read-only</span>
                             )}
                           </td>
                         </tr>
@@ -450,9 +445,6 @@ export default function Users({ me }) {
                 </table>
               </div>
             )}
-            <p className="border-t border-line px-5 py-2.5 text-2xs text-faint">
-              Folder-level access is granted per folder on the Documents page.
-            </p>
           </Panel>
         </StackItem>
       </Stack>

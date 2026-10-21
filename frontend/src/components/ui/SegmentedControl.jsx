@@ -77,15 +77,18 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
   );
 }
 
-/** Pill filter chip (status filters etc.). */
-export function Chip({ active, onClick, tone, count, children, className }) {
+/** Pill filter chip (status filters etc.). `disabled` shows a choice that
+ * cannot be changed here, still readable, rather than a button that does
+ * nothing. */
+export function Chip({ active, onClick, tone, count, disabled, children, className }) {
   return (
     <button
       type="button"
       aria-pressed={!!active}
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
+        "flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium disabled:cursor-default",
         "transition-[background-color,border-color,color] duration-150 ease-out",
         active ? "border-accent bg-accent/10 text-accent" : "border-line text-muted hover:border-line-strong hover:text-ink",
         className

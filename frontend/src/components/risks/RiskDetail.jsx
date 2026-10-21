@@ -250,7 +250,7 @@ export function RiskDetail({
         ) : notesLoading ? (
           <Loading className="py-6">Loading notes…</Loading>
         ) : notes.length === 0 ? (
-          <p className="mt-2 text-xs text-faint">No notes yet. Add the first progress note below.</p>
+          <p className="mt-2 text-xs text-faint">No notes yet.</p>
         ) : (
           <ul className="mt-2 divide-y divide-line">
             {notes.map((n) => (

@@ -281,7 +281,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
     return (
       <Panel className="min-w-0">
         <AtlasHeader />
-        <Empty title="No controls to draw">Load a control library and every control appears here as one square.</Empty>
+        <Empty title="No controls to draw" />
       </Panel>
     );
   }
@@ -349,7 +349,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
       <div className="dash-atlas p-4 sm:p-5">
         <div className="min-w-0">
           {shown.length === 0 ? (
-            <Empty title="Nothing is drawn" className="py-8">Choose a framework above to draw its controls.</Empty>
+            <Empty title="Nothing is drawn" className="py-8">Choose a framework above.</Empty>
           ) : (
             <div
               ref={fieldRef}
@@ -450,18 +450,15 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
                     {probe.fw.name}, {CONTROL_STATUS[probe.status]?.label.toLowerCase()}.{" "}
                     {partners.size === 0 ? "No other control answers the same theme." : `${partners.size.toLocaleString()} ${partners.size === 1 ? "control answers" : "controls answer"} the same themes.`}
                   </p>
-                  <p className="mt-2 text-xs text-faint">Select it to pin the crosswalk.</p>
                 </>
               ) : (
-                <p className="mt-2 text-xs leading-snug text-muted">
-                  Point at a square, or move to it with the arrow keys, to light every control that answers the same theme in any framework. Select one to pin it and see what it answers.
-                </p>
+                <p className="mt-2 text-xs leading-snug text-muted">No control selected.</p>
               )}
             </div>
           )}
           <p className="px-0.5 text-xs leading-snug text-muted">
-            <b className="font-semibold text-ink">{flat.length.toLocaleString()} controls</b>, one square each, grouped by framework.
-            {chips && shown.length < model.territories.length ? ` ${model.total.toLocaleString()} in all.` : ""} Arrow keys move through them.
+            <b className="font-semibold text-ink">{flat.length.toLocaleString()} controls</b>
+            {chips && shown.length < model.territories.length ? `, ${model.total.toLocaleString()} in all` : ""}
           </p>
         </div>
       </div>
@@ -522,7 +519,7 @@ function PlaceCard({ control, detail, litDrawn, onPick, onClear }) {
                   <button
                     type="button"
                     onClick={() => onPick(p.id)}
-                    title={`${p.ref}, ${p.title}. Select it.`}
+                    title={`${p.ref}, ${p.title}`}
                     className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-xs transition-colors duration-150 ease-out hover:bg-ink/[0.05]"
                   >
                     <StatusGlyph status={p.status} />

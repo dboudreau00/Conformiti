@@ -207,8 +207,8 @@ every other section into the side menu, which is drawn only when it has items,
 so a core installation and an external auditor have none. It reads section ids
 and never a flag on the signed-in user, so an add-on that wraps `navSections`
 and `NAV_LOOKUP` has its sections placed with no change in the core. The page
-title and caption come from `NAV_LOOKUP` and are drawn by `PanelTransition` as
-the page's `<h1>`.
+title comes from `NAV_LOOKUP` and is drawn by `PanelTransition` as the page's
+`<h1>`.
 
 Menus and popovers (Governance, Appearance, the bell, the account menu, the
 phone sheet) are one primitive, `components/ui/Popover.jsx`: a press outside or

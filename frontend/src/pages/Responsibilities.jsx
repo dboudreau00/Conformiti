@@ -23,10 +23,10 @@ import { cn } from "../utils/cn.js";
 import { TONE_RING, TONE_TEXT, TONE_WASH } from "../utils/tone.js";
 
 const ROLES = [
-  ["responsible", "Responsible", "Does the work"],
-  ["accountable", "Accountable", "Answers for it: exactly one"],
-  ["consulted", "Consulted", "Asked before decisions"],
-  ["informed", "Informed", "Told afterwards"],
+  ["responsible", "Responsible"],
+  ["accountable", "Accountable"],
+  ["consulted", "Consulted"],
+  ["informed", "Informed"],
 ];
 const PARTY = [{ id: "user", label: "Person" }, { id: "vendor", label: "Vendor" }];
 const EMPTY = { control: "", kind: "user", party: "", role: "responsible", note: "" };
@@ -35,7 +35,7 @@ const EMPTY = { control: "", kind: "user", party: "", role: "responsible", note:
 // hold several roles on the same control, so its X names the role it removes.
 function PartyChip({ x, role, canManage, onRemove }) {
   const tone = x.kind === "vendor" ? "info" : "accent";
-  const title = [x.kind === "vendor" ? "Vendor" : "Person", x.note].filter(Boolean).join(" · ");
+  const title = [x.kind === "vendor" ? "Vendor" : "Person", x.implicit ? "implied" : null, x.note].filter(Boolean).join(" · ");
   return (
     <span
       title={title}
@@ -66,7 +66,9 @@ export default function Responsibilities({ me }) {
   const [fw, setFw] = useState("");
   const [q, setQ] = useState("");
   const [gapsOnly, setGapsOnly] = useState(false);
-  const [controls, setControls] = useState([]);
+  // null until the choices arrive: an empty list is a workspace with no
+  // controls, which the picker must not show as loading for ever.
+  const [controls, setControls] = useState(null);
   const [users, setUsers] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [msg, setMsg] = useState(null);
@@ -92,7 +94,7 @@ export default function Responsibilities({ me }) {
 
   const frameworks = useMemo(() => {
     const seen = new Map();
-    for (const c of controls) if (!seen.has(c.framework)) seen.set(c.framework, c.framework_name);
+    for (const c of controls || []) if (!seen.has(c.framework)) seen.set(c.framework, c.framework_name);
     return Array.from(seen.entries());
   }, [controls]);
   // The real names, from the choices the page already loads: a hard-coded
@@ -103,20 +105,22 @@ export default function Responsibilities({ me }) {
     && (!gapsOnly || r.accountable.length === 0 || r.responsible.length === 0)
   ), [data, q, gapsOnly]);
   const page = usePage(rows, 100, [fw, q, gapsOnly]);
-  const chosen = useMemo(() => controls.find((c) => String(c.id) === String(form.control)) || null, [controls, form.control]);
+  const chosen = useMemo(() => (controls || []).find((c) => String(c.id) === String(form.control)) || null, [controls, form.control]);
   const shared = (data?.rows || []).filter((r) => r.shared).length;
   const parties = form.kind === "vendor" ? vendors.map((v) => ({ id: v.id, name: v.name })) : users.map((u) => ({ id: u.id, name: u.full_name || u.username }));
 
-  async function act(fn, okText) {
+  // `at` names where the outcome is shown: "assign" puts it under the form,
+  // which on a phone sits below the whole matrix, far from the page's top.
+  async function act(fn, okText, at) {
     setBusy(true);
     setMsg(null);
     try {
       await fn();
       await load();
-      if (okText) setMsg({ ok: true, text: okText });
+      if (okText) setMsg({ ok: true, text: okText, at });
       return true;
     } catch (e) {
-      setMsg({ ok: false, text: errorText(e) });
+      setMsg({ ok: false, text: errorText(e), at });
       return false;
     } finally {
       setBusy(false);
@@ -146,7 +150,7 @@ export default function Responsibilities({ me }) {
   return (
     <PanelTransition>
       {confirmDialog}
-      {msg ? (
+      {msg && msg.at !== "assign" ? (
         <div className={cn("notice mb-4 flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
           <span>{msg.text}</span>
           <button type="button" aria-label="Dismiss" onClick={() => setMsg(null)} className="shrink-0 opacity-70 hover:opacity-100"><XIcon className="h-3.5 w-3.5" /></button>
@@ -155,12 +159,12 @@ export default function Responsibilities({ me }) {
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Controls" value={data ? data.count : "-"} detail={fw ? names[fw] || fw : "All frameworks"} />
-        <StatCard label="No Accountable" value={data ? data.gaps.no_accountable : "-"} tone={data?.gaps.no_accountable ? "danger" : "success"} detail="Nobody answers for the control" />
-        <StatCard label="No Responsible" value={data ? data.gaps.no_responsible : "-"} tone={data?.gaps.no_responsible ? "warning" : "success"} detail="Nobody does the work" />
-        <StatCard label="Shared with a vendor" value={data ? shared : "-"} tone="info" detail="From vendors' responsibility matrices" />
+        <StatCard label="No Accountable" value={data ? data.gaps.no_accountable : "-"} tone={data?.gaps.no_accountable ? "danger" : "success"} />
+        <StatCard label="No Responsible" value={data ? data.gaps.no_responsible : "-"} tone={data?.gaps.no_responsible ? "warning" : "success"} />
+        <StatCard label="Shared with a vendor" value={data ? shared : "-"} tone="info" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className={cn("grid gap-4", canManage && "lg:grid-cols-[minmax(0,1fr)_320px]")}>
         <Panel className="overflow-hidden">
           <PanelHeader className="flex-wrap" title="Responsibility matrix" meta={data ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}` : "-"}>
             <Button size="sm" variant="ghost" icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
@@ -184,13 +188,9 @@ export default function Responsibilities({ me }) {
           ) : !data ? <Loading /> : rows.length === 0 ? (
             fw || q || gapsOnly ? (
               <Empty title="No controls match"
-                     action={<Button size="sm" onClick={() => { setFw(""); setQ(""); setGapsOnly(false); }}>Clear filters</Button>}>
-                Clear the filters to see the whole matrix.
-              </Empty>
+                     action={<Button size="sm" onClick={() => { setFw(""); setQ(""); setGapsOnly(false); }}>Clear filters</Button>} />
             ) : (
-              <Empty title="No controls yet">
-                Install a compliance pack, or load the framework library, and every control gets a row here.
-              </Empty>
+              <Empty title="No controls yet" />
             )
           ) : (
             <div className="overflow-x-auto">
@@ -198,8 +198,8 @@ export default function Responsibilities({ me }) {
                 <thead className="bg-surface-2">
                   <tr>
                     <th className="px-4 py-2 text-left font-normal text-faint" scope="col">Control</th>
-                    {ROLES.map(([k, l, hint]) => (
-                      <th key={k} className="px-2 py-2 text-left font-normal text-faint" scope="col" title={hint}>{l}</th>
+                    {ROLES.map(([k, l]) => (
+                      <th key={k} className="px-2 py-2 text-left font-normal text-faint" scope="col">{l}</th>
                     ))}
                   </tr>
                 </thead>
@@ -223,7 +223,7 @@ export default function Responsibilities({ me }) {
                                 <PartyChip key={x.id || `implicit-${x.kind}-${x.party_id}-${i}`} x={x} role={l} canManage={canManage}
                                            onRemove={(p) => ask({
                                              title: `Remove ${p.name} as ${l}?`,
-                                             description: `Only this ${l} entry goes. Any other role ${p.name} holds on this control stays, and so do implied entries from ownership or a vendor matrix.`,
+                                             description: `Only this ${l} entry goes. Any other role ${p.name} holds on this control stays.`,
                                              confirmLabel: "Remove",
                                              onConfirm: () => actOrThrow(() => api.delete(`/responsibilities/${p.id}/`), `${p.name} removed as ${l}.`),
                                            })} />
@@ -245,10 +245,6 @@ export default function Responsibilities({ me }) {
               ) : null}
             </div>
           )}
-          <p className="border-t border-line px-5 py-3 text-xs text-muted">
-            Dashed entries are implied: the control's owner as Accountable, and any vendor whose shared
-            responsibility matrix claims the control as Responsible. Everything else was assigned here.
-          </p>
         </Panel>
 
         <div className="space-y-4">
@@ -259,7 +255,7 @@ export default function Responsibilities({ me }) {
                 e.preventDefault();
                 const body = { control: Number(form.control), role: form.role, note: form.note };
                 body[form.kind === "vendor" ? "vendor" : "user"] = Number(form.party);
-                if (await act(() => api.post("/responsibilities/", body), "Assigned.")) setForm((f) => ({ ...f, party: "", note: "" }));
+                if (await act(() => api.post("/responsibilities/", body), "Assigned.", "assign")) setForm((f) => ({ ...f, party: "", note: "" }));
               }}>
                 <div>
                   <span className="field-label">Control</span>
@@ -277,7 +273,7 @@ export default function Responsibilities({ me }) {
                       id="raci-control"
                       label="Control"
                       className="mt-1"
-                      controls={controls.length ? controls : null}
+                      controls={controls}
                       framework={fw}
                       onPick={(c) => setForm((f) => ({ ...f, control: String(c.id) }))}
                     />
@@ -297,7 +293,7 @@ export default function Responsibilities({ me }) {
                 <div>
                   <label htmlFor="raci-role" className="field-label">Role</label>
                   <select id="raci-role" className="input input-sm" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
-                    {ROLES.map(([k, l, hint]) => <option key={k} value={k}>{l}, {hint}</option>)}
+                    {ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                   </select>
                 </div>
                 <div>
@@ -307,24 +303,12 @@ export default function Responsibilities({ me }) {
                 <Button type="submit" size="sm" variant="primary" className="w-full" disabled={busy || !form.control || !form.party}>
                   {busy ? "Saving…" : "Assign"}
                 </Button>
+                {msg?.at === "assign" ? (
+                  <div className={cn("notice", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>{msg.text}</div>
+                ) : null}
               </form>
             </Panel>
           ) : null}
-          <Panel className="p-4">
-            <Label className="mb-2 block">Reading the matrix</Label>
-            <ul className="space-y-2 text-xs text-muted">
-              {ROLES.map(([k, l, hint]) => (
-                <li key={k} className="flex gap-2">
-                  <span className="w-24 shrink-0 font-medium text-ink">{l}</span>
-                  <span>{hint}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-3 text-xs text-muted">
-              A control with no Accountable party has nobody to answer for it at audit; the API refuses a second one so the
-              matrix cannot drift into "everyone and no one".
-            </p>
-          </Panel>
         </div>
       </div>
     </PanelTransition>

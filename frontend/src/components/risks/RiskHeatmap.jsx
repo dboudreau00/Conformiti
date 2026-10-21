@@ -111,7 +111,6 @@ export function RiskHeatmap({ risks, stats, loading, selectedId, onSelect }) {
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <Label>Impact ↑ · Likelihood →</Label>
-              <Label>Open &amp; mitigating only</Label>
             </div>
           </div>
 
@@ -119,9 +118,6 @@ export function RiskHeatmap({ risks, stats, loading, selectedId, onSelect }) {
             <div className="min-w-[220px] flex-1">
               <Label className="mb-2 block">Live by rating</Label>
               <Legend items={legend} columns={2} />
-              <p className="mt-3 text-2xs leading-relaxed text-faint">
-                Bubbles are risk ids. Closed and accepted risks are not plotted.
-              </p>
             </div>
           ) : null}
         </div>

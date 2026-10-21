@@ -11,8 +11,8 @@ export function onActivate(fn) {
 
 /** What a LoadError should say about a failed load, or "" to keep its default.
  *
- * LoadError's own sentence ("The request did not come back ... trying again is
- * safe") is only true when no response arrived. A server that answered with a
+ * LoadError's own sentence ("The request did not come back") is only true when
+ * no response arrived. A server that answered with a
  * refusal or an error deserves its own words, and a raw HTML error page never
  * reaches the screen. */
 export function loadFailReason(e) {
@@ -20,7 +20,7 @@ export function loadFailReason(e) {
   if (!r) return "";
   if (r.status < 500 && r.data && typeof r.data === "object") return errorText(e);
   if (r.status === 403) return "You don't have permission to see this.";
-  return `The server returned an error (${r.status}). Nothing has changed, so trying again is safe.`;
+  return `The server returned an error (${r.status}). Try again.`;
 }
 
 /** Extract a human-readable message from a failed axios call. */
@@ -33,7 +33,9 @@ export function errorText(e, fallback = "Something went wrong. Please try again.
     if (first) {
       const [k, v] = first;
       const msg = Array.isArray(v) ? v.join(" ") : String(v);
-      return k === "non_field_errors" ? msg : `${k}: ${msg}`;
+      // The field's name in words ("Base url"), not the API's key ("base_url").
+      const field = k.replace(/_/g, " ");
+      return k === "non_field_errors" ? msg : `${field.charAt(0).toUpperCase()}${field.slice(1)}: ${msg}`;
     }
   }
   if (e?.response?.status === 413) return "That file is too large to upload.";

@@ -1,6 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
 import { ChevronDownIcon } from "lucide-react";
-import { navCaption } from "../../nav.js";
 import { useShell, useShellNav } from "../../shell.js";
 import { cn } from "../../utils/cn.js";
 import { Label } from "../ui/Panel.jsx";
@@ -9,7 +8,7 @@ import { NavCount, TAB_CLASS } from "./NavParts.jsx";
 import { NavIcon } from "./NavIcon.jsx";
 
 /** The Governance section as one tab. It opens a two-column panel of every
- * Governance page with its icon, live count and caption. When the page you
+ * Governance page with its icon and live count. When the page you
  * are on is one of them the tab is the active one and names it, so the bar
  * still says where you are with the panel closed.
  *
@@ -50,7 +49,6 @@ export function GovernanceMenu() {
       <ul className="grid grid-cols-2 gap-x-2.5 gap-y-0.5 p-2" data-popover-cols="2">
         {governance.map((item) => {
           const active = item.path === pathname;
-          const caption = navCaption(item.path);
           return (
             <li key={item.id}>
               <Link
@@ -59,7 +57,7 @@ export function GovernanceMenu() {
                 data-autofocus={active ? "" : undefined}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group grid grid-cols-[34px_minmax(0,1fr)] items-start gap-3 rounded-[10px] py-2.5 pl-2.5 pr-3",
+                  "group grid grid-cols-[34px_minmax(0,1fr)] items-center gap-3 rounded-[10px] py-2.5 pl-2.5 pr-3",
                   "transition-colors duration-150 ease-out hover:bg-ink/[0.045] focus-visible:rounded-[10px] focus-visible:-outline-offset-2",
                   active && "bg-accent/10"
                 )}
@@ -77,15 +75,13 @@ export function GovernanceMenu() {
                     {item.label}
                     <NavCount kind={item.badge} value={item.badge ? counts[item.badge] : undefined} />
                   </span>
-                  {caption ? <span className="text-xs leading-[1.4] text-muted">{caption}</span> : null}
                 </span>
               </Link>
             </li>
           );
         })}
       </ul>
-      <div className="flex items-center justify-between gap-3 border-t border-line bg-surface-2 px-4 py-2 text-xs text-muted">
-        <span>Settings and Sign out are in the account menu.</span>
+      <div className="flex items-center justify-end gap-3 border-t border-line bg-surface-2 px-4 py-2 text-xs text-muted">
         <span>
           <kbd className="rounded-[5px] border border-line-strong bg-surface px-1.5 font-mono text-[10.5px] leading-4">Esc</kbd> to close
         </span>

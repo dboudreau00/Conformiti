@@ -58,21 +58,21 @@ export function openToAuditor(path) {
 }
 
 export const NAV_LOOKUP = {
-  "/": { title: "Dashboard", caption: "Compliance posture across every framework in this workspace" },
-  "/analytics": { title: "Analytics", caption: "Readiness, coverage and ownership breakdowns" },
-  "/controls": { title: "Controls", caption: "Every control library in this workspace, with its crosswalk" },
-  "/documents": { title: "Documents", caption: "Policies, procedures and evidence in your folders" },
-  "/users": { title: "Users", caption: "Workspace membership, roles and folder grants" },
-  "/user-audit": { title: "User audit", caption: "Periodic access review and attestation" },
-  "/packages": { title: "Audit packages", caption: "Evidence sealed and issued to an external auditor" },
-  "/vendors": { title: "Vendors", caption: "Third-party risk, assurance on file and shared responsibility" },
-  "/responsibilities": { title: "Responsibility matrix", caption: "Who is responsible, accountable, consulted and informed per control" },
-  "/audit-log": { title: "Audit log", caption: "Read-only record of every change and sign-in" },
-  "/meetings": { title: "Meetings", caption: "Governance forum cadence and minutes" },
-  "/groups": { title: "Champion groups", caption: "Inter-departmental compliance ownership" },
-  "/risks": { title: "Risk register", caption: "Open, mitigating and accepted risk treatment" },
-  "/jira": { title: "Jira boards", caption: "Remediation work linked to controls" },
-  "/settings": { title: "Settings", caption: "Profile, appearance, security, notifications and access" },
+  "/": { title: "Dashboard" },
+  "/analytics": { title: "Analytics" },
+  "/controls": { title: "Controls" },
+  "/documents": { title: "Documents" },
+  "/users": { title: "Users" },
+  "/user-audit": { title: "User audit" },
+  "/packages": { title: "Audit packages" },
+  "/vendors": { title: "Vendors" },
+  "/responsibilities": { title: "Responsibility matrix" },
+  "/audit-log": { title: "Audit log" },
+  "/meetings": { title: "Meetings" },
+  "/groups": { title: "Champion groups" },
+  "/risks": { title: "Risk register" },
+  "/jira": { title: "Jira boards" },
+  "/settings": { title: "Settings" },
 };
 
 // Where the shell draws each section that navSections(me) returns:
@@ -100,10 +100,4 @@ export function shellNav(me) {
     side: side.filter((s) => s.items.length > 0),
     foot,
   };
-}
-
-/** The caption under a page's title, read at call time because an add-on
- *  merges its own entries (and may override one) after this file has run. */
-export function navCaption(path) {
-  return NAV_LOOKUP[path]?.caption ?? "";
 }

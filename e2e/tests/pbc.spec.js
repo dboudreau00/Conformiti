@@ -46,7 +46,9 @@ test.describe("PBC request list", () => {
     await page.evaluate(() => localStorage.clear());
     await signIn(page, DEMO.owner);
     await open(page, "/packages", "Audit packages");
-    await expect(page.getByText("No packages yet")).toBeVisible();
+    // The packages exist; this account reads none of them, and its requests
+    // name the one they belong to.
+    await expect(page.getByText("No packages visible to you")).toBeVisible();
     const mine = page.getByRole("region", { name: "Auditor requests assigned to you", exact: true });
     await expect(mine).toBeVisible();
     const openLine = mine.locator('li[data-reference="PBC-03"]');
@@ -58,10 +60,12 @@ test.describe("PBC request list", () => {
     await expect(ask).toBeVisible();
     // It opens on the field, not on Close, and Shift+Tab from the field
     // reaches Close rather than skipping it for the last button.
-    await expect(ask.getByLabel("Note")).toBeFocused();
+    // Nothing is attached, so the note is required and its label says why.
+    const why = ask.getByLabel("Why it is answered without a document");
+    await expect(why).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect(ask.getByRole("button", { name: "Close", exact: true })).toBeFocused();
-    await ask.getByLabel("Note").fill("Q1-Q4 sign-offs are in the access review export already in the package.");
+    await why.fill("Q1-Q4 sign-offs are in the access review export already in the package.");
     await ask.getByRole("button", { name: "Mark provided" }).click();
     await expect(ask).toBeHidden();
     await expect(page.getByText("PBC-03 marked provided.")).toBeVisible();

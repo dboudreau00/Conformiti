@@ -6,10 +6,10 @@
 import { useEffect, useState } from "react";
 
 export const THEME_PACKS = [
-  { id: "ledger", name: "Audit Ledger", mode: "Light", blurb: "Warm paper neutrals. Reads well in printed evidence packs.", swatch: ["#f6f5f1", "#ffffff"] },
-  { id: "nimbus", name: "Nimbus", mode: "Light", blurb: "Cool slate. Highest legibility for long control reviews.", swatch: ["#f3f6fa", "#ffffff"] },
-  { id: "ledger-dark", name: "Ledger Dark", mode: "Dark", blurb: "Muted ink surfaces for low-light monitoring.", swatch: ["#0c0e12", "#151820"] },
-  { id: "obsidian", name: "Obsidian", mode: "Dark", blurb: "Near-black, maximum contrast for wall displays.", swatch: ["#060709", "#0d0f13"] },
+  { id: "ledger", name: "Audit Ledger", mode: "Light", swatch: ["#f6f5f1", "#ffffff"] },
+  { id: "nimbus", name: "Nimbus", mode: "Light", swatch: ["#f3f6fa", "#ffffff"] },
+  { id: "ledger-dark", name: "Ledger Dark", mode: "Dark", swatch: ["#0c0e12", "#151820"] },
+  { id: "obsidian", name: "Obsidian", mode: "Dark", swatch: ["#060709", "#0d0f13"] },
 ];
 
 export const ACCENT_PACKS = [

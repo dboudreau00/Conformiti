@@ -370,14 +370,14 @@ test.describe("documents", () => {
     for (const framework of ["ISO-IEC 27001 2022", "PCI DSS 4.0.1", "SOC 2 2017 TSC (rev. 2022)"]) {
       await expect(page.getByText(framework, { exact: true }).first()).toBeVisible();
     }
-    await expect(page.getByText("Pick a folder on the left")).toBeVisible();
+    await expect(page.getByText("Select a folder", { exact: true })).toBeVisible();
   });
 
   test("selecting a folder shows its documents", async ({ page }) => {
     await open(page, "/documents", "Documents");
     await page.getByText("CC6 - Logical and Physical Access Controls", { exact: true }).first().click();
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("Pick a folder on the left")).toHaveCount(0);
+    await expect(page.getByText("Select a folder", { exact: true })).toHaveCount(0);
   });
 
   test("choosing a file names the upload after it, unless a name was typed first", async ({ page }) => {
@@ -412,7 +412,7 @@ test.describe("risk register", () => {
 
   test("the heatmap plots only live risks", async ({ page }) => {
     await expect(page.getByText("Likelihood × impact")).toBeVisible();
-    await expect(page.getByText(/Closed and accepted risks are not plotted/i)).toBeVisible();
+    await expect(page.getByRole("group", { name: "Live risks by likelihood and impact" })).toBeVisible();
   });
 
   test("opening a risk shows its detail", async ({ page }) => {

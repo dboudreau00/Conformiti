@@ -9,7 +9,7 @@ import { RiskHeatmap } from "../components/risks/RiskHeatmap.jsx";
 import { RiskTable } from "../components/risks/RiskTable.jsx";
 import { FILTERS, IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, TEMPLATE_CSV, TYPES, deriveSummary, filterRisks } from "../components/risks/vocab.js";
 import { Button } from "../components/ui/Button.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
 import { useShell } from "../shell.js";
@@ -34,7 +34,9 @@ export default function Risks({ me }) {
   const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
   const [usersErr, setUsersErr] = useState("");
-  const [controls, setControls] = useState([]);
+  // null until the choices arrive: an empty list is a workspace with no
+  // controls, which the picker must not show as loading for ever.
+  const [controls, setControls] = useState(null);
   const [riskControl, setRiskControl] = useState(null); // the control picked on the new-risk form
   const [filter, setFilter] = useState("live");
   const [selectedId, setSelectedId] = useState(null);
@@ -318,7 +320,7 @@ export default function Risks({ me }) {
           {showNew && canManage ? (
             <Collapse key="new" open>
               <Panel>
-                <PanelHeader title="New risk" meta="Register entry" />
+                <PanelHeader title="New risk" />
                 <form onSubmit={createRisk} className="grid grid-cols-1 gap-3 p-5 md:grid-cols-4" aria-busy={creating}>
                   <Field id="new-title" label="Title" className="md:col-span-2">
                     <input id="new-title" name="title" className="input" required maxLength={255} placeholder="e.g. Laptops without disk encryption" />
@@ -363,7 +365,7 @@ export default function Risks({ me }) {
                         id="new-control"
                         label="Related control"
                         placeholder="Find a control, or leave this empty"
-                        controls={controls.length ? controls : null}
+                        controls={controls}
                         onPick={setRiskControl}
                       />
                     )}
@@ -396,7 +398,7 @@ export default function Risks({ me }) {
                   <Button size="sm" className="mt-3" onClick={loadRisks}>Try again</Button>
                 </div>
               ) : shown.length === 0 ? (
-                <Empty title="No risks in this view">{risks.length ? "Widen the filter above." : canManage ? "Create the first entry or import a register." : "Nothing has been logged yet."}</Empty>
+                <Empty title="No risks in this view" />
               ) : (
                 <RiskTable risks={shown} selectedId={selectedId} onSelect={(r) => setSelectedId((cur) => (cur === r.id ? null : r.id))} />
               )}
@@ -430,13 +432,6 @@ export default function Risks({ me }) {
           ) : null}
         </AnimatePresence>
 
-        {!loading && !error ? (
-          <StackItem>
-            <Label className="block whitespace-normal px-1">
-              Ratings use the 5×5 banding: 1 to 4 low · 5 to 9 moderate · 10 to 15 high · 16 to 25 critical. Owners may edit their own risks; framework managers may edit, create and import.
-            </Label>
-          </StackItem>
-        ) : null}
       </Stack>
     </PanelTransition>
   );

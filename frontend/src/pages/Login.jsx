@@ -299,7 +299,7 @@ export default function Login({ onDone }) {
   const showPasskey = mfaStep && !lockedOut && factors.passkey && method === "passkey";
 
   const heading = mfaStep ? "Two-factor authentication" : "Sign in";
-  let intro = "Continuous compliance, on your own hardware.";
+  let intro = "";
   if (lockedOut) {
     intro = "Your only passkey was disabled because it may have been cloned, and there is no "
       + "authenticator app or backup code left on this account. Ask an administrator to reset your second factor.";
@@ -324,7 +324,7 @@ export default function Login({ onDone }) {
           <form onSubmit={submit} noValidate>
             <ConformitiLogo size={40} />
             <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
-            <p className="mt-1 text-[13px] leading-snug text-muted">{intro}</p>
+            {intro ? <p className="mt-1 text-[13px] leading-snug text-muted">{intro}</p> : null}
             {err ? <div className="notice notice-err mt-4" role="alert">{err}</div> : null}
             {!mfaStep ? (
               <>
@@ -402,12 +402,10 @@ export default function Login({ onDone }) {
             ) : health?.demo_accounts ? (
               <div className="mt-4 text-xs text-muted">
                 <p className="text-center">
-                  This installation still has its seeded demo accounts.
+                  This installation still has its demo accounts.
                   <span className="block text-2xs text-faint">
-                    Their shared password was printed once when the demo data was seeded (in the
-                    backend log with Docker), on the line that starts <span className="font-mono">Sign in as</span>. Before real use,
-                    create an administrator of your own, then retire the demo with <span className="font-mono">manage.py remove_demo_data</span>,
-                    run the same way. It refuses until that account exists.
+                    Their shared password is in the backend log, on the line that starts <span className="font-mono">Sign in as</span>.
+                    Before real use, create an administrator of your own, then run <span className="font-mono">manage.py remove_demo_data</span>.
                   </span>
                 </p>
                 <CreateAdminCommands label="Create an administrator of your own" />
@@ -424,7 +422,7 @@ export default function Login({ onDone }) {
               </div>
             ) : null}
             {!mfaStep && health?.first_admin_needed !== true ? (
-              <p className="mt-4 text-center text-xs text-muted">Forgotten your password? An administrator can set a new one for you from the Users page.</p>
+              <p className="mt-4 text-center text-xs text-muted">Forgotten your password? Ask an administrator.</p>
             ) : null}
           </form>
         </Panel>

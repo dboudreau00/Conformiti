@@ -370,11 +370,11 @@ export function ControlDetail({
               )}
             </div>
           </div>
-          <p className="mt-2 text-2xs text-faint">
-            {control.last_tested_by_name
-              ? `Recorded by ${control.last_tested_by_name}${control.last_tested_recorded_at ? ` on ${String(control.last_tested_recorded_at).slice(0, 10)}` : ""}.`
-              : "Recording a test date stamps who recorded it and when, and writes to the audit trail."}
-          </p>
+          {control.last_tested_by_name ? (
+            <p className="mt-2 text-2xs text-faint">
+              {`Recorded by ${control.last_tested_by_name}${control.last_tested_recorded_at ? ` on ${String(control.last_tested_recorded_at).slice(0, 10)}` : ""}.`}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -550,9 +550,7 @@ function ReadinessBreakdown({ readiness }) {
     return (
       <div className="rounded-xl border border-line bg-surface p-3">
         <Label as="p">Readiness</Label>
-        <p className="mt-1 text-xs text-muted">
-          Marked not applicable, so it is excluded from every readiness figure.
-        </p>
+        <p className="mt-1 text-xs text-muted">Marked not applicable.</p>
       </div>
     );
   }

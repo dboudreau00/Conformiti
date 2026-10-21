@@ -93,6 +93,9 @@ function DecisionControl({ item, disabled, onChange }) {
 
 export default function UserAudit({ me }) {
   const canWrite = !!me?.capabilities?.manage_users;
+  // The API answers those who manage users and auditors (AccessAuditPermission)
+  // and refuses everyone else, so the page does not ask on their behalf.
+  const canRead = canWrite || !!me?.capabilities?.auditor;
 
   const [reviews, setReviews] = useState([]);
   const [review, setReview] = useState(null);
@@ -147,7 +150,7 @@ export default function UserAudit({ me }) {
     }
   }
 
-  useEffect(() => { loadReviews(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (canRead) loadReviews(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function startReview(e) {
     e?.preventDefault();
@@ -158,7 +161,7 @@ export default function UserAudit({ me }) {
       const { data } = await api.post("/access-reviews/", { name });
       setNewName("");
       await loadReviews(data.id);
-      setMsg({ ok: true, text: `Started "${data.name}", every user account has been snapshotted into the grid.` });
+      setMsg({ ok: true, text: `Started "${data.name}".` });
     } catch (ex) {
       setMsg({ ok: false, text: errorText(ex, "Couldn't start the review.") });
     } finally {
@@ -229,13 +232,11 @@ export default function UserAudit({ me }) {
     }
   }
 
-  if (denied) {
+  if (denied || !canRead) {
     return (
       <PanelTransition>
         <Panel>
-          <Empty title="Access reviews are restricted">
-            They are visible to administrators and auditors. Ask an administrator if you need this.
-          </Empty>
+          <Empty title="Access reviews are restricted" />
         </Panel>
       </PanelTransition>
     );
@@ -287,7 +288,6 @@ export default function UserAudit({ me }) {
             </ul>
             <p className="mt-3 text-xs text-muted">
               Your own account, superusers, and accounts already inactive or deleted are left as they are and listed afterwards.
-              Keep and Modify rows change nothing.
             </p>
           </>
         ) : null}
@@ -376,7 +376,7 @@ export default function UserAudit({ me }) {
           <StackItem>
             <div className={cn("notice flex items-start justify-between gap-3", report.skipped.length ? "notice-warn" : "notice-ok")} role="status">
               <div className="min-w-0">
-                <p className="font-medium">Review completed. The grid is now read-only evidence.</p>
+                <p className="font-medium">Review completed.</p>
                 <p className="mt-1">
                   {report.revoked.length
                     ? `Deactivated and signed out of every session: ${report.revoked.join(", ")}.`
@@ -409,11 +409,7 @@ export default function UserAudit({ me }) {
         ) : !review ? (
           <StackItem>
             <Panel>
-              <Empty title="No access reviews yet">
-                {canWrite
-                  ? "Starting a review snapshots every user account (role, activity, folder grants and capabilities) into a grid. Record a decision per row, then export the CSV as audit evidence."
-                  : "An administrator hasn't started one yet. Completed reviews will appear here as read-only evidence."}
-              </Empty>
+              <Empty title="No access reviews yet" />
             </Panel>
           </StackItem>
         ) : (
@@ -452,9 +448,7 @@ export default function UserAudit({ me }) {
                 {itemsLoading ? (
                   <Loading />
                 ) : total === 0 ? (
-                  <Empty title="No rows in this review">
-                    The snapshot found no user accounts to attest.
-                  </Empty>
+                  <Empty title="No rows in this review" />
                 ) : (
                   <div className="overflow-x-auto">
                     <div className={GRID_MIN_W}>

@@ -162,7 +162,7 @@ function PaletteBody({ onClose }) {
   let message = null;
   if (q.length < MIN_CHARS) message = `Type ${MIN_CHARS} or more characters.`;
   else if (state.status === "loading" && !options.length) message = "Searching…";
-  else if (state.status === "error") message = "Search is unavailable right now. Nothing has changed, so trying again is safe.";
+  else if (state.status === "error") message = "Search is unavailable. Try again.";
   else if (state.status === "done" && !options.length) message = `Nothing matches "${q}".`;
 
   return (
@@ -229,10 +229,6 @@ function PaletteBody({ onClose }) {
           </div>
         ))}
       </div>
-
-      <p className="mt-3 border-t border-line pt-2.5 text-2xs text-muted">
-        Up and Down to move, Enter to open, Esc to close.
-      </p>
     </div>
   );
 }
@@ -241,7 +237,7 @@ function PaletteBody({ onClose }) {
  * existing list endpoints, grouped results. */
 export function SearchPalette({ open, onClose }) {
   return (
-    <Dialog open={open} onClose={onClose} title="Jump to" description="Controls, documents and people in this workspace." placement="top">
+    <Dialog open={open} onClose={onClose} title="Jump to" placement="top">
       <PaletteBody onClose={onClose} />
     </Dialog>
   );

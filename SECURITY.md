@@ -508,8 +508,7 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   factor, and any unused one signs in in place of the passkey. A person whose
   single passkey is lost or flagged as cloned signs in with a backup code, a
   second key or the authenticator app, or needs an administrator's reset,
-  which also ends their sessions. The settings screen says so before they
-  rely on one key.
+  which also ends their sessions.
 - **The questionnaire link is a bearer credential.** Whoever holds an open
   link can read the twelve questions, the vendor's own draft, the vendor's
   and your organisation's names, the sender's name, the address it was sent

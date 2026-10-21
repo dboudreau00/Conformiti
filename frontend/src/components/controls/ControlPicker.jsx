@@ -94,7 +94,7 @@ export function ControlPicker({
         )
       ) : controls ? (
         <p className="mt-1 text-2xs text-faint">
-          {total.toLocaleString()} controls. Type at least two characters of a reference or a title.
+          {total.toLocaleString()} controls. Type two or more characters.
         </p>
       ) : null}
     </div>

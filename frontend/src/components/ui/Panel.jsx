@@ -76,7 +76,7 @@ export function LoadError({ what = "This", reason, onRetry, className }) {
       className={className}
       action={onRetry ? <Button size="sm" variant="secondary" onClick={onRetry}>Try again</Button> : null}
     >
-      {reason || "The request did not come back. Nothing has changed, so trying again is safe."}
+      {reason || "The request did not come back. Try again."}
     </Empty>
   );
 }

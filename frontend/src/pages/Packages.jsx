@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DownloadIcon,
@@ -15,6 +16,7 @@ import { PbcList } from "../components/packages/PbcList.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { ConfirmDialog, TextDialog } from "../components/ui/Dialog.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
@@ -201,7 +203,7 @@ export default function Packages({ me }) {
       setCreating(false);
       setDraft({ name: "", engagement: "", audit_firm: "", assurance_type: "type_ii" });
       await loadPackages(data.id);
-    }, "Package opened. Add the controls in scope, then seal it.");
+    }, "Package opened.");
   };
 
   // Every question is a dialog rather than a browser prompt: `ask`
@@ -226,13 +228,13 @@ export default function Packages({ me }) {
   const submitSeal = (assertion) => rethrowing("seal", async () => {
     await api.post(`/evidence-packages/${selectedId}/seal/`, { assertion });
     await loadPackages();
-  }, "Sealed. The manifest digest is now fixed. Publish it to the auditor separately.")();
+  }, "Sealed.")();
 
   const withdraw = () => setAsk({ kind: "withdraw" });
   const submitWithdraw = (reason) => rethrowing("withdraw", async () => {
     await api.post(`/evidence-packages/${selectedId}/withdraw/`, { reason });
     await loadPackages();
-  }, "Withdrawn. Every grant is revoked; the record remains.")();
+  }, "Withdrawn.")();
 
   const exportBundle = () =>
     act("export", () =>
@@ -246,7 +248,7 @@ export default function Packages({ me }) {
     const { data } = await api.post(`/evidence-packages/${selectedId}/roll_forward/`, { name });
     await loadPackages(data.id);
     const skipped = (data.skipped || []).length;
-    setMsg({ ok: true, text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}. Review the diff, then seal.` });
+    setMsg({ ok: true, text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}.` });
   })();
 
   const conclude = (row, field, value) => {
@@ -355,11 +357,7 @@ export default function Packages({ me }) {
             <LoadError what="The package list" onRetry={() => { setMsg(null); loadList(); }} />
           ) : packages.length === 0 ? (
             creating ? null : (
-              <Empty title="No packages yet">
-                {canAssemble
-                  ? "Assemble the controls and evidence for an audit, seal it, and issue it to the auditor. Start with New package above."
-                  : "Packages issued to you will appear here."}
-              </Empty>
+              <Empty title={canAssemble ? "No packages yet" : "No packages visible to you"} />
             )
           ) : (
             <ul className="divide-y divide-line">
@@ -401,9 +399,7 @@ export default function Packages({ me }) {
         <Notice msg={msg} />
         {!selected ? (
           <Panel>
-            <Empty title="Select a package">
-              Pick a package on the left to see its controls, its evidence and who it was issued to.
-            </Empty>
+            <Empty title="Select a package" />
           </Panel>
         ) : (
           <>
@@ -464,10 +460,11 @@ export default function Packages({ me }) {
                 <StatCard
                   label="Integrity"
                   value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length}`) : "-"}
+                  // A draft's files are checked against their pins: it has not been sealed.
                   detail={integrity
                     ? (integrity.ok
-                        ? "Every file matches what was sealed"
-                        : "File(s) no longer match what was sealed")
+                        ? `Every file matches what was ${selected.status === "draft" ? "pinned" : "sealed"}`
+                        : `File(s) no longer match what was ${selected.status === "draft" ? "pinned" : "sealed"}`)
                     : "Not checked"}
                   tone={integrity ? (integrity.ok ? "success" : "danger") : "muted"}
                 />
@@ -475,28 +472,25 @@ export default function Packages({ me }) {
 
               {selected.manifest_sha256 ? (
                 <div className="mt-4 rounded-xl border border-line bg-surface-2 p-3">
-                  <Label as="p">Manifest digest (SHA-256)</Label>
+                  <div className="flex items-center gap-1">
+                    <Label as="p">Manifest digest (SHA-256)</Label>
+                    <InfoTip label="Proving the bundle to the auditor">
+                      {selected.signing_key_id
+                        ? "Give the auditor your key fingerprint (Settings, About) through another channel, so they can tell your key from a forger's."
+                        : "Send the auditor this digest through another channel. It proves the bundle they hold is the one you sealed."}
+                    </InfoTip>
+                  </div>
                   <p className="mt-1 break-all font-mono text-2xs text-ink">{selected.manifest_sha256}</p>
                   {selected.signing_key_id ? (
-                    <>
-                      <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                        <Badge tone={integrity?.signature === "invalid" ? "danger" : "success"} dot>
-                          {integrity?.signature === "invalid" ? "Signature does not verify" : "Signed"}
-                        </Badge>
-                        <span>Ed25519, signing key <span className="font-mono text-ink">{selected.signing_key_id}</span></span>
-                      </p>
-                      <p className="mt-1.5 text-xs text-muted">
-                        The bundle carries the signature and the public key; the shipped verify.py
-                        checks it offline. Give the auditor the key fingerprint from Settings › About
-                        out of band, so they can tell your key from a forger's.
-                      </p>
-                    </>
+                    <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+                      <Badge tone={integrity?.signature === "invalid" ? "danger" : "success"} dot>
+                        {integrity?.signature === "invalid" ? "Signature does not verify" : "Signed"}
+                      </Badge>
+                      <span>Ed25519, signing key <span className="font-mono text-ink">{selected.signing_key_id}</span></span>
+                    </p>
                   ) : (
                     <p className="mt-1.5 text-xs text-muted">
-                      Publish this to the auditor separately. It is what lets them prove the bundle
-                      they hold is the one you sealed. This package carries no signature (the
-                      installation had no signing key when it was sealed), so this digest and the
-                      audit-trail entry beside it are the binding to a moment.
+                      This package carries no signature: the installation had no signing key when it was sealed.
                     </p>
                   )}
                 </div>
@@ -523,7 +517,7 @@ export default function Packages({ me }) {
             <Panel className="overflow-hidden">
               <PanelHeader title="Issued to" meta={detailErr ? "- live" : `${grants.filter((g) => g.is_live).length} live`}>
                 {canAssemble && selected.status === "sealed" && !detailErr ? (
-                  <IssueForm packageId={selected.id} onDone={async () => {
+                  <IssueForm packageId={selected.id} canAddAuditor={!!me?.capabilities?.manage_users} onDone={async () => {
                     setGrants(await fetchAll(`/package-grants/?package=${selected.id}`));
                     await loadPackages();
                   }} onError={(text) => setMsg({ ok: false, text })} />
@@ -532,10 +526,7 @@ export default function Packages({ me }) {
               {detailErr ? (
                 <LoadError what="This package's access list" onRetry={retryDetail} />
               ) : grants.length === 0 ? (
-                <Empty title="Not issued yet">
-                  Seal the package, then issue it to the auditor's account. They will see exactly
-                  these files and nothing else, until the access expires or you withdraw it.
-                </Empty>
+                <Empty title="Not issued yet" />
               ) : (
                 <ul className="divide-y divide-line">
                   {grants.map((g) => (
@@ -583,11 +574,7 @@ export default function Packages({ me }) {
               {detailErr ? (
                 <LoadError what="This package's controls" onRetry={retryDetail} />
               ) : rows.length === 0 ? (
-                <Empty title="No controls yet">
-                  {canAssemble
-                    ? "Use Add controls above to choose the controls this audit covers."
-                    : "This package has no controls."}
-                </Empty>
+                <Empty title="No controls yet" />
               ) : (
                 <ul className="divide-y divide-line">
                   <AnimatePresence initial={false}>
@@ -606,7 +593,7 @@ export default function Packages({ me }) {
                               <span className="font-mono text-xs text-muted">{row.control_ref}</span>{" "}
                               {row.title}
                             </span>
-                            <Label className="block">
+                            <Label className="block whitespace-normal">
                               {row.framework_name} · {row.category_name} · {row.mgmt_status_display}
                             </Label>
                           </span>
@@ -688,10 +675,6 @@ export default function Packages({ me }) {
                   </AnimatePresence>
                 </ul>
               )}
-              <p className="border-t border-line px-5 py-3 text-xs text-muted">
-                Conclusions are recorded by the auditor the package was issued to, and nobody at
-                this organisation can edit them. The management response is yours to write.
-              </p>
             </Panel>
           </>
         )}
@@ -703,21 +686,20 @@ export default function Packages({ me }) {
       open={ask?.kind === "seal"}
       onClose={() => setAsk(null)}
       title="Seal this package"
-      description="The management assertion is the statement the auditor relies on. It is sealed into the manifest with the evidence and cannot be edited afterwards."
+      description="Sealing is final: the assertion is fixed in the manifest and cannot be edited."
       label="Management assertion"
       multiline
       minLength={40}
       maxLength={4000}
       initial={DEFAULT_ASSERTION}
       submitLabel="Seal"
-      hint="Read it as the auditor will."
       onSubmit={submitSeal}
     />
     <TextDialog
       open={ask?.kind === "withdraw"}
       onClose={() => setAsk(null)}
       title="Withdraw this package"
-      description="Every grant is revoked and the auditor loses access at once. The package and its record stay."
+      description="Every grant is revoked and the auditor loses access at once."
       label="Reason"
       initial="Fieldwork complete"
       required={false}
@@ -729,7 +711,6 @@ export default function Packages({ me }) {
       open={ask?.kind === "roll"}
       onClose={() => setAsk(null)}
       title="Roll forward"
-      description="A new draft with the same controls snapshotted today and today's evidence pinned, with this package as its predecessor."
       label="Name for the new package"
       initial={`${selected?.name || "Package"} (roll-forward)`}
       submitLabel="Create draft"
@@ -739,7 +720,6 @@ export default function Packages({ me }) {
       open={ask?.kind === "not_tested"}
       onClose={() => setAsk(null)}
       title={`${ask?.row?.control_ref || "Control"} not tested`}
-      description="Say why the control was not tested. The reason is recorded on the workpaper."
       label="Reason"
       multiline
       submitLabel="Record"
@@ -749,7 +729,7 @@ export default function Packages({ me }) {
       open={ask?.kind === "revoke"}
       onClose={() => setAsk(null)}
       title={`Revoke ${ask?.grant?.full_name || ask?.grant?.username || "this auditor"}'s access?`}
-      description="They lose this package at once, and it cannot be issued to them again: the grant stays on record as revoked. To work with them again, roll the package forward, seal the new draft and issue that one."
+      description="They lose this package at once and it cannot be issued to them again."
       confirmLabel="Revoke"
       onConfirm={submitRevoke}
     />
@@ -1068,7 +1048,6 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
         open={!!failing}
         onClose={() => setFailing(null)}
         title={`Exception on ${failing?.identifier || "sample"}`}
-        description="What was wrong with this item. The note is recorded with the failed result on the workpaper."
         label="Exception"
         multiline
         initial={failing?.exception_note || ""}
@@ -1080,7 +1059,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
   );
 }
 
-function IssueForm({ packageId, onDone, onError }) {
+function IssueForm({ packageId, canAddAuditor, onDone, onError }) {
   const [open, setOpen] = useState(false);
   const [auditors, setAuditors] = useState([]);
   const [user, setUser] = useState("");
@@ -1131,7 +1110,8 @@ function IssueForm({ packageId, onDone, onError }) {
     >
       {state === "ready" && auditors.length === 0 ? (
         <p className="text-xs text-muted">
-          No active account holds the Auditor role. Create one on the Users page, then issue this package to it.
+          No active account holds the Auditor role.
+          {canAddAuditor ? <> <Link to="/users" className="link">Go to Users</Link></> : null}
         </p>
       ) : state === "error" ? (
         <p className="text-xs text-danger" role="alert">The list of auditors could not be loaded. Close this and try again.</p>

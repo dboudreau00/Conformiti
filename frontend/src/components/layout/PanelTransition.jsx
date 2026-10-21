@@ -7,7 +7,7 @@ export const EASE = [0.23, 1, 0.32, 1];
 
 /** Wraps a routed page. Enters after the previous page has left (AnimatePresence mode="wait").
  *
- * It also draws the page's title and caption, the page's only <h1>, when the
+ * It also draws the page's title, the page's only <h1>, when the
  * route has an entry in NAV_LOOKUP (an add-on may add its own). A route with none, the
  * public vendor questionnaire, gets neither. The <main> carries id="main" for
  * the skip link. */
@@ -26,7 +26,6 @@ export function PanelTransition({ children, className }) {
       {meta ? (
         <div className="mb-4 flex flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
           <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.02em] text-ink">{meta.title}</h1>
-          {meta.caption ? <p className="text-[13px] text-muted">{meta.caption}</p> : null}
         </div>
       ) : null}
       {children}

@@ -99,9 +99,7 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
         {sorted.length === 0 ? (
           <motion.li initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.24, ease: EASE }} className="flex flex-col items-center pt-8">
             <CheckIcon className="h-5 w-5 text-success" strokeWidth={2} aria-hidden="true" />
-            <Empty className="py-3" title="Every scheduled review is attested">
-              Nothing is due in the next 120 days.
-            </Empty>
+            <Empty className="py-3" title="Every scheduled review is attested" />
           </motion.li>
         ) : null}
       </ul>

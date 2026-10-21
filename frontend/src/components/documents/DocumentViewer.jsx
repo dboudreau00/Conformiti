@@ -379,6 +379,9 @@ export default function DocumentViewer({
 
   useEffect(() => {
     if (!open) return undefined;
+    // Closing hands focus back to whatever opened the viewer, as Dialog does,
+    // rather than leaving it on the page body.
+    const opener = document.activeElement;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e) => { if (e.key === "Escape") onCloseRef.current?.(); };
@@ -388,6 +391,7 @@ export default function DocumentViewer({
       document.body.style.overflow = prev;
       document.removeEventListener("keydown", onKey);
       clearTimeout(t);
+      opener?.focus?.();
     };
   }, [open]);
 
@@ -546,9 +550,6 @@ export default function DocumentViewer({
                             Compute digest
                           </Button>
                         )}
-                        <p className="mt-1.5 text-2xs leading-snug text-faint">
-                          Computed in your browser. Compare it with the digest recorded in a sealed audit package to prove this is the same file.
-                        </p>
                       </dd>
                     </div>
                   </dl>

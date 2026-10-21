@@ -92,8 +92,8 @@ Rules of thumb:
   keys with it; do not write another.
 - **A new page is wired in `nav.js`.** An entry in `NAV_SECTIONS` (its section
   decides where the shell draws it: the tabs, the Governance menu or the account
-  menu) and one in `NAV_LOOKUP`, whose title and caption `PanelTransition` draws
-  as the page's `<h1>`. Keep `navSections` a function and `NAV_LOOKUP` a plain
+  menu) and one in `NAV_LOOKUP`, whose title `PanelTransition` draws as the
+  page's `<h1>`. Keep `navSections` a function and `NAV_LOOKUP` a plain
   object: an add-on extends both.
 - **Control text is paraphrased.** Do not paste normative ISO/PCI text into the
   seed data: it is copyrighted.

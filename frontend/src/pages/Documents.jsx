@@ -315,7 +315,7 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
   return (
     <div id="folder-access" className="border-b border-line bg-surface-2 px-5 py-4">
       <div className="mb-3 flex items-center justify-between gap-4">
-        <Label>Folder access · inherited by subfolders</Label>
+        <Label className="whitespace-normal">Folder access · inherited by subfolders</Label>
         {permsErr ? <Label>- grants</Label> : perms ? <Label>{perms.length} {perms.length === 1 ? "grant" : "grants"}</Label> : null}
       </div>
       {permsErr ? (
@@ -323,7 +323,7 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
       ) : perms === null ? (
         <Loading className="py-4" />
       ) : perms.length === 0 ? (
-        <p className="text-xs text-faint">No explicit grants. Access here comes from parent folders and role capabilities.</p>
+        <p className="text-xs text-faint">No explicit grants.</p>
       ) : (
         <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
           {perms.map((p) => {
@@ -692,11 +692,7 @@ export default function Documents({ me }) {
         months
           ? `The next review falls due in ${months} ${months === 1 ? "month" : "months"}.`
           : "It has no review cadence, so no next review is scheduled.",
-        d.status === "approved"
-          ? null
-          : d.status === "draft"
-            ? "Its status changes from Draft to Approved. On this page, only Upload new version returns it to Draft."
-            : `Its status changes from ${from} to Approved, and nothing on this page sets it back to ${from}.`,
+        d.status === "approved" ? null : `Its status changes from ${from} to Approved.`,
         "This is written to the audit trail.",
       ].filter(Boolean).join(" "),
       confirmLabel: "Mark reviewed",
@@ -836,14 +832,14 @@ export default function Documents({ me }) {
         {/* ---------------- Left: folders + status mix ---------------- */}
         <StackItem className="col-span-12 lg:col-span-3">
           <Panel className="overflow-hidden">
-            <PanelHeader title="Folders" meta="Visible to you" />
+            <PanelHeader title="Folders" />
             {treeLoading ? (
               <Loading />
             ) : treeErr ? (
               <LoadError what="The folder list" reason={treeErr.reason} onRetry={retryTree} />
             ) : tree.length === 0 ? (
               <Empty
-                title="No folders yet"
+                title={canManageFolders ? "No folders yet" : "No folders visible to you"}
                 action={canManageFolders ? (
                   <form onSubmit={(e) => createFolder(e, null)} className="flex items-center gap-2">
                     <input
@@ -859,11 +855,7 @@ export default function Documents({ me }) {
                     </Button>
                   </form>
                 ) : null}
-              >
-                {canManageFolders
-                  ? "Make the first folder here, or load a framework library, which brings its evidence folders with it."
-                  : "Ask an administrator to create the first folder, or to load a framework library, which brings its evidence folders with it."}
-              </Empty>
+              />
             ) : (
               <FolderTree
                 nodes={tree}
@@ -876,11 +868,9 @@ export default function Documents({ me }) {
             )}
             {/* Upload is in the folder's header, so a folder the reader
                 can edit leaves nothing to say here. */}
-            {treeErr || canEdit ? null : (
+            {treeErr || canEdit || !folder ? null : (
               <div className="border-t border-line p-3">
-                <p className="text-center text-2xs text-faint">
-                  {!folder ? "Select a folder to upload" : "This folder is view-only for you."}
-                </p>
+                <p className="text-center text-2xs text-faint">This folder is view-only for you.</p>
               </div>
             )}
           </Panel>
@@ -933,7 +923,7 @@ export default function Documents({ me }) {
                 ) : searchErr ? (
                   <LoadError what="The search results" reason={searchErr.reason} onRetry={() => setSearchTry((n) => n + 1)} />
                 ) : hits.length === 0 ? (
-                  <Empty title="No documents match">Try a shorter word: the search matches names and descriptions.</Empty>
+                  <Empty title="No documents match" />
                 ) : (
                   <div className="overflow-x-auto">
                     <div style={{ minWidth: SEARCH_COLS.minWidth }}>
@@ -986,11 +976,7 @@ export default function Documents({ me }) {
                 )}
               </section>
             ) : !folder ? (
-              <Empty title="Select a folder" className="py-20">
-                {treeErr
-                  ? "The folder list did not load, so there is nothing to pick yet. Search above still looks across every document you can see."
-                  : "Pick a folder on the left to see its documents, or search across all of them above."}
-              </Empty>
+              <Empty title="Select a folder" className="py-20" />
             ) : (
               <>
                 <PanelHeader title={folder.name}>
@@ -1137,9 +1123,7 @@ export default function Documents({ me }) {
                     ) : docsErr ? (
                       <LoadError what="This folder's documents" reason={docsErr.reason} onRetry={() => loadDocs(folderId)} />
                     ) : docs.length === 0 ? (
-                      <Empty title="No documents in this folder">
-                        {canEdit ? "Use Upload document to add the first one." : "Nothing has been uploaded here yet."}
-                      </Empty>
+                      <Empty title="No documents in this folder" />
                     ) : (
                       <ul className="divide-y divide-line">
                         <AnimatePresence>
@@ -1190,7 +1174,7 @@ export default function Documents({ me }) {
                                   </span>
                                   <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "-"}</span>
                                   <span className="tabular font-mono text-xs text-muted">v{d.version}</span>
-                                  <span className="flex flex-wrap gap-1" title={chips.length ? "Controls this document is linked to as evidence" : undefined}>
+                                  <span className="flex flex-wrap gap-1">
                                     {chips.length === 0 ? <span className="text-2xs text-faint">-</span> : null}
                                     {chips.slice(0, MAX_CHIPS).map((s) => (
                                       <Badge key={s.link_id} tone="accent" mono title={s.title}>{s.label}</Badge>

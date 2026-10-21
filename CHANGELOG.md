@@ -11,6 +11,31 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5mh], 2026-10-21
+
+The screens say less. No migration and no stored data changed.
+
+**On upgrade.** Nothing to do.
+
+**Screens.** The caption under each page title, the captions in the Governance
+menu and the explanatory paragraphs at the top of panels are gone; the guides
+keep the explanations. Empty states are one line with the action that fixes
+them, and every confirmation still says what will happen. One rule stays on
+screen, behind an information button beside a sealed package's digest: give
+the auditor the digest, or your key fingerprint, through another channel.
+
+**Fixed.**
+- On a phone, Audit packages, the vendor matrix, the public questionnaire and
+  Settings no longer scroll sideways, and the vendor matrix's buttons fit.
+- Closing the document viewer returns keyboard focus to what opened it.
+- The responsibility matrix shows an assignment's result under its form.
+- The control pickers no longer wait forever in a workspace with no controls.
+- A viewer's questionnaire answer buttons are disabled instead of doing
+  nothing, and User audit no longer asks the server for what a person may
+  not see.
+- Attaching a document to a request no longer offers one already attached.
+- Error messages name a field in words, not by its key.
+
 ## [0.9.5mg], 2026-10-20
 
 The crosswalk behind the dashboard's coverage atlas is completed, and the seed

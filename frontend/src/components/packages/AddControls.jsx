@@ -109,7 +109,6 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
               <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Scope</h2>
               <Label>{inScopeIds.size} in scope</Label>
             </div>
-            <p className="mt-1 text-xs text-muted">Choose the controls this audit covers. Evidence already linked to each one is pinned as it is today.</p>
           </div>
           <Button size="sm" variant="primary" onClick={() => setOpen(true)}
                   icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
@@ -188,7 +187,7 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-muted">
-          {chosen.size ? `${chosen.size} selected` : "Tick the controls to include."}
+          {chosen.size ? `${chosen.size} selected` : "None selected"}
           {visible.length && chosen.size !== visible.length ? (
             <button type="button" className="link ml-2" onClick={() => setChosen(new Set(visible.map((c) => c.id)))}>
               Select all {visible.length} shown

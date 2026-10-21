@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Lock, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import api from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -138,9 +138,7 @@ export default function AuditLog({ me }) {
     return (
       <PanelTransition>
         <Panel>
-          <Empty title="The audit trail is restricted">
-            It is visible to administrators, auditors, and managers with view-all access. Ask an administrator if you need it.
-          </Empty>
+          <Empty title="The audit trail is restricted" />
         </Panel>
       </PanelTransition>
     );
@@ -247,11 +245,9 @@ export default function AuditLog({ me }) {
             <PanelHeader
               title="Audit trail"
               meta={
-                initialLoading || loadFailed ? (
-                  "Append-only"
-                ) : (
+                initialLoading || loadFailed ? null : (
                   <span className="tabular">
-                    Append-only · {total.toLocaleString()} {total === 1 ? "entry" : "entries"}
+                    {total.toLocaleString()} {total === 1 ? "entry" : "entries"}
                   </span>
                 )
               }
@@ -262,20 +258,14 @@ export default function AuditLog({ me }) {
               loadFailed ? (
                 <LoadError what="The audit trail" reason={loadFailed.reason} onRetry={() => load(1)} />
               ) : filtered ? (
-                <Empty title="No entries match these filters">
-                  {f.days ? "Clear the filters, or widen the time range." : "Clear the filters to see every entry."}
-                </Empty>
+                <Empty title="No entries match these filters" />
               ) : f.days ? (
                 <Empty
                   title={`No entries in the ${range ? range.label.toLowerCase() : "selected time range"}`}
                   action={<Button size="sm" variant="secondary" onClick={() => setF({ ...f, days: "" })}>Show all time</Button>}
-                >
-                  Anything older falls outside the time range.
-                </Empty>
+                />
               ) : (
-                <Empty title="No entries yet">
-                  New entries appear automatically as people sign in and create, update, or delete records.
-                </Empty>
+                <Empty title="No entries yet" />
               )
             ) : (
               <div className="overflow-x-auto" role="region" aria-label="Audit log entries" tabIndex={0}>
@@ -356,17 +346,6 @@ export default function AuditLog({ me }) {
               </div>
             ) : null}
           </Panel>
-        </StackItem>
-
-        <StackItem>
-          <p className="flex items-start gap-2 text-xs leading-snug text-muted">
-            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" strokeWidth={2} aria-hidden="true" />
-            <span>
-              Read-only record of every change and sign-in, in the app and in the Django admin: who did what,
-              to which record, from where. Entries are written server-side, and nobody can edit or delete one
-              from either.
-            </span>
-          </p>
         </StackItem>
       </Stack>
     </PanelTransition>

@@ -58,7 +58,7 @@ export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
       {!known ? (
         <LoadError what="The lead schedule" onRetry={onRetry} />
       ) : rows.length === 0 ? (
-        <Empty title="No frameworks yet">Frameworks and their controls appear here once a control library is loaded.</Empty>
+        <Empty title="No frameworks yet" />
       ) : (
         <ShowMore total={rows.length} initial={ROWS} noun="frameworks" className="flex flex-1 flex-col" buttonClassName="mx-5 mb-3 self-start">
           {(n) => (

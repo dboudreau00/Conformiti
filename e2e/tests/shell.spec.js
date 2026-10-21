@@ -154,7 +154,7 @@ test.describe("the top bar", () => {
 });
 
 test.describe("the Governance menu", () => {
-  test("opens with all ten pages in order, each with its caption", async ({ page }) => {
+  test("opens with all ten pages in order, each named and nothing more", async ({ page }) => {
     await open(page, "/", "Dashboard");
     const button = governanceButton(page);
     await expect(button).toHaveAttribute("aria-expanded", "false");
@@ -169,9 +169,12 @@ test.describe("the Governance menu", () => {
     const links = panel.getByRole("link");
     await expect(links).toHaveCount(GOVERNANCE_ROUTES.length);
     expect(await links.evaluateAll((els) => els.map((el) => el.getAttribute("href")))).toEqual(GOVERNANCE_ROUTES);
-    // A caption under each name, taken from the page's own description.
-    await expect(panel.locator('a[href="/users"]')).toContainText("Workspace membership, roles and folder grants");
-    await expect(panel.locator('a[href="/jira"]')).toContainText("Remediation work linked to controls");
+    // Each link is its page's name, in that order, with at most a live count
+    // beside it: no description under the name.
+    const texts = await links.evaluateAll((els) => els.map((el) => el.textContent.trim()));
+    texts.forEach((text, i) => {
+      expect(text).toMatch(new RegExp(`^${GOVERNANCE_LABELS[GOVERNANCE_ROUTES[i]]}(\\d+ (in progress|open))?$`));
+    });
   });
 
   test("every page in it opens, and the button then names that page", async ({ page }) => {

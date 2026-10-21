@@ -331,9 +331,7 @@ export default function Controls({ me }) {
                   onRetry={() => { setLoadFailed(false); setPageError(""); setLoading(true); setAttempt((a) => a + 1); }}
                 />
               ) : frameworks.length === 0 ? (
-                <Empty title="No frameworks yet">
-                  Install a compliance pack, or load the framework library, to populate the control register.
-                </Empty>
+                <Empty title="No frameworks yet" />
               ) : (
                 <ul className="min-w-[960px] divide-y divide-line">
                   <AnimatePresence initial={false}>
@@ -361,9 +359,7 @@ export default function Controls({ me }) {
                   </AnimatePresence>
                   {rows.length === 0 ? (
                     <li>
-                      <Empty title="No controls match these filters">
-                        Clear the search or widen the status selection.
-                      </Empty>
+                      <Empty title="No controls match these filters" />
                       <div className="pb-8 text-center">
                         <Button size="sm" onClick={() => { setQuery(""); setStatus("all"); setFramework("all"); }}>Clear filters</Button>
                       </div>

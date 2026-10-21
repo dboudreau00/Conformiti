@@ -198,7 +198,7 @@ export default function Dashboard({ me }) {
                       <TrendLine points={trendPoints} height={72} ariaLabel={`Readiness trend over the last ${trendPoints.length} months`} />
                     ) : (
                       <div className="flex h-[72px] items-center justify-center rounded-lg border border-dashed border-line">
-                        <Label>History builds from daily snapshots</Label>
+                        <Label>No history yet</Label>
                       </div>
                     )}
                   </div>

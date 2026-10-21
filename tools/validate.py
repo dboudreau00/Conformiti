@@ -265,7 +265,7 @@ def check_app_wiring():
         if to not in route_paths:
             err("app", f"nav.js links to {to} but App.jsx defines no Route for it")
         if to not in lookup_keys:
-            err("app", f"nav.js links to {to} but NAV_LOOKUP has no title/caption for it")
+            err("app", f"nav.js links to {to} but NAV_LOOKUP has no title for it")
     # every routed page is a PanelTransition page (shell animation contract)
     for page in pages - {"Login"}:
         src = read(os.path.join(FRONTEND, "pages", f"{page}.jsx"))

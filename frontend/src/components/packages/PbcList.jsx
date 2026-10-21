@@ -127,7 +127,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   };
   const withdraw = (r) => ask({
     title: `Withdraw ${r.reference}?`,
-    description: "The line stays on the list, marked withdrawn, so the auditor can see it was asked for and then dropped.",
+    description: "The line stays on the list, marked withdrawn.",
     confirmLabel: "Withdraw the request",
     // Rethrown for the same reason as the notes: `act` resolves on a failure,
     // which would close the dialog as if the withdrawal had gone through.
@@ -260,11 +260,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
       ) : failed ? (
         <LoadError what="The request list" onRetry={reload} />
       ) : rows.length === 0 ? (
-        <Empty title="Nothing requested yet">
-          {canRaise
-            ? "Raise the lines the auditor has asked for, assign each one, and answer it by attaching documents."
-            : "The auditor's requests for this package will appear here."}
-        </Empty>
+        <Empty title="Nothing requested yet" />
       ) : (
         <ul className="divide-y divide-line">
           {rows.map((r) => {
@@ -300,7 +296,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                 {r.response_note ? (
                   <p className="mt-2 text-xs leading-snug text-muted"><span className="text-faint">Answer: </span>{r.response_note}</p>
                 ) : null}
-                {r.accepted_at ? <Label className="mt-1 block">Accepted by {r.accepted_by_name} · {DATE(r.accepted_at)}</Label> : null}
+                {r.accepted_at ? <Label className="mt-1 block whitespace-normal">Accepted by {r.accepted_by_name} · {DATE(r.accepted_at)}</Label> : null}
 
                 {(r.items || []).length ? (
                   <ul className="mt-2 flex flex-wrap gap-1.5">
@@ -329,7 +325,10 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                       <label htmlFor={id(`doc-${r.id}`)} className="field-label">Document</label>
                       <select id={id(`doc-${r.id}`)} className="input input-sm" required value={attach.document} onChange={(e) => setAttach({ ...attach, document: e.target.value })}>
                         <option value="">{docs === null ? "Loading…" : "Choose a document you can see…"}</option>
-                        {(docs || []).map((d) => <option key={d.id} value={d.id}>{d.name}{d.control_id ? ` (${d.control_id})` : ""}</option>)}
+                        {/* One already attached here would only be refused as a duplicate. */}
+                        {(docs || []).filter((d) => !(r.items || []).some((i) => i.document === d.id)).map((d) => (
+                          <option key={d.id} value={d.id}>{d.name}{d.control_id ? ` (${d.control_id})` : ""}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -394,21 +393,17 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
           })}
         </ul>
       )}
-      {!mine ? (
-        <p className="border-t border-line px-5 py-3 text-xs text-muted">
-          The auditor raises what they need, or you transcribe their list; each line is assigned and chased until it is answered, and the auditor accepts or returns the answer. Documents attached here are read under the same grant as the package.
-        </p>
-      ) : null}
       <TextDialog
         open={!!asking}
         onClose={() => setAsking(null)}
         title={asking?.kind === "return" ? `Return ${asking.request.reference}` : `Mark ${asking?.request?.reference || ""} provided`}
-        description={asking?.kind === "return"
-          ? "Tell the organisation what is missing or wrong. They see this note on the request."
-          : (asking?.request?.items || []).length
-            ? "A note for the auditor, if there is anything to say about what is attached."
-            : "Nothing is attached to this request. Say why it is answered without a document, or cancel and attach one first."}
-        label="Note"
+        description={asking?.kind !== "return" && !(asking?.request?.items || []).length
+          ? "Nothing is attached to this request."
+          : undefined}
+        // Required in both of these cases, so the label says what to write.
+        label={asking?.kind === "return"
+          ? "What is missing or wrong"
+          : !(asking?.request?.items || []).length ? "Why it is answered without a document" : "Note"}
         multiline
         initial={asking?.kind === "provide" ? asking.request.response_note || "" : ""}
         required={asking?.kind === "return" || !(asking?.request?.items || []).length}

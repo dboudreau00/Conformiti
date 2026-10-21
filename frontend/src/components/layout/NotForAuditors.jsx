@@ -15,9 +15,7 @@ export function NotForAuditors() {
         <Empty
           title="Not available to an auditor account"
           action={<Button size="sm" variant="primary" onClick={() => nav("/packages")}>Go to your packages</Button>}
-        >
-          This account opens the evidence packages issued to it, the folders granted with them, the access reviews and the audit log. The rest of the workspace is for the organisation's own people.
-        </Empty>
+        />
       </Panel>
     </PanelTransition>
   );

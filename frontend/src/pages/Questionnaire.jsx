@@ -9,7 +9,6 @@ import { useParams } from "react-router-dom";
 import axios from "axios";
 import { ConformitiMark } from "../components/brand/ConformitiMark.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
-import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
@@ -30,7 +29,7 @@ function Header({ vendor, organisation }) {
       <ConformitiMark size={36} title="Conformiti" />
       <div className="min-w-0">
         <p className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{organisation || "Conformiti"}</p>
-        <Label>Security questionnaire{vendor ? ` · ${vendor}` : ""}</Label>
+        <Label className="block whitespace-normal">Security questionnaire{vendor ? ` · ${vendor}` : ""}</Label>
       </div>
     </div>
   );
@@ -86,7 +85,7 @@ export default function Questionnaire() {
     setBusy(true);
     try {
       await axios.put(url, { answers });
-      setMsg({ ok: true, text: "Draft saved. You can come back to this link until it expires." });
+      setMsg({ ok: true, text: "Draft saved." });
     } catch (e) {
       setMsg({ ok: false, text: e?.response?.data?.detail || "The draft could not be saved." });
     } finally {
@@ -116,7 +115,7 @@ export default function Questionnaire() {
         <Header vendor={data?.vendor} organisation={data?.organisation} />
         <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">Thank you</h1>
         <p className="mt-2 text-[13px] leading-snug text-muted">
-          Your answers for {data?.vendor} were received{answered ? ` (${answered} of ${questions.length} questions)` : ""} and will be reviewed by {data?.sender || "your contact"}. This link is now closed.
+          Your answers for {data?.vendor} were received{answered ? ` (${answered} of ${questions.length} questions)` : ""}. This link is now closed.
         </p>
       </Panel>
     );
@@ -136,8 +135,7 @@ export default function Questionnaire() {
           <Header vendor={data.vendor} organisation={data.organisation} />
           <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">Security questionnaire for {data.vendor}</h1>
           <p className="mt-2 text-[13px] leading-snug text-muted">
-            {data.sender}{data.organisation ? ` at ${data.organisation}` : ""} has asked you to answer {questions.length} questions about {data.vendor}'s security practices.
-            Save a draft as often as you like; submit once when you are done. This link works until <span className="text-ink">{fmt(data.expires_at)}</span>.
+            From {data.sender}{data.organisation ? `, ${data.organisation}` : ""}. This link works until <span className="text-ink">{fmt(data.expires_at)}</span>.
           </p>
           {data.message ? (
             <blockquote className="mt-3 border-l-2 border-line pl-3 text-[13px] leading-snug text-muted">{data.message}</blockquote>
@@ -150,7 +148,7 @@ export default function Questionnaire() {
         </Panel>
 
         <Panel className="overflow-hidden">
-          <PanelHeader title="Questions" meta="Yes · Partial · No · N/A, with a note where it helps" />
+          <PanelHeader title="Questions" />
           <div className="divide-y divide-line">
             {areas.map((a) => (
               <fieldset key={a.area} className="px-5 py-4">
@@ -191,14 +189,13 @@ export default function Questionnaire() {
               {busy ? "Sending…" : "Submit questionnaire"}
             </Button>
             <Button type="button" onClick={saveDraft} disabled={busy}>Save draft</Button>
-            <Badge tone="muted">Submits once; the link closes afterwards</Badge>
           </div>
         </Panel>
         <ConfirmDialog
           open={confirming}
           onClose={() => setConfirming(false)}
           title="Submit your answers?"
-          description={`${answered} of ${questions.length} questions answered${answered < questions.length ? `, ${questions.length - answered} left blank` : ""}. The link closes once you submit and nothing can be changed afterwards.`}
+          description={`${answered} of ${questions.length} questions answered${answered < questions.length ? `, ${questions.length - answered} left blank` : ""}. You cannot change them after you submit.`}
           confirmLabel="Submit"
           tone="primary"
           onConfirm={submit}
