@@ -11,6 +11,12 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+**Dependencies.** React and React DOM 19.3.1, framer-motion 14.3, lucide-react 1.59, @vitejs/plugin-react 6.1.2, PostCSS 8.5.31 and Vite 8.3.4 in the front end, and Playwright 1.64 for the browser tests. No setting or stored data changed.
+
+---
+
 ## [0.9.5n], 2026-10-21
 
 The shield follows the theme, and a sign-in is no longer undone by a clock that steps back. No migration and no stored data changed.
