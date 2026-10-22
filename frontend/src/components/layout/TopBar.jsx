@@ -46,7 +46,7 @@ export function TopBar({ onSignOut }) {
         <nav aria-label="Primary" className="flex h-full min-w-0 items-center gap-2">
           <Link to="/" className="flex shrink-0 items-center rounded-lg">
             <span aria-hidden="true" className="flex">
-              <ConformitiLogo size={32} className="max-[939px]:[&>div]:hidden" />
+              <ConformitiLogo colour="accent" size={32} className="max-[939px]:[&>div]:hidden" />
             </span>
             <span className="sr-only">Home</span>
           </Link>

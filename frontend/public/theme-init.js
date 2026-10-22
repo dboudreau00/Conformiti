@@ -18,8 +18,11 @@
       var n = parseInt(a.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
       root.setAttribute("data-accent", "custom");
       root.style.setProperty("--accent", r + " " + g + " " + b);
-      var lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-      root.style.setProperty("--accent-ink", lum > 0.6 ? "10 12 16" : "255 255 255");
+      var lin = function (c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      var lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+      // White or the dark ink, whichever reads better on the fill; 0.187 is where the two contrast ratios cross.
+      root.style.setProperty("--accent-ink", lum > 0.187 ? "10 12 16" : "255 255 255");
+      root.style.setProperty("--accent-deep", Math.round(r * 0.62) + " " + Math.round(g * 0.62) + " " + Math.round(b * 0.62));
     } else {
       root.setAttribute("data-accent", "azure");
     }

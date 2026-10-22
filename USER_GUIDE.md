@@ -86,7 +86,7 @@ page by anyone with *manage* on that folder.
 ## 3. The shell
 
 One bar runs across the top of every page, and nothing runs down the side.
-The page's own title and a line about it open the page, under the bar.
+The page's own title opens the page, under the bar.
 
 - **Workspace tabs**: Dashboard, Analytics, Controls and Documents. The page
   you are on has an accent underline. A live badge on Controls counts the
@@ -330,7 +330,10 @@ also listed on this page even if you cannot see the package itself.
 - **Role & access**: your capabilities, and the workspace you are in (a
   superuser creates, switches and archives workspaces here, and sets each
   workspace's notification inbox and Slack and Teams webhooks).
-- **About**: version, frameworks loaded, whether demo data is present.
+- **About**: the version and licence, whether demo data is present, malware
+  scanning and package signing (with the signing key's fingerprint), the
+  frameworks loaded (an external auditor is not shown the library), and the
+  link to the documentation and source.
 
 ## 5. Review reminders
 

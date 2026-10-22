@@ -520,6 +520,12 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("JWT_ACCESS_MINUTES", 60)),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("JWT_REFRESH_DAYS", 7)),
+    # A clock that steps back (a virtual machine after a sleep or a time sync, a
+    # replica a second behind its neighbour) dates a token just minted a moment
+    # ahead of the clock that checks it, and with no leeway PyJWT refuses it as
+    # "not yet valid": the person who has just signed in is signed out. Thirty
+    # seconds forgives that, and the same thirty on an expiry, and no more.
+    "LEEWAY": env_int("JWT_LEEWAY_SECONDS", 30),
     # Every refresh issues a new refresh token and blacklists the old one, so a
     # stolen refresh token is single-use, and sign-out revokes it server-side
     # (POST /api/auth/logout/). Expired blacklist rows are pruned by the

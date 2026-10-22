@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { NAV_LOOKUP } from "../../nav.js";
@@ -5,14 +6,28 @@ import { cn } from "../../utils/cn.js";
 
 export const EASE = [0.23, 1, 0.32, 1];
 
+const PRODUCT = "Conformiti";
+
 /** Wraps a routed page. Enters after the previous page has left (AnimatePresence mode="wait").
  *
  * It also draws the page's title, the page's only <h1>, when the
- * route has an entry in NAV_LOOKUP (an add-on may add its own). A route with none, the
- * public vendor questionnaire, gets neither. The <main> carries id="main" for
- * the skip link. */
+ * route has an entry in NAV_LOOKUP (an add-on may add its own), and puts the
+ * same title in the tab, so the tab, the history and a bookmark say which page
+ * this is. The tab is only named while it still carries the product's own name:
+ * an add-on that has renamed the product (a white-label brand) keeps its title.
+ * A route with no entry, the public vendor questionnaire, gets neither. The
+ * <main> carries id="main" for the skip link. */
 export function PanelTransition({ children, className }) {
   const meta = NAV_LOOKUP[useLocation().pathname];
+  const title = meta?.title;
+  useEffect(() => {
+    if (!title) return undefined;
+    const stock = document.title === PRODUCT || document.title.endsWith(` · ${PRODUCT}`);
+    if (!stock) return undefined;
+    const named = `${title} · ${PRODUCT}`;
+    document.title = named;
+    return () => { if (document.title === named) document.title = PRODUCT; };
+  }, [title]);
   return (
     <motion.main
       id="main"

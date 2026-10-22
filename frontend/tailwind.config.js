@@ -23,6 +23,11 @@ export default {
         "danger-ink": "rgb(var(--danger-ink) / <alpha-value>)",
         info: "rgb(var(--info) / <alpha-value>)",
       },
+      // Accent text reads --accent-text when theme.js has set one (an accent that would fall short of 4.5:1 as small text),
+      // the accent itself otherwise. Fills, borders and washes always take the accent as chosen.
+      textColor: {
+        accent: "rgb(var(--accent-text, var(--accent)) / <alpha-value>)",
+      },
       // Stacks, not downloads: Inter and JetBrains Mono are used when the
       // reader already has them, and the platform's own UI faces otherwise.
       // Nothing is fetched from a font CDN; see index.html.

@@ -450,7 +450,7 @@ export default function UserAudit({ me }) {
                 ) : total === 0 ? (
                   <Empty title="No rows in this review" />
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto" role="region" aria-label={`Users in ${review.name}`} tabIndex={0}>
                     <div className={GRID_MIN_W}>
                       <div className={cn("grid gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
                         {COLUMNS.map((h) => <Label key={h}>{h}</Label>)}

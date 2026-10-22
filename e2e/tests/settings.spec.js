@@ -1,4 +1,4 @@
-import { test, expect, open, expectBrowserError, appearanceButton, DEMO } from "../fixtures.js";
+import { test, expect, open, expectBrowserError, appearanceButton, DEMO, signIn, signOut, forgetSession } from "../fixtures.js";
 
 const SECTIONS = ["Profile", "Appearance", "Security", "Notifications", "Role & access", "About"];
 
@@ -52,6 +52,21 @@ test.describe("account settings", () => {
     await expect(page.getByRole("main").getByText("Licence", { exact: true })).toHaveCount(0);
   });
 
+  test("About offers the source, and credits the author in small print at the foot", async ({ page }) => {
+    await section(page, "About").click();
+    const panel = page.getByRole("main").locator("section")
+      .filter({ has: page.getByRole("heading", { name: "About", exact: true, level: 2 }) });
+    await expect(panel.getByRole("link", { name: /Documentation & source/ })).toHaveAttribute("href", /github\.com\/dboudreau00\/Conformiti$/);
+    const credit = panel.getByRole("link", { name: "dboudreau00.github.io", exact: true });
+    await expect(credit).toHaveAttribute("href", "https://dboudreau00.github.io");
+    await expect(credit).toHaveAttribute("target", "_blank");
+    await expect(credit).toHaveAttribute("rel", /noreferrer/);
+    // Set small and last: there to be found, not to compete with the source link.
+    expect(await credit.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeLessThanOrEqual(12);
+    const last = await panel.evaluate((el) => [...el.querySelectorAll("a")].pop().textContent.trim());
+    expect(last).toBe("dboudreau00.github.io");
+  });
+
   test("the role section reports the signed-in user's capabilities", async ({ page }) => {
     await section(page, "Role & access").click();
     // The section's own panel: the card above the nav names the role
@@ -74,6 +89,26 @@ test.describe("account settings", () => {
     await expect(page.locator("#digest-cadence")).toHaveValue("daily");
     await page.locator("#digest-cadence").selectOption("off");
     await expect(page.getByText("Digest emails are off.")).toBeVisible();
+  });
+});
+
+test.describe("About for an external auditor", () => {
+  test("leaves the framework library out rather than saying none is loaded", async ({ page }) => {
+    await forgetSession(page);
+    await signIn(page, DEMO.auditor);
+    await expect(page.getByRole("heading", { name: "Audit packages" })).toBeVisible();
+    await open(page, "/settings", "Settings");
+    await section(page, "About").click();
+    await expect(heading(page, "About")).toBeVisible();
+    const main = page.getByRole("main");
+    // The API refuses an auditor the library, so the panel neither asks for it nor reports it empty.
+    await expect(main.getByText("No frameworks loaded")).toHaveCount(0);
+    await expect(main.getByText("Frameworks", { exact: true })).toHaveCount(0);
+    // The rest of the panel stays.
+    await expect(main.locator("dl > div").filter({ hasText: "Core licence" })).toHaveCount(1);
+    await expect(main.getByRole("link", { name: /Documentation & source/ })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await signOut(page);
   });
 });
 
@@ -120,6 +155,137 @@ test.describe("appearance", () => {
     await page.reload();
     await page.waitForLoadState("networkidle");
     expect(await page.evaluate(() => document.documentElement.dataset.accent)).toBe("ember");
+  });
+
+  test("the shield, the wordmark and the tab icon follow the accent, packs and a custom colour alike", async ({ page }) => {
+    // Colours are compared as the browser paints them: a probe element takes the token as its text colour.
+    const painted = () => page.evaluate(() => {
+      const probe = (value) => {
+        const el = document.createElement("i");
+        el.style.color = value;
+        document.body.appendChild(el);
+        const out = getComputedStyle(el).color;
+        el.remove();
+        return out;
+      };
+      const nav = document.querySelector('header nav[aria-label="Primary"]');
+      const [right, left] = [...nav.querySelectorAll("svg path")].slice(0, 2).map((p) => getComputedStyle(p).fill);
+      const word = [...nav.querySelectorAll("span")].find((s) => s.textContent === "iti");
+      const icon = decodeURIComponent(document.querySelector('link[rel~="icon"]').getAttribute("href"));
+      return {
+        right, left, word: getComputedStyle(word).color, icon,
+        accent: probe("rgb(var(--accent))"), deep: probe("rgb(var(--accent-deep))"),
+        text: probe("rgb(var(--accent-text, var(--accent)))"),
+      };
+    });
+    const hex = (rgb) => `#${rgb.match(/\d+/g).slice(0, 3).map((n) => Number(n).toString(16).padStart(2, "0")).join("")}`;
+
+    const accents = page.getByRole("group", { name: "Accent pack" });
+    const faces = new Set();
+    for (const accent of ["Pine", "Azure", "Violet", "Ember"]) {
+      await accents.getByRole("button", { name: new RegExp(`^${accent}`) }).first().click();
+      await page.waitForTimeout(150);
+      const now = await painted();
+      expect(now.right, `${accent}: the shield's face`).toBe(now.accent);
+      expect(now.left, `${accent}: the shield's darker half`).toBe(now.deep);
+      expect(now.word, `${accent}: the wordmark`).toBe(now.text);
+      expect(now.left, `${accent}: the two halves differ`).not.toBe(now.right);
+      expect(now.icon, `${accent}: the tab icon`).toContain(`fill="${hex(now.accent)}"`);
+      faces.add(now.right);
+    }
+    expect(faces.size, "four accents give four different shields").toBe(4);
+
+    // The theme pack matters too: a dark pack's accent is the lighter tint.
+    await page.getByRole("group", { name: "Theme pack" }).getByRole("button", { name: /^Obsidian/ }).first().click();
+    await page.waitForTimeout(150);
+    const dark = await painted();
+    expect(dark.right).toBe(dark.accent);
+    expect(dark.left).toBe(dark.deep);
+
+    // The bar a phone draws around the page takes the pack's background, so a light pack is not framed in black.
+    const barColour = () => page.evaluate(() => {
+      const el = document.createElement("i");
+      el.style.color = "rgb(var(--bg))";
+      document.body.appendChild(el);
+      const bg = getComputedStyle(el).color;
+      el.remove();
+      return { bg, bar: document.querySelector('meta[name="theme-color"]').getAttribute("content") };
+    });
+    const obsidian = await barColour();
+    expect(obsidian.bar).toBe(hex(obsidian.bg));
+    await page.getByRole("group", { name: "Theme pack" }).getByRole("button", { name: /^Nimbus/ }).first().click();
+    await page.waitForTimeout(150);
+    const nimbus = await barColour();
+    expect(nimbus.bar).toBe(hex(nimbus.bg));
+    expect(nimbus.bar, "a light pack and a dark pack give different bars").not.toBe(obsidian.bar);
+
+    await page.locator("#acct-accent-custom").fill("#e91e63");
+    await page.getByRole("button", { name: "Use custom colour" }).click();
+    await page.waitForTimeout(150);
+    const custom = await painted();
+    expect(custom.right).toBe("rgb(233, 30, 99)");
+    expect(custom.left).toBe(custom.deep);
+    expect(custom.left).not.toBe(custom.right);
+    expect(custom.word).toBe(custom.text);
+    expect(custom.icon).toContain('fill="#e91e63"');
+
+    // It is restored before first paint on the next visit, the tab icon included.
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    const again = await painted();
+    expect(again.right).toBe("rgb(233, 30, 99)");
+    expect(again.icon).toContain('fill="#e91e63"');
+  });
+
+  test("accent text and a button's label hold 4.5:1 in every pack and a custom colour", async ({ page }) => {
+    // Accent text on a card, on its own wash and on that wash stacked on a selected row: the layers are painted by the real
+    // stylesheet (bg-surface, bg-accent/10, text-accent) and composited here.
+    const readable = () => page.evaluate(() => {
+      const parse = (s) => { const n = s.match(/[\d.]+/g).map(Number); return { c: n.slice(0, 3), a: n.length > 3 ? n[3] : 1 }; };
+      const over = ({ c, a }, base) => base.map((v, i) => v * (1 - a) + c[i] * a);
+      const lum = (c) => {
+        const [r, g, b] = c.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const card = document.createElement("div");
+      card.className = "bg-surface";
+      const row = document.createElement("div");
+      row.className = "bg-accent/10";
+      const badge = document.createElement("span");
+      badge.className = "bg-accent/10 text-accent";
+      badge.textContent = "badge";
+      row.appendChild(badge);
+      card.appendChild(row);
+      document.body.appendChild(card);
+      const base = parse(getComputedStyle(card).backgroundColor).c;
+      const wash = parse(getComputedStyle(badge).backgroundColor);
+      const text = parse(getComputedStyle(badge).color).c;
+      const worst = Math.min(ratio(text, base), ratio(text, over(wash, base)), ratio(text, over(wash, over(parse(getComputedStyle(row).backgroundColor), base))));
+      // And the label a button carries on the accent fill.
+      const button = document.createElement("span");
+      button.className = "bg-accent text-accent-ink";
+      button.textContent = "button";
+      document.body.appendChild(button);
+      const label = ratio(parse(getComputedStyle(button).color).c, parse(getComputedStyle(button).backgroundColor).c);
+      button.remove();
+      card.remove();
+      return { worst, label, token: getComputedStyle(document.documentElement).getPropertyValue("--accent-text").trim() };
+    });
+    const fails = [];
+    for (const theme of ["ledger", "nimbus", "ledger-dark", "obsidian"]) {
+      for (const accent of ["pine", "azure", "violet", "ember", "#e91e63", "#ffd60a", "#1e3a8a"]) {
+        await page.evaluate(([t, a]) => { localStorage.setItem("theme", t); localStorage.setItem("accent", a); }, [theme, accent]);
+        await page.reload();
+        await page.waitForLoadState("networkidle");
+        const now = await readable();
+        if (now.worst < 4.5) fails.push(`${theme}/${accent}: text ${now.worst.toFixed(2)}`);
+        if (now.label < 4.5) fails.push(`${theme}/${accent}: button label ${now.label.toFixed(2)}`);
+        // The default pack is left alone, so a brand colour an add-on paints over it is the text colour too.
+        if (accent === "azure") expect(now.token, `${theme}/azure needs no text shade`).toBe("");
+      }
+    }
+    expect(fails, "accent text below 4.5:1").toEqual([]);
   });
 
   test("the top bar theme menu offers the same packs", async ({ page }) => {

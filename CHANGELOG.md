@@ -11,6 +11,23 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5n], 2026-10-21
+
+The shield follows the theme, and a sign-in is no longer undone by a clock that steps back. No migration and no stored data changed.
+
+**On upgrade.** Nothing to do.
+
+**Changed.**
+- The shield and the wordmark follow the accent you choose, the packs and a custom colour alike, in the top bar and on the sign-in page. The tab icon is the shield in that colour, and the browser's bar on a phone takes the theme's background instead of staying dark. On the dark packs the wordmark now meets the contrast threshold it missed.
+- Every page names itself in the tab ("Controls · Conformiti"), so the tab, the history and a bookmark can tell pages apart.
+- About is a single column, so a long value no longer breaks its label over three lines. An auditor is no longer told that no frameworks are loaded; the panel leaves the library out for them. The author's page is credited in small print at the foot.
+
+**Fixed.**
+- On a machine whose clock steps back (a virtual machine after a sleep or a time sync, seen on Docker under WSL), one sign-in in a few dozen was followed by a return to the sign-in page. A token is now read with 30 seconds of leeway (`JWT_LEEWAY_SECONDS`).
+- Three accessibility misses. The bell's unread count is the same number on screen and in its name, and readable on the dark packs. The auditor's table of users scrolls from the keyboard on a phone. Small text in the accent (a badge, an active chip, on a selected row) holds 4.5:1 in every pack and in a custom colour: where an accent would fall short (Violet and Ember on some packs, a mid-tone custom colour) the text, and only the text, takes a shade toward the pack's ink. A custom colour's button label is white or dark, whichever reads better on it.
+
+---
+
 ## [0.9.5mh], 2026-10-21
 
 The screens say less. No migration and no stored data changed.

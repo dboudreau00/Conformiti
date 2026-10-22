@@ -226,7 +226,10 @@ Every page is a `PanelTransition` panel built from the primitives in
 `components/ui` and `components/charts`. Styling is Tailwind over the token
 system in `styles/index.css`: a theme pack (`data-theme`) and an accent pack or
 custom colour (`data-accent`) on `<html>`, applied before first paint by
-`public/theme-init.js` and managed by `theme.js`. The axios client sends
+`public/theme-init.js` and managed by `theme.js`. An accent that would read
+below 4.5:1 as small text gets a text-only shade, `--accent-text`, set by
+`theme.js`; `text-accent` reads it and nothing else does, so fills and washes
+keep the accent as chosen. The axios client sends
 `X-Workspace` when a superuser has chosen a workspace. In cookie mode (the
 default) the browser carries the HttpOnly cookies and the client adds Django's
 CSRF token to unsafe requests; in header mode it attaches the access token

@@ -1,7 +1,10 @@
 // The Conformiti identity: a shield split along its centreline with a single
 // check struck across it, in four colourways. Governance Blue is the corporate
-// mark; the other three are semantic and used where their meaning applies.
-// Risk Red is reserved for findings and alert states, never the lockup.
+// mark and the default colourway; the other three are semantic and used where
+// their meaning applies. The app's own lockups (the top bar and the sign-in
+// page) take colour="accent" instead and follow the theme's accent, so the
+// shield changes with it; a colourway pins the mark where it must not (the
+// public pages, which an add-on may paint in a brand colour of its own).
 export const BRAND_PALETTES = [
   { id: "green", name: "Assurance Green", role: "Controls passing, audit ready",
     base: "#0E9F6E", shade: "#08704D", soft: "#E9F7F1", onDark: "#34D399" },

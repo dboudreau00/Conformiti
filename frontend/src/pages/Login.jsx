@@ -322,7 +322,7 @@ export default function Login({ onDone }) {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }} className="w-full max-w-[400px]">
         <Panel as="div" className="p-6">
           <form onSubmit={submit} noValidate>
-            <ConformitiLogo size={40} />
+            <ConformitiLogo colour="accent" size={40} />
             <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
             {intro ? <p className="mt-1 text-[13px] leading-snug text-muted">{intro}</p> : null}
             {err ? <div className="notice notice-err mt-4" role="alert">{err}</div> : null}

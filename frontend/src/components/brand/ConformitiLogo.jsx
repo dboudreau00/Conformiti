@@ -1,7 +1,8 @@
 /**
  * The logo lockup: mark plus wordmark ("Conform" in ink, "iti" in the
  * colourway). Horizontal for headers, stacked for cover screens, `mark` alone
- * below 20px where the wordmark stops resolving.
+ * below 20px where the wordmark stops resolving. `colour` is a brand
+ * colourway, or "accent" to follow the theme's accent (see ConformitiMark).
  */
 import { paletteById } from "../../brand.js";
 import { cn } from "../../utils/cn.js";
@@ -9,6 +10,7 @@ import { ConformitiMark } from "./ConformitiMark.jsx";
 
 export function ConformitiLogo({ colour = "blue", lockup = "horizontal", size = 36, tagline, className }) {
   const palette = paletteById(colour);
+  const followsAccent = colour === "accent";
   if (lockup === "mark") {
     return <ConformitiMark colour={colour} size={size} title="Conformiti" className={className} />;
   }
@@ -20,7 +22,7 @@ export function ConformitiLogo({ colour = "blue", lockup = "horizontal", size = 
       <ConformitiMark colour={colour} size={size} title="Conformiti" />
       <div className={cn("flex flex-col", stacked ? "items-center" : "items-start")}>
         <span className="font-semibold leading-none tracking-[-0.035em] text-ink" style={{ fontSize: wordSize }}>
-          Conform<span style={{ color: palette.base }}>iti</span>
+          Conform<span className={followsAccent ? "text-accent" : undefined} style={followsAccent ? undefined : { color: palette.base }}>iti</span>
         </span>
         {tagline ? (
           <span className="font-mono text-2xs uppercase tracking-label text-faint" style={{ marginTop: Math.round(wordSize * 0.4) }}>

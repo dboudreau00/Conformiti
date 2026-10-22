@@ -12,6 +12,36 @@ test.describe("authentication", () => {
     await expect(page.getByRole("navigation", { name: "Primary", exact: true })).toHaveCount(0);
   });
 
+  test("the sign-in page's shield and wordmark wear the saved accent", async ({ page }) => {
+    await forgetSession(page);
+    await page.goto("/login");
+    await page.evaluate(() => { localStorage.setItem("accent", "ember"); });
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    const painted = await page.evaluate(() => {
+      const probe = (value) => {
+        const el = document.createElement("i");
+        el.style.color = value;
+        document.body.appendChild(el);
+        const out = getComputedStyle(el).color;
+        el.remove();
+        return out;
+      };
+      const form = document.querySelector("form");
+      const [right, left] = [...form.querySelectorAll("svg path")].slice(0, 2).map((p) => getComputedStyle(p).fill);
+      const word = [...form.querySelectorAll("span")].find((s) => s.textContent === "iti");
+      return {
+        right, left, word: getComputedStyle(word).color,
+        accent: probe("rgb(var(--accent))"), deep: probe("rgb(var(--accent-deep))"),
+        text: probe("rgb(var(--accent-text, var(--accent)))"),
+      };
+    });
+    expect(painted.right).toBe(painted.accent);
+    expect(painted.left).toBe(painted.deep);
+    expect(painted.word).toBe(painted.text);
+    expect(painted.left).not.toBe(painted.right);
+  });
+
   test("a protected route redirects to the login page when signed out", async ({ page }) => {
     await forgetSession(page);
     await page.goto("/controls");

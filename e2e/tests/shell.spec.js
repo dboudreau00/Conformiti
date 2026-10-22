@@ -25,8 +25,10 @@ const ROUTES = [
 
 test.describe("application shell", () => {
   for (const [path, heading] of ROUTES) {
-    test(`${path} renders without a browser error`, async ({ page }) => {
+    test(`${path} renders without a browser error and names itself in the tab`, async ({ page }) => {
       await open(page, path, heading);
+      // The tab, the history and a bookmark say which page this is.
+      await expect(page).toHaveTitle(`${heading} · Conformiti`);
       // The console-error assertion in fixtures.js runs on teardown.
     });
   }
@@ -76,6 +78,31 @@ test.describe("application shell", () => {
     await expect(bell).toHaveAttribute("aria-expanded", "true");
     // Each item is actionable and separately dismissable.
     await expect(page.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
+  });
+
+  test("the bell's badge says what its name says, in ink the theme pairs with it", async ({ page }) => {
+    // Opening the tray marks everything read, so the count is fed to the page rather than left to the shared database.
+    const feed = /\/api\/notifications\/(\?.*)?$/;
+    for (const [unread, shown] of [[3, "3"], [12, "12"], [150, "99+"]]) {
+      await page.route(feed, (route) => route.fulfill({ json: { results: [], unread } }));
+      await open(page, "/", "Dashboard");
+      const bell = page.getByRole("button", { name: /^Notifications/ });
+      // What is on screen is what a person can speak.
+      await expect(bell).toHaveAccessibleName(`Notifications, ${shown} unread`);
+      const badge = bell.locator("span.tabular");
+      await expect(badge).toHaveText(shown);
+      // The danger colour with the danger ink, as a danger button has it, in whichever pack is active.
+      const colours = await badge.evaluate((el) => {
+        const p = document.createElement("i");
+        p.style.color = "rgb(var(--danger-ink))";
+        document.body.appendChild(p);
+        const expected = getComputedStyle(p).color;
+        p.remove();
+        return { ink: getComputedStyle(el).color, expected };
+      });
+      expect(colours.ink).toBe(colours.expected);
+      await page.unroute(feed);
+    }
   });
 
   test("dismissing a notification removes it from the tray", async ({ page }) => {

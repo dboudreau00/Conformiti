@@ -88,8 +88,10 @@ point of view.
 ## Posture at a glance
 
 - **Authentication:** JWT (SimpleJWT, HS256, signed with the Django secret
-  key: see *Residual risks*). 60-minute access tokens (`JWT_ACCESS_MINUTES`);
-  7-day refresh tokens (`JWT_REFRESH_DAYS`) that **rotate on every use** and
+  key: see *Residual risks*). 60-minute access tokens (`JWT_ACCESS_MINUTES`),
+  read with 30 seconds of leeway for clock skew (`JWT_LEEWAY_SECONDS`), so a
+  server whose clock steps back does not sign out the person who has just
+  signed in; 7-day refresh tokens (`JWT_REFRESH_DAYS`) that **rotate on every use** and
   are **blacklisted on rotation and on sign-out**. The browser signs out
   through `POST /api/auth/token/clear/`, which receives the refresh cookie on
   its narrow path and revokes that token and, while the access cookie is

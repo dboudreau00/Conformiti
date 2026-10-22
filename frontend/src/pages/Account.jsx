@@ -52,6 +52,8 @@ const CAP_LABELS = {
 const roleLabel = (me) => me?.role_detail?.name || (me?.is_superuser ? "Superuser" : "No role");
 
 const DOCS_URL = "https://github.com/dboudreau00/Conformiti";
+// The author's page, credited at the foot of About in small print.
+const CREDIT_URL = "https://dboudreau00.github.io";
 const isHex = (v) => /^#[0-9a-f]{6}$/i.test(v || "");
 
 /* ---------- small page-private helpers ---------- */
@@ -1272,15 +1274,16 @@ function WorkspacesBlock({ me }) {
 function AboutSection() {
   const { me, health } = useShell();
   // The control library belongs to the organisation, not to the engagement:
-  // an external auditor is refused /frameworks/, so do not ask for it and put
-  // a 403 on their console. They see the rest of the panel.
+  // an external auditor is refused /frameworks/, so do not ask for it, put a
+  // 403 on their console, or tell them nothing is loaded. They see the rest of
+  // the panel.
   const auditor = !!me?.capabilities?.auditor;
   const [frameworks, setFrameworks] = useState(null);
   const [err, setErr] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    if (auditor) { setFrameworks([]); return undefined; }
+    if (auditor) return undefined;
     fetchAll("/frameworks/")
       .then((list) => {
         if (alive) setFrameworks(list);
@@ -1322,15 +1325,15 @@ function AboutSection() {
       : `On · UNREACHABLE${scanning.down_since ? ` since ${String(scanning.down_since).slice(0, 16).replace("T", " ")}` : ""}`;
   const rows = [
     ["Version", health?.version ? `v${health.version}` : "-"],
-    ["Frameworks", auditor ? "-" : frameworks ? `${frameworks.length} loaded` : "…"],
+    ["Core licence", "AGPL-3.0"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
+    ...(auditor ? [] : [["Frameworks", frameworks ? `${frameworks.length} loaded` : "…"]]),
     ["Malware scanning", scannerLabel],
     ["Package signing", signingKey?.key_id
       ? `Ed25519 · key ${signingKey.key_id}`
       : signingKey?.enabled === false ? "Off"
         : signingKey?.per_workspace ? "One key per workspace" : "No key configured"],
     ...(signingKey?.fingerprint ? [["Signing key fingerprint", `sha256:${signingKey.fingerprint}`]] : []),
-    ["Core licence", "AGPL-3.0"],
   ];
 
   return (
@@ -1346,58 +1349,71 @@ function AboutSection() {
         }
       />
 
-      <dl className="mt-5 grid max-w-[560px] grid-cols-1 gap-3 sm:grid-cols-2">
+      <dl className="mt-5 max-w-[720px]">
         {rows.map(([k, v]) => (
-          <div key={k} className="flex justify-between gap-4 border-b border-line pb-2">
-            <dt className="text-xs text-muted">{k}</dt>
-            {/* A fingerprint is one 71-character word: it breaks to fit. */}
-            <dd className="tabular min-w-0 break-words text-right font-mono text-xs text-ink">{v}</dd>
+          <div key={k} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-line py-2.5">
+            <dt className="shrink-0 text-xs text-muted">{k}</dt>
+            {/* A value too long to sit beside its label drops under it, and a fingerprint, one 71-character word,
+                breaks to fit. */}
+            <dd className="tabular min-w-0 grow break-words text-right font-mono text-xs text-ink">{v}</dd>
           </div>
         ))}
       </dl>
 
-      <Label as="p" className="mb-2.5 mt-6">Frameworks</Label>
-      {err ? (
-        <div className="notice notice-err max-w-[640px]" role="alert">
-          {err}
-        </div>
-      ) : frameworks === null ? (
-        <Loading className="py-6 text-left" />
-      ) : frameworks.length === 0 ? (
-        <Empty title="No frameworks loaded" />
-      ) : (
-        <ShowMore total={frameworks.length} initial={8} noun="frameworks" className="max-w-[640px]">
-          {(n) => (
-            <ul className="divide-y divide-line rounded-xl border border-line">
-              {frameworks.slice(0, n).map((f) => (
-                <li key={f.key || f.id} className="px-4 py-2.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 truncate text-[13px] font-medium text-ink" title={f.name}>{f.name}</span>
-                    {typeof f.control_count === "number" ? (
-                      <span className="tabular shrink-0 font-mono text-2xs text-faint">{f.control_count} controls</span>
-                    ) : null}
-                  </div>
-                  {f.authority || f.version ? (
-                    <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted">
-                      {f.authority ? <span className="min-w-0 truncate" title={f.authority}>{f.authority}</span> : null}
-                      {f.version ? (
-                        <span className="min-w-0 shrink-0 truncate font-mono text-2xs text-faint" title={f.version}>
-                          {f.version}
-                        </span>
+      {auditor ? null : (
+        <>
+          <Label as="p" className="mb-2.5 mt-6">Frameworks</Label>
+          {err ? (
+            <div className="notice notice-err max-w-[720px]" role="alert">
+              {err}
+            </div>
+          ) : frameworks === null ? (
+            <Loading className="py-6 text-left" />
+          ) : frameworks.length === 0 ? (
+            <Empty title="No frameworks loaded" />
+          ) : (
+            <ShowMore total={frameworks.length} initial={8} noun="frameworks" className="max-w-[720px]">
+              {(n) => (
+                <ul className="divide-y divide-line rounded-xl border border-line">
+                  {frameworks.slice(0, n).map((f) => (
+                    <li key={f.key || f.id} className="px-4 py-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate text-[13px] font-medium text-ink" title={f.name}>{f.name}</span>
+                        {typeof f.control_count === "number" ? (
+                          <span className="tabular shrink-0 font-mono text-2xs text-faint">{f.control_count} controls</span>
+                        ) : null}
+                      </div>
+                      {f.authority || f.version ? (
+                        <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted">
+                          {f.authority ? <span className="min-w-0 truncate" title={f.authority}>{f.authority}</span> : null}
+                          {f.version ? (
+                            <span className="min-w-0 shrink-0 truncate font-mono text-2xs text-faint" title={f.version}>
+                              {f.version}
+                            </span>
+                          ) : null}
+                        </div>
                       ) : null}
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </ShowMore>
           )}
-        </ShowMore>
+        </>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="mt-6 flex max-w-[720px] flex-wrap items-center gap-x-3 gap-y-2">
         <a href={DOCS_URL} target="_blank" rel="noreferrer" className="link">
           Documentation &amp; source
           <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+        </a>
+        <a
+          href={CREDIT_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded text-2xs text-faint transition-colors duration-150 ease-out hover:text-muted hover:underline focus-visible:underline sm:ml-auto"
+        >
+          dboudreau00.github.io
         </a>
       </div>
     </Panel>

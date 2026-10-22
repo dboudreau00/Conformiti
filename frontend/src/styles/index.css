@@ -35,6 +35,7 @@
   --grid: 32 36 44;
   --accent: 92 150 250;
   --accent-ink: 6 14 30;
+  --accent-deep: 29 111 224;
 }
 /* ---------- Pack: Ledger (light, warm paper) ---------- */
 [data-theme="ledger"] {
@@ -114,21 +115,27 @@
   --grid: 24 28 35;
   --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 20px 44px -26px rgb(0 0 0 / 1);
 }
-/* ---------- Accent packs ---------- */
-[data-accent="pine"] { --accent: 17 110 96; --accent-ink: 255 255 255; }
-[data-accent="azure"] { --accent: 34 92 200; --accent-ink: 255 255 255; }
-[data-accent="violet"] { --accent: 118 74 226; --accent-ink: 255 255 255; }
-[data-accent="ember"] { --accent: 194 61 52; --accent-ink: 255 255 255; }
+/* ---------- Accent packs ----------
+   --accent-deep is the darker half of the Conformiti shield (the mark and the wordmark's "iti" follow the accent). On the
+   light packs it is a deeper shade of the accent; on the dark packs, where the accent is the lighter tint, it is the
+   accent's own mid tone.
+   An accent is also read as text (a badge, an active chip), on its own 10% wash and on a selected row's wash under it.
+   `text-accent` uses --accent-text, which theme.js sets only for an accent that would fall short of 4.5:1 there (it moves
+   toward the pack's ink); without it the text is the accent itself, and the fills and washes always are. */
+[data-accent="pine"] { --accent: 17 110 96; --accent-ink: 255 255 255; --accent-deep: 10 72 63; }
+[data-accent="azure"] { --accent: 34 92 200; --accent-ink: 255 255 255; --accent-deep: 18 69 143; }
+[data-accent="violet"] { --accent: 118 74 226; --accent-ink: 255 255 255; --accent-deep: 66 32 143; }
+[data-accent="ember"] { --accent: 194 61 52; --accent-ink: 255 255 255; --accent-deep: 143 32 32; }
 /* Dark packs get brighter accents so they stay legible on near-black */
 [data-theme="ledger-dark"][data-accent="pine"],
-[data-theme="obsidian"][data-accent="pine"] { --accent: 45 176 148; --accent-ink: 6 22 19; }
+[data-theme="obsidian"][data-accent="pine"] { --accent: 45 176 148; --accent-ink: 6 22 19; --accent-deep: 17 110 96; }
 [data-theme="ledger-dark"][data-accent="azure"],
-[data-theme="obsidian"][data-accent="azure"] { --accent: 92 150 250; --accent-ink: 6 14 30; }
+[data-theme="obsidian"][data-accent="azure"] { --accent: 92 150 250; --accent-ink: 6 14 30; --accent-deep: 29 111 224; }
 [data-theme="ledger-dark"][data-accent="violet"],
-[data-theme="obsidian"][data-accent="violet"] { --accent: 155 124 250; --accent-ink: 14 8 32; }
+[data-theme="obsidian"][data-accent="violet"] { --accent: 155 124 250; --accent-ink: 14 8 32; --accent-deep: 118 74 226; }
 [data-theme="ledger-dark"][data-accent="ember"],
-[data-theme="obsidian"][data-accent="ember"] { --accent: 244 112 96; --accent-ink: 32 9 6; }
-/* data-accent="custom": --accent / --accent-ink are set inline by theme.js */
+[data-theme="obsidian"][data-accent="ember"] { --accent: 244 112 96; --accent-ink: 32 9 6; --accent-deep: 194 61 52; }
+/* data-accent="custom": --accent / --accent-ink / --accent-deep are set inline by theme.js */
 
 html, body, #root { height: 100%; }
 body {

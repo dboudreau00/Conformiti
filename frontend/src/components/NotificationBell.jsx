@@ -14,6 +14,8 @@ export default function NotificationBell() {
   const nav = useNavigate();
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
+  // The badge and the button's name say the same number, so what is on screen is what a person can speak.
+  const shown = unread > 99 ? "99+" : String(unread);
   const [open, setOpen] = useState(false);
 
   async function load() {
@@ -65,7 +67,7 @@ export default function NotificationBell() {
         <button
           type="button"
           {...p}
-          aria-label={`Notifications, ${unread} unread`}
+          aria-label={`Notifications, ${shown} unread`}
           className={cn(
             "relative flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-line bg-surface text-muted",
             "transition-colors duration-150 ease-out hover:border-line-strong hover:bg-surface-2 hover:text-ink",
@@ -74,8 +76,8 @@ export default function NotificationBell() {
         >
           <BellIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           {unread > 0 ? (
-            <span className="tabular absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-danger px-1 font-mono text-[9px] font-medium text-white">
-              {unread > 9 ? "9+" : unread}
+            <span className="tabular absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-danger px-1 font-mono text-[9px] font-medium text-danger-ink">
+              {shown}
             </span>
           ) : null}
         </button>
