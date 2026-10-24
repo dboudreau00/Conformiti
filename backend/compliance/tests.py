@@ -3,23 +3,21 @@ import csv
 import io
 import json
 import os
+from datetime import timedelta
 from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
-
-from compliance.models import Control, ControlEvidence, Framework
-from documents.models import EDIT, VIEW, Folder
-from testutils import APITestBase, grant, make_doc
-from datetime import timedelta
 from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
-from compliance import scoring
-from compliance.models import Control, ControlEvidence, ControlMapping
-from documents.access import accessible_folder_ids
-from documents.models import Document
-from governance.models import Risk
+
 from audit.models import AuditLog
+from compliance import scoring
+from compliance.models import Control, ControlEvidence, ControlMapping, Framework
+from documents.access import accessible_folder_ids
+from documents.models import EDIT, VIEW, Document, Folder
+from governance.models import Risk
+from testutils import APITestBase, grant, make_doc
 
 
 class ControlApiTests(APITestBase):

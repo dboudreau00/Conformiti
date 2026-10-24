@@ -90,13 +90,6 @@ export async function forgetSession(page) {
   await page.context().clearCookies();
 }
 
-/** The caller's access token, or null in cookie mode where script cannot read
- *  it, which is the point of that mode. */
-export function accessToken(page) {
-  return COOKIE_MODE ? Promise.resolve(null)
-                     : page.evaluate(() => localStorage.getItem("access"));
-}
-
 /** Wait until the shell has finished its initial data load. */
 export async function ready(page) {
   await page.waitForLoadState("networkidle");

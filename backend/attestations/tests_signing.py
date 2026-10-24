@@ -220,7 +220,7 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         self.assertNotEqual(new_id, old_id)
         self.assertEqual(SigningKey.objects.get(key_id=new_id).label, "FY27")
         # The fingerprint printed for the workspace is the one its packages now carry.
-        self.assertIn(f"default", out.getvalue())
+        self.assertIn("default", out.getvalue())
         self.assertIn(new_id, out.getvalue())
         other = EvidencePackage.objects.create(name="Next", created_by=self.manager,
                                                created_by_name="Mia")

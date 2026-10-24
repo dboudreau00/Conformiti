@@ -1,4 +1,4 @@
-import { test, expect, topHeading, open, expectBrowserError } from "../fixtures.js";
+import { test, expect, open, expectBrowserError } from "../fixtures.js";
 
 test.describe("audit trail", () => {
   test.beforeEach(async ({ page }) => {
