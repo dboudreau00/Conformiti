@@ -6,7 +6,7 @@ import io
 import json
 import zipfile
 
-from attestations.models import PackageEvidence, PackageSample
+from attestations.models import EvidencePackage, PackageEvidence, PackageSample
 from attestations.tests import PackageTestBase
 from testutils import make_doc
 
@@ -45,8 +45,12 @@ class SampleTests(PackageTestBase):
         self.assertEqual(rows[0]["samples"][0]["identifier"], "u-1042")
 
     def test_only_the_frameworks_capability_lists_items_in_a_draft(self):
-        self.assertEqual(self.list_item(self.owner_client).status_code, 403)
-        self.assertEqual(self.list_item(self.client_for(self.viewer)).status_code, 403)
+        # The draft is not readable to them, so its control row is answered as
+        # one that does not exist, never a 403 that would confirm it.
+        for client in (self.owner_client, self.client_for(self.viewer)):
+            r = self.list_item(client)
+            self.assertEqual(r.status_code, 400)
+            self.assertEqual(r.data["package_control"], [f'Invalid pk "{self.row.pk}" - object does not exist.'])
         r = self.owner_client.patch(f"/api/package-controls/{self.row.pk}/", {"population_size": 3}, format="json")
         self.assertEqual(r.status_code, 404)   # the draft is not even readable to them
 
@@ -145,6 +149,40 @@ class SampleTests(PackageTestBase):
         self.assertEqual(r.status_code, 200, r.data)
         r = self.manager_client.patch(f"/api/package-controls/{self.row.pk}/", {"sampling_note": "x"}, format="json")
         self.assertEqual(r.status_code, 403)
+
+    def test_a_sample_cannot_be_moved_to_a_control_in_another_package(self):
+        """The auditor's own selection on the issued package is theirs to
+        correct, but not to re-point: `package_control` is scoped to the
+        workspace, so without this check a PATCH would carry the sample into a
+        draft they cannot read, where sealing writes it into that manifest.
+        The organisation's own sealed-in row cannot leave its package either."""
+        sealed = self._issued()
+        other = EvidencePackage.objects.create(
+            name="Next year", engagement="FY27", audit_firm="Example Assurance LLP",
+            framework=self.tree.framework, assurance_type=EvidencePackage.Assurance.TYPE_II,
+            created_by=self.manager, created_by_name=self.manager.get_full_name())
+        r = self.manager_client.post(f"/api/evidence-packages/{other.pk}/add_controls/",
+                                     {"controls": [self.tree.c2.pk]}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        elsewhere = other.controls.get()
+        r = self.auditor_client.post("/api/package-samples/", {
+            "package_control": self.row.pk, "identifier": "aud-1"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        mine = r.data["id"]
+        r = self.auditor_client.patch(f"/api/package-samples/{mine}/", {
+            "package_control": elsewhere.pk, "description": "moved"}, format="json")
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertIn("package_control", r.data)
+        self.assertEqual(PackageSample.objects.get(pk=mine).package_control_id, self.row.pk)
+        self.assertEqual(PackageSample.objects.filter(package_control__package=other).count(), 0)
+        r = self.manager_client.patch(f"/api/package-samples/{sealed.pk}/",
+                                      {"package_control": elsewhere.pk}, format="json")
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertEqual(PackageSample.objects.get(pk=sealed.pk).package_control_id, self.row.pk)
+        # Naming the row it already sits on is not a move.
+        r = self.auditor_client.patch(f"/api/package-samples/{mine}/", {
+            "package_control": self.row.pk, "description": "same row"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
 
     def test_an_auditor_without_a_grant_sees_nothing(self):
         self.list_item()

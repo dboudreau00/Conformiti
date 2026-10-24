@@ -697,6 +697,13 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         row = sample.package_control
         package = row.package
         data = serializer.validated_data
+        # A sample stays on the row it was listed on. Accepting a new
+        # package_control here would let anyone who can read one package move
+        # a sample into another (the related field is scoped to the workspace,
+        # not to the caller's packages), and a moved sample is written into
+        # that package's manifest at seal. Evidence rows refuse the same move.
+        if "package_control" in data and data["package_control"].pk != row.pk:
+            raise ValidationError({"package_control": "A sample cannot be moved to another control."})
         touching_result = bool(self.RESULT_FIELDS & set(data))
         touching_item = bool(self.ITEM_FIELDS & set(data))
         if package.status == EvidencePackage.Status.WITHDRAWN:

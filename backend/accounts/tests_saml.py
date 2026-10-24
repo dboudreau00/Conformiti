@@ -59,6 +59,7 @@ class FakeIdp:
         self.key, self.cert = KEY, CERT
         self.email = "val@example.com"
         self.name_id = "val@example.com"
+        self.name_format = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
         self.issuer = IDP
         self.audience = flow["sp"]
         self.recipient = flow["acs"]
@@ -92,7 +93,7 @@ class FakeIdp:
             f'<saml:Assertion xmlns:saml="{NS["saml"]}" ID="{assertion_id or self.assertion_id}" '
             f'Version="2.0" IssueInstant="{self._t(self.not_before)}">'
             f'<saml:Issuer>{self.issuer}</saml:Issuer>'
-            f'<saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{name_id or self.name_id}</saml:NameID>'
+            f'<saml:Subject><saml:NameID Format="{self.name_format}">{name_id or self.name_id}</saml:NameID>'
             f'<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">'
             f'<saml:SubjectConfirmationData InResponseTo="{self.in_response_to}" '
             f'Recipient="{self.recipient if self.subject_recipient is None else self.subject_recipient}" '
@@ -212,6 +213,27 @@ class SamlFlowTests(APITestBase):
         self.assertTrue(AuditLog.objects.filter(action="login", detail__contains="saml").exists())
         # The flow cookie is gone once used.
         self.assertFalse(self.anon.cookies.get(saml.FLOW_COOKIE, None) and self.anon.cookies[saml.FLOW_COOKIE].value)
+
+    def test_a_transient_name_id_is_not_the_subject(self):
+        """A transient NameID is new at every sign-in. Used as the subject it
+        added an identity row per sign-in and pinned the account to nothing;
+        the address is the subject instead, so two sign-ins are one identity."""
+        def transient(value):
+            def tweak(idp):
+                idp.name_format = saml.TRANSIENT_FORMAT
+                idp.name_id = value
+            return tweak
+
+        self.sign_in(transient("_t" + secrets.token_hex(8)))
+        self.sign_in(transient("_t" + secrets.token_hex(8)))
+        rows = OidcIdentity.objects.filter(issuer=IDP)
+        self.assertEqual([(r.subject, r.user_id) for r in rows], [("val@example.com", self.viewer.pk)])
+
+    def test_an_anonymous_post_with_no_sign_in_in_progress_writes_no_audit_row(self):
+        before = AuditLog.objects.count()
+        r = self.anon.post("/api/auth/saml/acs/", {"SAMLResponse": "x", "RelayState": "y"})
+        self.assertIn("sso_error=state", r["Location"])
+        self.assertEqual(AuditLog.objects.count(), before)
 
     def test_an_assertion_level_signature_is_accepted(self):
         def tweak(idp):

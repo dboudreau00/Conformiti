@@ -15,6 +15,20 @@ says what changed and what to expect on upgrade.
 
 **Dependencies.** React and React DOM 19.3.1, framer-motion 14.3, lucide-react 1.59, @vitejs/plugin-react 6.1.2, PostCSS 8.5.31 and Vite 8.3.4 in the front end, and Playwright 1.64 for the browser tests. No setting or stored data changed.
 
+**Changed.**
+- Every button that loads something again after it failed says Try again; five said Retry.
+
+**Fixed.**
+- A sample item could be moved to a control in another package by changing `package_control` on PATCH: the destination was checked when an item was listed, not when it was changed, so an auditor's own selection could land in a draft they cannot read, and a sealed-in item could leave its sealed package. A sample now stays on the control it was listed on, as pinned evidence already did.
+- A document attached to a request on the auditor's list served the document as it stands now, not the version the attachment recorded. The attachment routes serve that version, or report the file as no longer available, as pinned evidence does.
+- A name typed into the vendor questionnaire reached a Slack channel as mrkdwn, so `<!channel>` mentioned everyone. Text in Slack notifications is now escaped the way Slack specifies.
+- A JSON body that is not an object (a list, a string, a number) answered 500 on the endpoints that read named fields, the public questionnaire and the sign-in ticket among them. Every endpoint now answers 400.
+- Single sign-on no longer links an account by its address when the account is already linked to a different identity at the same provider: a recycled mailbox, or a second provider account asserting the same address, does not get in. A provider that really changed someone's identity is re-linked with `link_oidc_identity`. A SAML NameID in the transient format, new at every sign-in, is no longer used as the identity; the asserted address stands in for it.
+- A single sign-on refusal nobody attempted (single sign-on not configured, or a callback with no sign-in in progress in that browser) no longer writes a row to the audit trail. Anyone could produce one by opening the URL, thousands a day from one address.
+- A document's owner with only view access to its folder could move it to another folder by editing it. Moving now takes edit on both folders, by editing or by Move alike.
+- A folder or a package control that is hidden from the caller is answered as one that does not exist, on upload, move and editing a document, and on listing a sample or pinning evidence. A 403 there confirmed that something the caller cannot see exists.
+- An archived document version with an id that is not a number answered 500; it answers 400.
+
 ---
 
 ## [0.9.5n], 2026-10-21

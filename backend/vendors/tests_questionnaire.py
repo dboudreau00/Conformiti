@@ -124,6 +124,18 @@ class VendorSideTests(APITestBase):
         self.assertEqual(self.anon.get("/api/questionnaire/nope/").status_code, 404)
         self.assertEqual(self.anon.get(f"/api/questionnaire/{self.token[:-1]}x/").status_code, 404)
 
+    def test_a_body_that_is_not_an_object_is_refused_not_a_crash(self):
+        """A JSON list or string parses, has no fields, and used to answer 500
+        on an endpoint with no account in front of it."""
+        for body in (["yes"], "yes", 7):
+            with self.subTest(body=body):
+                r = self.anon.put(f"/api/questionnaire/{self.token}/", body, format="json")
+                self.assertEqual(r.status_code, 400, r.data)
+                r = self.anon.post(f"/api/questionnaire/{self.token}/submit/", body, format="json")
+                self.assertEqual(r.status_code, 400, r.data)
+        self.invite.refresh_from_db()
+        self.assertIsNone(self.invite.submitted_at)
+
     def test_drafts_save_with_validation_and_come_back(self):
         r = self.anon.put(f"/api/questionnaire/{self.token}/",
                           {"answers": {"soc2": {"answer": "yes", "note": "Report attached separately"}}},

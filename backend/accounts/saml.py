@@ -51,6 +51,9 @@ NS = {
 BEARER = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
 SUCCESS = "urn:oasis:names:tc:SAML:2.0:status:Success"
 EMAIL_FORMAT = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+# A transient NameID is a fresh opaque value at every sign-in (SAML core 8.3.8),
+# so it identifies nobody across sign-ins and is never used as the subject.
+TRANSIENT_FORMAT = "urn:oasis:names:tc:SAML:2.0:nameid-format:transient"
 POST_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
 
 FLOW_COOKIE = "conformiti_saml"
@@ -169,7 +172,7 @@ def begin(request, next_path="/"):
     """Build the AuthnRequest and the flow cookie; return (url, cookie_value)."""
     cfg = config()
     if not cfg.enabled:
-        raise OidcError("disabled")
+        raise OidcError("disabled", record=False)
     request_id = "_" + secrets.token_hex(20)
     relay = secrets.token_urlsafe(24)
     sp, acs = sp_entity_id(request, cfg), acs_url(request, cfg)
@@ -271,9 +274,9 @@ def complete(request, flow):
     """Validate the posted Response. Returns (user, how, next_path, mfa_asserted)."""
     cfg = config()
     if not cfg.enabled:
-        raise OidcError("disabled")
+        raise OidcError("disabled", record=False)
     if flow is None:
-        raise OidcError("state", "no sign-in in progress in this browser, or it expired")
+        raise OidcError("state", "no sign-in in progress in this browser, or it expired", record=False)
     if not _same(request.POST.get("RelayState", ""), flow.get("relay")):
         raise OidcError("state", "relay state mismatch")
     encoded = request.POST.get("SAMLResponse", "")
@@ -327,7 +330,9 @@ def complete(request, flow):
     subject = assertion.find("saml:Subject", NS)
     if subject is None:
         raise OidcError("token", "assertion has no subject")
-    name_id = (subject.findtext("saml:NameID", default="", namespaces=NS) or "").strip()
+    name_el = subject.find("saml:NameID", NS)
+    name_id = ((name_el.text if name_el is not None else "") or "").strip()
+    transient = name_el is not None and name_el.get("Format") == TRANSIENT_FORMAT
     confirmed = False
     for sc in subject.findall("saml:SubjectConfirmation", NS):
         if sc.get("Method") != BEARER:
@@ -366,6 +371,12 @@ def complete(request, flow):
         email = _first(attrs, (cfg.email_attribute,))
     if not email:
         email = _first(attrs, EMAIL_ATTRS)
+    if transient:
+        # The address is the stable thing to pin the account by. Without this
+        # every sign-in was a new subject: a new identity row each time, and
+        # one account could never be told apart from another holding the
+        # same address at the provider.
+        name_id = email.strip().lower()
     if not email and "@" in name_id:
         email = name_id
     if not name_id:

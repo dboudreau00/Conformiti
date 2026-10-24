@@ -137,12 +137,20 @@ def link(path):
 # --------------------------------------------------------------------------- #
 # Payloads
 # --------------------------------------------------------------------------- #
+def mrkdwn_text(value):
+    """Text as Slack mrkdwn shows it literally. The three characters Slack
+    reserves are escaped the way its formatting guide says; without this a
+    name typed into the public questionnaire (`<!channel>`, `<url|label>`)
+    would mention the whole channel or plant a link in the message."""
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def slack_payload(title, text, facts=None, url="", severity="info"):
-    body = f"{SEVERITY_EMOJI.get(severity, '')}*{title}*\n{text}"
+    body = f"{SEVERITY_EMOJI.get(severity, '')}*{mrkdwn_text(title)}*\n{mrkdwn_text(text)}"
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": body[:2900]}}]
     if facts:
         blocks.append({"type": "section", "fields": [
-            {"type": "mrkdwn", "text": f"*{k}*\n{v}"[:200]} for k, v in list(facts)[:10]]})
+            {"type": "mrkdwn", "text": f"*{mrkdwn_text(k)}*\n{mrkdwn_text(v)}"[:200]} for k, v in list(facts)[:10]]})
     if url:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{url}|Open in Conformiti>"}]})
     return {"text": f"{title}: {text}"[:3000], "blocks": blocks}

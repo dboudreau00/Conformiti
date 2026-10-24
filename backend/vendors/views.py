@@ -13,9 +13,10 @@ from accounts.permissions import CanManageFrameworks
 
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
-from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 
 from compliance.models import Control
+from config.parsers import ObjectJSONParser
 from documents.serializers import person_name
 
 from . import matrix as matrix_lib
@@ -198,7 +199,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         return Response({"saved": len(clean), "cleared": len(clear), "layout_saved": bool(layout)})
 
     @action(detail=True, methods=["post"], url_path="matrix/parse",
-            parser_classes=[MultiPartParser, FormParser, JSONParser])
+            parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
     def matrix_parse(self, request, pk=None):
         """Read the vendor's own matrix file and report what was recognised.
 

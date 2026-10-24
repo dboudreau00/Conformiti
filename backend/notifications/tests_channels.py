@@ -175,6 +175,24 @@ class WebhookTests(PackageTestBase):
         self.assertEqual(self.http.calls[0]["headers"]["Content-type"], "application/json")
         self.assertEqual(WebhookDelivery.objects.filter(ok=True).count(), 2)
 
+    def test_text_from_outside_cannot_mention_the_channel_or_plant_a_link(self):
+        """A vendor types their name into the public questionnaire and it ends
+        up in the organisation's channel. Slack reads `<!channel>` as a mention
+        of everyone and `<url|label>` as a link, so the three characters it
+        reserves are escaped; Teams renders a TextBlock literally."""
+        webhooks.post_event("test", "Returned by <!channel>", "<https://evil.example|Approve in Conformiti> & co",
+                            facts=[("Vendor tier", "<b>")], sync=True)
+        by_url = {c["url"]: c["body"] for c in self.http.calls}
+        slack = by_url[SLACK_HOOK]
+        body = slack["blocks"][0]["text"]["text"]
+        self.assertIn("*Returned by &lt;!channel&gt;*", body)
+        self.assertIn("&lt;https://evil.example|Approve in Conformiti&gt; &amp; co", body)
+        self.assertNotIn("<!channel>", json.dumps(slack["blocks"]))
+        self.assertNotIn("<https://evil.example", json.dumps(slack["blocks"]))
+        self.assertEqual(slack["blocks"][1]["fields"][0]["text"], "*Vendor tier*\n&lt;b&gt;")
+        card = by_url[TEAMS_HOOK]["attachments"][0]["content"]
+        self.assertEqual(card["body"][0]["text"], "Returned by <!channel>")
+
     def test_https_only_and_the_allow_list(self):
         with override_settings(SLACK_WEBHOOK_URL="http://hooks.slack.com/plain"):
             webhooks.post_event("test", "x", "y", sync=True)

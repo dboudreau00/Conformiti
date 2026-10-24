@@ -934,3 +934,31 @@ class ShippedTextTests(SimpleTestCase):
                     "backend/requirements.txt", "backend/entrypoint.sh", ".env.example",
                     "scripts/backup.sh", "frontend/nginx.conf", "backend/config/settings.py"):
             self.assertFalse(validate._dash_rule_covers(rel), rel)
+
+
+class JsonBodyShapeTests(APITestBase):
+    """Every endpoint reads its JSON body as named fields. A list or a bare
+    value is valid JSON with no fields, and used to reach `request.data.get`
+    and answer 500, anonymous endpoints included. The parser refuses it."""
+
+    def test_a_json_body_that_is_not_an_object_is_a_400_everywhere(self):
+        from rest_framework.test import APIClient
+
+        anon = APIClient()
+        signed_in = self.client_for(self.manager)
+        cases = [
+            (anon, "/api/auth/oidc/redeem/"),
+            (anon, "/api/auth/session/clear/"),
+            (signed_in, "/api/auth/logout/"),
+            (signed_in, "/api/risks/"),
+        ]
+        for client, url in cases:
+            for body in ("[1, 2]", '"text"', "7", "null"):
+                with self.subTest(url=url, body=body):
+                    r = client.post(url, body, content_type="application/json")
+                    self.assertEqual(r.status_code, 400, getattr(r, "data", r))
+                    self.assertEqual(r.data, {"detail": "Send the fields as a JSON object.", "code": "bad_body"})
+
+    def test_an_object_still_parses(self):
+        r = self.client_for(self.manager).post("/api/auth/logout/", "{}", content_type="application/json")
+        self.assertEqual(r.status_code, 200)

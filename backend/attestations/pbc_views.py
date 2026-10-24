@@ -387,28 +387,49 @@ class PbcItemViewSet(viewsets.ModelViewSet):
             PackageGrant.objects.filter(pk=grant.pk).update(
                 last_accessed_at=timezone.now(), access_count=F("access_count") + 1)
 
+    @staticmethod
+    def _attached_file(item):
+        """The file as it stood when it was attached, or None.
+
+        The item records the document's version and digest at attachment, the
+        way pinned package evidence does, and these two routes are the
+        folder-ACL bypass a grant buys. Serving ``document.file`` would hand the
+        auditor whatever the document holds now, after any later version, while
+        the item still names the version and digest somebody attached. The
+        archived version is what the attachment stands for; without it, the
+        attachment is gone rather than silently replaced."""
+        document = item.document
+        if document is None or not document.file:
+            return None
+        if document.version == item.version:
+            return document.file
+        archived = document.versions.filter(version=item.version).first()
+        return archived.file if archived is not None and archived.file else None
+
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         from documents.views import preview_response
 
         item = self.get_object()
-        if item.document is None or not item.document.file:
+        stored = self._attached_file(item)
+        if stored is None:
             raise ValidationError({"detail": "This file is no longer available."})
         monitor.refuse_if_quarantined(item.document)
         package = item.request.package
         self._touch_grant(request, package)
         record_package_event(request, package, "read",
                              f"previewed '{item.document_name}' from {item.request.reference} in package {package.pk}")
-        return preview_response(request, item.document.file, item.document_name, item.document)
+        return preview_response(request, stored, item.document_name, item.document)
 
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         item = self.get_object()
-        if item.document is None or not item.document.file:
+        stored = self._attached_file(item)
+        if stored is None:
             raise ValidationError({"detail": "This file is no longer available."})
         monitor.refuse_if_quarantined(item.document)
         package = item.request.package
         self._touch_grant(request, package)
         record_package_event(request, package, "read",
                              f"read '{item.document_name}' from {item.request.reference} in package {package.pk}")
-        return serve_stored_file(item.document.file, item.document_name)
+        return serve_stored_file(stored, item.document_name)

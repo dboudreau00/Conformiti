@@ -5,6 +5,7 @@ assignee route is a deliberate, narrow disclosure and must stay narrow, and
 the party that names a person is always the organisation.
 """
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.utils import timezone
 
@@ -188,6 +189,26 @@ class AnswerTests(PbcBase):
         # And the viewer, with no route at all, gets nothing.
         self.assertEqual(self.client_for(self.viewer).get(f"/api/pbc-items/{item.pk}/file/").status_code, 404)
         self.assertEqual(self.client_for(self.viewer).get("/api/pbc-items/").data["count"], 0)
+
+    def test_the_attachment_stays_the_version_that_was_attached(self):
+        """An item records the version and digest it was attached at. A later
+        version of the document is the organisation's business; the auditor,
+        reading through the grant, gets the bytes the item names, exactly as a
+        pinned artefact does, and never the live file in their place."""
+        self.attach(self.manager_client, self.doc)
+        item = PbcItem.objects.get()
+        self.assertEqual(item.version, 1)
+        r = self.manager_client.post(f"/api/documents/{self.doc.pk}/new_version/",
+                                     {"file": SimpleUploadedFile("policy-v2.txt", b"rewritten later")},
+                                     format="multipart")
+        self.assertEqual(r.status_code, 200, getattr(r, "data", r))
+        r = self.auditor_client.get(f"/api/pbc-items/{item.pk}/file/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(b"".join(r.streaming_content), b"policy bytes")
+        self.assertEqual(self.auditor_client.get(f"/api/pbc-items/{item.pk}/preview/").status_code, 200)
+        # The organisation's own route serves the live document, as it should.
+        r = self.manager_client.get(f"/api/documents/{self.doc.pk}/download/")
+        self.assertEqual(b"".join(r.streaming_content), b"rewritten later")
 
     def test_the_assignee_reads_attachments_on_their_line_only(self):
         self.attach(self.manager_client, self.doc)

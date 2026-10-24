@@ -147,8 +147,12 @@ point of view.
   the environment only**: there is deliberately no screen or API for it,
   because a provider an administrator could register is a provider they could
   point at themselves. A verified email links exactly one existing account of
-  the workspace single sign-on serves (`SSO_WORKSPACE`) and **never a
+  the workspace single sign-on serves (`SSO_WORKSPACE`), never one already
+  linked to a different identity at the same provider (a recycled mailbox
+  does not inherit an account; an operator re-links), and **never a
   superuser, a staff account or an account whose role can manage users**.
+  A SAML NameID in the transient format is never used as the identity: it
+  changes at every sign-in, so the asserted address stands in for it.
   The same test runs again at every sign-in, so an account promoted after it
   was linked is refused. Those accounts are linked only by an operator
   running `manage.py link_oidc_identity --allow-privileged`. Auto-provisioning
@@ -255,7 +259,9 @@ point of view.
   confirming, removing and regenerating a second factor. There is no
   per-account lockout: attempts against one account from many addresses are
   limited only per address, so watch the `login_failed` rows in the audit
-  trail. Counters live in Redis in the compose stack so the limit is shared
+  trail. A single sign-on refusal nobody attempted (SSO not configured, or a
+  callback with no sign-in in progress in that browser) writes no row:
+  anyone can produce one by opening the URL. Counters live in Redis in the compose stack so the limit is shared
   across workers. Without Docker, `CACHE_URL` must point at Redis for the
   same effect; unset, each gunicorn worker counts on its own.
 - **Uploads:** a size ceiling enforced in the application (`MAX_UPLOAD_MB`,

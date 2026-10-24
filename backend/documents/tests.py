@@ -212,6 +212,39 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(c.patch(f"/api/documents/{doc.pk}/", {"folder": self.tree.ctrl2.pk}, format="json").status_code, 403)
         self.assertEqual(c.post(f"/api/documents/{doc.pk}/move/", {"folder": 999999}, format="json").status_code, 400)
 
+    def test_a_hidden_folder_is_answered_like_a_missing_one(self):
+        """A folder the caller cannot see gets the reply a folder that does not
+        exist gets, on upload, PATCH and move alike: a 403 would confirm it."""
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        doc = make_doc(self.tree.ctrl1, self.owner)
+        c = self.client_for(self.owner)
+        hidden, missing = self.tree.ctrl2.pk, 999999
+        r = c.post(f"/api/documents/{doc.pk}/move/", {"folder": hidden}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.data, c.post(f"/api/documents/{doc.pk}/move/", {"folder": missing}, format="json").data)
+        r = c.patch(f"/api/documents/{doc.pk}/", {"folder": hidden}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.data["folder"], [f'Invalid pk "{hidden}" - object does not exist.'])
+        self.assertEqual(c.patch(f"/api/documents/{doc.pk}/", {"folder": missing}, format="json").data["folder"],
+                         [f'Invalid pk "{missing}" - object does not exist.'])
+        self.assertEqual(self._upload(c, self.tree.ctrl2).status_code, 400)
+        doc.refresh_from_db()
+        self.assertEqual(doc.folder_id, self.tree.ctrl1.pk)
+
+    def test_the_owner_cannot_move_a_document_out_of_a_folder_they_only_view(self):
+        """PATCH `folder` takes what the move action takes: edit on the source
+        as well as on the destination. Owning the document lets them edit its
+        description with view access, not take it out of the folder."""
+        grant(self.tree.ctrl1, user=self.owner, level=VIEW)
+        grant(self.tree.ctrl2, user=self.owner, level=EDIT)
+        doc = make_doc(self.tree.ctrl1, self.owner)
+        c = self.client_for(self.owner)
+        self.assertEqual(c.patch(f"/api/documents/{doc.pk}/", {"description": "mine"}, format="json").status_code, 200)
+        self.assertEqual(c.patch(f"/api/documents/{doc.pk}/", {"folder": self.tree.ctrl2.pk}, format="json").status_code, 403)
+        self.assertEqual(c.post(f"/api/documents/{doc.pk}/move/", {"folder": self.tree.ctrl2.pk}, format="json").status_code, 403)
+        doc.refresh_from_db()
+        self.assertEqual(doc.folder_id, self.tree.ctrl1.pk)
+
     def test_new_version_archives_previous_file(self):
         doc = make_doc(self.tree.ctrl1, self.owner)
         c = self.client_for(self.manager)
@@ -531,6 +564,11 @@ class EvidenceDownloadTests(APITestBase):
             self.client_for(self.viewer).get(
                 f"/api/documents/{self.doc.pk}/versions/{version_id}/download/").status_code,
             404)
+        # A version id that is not a number is refused, not a crash (a dotted
+        # one never reaches the view: the route takes no dot).
+        for bad in ("abc", str(2 ** 63), "-1"):
+            with self.subTest(bad=bad):
+                self.assertEqual(c.get(f"/api/documents/{self.doc.pk}/versions/{bad}/download/").status_code, 400)
 
 
 class DownloadNameTests(APITestBase):
@@ -935,12 +973,18 @@ class VirusScanTests(APITestBase):
     def test_scanning_runs_after_the_folder_permission_check(self):
         """A caller who may not write to the folder must never reach the
         scanner: that would be a signature-set oracle and a DoS lever."""
-        with self.scanning():
-            r = self.client_for(self.viewer).post("/api/documents/", {
-                "name": "Not allowed", "folder": self.tree.ctrl1.pk,
-                "file": SimpleUploadedFile("x.txt", eicar_bytes()),
-            })
-        self.assertEqual(r.status_code, 403)
+        def upload():
+            with self.scanning():
+                return self.client_for(self.viewer).post("/api/documents/", {
+                    "name": "Not allowed", "folder": self.tree.ctrl1.pk,
+                    "file": SimpleUploadedFile("x.txt", eicar_bytes()),
+                })
+        # A folder hidden from them is answered as one that does not exist...
+        self.assertEqual(upload().status_code, 400)
+        self.assertEqual(self.clamd.received, b"", "the scanner must not have been called")
+        # ...and one they can see but not write to is a 403; neither scans.
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        self.assertEqual(upload().status_code, 403)
         self.assertEqual(self.clamd.received, b"", "the scanner must not have been called")
 
     # ------------------------------------------------------------- fail closed

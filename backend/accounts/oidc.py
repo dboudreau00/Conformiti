@@ -79,6 +79,7 @@ MESSAGES = {
     "ambiguous_email": "More than one account uses that email address. Ask an administrator to link your identity.",
     "email_taken": "An account already uses that email address. Ask an administrator to link your identity.",
     "unknown_user": "No account is linked to that identity. Ask an administrator to link it.",
+    "already_linked": "That account is linked to a different identity at your provider. Ask an administrator to link this one.",
     "inactive": "That account is deactivated.",
     "role": "The server's default single sign-on role is misconfigured.",
     "mfa_required": "This server requires a second factor for single sign-on. Sign in with your "
@@ -97,9 +98,15 @@ class StepUpRequired(Exception):
 
 
 class OidcError(Exception):
-    def __init__(self, code, detail=""):
+    """``record=False`` marks a refusal that says nothing about anyone: single
+    sign-on is not configured, or a browser arrives with no sign-in in progress.
+    Anyone can produce those at will, and the audit trail cannot be pruned, so
+    the views do not write a row for them."""
+
+    def __init__(self, code, detail="", record=True):
         self.code = code
         self.detail = detail
+        self.record = record
         super().__init__(detail or code)
 
     @property
@@ -302,7 +309,7 @@ def begin(request, next_path="/"):
     """Park the flow secrets in the session and return the provider URL."""
     cfg = config()
     if not cfg.enabled:
-        raise OidcError("disabled")
+        raise OidcError("disabled", record=False)
     doc = discovery(cfg)
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
@@ -355,11 +362,11 @@ def complete(request):
     """Finish the sign-in. Returns ``(user, how, next_path, mfa_asserted)``."""
     cfg = config()
     if not cfg.enabled:
-        raise OidcError("disabled")
+        raise OidcError("disabled", record=False)
     flow = request.session.pop(SESSION_KEY, None)
     request.session.modified = True
     if not flow or int(time.time()) - int(flow.get("ts", 0)) > FLOW_TTL:
-        raise OidcError("state", "no sign-in in progress, or it expired")
+        raise OidcError("state", "no sign-in in progress, or it expired", record=False)
     if request.GET.get("error"):
         raise OidcError("denied", str(request.GET.get("error_description") or request.GET["error"])[:200])
     state, code = str(request.GET.get("state") or ""), str(request.GET.get("code") or "")
@@ -467,8 +474,9 @@ def resolve_user(claims, cfg):
     # entity id and Auth0's issuer do) while link_oidc_identity stores it
     # without one. Both spellings are one identity, and two accounts holding
     # it is refused.
+    spellings = {issuer, issuer.rstrip("/"), issuer.rstrip("/") + "/"}
     matches = list(OidcIdentity.objects.select_related("user__role")
-                   .filter(issuer__in={issuer, issuer.rstrip("/")}, subject=subject))
+                   .filter(issuer__in=spellings, subject=subject))
     if len({m.user_id for m in matches}) > 1:
         raise OidcError("denied", "identity linked to more than one account")
     identity = matches[0] if matches else None
@@ -515,6 +523,15 @@ def resolve_user(claims, cfg):
                 raise OidcError("privileged", f"refused to link {user.get_username()} by email")
             if not user.is_active:
                 raise OidcError("inactive")
+            # An account already bound to a different subject at this provider
+            # is not bound to a second one by its address: a recycled mailbox,
+            # or a second provider account asserting the same verified address,
+            # would otherwise walk into the first person's account. A provider
+            # that genuinely changed someone's subject is re-linked by hand
+            # (manage.py link_oidc_identity).
+            if OidcIdentity.objects.filter(user=user, issuer__in=spellings).exclude(subject=subject).exists():
+                raise OidcError("already_linked",
+                                f"{user.get_username()} is linked to another identity at {issuer}")
             OidcIdentity.objects.create(user=user, issuer=issuer, subject=subject, email=email,
                                         last_login_at=timezone.now())
             return user, "linked by verified email"

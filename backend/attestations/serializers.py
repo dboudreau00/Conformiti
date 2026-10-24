@@ -113,7 +113,27 @@ class PbcRequestSerializer(serializers.ModelSerializer):
         }
 
 
+class ReadablePackageControlField(serializers.PrimaryKeyRelatedField):
+    """A control row of a package the caller can read.
+
+    Scoped per request, so an id that does not exist and an id in a package
+    the caller cannot read get the same "does not exist" answer. Checking
+    readability afterwards in the view answered 403 for the second, which
+    told anyone in the workspace which row ids belong to packages hidden
+    from them."""
+
+    def get_queryset(self):
+        from . import access
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return PackageControl.objects.none()
+        return PackageControl.objects.filter(package__in=access.readable_packages(user))
+
+
 class PackageSampleSerializer(serializers.ModelSerializer):
+    package_control = ReadablePackageControlField()
     result_display = serializers.CharField(source="get_result_display", read_only=True)
     control_ref = serializers.CharField(source="package_control.control_ref", read_only=True)
 
@@ -153,8 +173,7 @@ class PackageSampleSerializer(serializers.ModelSerializer):
 class PackageEvidenceSerializer(serializers.ModelSerializer):
     # `package_control` is chosen when the artefact is pinned and never moves:
     # re-parenting a row would put evidence inside a sealed package.
-    package_control = serializers.PrimaryKeyRelatedField(
-        queryset=PackageControl.objects.all(), write_only=False)
+    package_control = ReadablePackageControlField()
 
     download_url = serializers.SerializerMethodField()
     integrity = serializers.SerializerMethodField()

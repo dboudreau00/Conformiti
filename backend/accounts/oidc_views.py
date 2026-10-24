@@ -21,7 +21,12 @@ class _LoginThrottle(SimpleRateThrottle):
 
 
 def _fail(request, exc):
-    oidc.audit(request, None, False, f"sso sign-in failed ({exc.code}): {exc.detail or exc.message}")
+    # A refusal about a sign-in that was actually attempted is recorded. One
+    # anyone can produce by opening the URL (SSO not configured, no sign-in in
+    # progress in this browser) is not: at the login throttle that was
+    # thousands of permanent rows a day from one address.
+    if exc.record:
+        oidc.audit(request, None, False, f"sso sign-in failed ({exc.code}): {exc.detail or exc.message}")
     return HttpResponseRedirect("/login?sso_error=" + quote(exc.code, safe=""))
 
 

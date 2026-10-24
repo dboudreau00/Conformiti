@@ -473,6 +473,14 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    # DRF's default three, with JSON held to an object at the top level (see
+    # config/parsers.py): a JSON list or bare value used to reach
+    # `request.data.get` and answer 500.
+    "DEFAULT_PARSER_CLASSES": (
+        "config.parsers.ObjectJSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",
+    ),
     # OPTIONS answers without the view's docstring, which is developer
     # commentary (see config/metadata.py).
     "DEFAULT_METADATA_CLASS": "config.metadata.NoDescriptionMetadata",

@@ -160,6 +160,36 @@ class OidcFlowTests(APITestBase):
         self.assertEqual(me.data["username"], "owen")
         self.assertEqual(OidcIdentity.objects.get(subject="sub-val").email, "val@example.com")
 
+    def test_an_account_linked_at_this_provider_is_not_linked_again_by_email(self):
+        """A second subject at the same provider asserting the same verified
+        address (a recycled mailbox, a second provider account) does not get
+        into an account already bound to the first. An operator re-links."""
+        OidcIdentity.objects.create(user=self.viewer, issuer=ISSUER + "/", subject="sub-first", email="val@example.com")
+        q = self.start()
+        r = self.callback(q["state"][0])        # the provider says sub-val
+        self.assertIn("sso_error=already_linked", r["Location"])
+        self.assertFalse(OidcIdentity.objects.filter(subject="sub-val").exists())
+        row = AuditLog.objects.filter(action="login_failed").latest("timestamp")
+        self.assertIn("(already_linked)", row.detail)
+        # The first subject still signs in.
+        self.idp.claims["sub"] = "sub-first"
+        self.sign_in()
+
+    def test_refusals_nobody_attempted_write_no_audit_row(self):
+        """SSO turned off, or a callback with no sign-in in progress: anyone can
+        produce these by opening the URL, and the trail cannot be pruned."""
+        before = AuditLog.objects.count()
+        r = self.anon.get("/api/auth/oidc/callback/", {"code": "c", "state": "s"})
+        self.assertIn("sso_error=state", r["Location"])
+        with override_settings(OIDC_CLIENT_SECRET=""):
+            r = self.anon.get("/api/auth/oidc/start/")
+            self.assertIn("sso_error=disabled", r["Location"])
+        self.assertEqual(AuditLog.objects.count(), before)
+        # A sign-in that was attempted and failed is still recorded.
+        self.start()
+        self.callback("not-the-state")
+        self.assertTrue(AuditLog.objects.filter(action="login_failed", detail__contains="(state)").exists())
+
     def test_email_missing_from_the_id_token_is_fetched_from_userinfo(self):
         self.idp.claims.pop("email")
         self.idp.claims.pop("email_verified")

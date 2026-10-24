@@ -385,10 +385,12 @@ Optional. Nothing changes until all three of the first keys are set.
    linked, including one linked with `link_oidc_identity`, signs in without
    it.
 3. On a person's first SSO sign-in, a verified email that matches exactly one
-   local account links it. Administrator accounts (superuser, staff, or any
-   role that can manage users) are never linked this way, and a linked user
-   who is later promoted loses SSO until an operator re-affirms it. Link
-   them deliberately:
+   local account links it, unless that account is already linked to a
+   different identity at the same provider (re-link it with
+   `link_oidc_identity` if the provider really changed it). Administrator
+   accounts (superuser, staff, or any role that can manage users) are never
+   linked this way, and a linked user who is later promoted loses SSO until
+   an operator re-affirms it. Link them deliberately:
    ```bash
    docker compose exec backend python manage.py link_oidc_identity admin <subject> --allow-privileged
    ```

@@ -264,9 +264,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if not folder.can_edit(self.request.user):
             raise PermissionDenied("You need edit access to this folder.")
 
+    def _require_target_folder(self, folder):
+        """A folder named as a destination. One the caller cannot even see is
+        answered exactly as one that does not exist (DRF's own wording for a
+        missing id), so the reply never confirms a folder hidden from them;
+        one they can see but not edit is the usual 403."""
+        if not folder.can_view(self.request.user):
+            raise ValidationError({"folder": [f'Invalid pk "{folder.pk}" - object does not exist.']})
+        self._require_folder_edit(folder)
+
     def perform_create(self, serializer):
         folder = serializer.validated_data["folder"]
-        self._require_folder_edit(folder)
+        self._require_target_folder(folder)
         # After the permission check, never in validate_file: is_valid() runs
         # before this, so scanning there would hand an unauthorised caller a
         # signature-set oracle and a way to saturate the scanner.
@@ -287,12 +296,15 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if "file" in serializer.validated_data:
             raise ValidationError(
                 {"file": "Upload a new version instead: POST /documents/{id}/new_version/."})
-        # Moving a document via PATCH must also require edit on the destination,
-        # matching the dedicated `move` action (otherwise a doc could be planted
-        # in a folder the user can't edit).
+        # Moving a document via PATCH takes what the dedicated `move` action
+        # takes: edit on the destination (or a doc could be planted in a folder
+        # the user can't edit) AND edit on the source. The owner may PATCH their
+        # own document's other fields with view access alone, but taking
+        # evidence out of a folder is a change to that folder.
         new_folder = serializer.validated_data.get("folder")
         if new_folder is not None and new_folder.id != serializer.instance.folder_id:
-            self._require_folder_edit(new_folder)
+            self._require_folder_edit(serializer.instance.folder)
+            self._require_target_folder(new_folder)
         before = serializer.instance.next_review_date
         doc = serializer.save()
         doc.compute_next_review()
@@ -327,6 +339,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         try:
             target = Folder.objects.get(pk=request.data.get("folder"))
         except (Folder.DoesNotExist, TypeError, ValueError):
+            raise ValidationError({"folder": "Target folder not found."})
+        # A folder hidden from the caller is "not found" too, never a 403 that
+        # would confirm it exists.
+        if not target.can_view(request.user):
             raise ValidationError({"folder": "Target folder not found."})
         self._require_folder_edit(target)       # edit on destination
         doc.folder = target
@@ -397,7 +413,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         doc = monitor.refuse_if_quarantined(self.get_object())
         try:
             version = doc.versions.get(pk=version_pk)
-        except DocumentVersion.DoesNotExist:
+        except (DocumentVersion.DoesNotExist, ValueError):
+            # ValueError: the URL pattern accepts any text, and a non-numeric id
+            # used to reach the query and answer 500.
             raise ValidationError({"version": "Not found."})
         record_evidence_read(request, doc, version=version.version)
         # "Policy (v2).pdf": the tag goes before the archived file's own

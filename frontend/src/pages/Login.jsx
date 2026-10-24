@@ -23,6 +23,7 @@ const SSO_ERRORS = {
   email_taken: "An account already uses that email address. Ask an administrator to link your identity.",
   workspace: "Single sign-on is not set up for a workspace on this server. Ask an administrator.",
   unknown_user: "No account is linked to that identity. Ask an administrator to link it.",
+  already_linked: "That account is linked to a different identity at your provider. Ask an administrator to link this one.",
   inactive: "That account is deactivated.",
   role: "The server's default single sign-on role is misconfigured.",
   mfa_required: "This server requires a second factor for single sign-on. Sign in with your password once and enrol an authenticator, or have your identity provider assert one.",

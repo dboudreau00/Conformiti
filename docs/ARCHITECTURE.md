@@ -91,7 +91,9 @@ An external auditor holds none of the role's capability flags, whatever the
 role stores, so rules 1 and 2 never apply to one, and is then capped at
 `view`. Documents inherit their folder's access; a document owner may edit
 their own document (an external auditor never may), but deleting requires
-`manage` on the folder. Restructuring the tree (re-parenting) requires
+`manage` on the folder, and moving it to another folder takes `edit` on both
+folders, by PATCH or by the move action alike. A destination folder the
+caller cannot see is answered as one that does not exist. Restructuring the tree (re-parenting) requires
 `manage` on the folder and `edit` on the destination; the generated framework
 folders cannot be moved, renamed or deleted through the API.
 
