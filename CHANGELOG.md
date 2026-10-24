@@ -11,7 +11,11 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5o], 2026-10-24
+
+What a review of the API found, closed. No migration and no stored data changed.
+
+**On upgrade.** Nothing to do. An account that single sign-on can no longer link by its address because it is already linked to a different identity at the same provider (the sign-in page says so) is re-linked with `manage.py link_oidc_identity`.
 
 **Dependencies.** React and React DOM 19.3.1, framer-motion 14.3, lucide-react 1.59, @vitejs/plugin-react 6.1.2, PostCSS 8.5.31 and Vite 8.3.4 in the front end, and Playwright 1.64 for the browser tests. No setting or stored data changed.
 
