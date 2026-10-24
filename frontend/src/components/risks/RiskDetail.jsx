@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SendIcon, XIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
+import { displayName } from "../../utils/format.js";
 import { RISK_RATING, RISK_STATUS } from "../../utils/tone.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button, IconButton } from "../ui/Button.jsx";
@@ -8,8 +9,7 @@ import { Label, Loading, Panel } from "../ui/Panel.jsx";
 import { Field } from "./Field.jsx";
 import { IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, STATUSES, TREATMENTS, treatmentLabel } from "./vocab.js";
 
-const displayName = (u) => u.full_name || u.username || `User ${u.id}`;
-const day = (iso) => (iso ? String(iso).slice(0, 10) : "");
+const day =(iso) => (iso ? String(iso).slice(0, 10) : "");
 
 /**
  * The selected risk: description, the treatment fields, the mitigation plan

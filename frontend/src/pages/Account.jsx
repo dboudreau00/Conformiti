@@ -533,7 +533,7 @@ function MfaBlock() {
             {statusErr}
           </div>
           <Button size="sm" onClick={loadStatus}>
-            Retry
+            Try again
           </Button>
         </div>
       ) : !status ? (
@@ -737,7 +737,7 @@ function PasskeysBlock() {
       {loadErr ? (
         <div className="mt-4 flex max-w-[640px] flex-wrap items-center gap-3">
           <div className="notice notice-err flex-1" role="alert">{loadErr}</div>
-          <Button size="sm" onClick={load}>Retry</Button>
+          <Button size="sm" onClick={load}>Try again</Button>
         </div>
       ) : !state ? (
         <Loading className="py-6 text-left" />

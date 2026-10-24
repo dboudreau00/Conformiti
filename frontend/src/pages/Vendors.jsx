@@ -27,6 +27,8 @@ import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
+import { fmtDate } from "../utils/format.js";
+import { QUESTIONNAIRE_ANSWERS } from "../utils/tone.js";
 
 const TIERS = [["critical", "Critical"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]];
 const TIER_TONE = { critical: "danger", high: "warning", medium: "info", low: "muted" };
@@ -58,7 +60,6 @@ const RESULT_TONE = { pending: "faint", satisfactory: "success", exceptions: "wa
 const RESP = [["provider", "Provider"], ["customer", "Us"], ["shared", "Shared"], ["not_applicable", "N/A"]];
 const RESP_LABEL = { provider: "Provider", customer: "Us", shared: "Shared", not_applicable: "N/A" };
 const RESP_TONE = { provider: "info", customer: "accent", shared: "warning", not_applicable: "muted" };
-const ANSWERS = [["yes", "Yes"], ["partial", "Partial"], ["no", "No"], ["n/a", "N/A"]];
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "assessments", label: "Assurance" },
@@ -70,13 +71,7 @@ const EMPTY_VENDOR = {
   data_handled: "", services: "", owner: "", review_cadence: "annual", notes: "",
 };
 
-const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-function fmtDate(iso) {
-  if (!iso) return "-";
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
-}
-const slug = (s) => String(s || "vendor").replace(/[^\w-]+/g, "-").toLowerCase();
+const slug =(s) => String(s || "vendor").replace(/[^\w-]+/g, "-").toLowerCase();
 function hostOf(url) {
   try { return new URL(url).host; } catch { return url; }
 }
@@ -505,7 +500,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
                 <li key={q.id} className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
                   <p className="text-[13px] text-ink">{q.text}</p>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {ANSWERS.map(([k, l]) => (
+                    {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
                       <Chip key={k} active={answers[q.id]?.answer === k} disabled={!canManage} onClick={() => canManage && setAnswer(q.id, { answer: k })}>{l}</Chip>
                     ))}
                     <input className="input input-sm w-48" placeholder="Note" aria-label={`Note for: ${q.text}`} value={answers[q.id]?.note || ""}

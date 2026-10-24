@@ -15,8 +15,7 @@ import { Chip } from "../components/ui/SegmentedControl.jsx";
 import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
-
-const displayName = (u) => u.full_name || u.username || `User ${u.id}`;
+import { displayName } from "../utils/format.js";
 
 // Named states for the detail panel, so onAnimationComplete can tell its
 // entrance from its exit.

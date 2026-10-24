@@ -155,7 +155,7 @@ export default function Dashboard({ me }) {
           <StackItem className="col-span-12">
             <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
               <span>Couldn't load {joinNames(failed)}. Showing what is available.</span>
-              <Button size="sm" onClick={load}>Retry</Button>
+              <Button size="sm" onClick={load}>Try again</Button>
             </div>
           </StackItem>
         ) : null}

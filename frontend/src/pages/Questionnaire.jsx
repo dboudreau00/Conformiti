@@ -14,8 +14,8 @@ import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
 import { Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
+import { QUESTIONNAIRE_ANSWERS } from "../utils/tone.js";
 
-const ANSWERS = [["yes", "Yes"], ["partial", "Partial"], ["no", "No"], ["n/a", "N/A"]];
 const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "long", year: "numeric" });
 const fmt = (iso) => {
   if (!iso) return "";
@@ -158,7 +158,7 @@ export default function Questionnaire() {
                     <li key={q.id} className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
                       <p className="text-[13px] text-ink">{q.text}</p>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {ANSWERS.map(([k, l]) => (
+                        {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
                           <Chip key={k} active={answers[q.id]?.answer === k} onClick={() => setAnswer(q.id, { answer: k })}>{l}</Chip>
                         ))}
                         <input className="input input-sm w-48" placeholder="Note" aria-label={`Note for: ${q.text}`} maxLength={1000}

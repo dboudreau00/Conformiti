@@ -222,7 +222,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       {error ? (
         <div className="notice notice-err mx-5 mt-3 flex items-center justify-between gap-3" role="alert">
           <span>{error}</span>
-          <Button size="sm" onClick={() => setAttempt((a) => a + 1)}>Retry</Button>
+          <Button size="sm" onClick={() => setAttempt((a) => a + 1)}>Try again</Button>
         </div>
       ) : null}
 

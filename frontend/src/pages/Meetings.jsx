@@ -330,7 +330,7 @@ export default function Meetings({ me }) {
                   loadSeries(activeId ?? undefined);
                 }}
               >
-                Retry
+                Try again
               </Button>
             </div>
           </StackItem>

@@ -14,6 +14,7 @@ import { FolderTree } from "../components/documents/FolderTree.jsx";
 import { cn } from "../utils/cn.js";
 import { errorText, loadFailReason as failReason } from "../utils/a11y.js";
 import { useDeepLink } from "../utils/deepLink.js";
+import { fmtDate } from "../utils/format.js";
 import { DOC_STATUS, dueLabel, dueTone, toneVar } from "../utils/tone.js";
 
 const CADENCE = [
@@ -26,7 +27,6 @@ const GRANT_BY = [{ id: "role", label: "Role" }, { id: "user", label: "User" }];
 const EMPTY_UPLOAD = { name: "", cadence: "annual", owner: "", file: null };
 const MAX_CHIPS = 3;
 
-const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 // Mirrors Document.CADENCE_MONTHS on the server, for the Mark reviewed
 // confirmation: a cadence missing here schedules no next review at all.
 const CADENCE_MONTHS = { monthly: 1, quarterly: 3, semiannual: 6, annual: 12, biennial: 24 };
@@ -56,12 +56,6 @@ const DOC_TRACKS = [
 const DOC_COLS = columns(DOC_TRACKS);
 const DOC_COLS_EDIT = columns([...DOC_TRACKS, track(28)]); // plus one IconButton
 const SEARCH_COLS = columns([track(176, 1.6), track(140, 1), track(100), track(92), track(80, 1)]);
-
-function fmtDate(iso) {
-  if (!iso) return "-";
-  const d = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
-}
 
 function findNode(nodes, id) {
   for (const n of nodes) {

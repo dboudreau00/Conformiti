@@ -86,6 +86,11 @@ export const RISK_RATING = {
   critical: "danger",
 };
 
+/** The answer scale of a vendor questionnaire, [value, label]. One list for
+ *  the public form a vendor fills in and the vendor file that reads it back,
+ *  so the two can never offer different answers. */
+export const QUESTIONNAIRE_ANSWERS = [["yes", "Yes"], ["partial", "Partial"], ["no", "No"], ["n/a", "N/A"]];
+
 /** Tone for a review that is due in `days` (negative = overdue). */
 export function dueTone(days) {
   if (days == null) return "muted";
