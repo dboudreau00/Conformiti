@@ -165,3 +165,13 @@ class APITestBase(TestCase):
         if user is not None:
             c.force_authenticate(user)
         return c
+
+
+def assert_same_as_missing(case, real, missing, real_pk, missing_pk=999999):
+    """An id the caller may not see answers exactly as an id that is not there:
+    the status, the wording and the error code. Any difference tells them which
+    ids exist."""
+    case.assertEqual(real.status_code, 400, getattr(real, "data", real.content[:300]))
+    case.assertEqual(missing.status_code, 400, getattr(missing, "data", missing.content[:300]))
+    case.assertEqual(str(real.data).replace(str(real_pk), "N"), str(missing.data).replace(str(missing_pk), "N"))
+    case.assertEqual(real.data[next(iter(real.data))][0].code, missing.data[next(iter(missing.data))][0].code)

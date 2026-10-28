@@ -213,6 +213,21 @@ class KeyFilePublishTests(SimpleTestCase):
                 self.path = Path(self._tmp.name) / "nested" / "key"
                 self.agree(start_empty=True)
 
+    def test_a_claim_still_being_deleted_on_windows_counts_as_held(self):
+        """Eight workers at once on Windows: one releases the claim while
+        another creates it, and the second got PermissionError, which errored
+        the worker instead of waiting its turn."""
+        from config import keyfile
+
+        claim = self.path.with_name(".key.fill")
+        refused = PermissionError(13, "Access is denied")
+        with mock.patch.object(keyfile.os, "open", side_effect=refused):
+            with mock.patch.object(keyfile, "DELETE_PENDING_REFUSED", True):
+                self.assertFalse(keyfile._take(claim))
+            with mock.patch.object(keyfile, "DELETE_PENDING_REFUSED", False):
+                with self.assertRaises(PermissionError):
+                    keyfile._take(claim)
+
     def test_a_claim_left_by_a_process_that_died_is_cleared(self):
         from config import keyfile
 

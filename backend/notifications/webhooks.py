@@ -153,7 +153,8 @@ def slack_payload(title, text, facts=None, url="", severity="info"):
             {"type": "mrkdwn", "text": f"*{mrkdwn_text(k)}*\n{mrkdwn_text(v)}"[:200]} for k, v in list(facts)[:10]]})
     if url:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{url}|Open in Conformiti>"}]})
-    return {"text": f"{title}: {text}"[:3000], "blocks": blocks}
+    # The notification fallback is mrkdwn as well, so it is escaped with the blocks.
+    return {"text": f"{mrkdwn_text(title)}: {mrkdwn_text(text)}"[:3000], "blocks": blocks}
 
 
 def teams_payload(title, text, facts=None, url="", severity="info"):

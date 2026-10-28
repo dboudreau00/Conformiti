@@ -29,6 +29,13 @@ const SSO_ERRORS = {
   mfa_required: "This server requires a second factor for single sign-on. Sign in with your password once and enrol an authenticator, or have your identity provider assert one.",
 };
 
+// A code is used as a key. Only a code this map owns is a message. An
+// inherited name is a function or an object, and rendering that blanks the page.
+function ssoErrorText(code) {
+  if (typeof code !== "string" || !Object.prototype.hasOwnProperty.call(SSO_ERRORS, code)) return "";
+  return SSO_ERRORS[code];
+}
+
 const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0, backup_codes: false };
 
 // createsuperuser as each install path runs it, the forms INSTALL.md gives. A
@@ -160,7 +167,7 @@ export default function Login({ onDone }) {
     const ticket = params.get("sso");
     const code = params.get("sso_error");
     if (code) {
-      setErr(SSO_ERRORS[code] || "The identity provider declined the sign-in.");
+      setErr(ssoErrorText(code) || "The identity provider declined the sign-in.");
       window.history.replaceState(null, "", "/login");
       return;
     }
@@ -233,7 +240,7 @@ export default function Login({ onDone }) {
       if (ex?.response?.status === 429) {
         setErr("Too many attempts. Wait a minute and try again.");
       } else if (ssoTicket && data?.code && data.code !== "mfa_invalid") {
-        resetToStart(SSO_ERRORS[data.code] || data.detail || SSO_ERRORS.state);
+        resetToStart(ssoErrorText(data.code) || data.detail || SSO_ERRORS.state);
       } else {
         setErr(data?.detail || passkeyErrorText(ex));
         await refreshChallenge();
@@ -275,7 +282,7 @@ export default function Login({ onDone }) {
         setErr(refused);
       } else if (ssoTicket && data?.code && data.code !== "mfa_invalid") {
         // The ticket is gone (expired, or too many tries): back to the start.
-        resetToStart(SSO_ERRORS[data.code] || data.detail || SSO_ERRORS.state);
+        resetToStart(ssoErrorText(data.code) || data.detail || SSO_ERRORS.state);
       } else if (mfaStep) {
         setErr(data?.detail && !/invalid authentication code/i.test(String(data.detail))
           ? String(data.detail)

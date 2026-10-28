@@ -156,11 +156,18 @@ class AnswerTests(PbcBase):
         self.assertFalse(listed["results"][0]["can"]["edit"])
         # ...but not the package itself.
         self.assertEqual(self.owner_client.get("/api/evidence-packages/").data["count"], 0)
-        # Owen can attach the document in his own folder, not the hidden one.
+        # Owen can attach the document in his own folder. One in a folder he
+        # cannot see is the same answer as an id that is not there.
         r = self.attach(self.owner_client, self.doc, note="Signed copy")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["content_sha256"], __import__("hashlib").sha256(b"policy bytes").hexdigest())
-        self.assertEqual(self.attach(self.owner_client, self.hidden).status_code, 403)
+        hidden = self.attach(self.owner_client, self.hidden)
+        missing = self.owner_client.post(
+            "/api/pbc-items/", {"request": self.line["id"], "document": 999999}, format="json")
+        self.assertEqual(hidden.status_code, 400)
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(str(hidden.data).replace(str(self.hidden.pk), "N"),
+                         str(missing.data).replace("999999", "N"))
         self.assertEqual(self.attach(self.owner_client, self.doc).status_code, 400)   # already attached
         # Marking provided, with the attachment standing in for a note.
         r = self.owner_client.post(f"/api/pbc-requests/{self.line['id']}/provide/", {}, format="json")

@@ -1,10 +1,12 @@
 """0.9.5: an edited review date starts the reminders again, and the folder
-tree costs a fixed number of queries however many folders it has."""
+tree costs a fixed number of queries however many folders it has. 0.9.5oa: a
+folder the caller cannot see answers as one that does not exist on every route
+that takes one, and a move names its folder by a whole number."""
 from django.utils import timezone
 
-from documents.models import EDIT, VIEW, Document, Folder
+from documents.models import EDIT, MANAGE, VIEW, Document, Folder
 from notifications.tasks import OVERDUE, run_review_scan
-from testutils import APITestBase, grant, make_doc
+from testutils import APITestBase, assert_same_as_missing, grant, make_doc
 
 
 class ReviewClockTests(APITestBase):
@@ -103,4 +105,110 @@ class FolderTreeQueryTests(APITestBase):
             for folder in folders:
                 self.assertEqual(bulk[folder.id], folder.effective_access(user),
                                  f"{user.username} on {folder.name}")
+
+
+class HiddenFolderIdTests(APITestBase):
+    """A 403 for a folder the caller cannot see and a 400 for an id that is not
+    there told a member which folder ids exist."""
+
+    def test_a_document_patched_into_a_hidden_folder(self):
+        # The owner may PATCH their document with only view on its folder.
+        grant(self.tree.ctrl1, user=self.owner, level=VIEW)
+        doc = make_doc(self.tree.ctrl1, self.owner)
+        client = self.client_for(self.owner)
+        hidden = self.tree.ctrl2.pk
+        real = client.patch(f"/api/documents/{doc.pk}/", {"folder": hidden}, format="json")
+        missing = client.patch(f"/api/documents/{doc.pk}/", {"folder": 999999}, format="json")
+        assert_same_as_missing(self, real, missing, hidden)
+        # A destination they can edit is still refused: the source is only view.
+        grant(self.tree.ctrl2, user=self.owner, level=EDIT)
+        refused = client.patch(f"/api/documents/{doc.pk}/", {"folder": self.tree.ctrl2.pk}, format="json")
+        self.assertEqual(refused.status_code, 403)
+        doc.refresh_from_db()
+        self.assertEqual(doc.folder_id, self.tree.ctrl1.pk)
+
+    def test_a_folder_made_under_a_hidden_parent(self):
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        client = self.client_for(self.owner)
+        hidden = self.tree.ctrl2.pk
+        real = client.post("/api/folders/", {"name": "Probe", "parent": hidden}, format="json")
+        missing = client.post("/api/folders/", {"name": "Probe", "parent": 999999}, format="json")
+        assert_same_as_missing(self, real, missing, hidden)
+        visible = Folder.objects.create(name="Visible only")
+        grant(visible, user=self.owner, level=VIEW)
+        self.assertEqual(
+            client.post("/api/folders/", {"name": "Child", "parent": visible.pk}, format="json").status_code, 403)
+        made = client.post("/api/folders/", {"name": "Child", "parent": self.tree.ctrl1.pk}, format="json")
+        self.assertEqual(made.status_code, 201, made.data)
+
+    def test_a_folder_moved_under_a_hidden_parent(self):
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        client = self.client_for(self.owner)
+        hidden = self.tree.root.pk
+        real = client.patch(f"/api/folders/{self.tree.ctrl1.pk}/", {"parent": hidden}, format="json")
+        missing = client.patch(f"/api/folders/{self.tree.ctrl1.pk}/", {"parent": 999999}, format="json")
+        assert_same_as_missing(self, real, missing, hidden)
+        self.assertEqual(Folder.objects.get(pk=self.tree.ctrl1.pk).parent_id, self.tree.cat.pk)
+        # A folder they manage, moved under one they can only view, is still refused.
+        grant(self.tree.ctrl1, user=self.owner, level=MANAGE)
+        child = client.post("/api/folders/", {"name": "Scans", "parent": self.tree.ctrl1.pk}, format="json")
+        self.assertEqual(child.status_code, 201, child.data)
+        view_only = Folder.objects.create(name="View target")
+        grant(view_only, user=self.owner, level=VIEW)
+        refused = client.patch(f"/api/folders/{child.data['id']}/", {"parent": view_only.pk}, format="json")
+        self.assertEqual(refused.status_code, 403)
+        self.assertEqual(Folder.objects.get(pk=child.data["id"]).parent_id, self.tree.ctrl1.pk)
+
+    def test_a_grant_made_on_or_moved_to_a_hidden_folder(self):
+        client = self.client_for(self.owner)
+        hidden = self.tree.root.pk
+        body = {"user": self.viewer.pk, "access_level": "view"}
+        real = client.post("/api/folder-permissions/", {"folder": hidden, **body}, format="json")
+        missing = client.post("/api/folder-permissions/", {"folder": 999999, **body}, format="json")
+        assert_same_as_missing(self, real, missing, hidden)
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        self.assertEqual(
+            client.post("/api/folder-permissions/", {"folder": self.tree.ctrl1.pk, **body}, format="json").status_code,
+            403)
+        grant(self.tree.ctrl2, user=self.owner, level=MANAGE)
+        made = client.post("/api/folder-permissions/", {"folder": self.tree.ctrl2.pk, **body}, format="json")
+        self.assertEqual(made.status_code, 201, made.data)
+        moved = client.patch(f"/api/folder-permissions/{made.data['id']}/", {"folder": hidden}, format="json")
+        moved_missing = client.patch(f"/api/folder-permissions/{made.data['id']}/", {"folder": 999999}, format="json")
+        assert_same_as_missing(self, moved, moved_missing, hidden)
+        self.assertEqual(client.get(f"/api/folder-permissions/{made.data['id']}/").data["folder"], self.tree.ctrl2.pk)
+
+
+class MoveTargetTypeTests(APITestBase):
+    """JSON true is 1 and 1.5 truncated to 1, so either moved a document into a
+    folder the caller never named."""
+
+    def setUp(self):
+        super().setUp()
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        grant(self.tree.ctrl2, user=self.owner, level=EDIT)
+        self.doc = make_doc(self.tree.ctrl1, self.owner)
+        self.client = self.client_for(self.owner)
+
+    def move(self, folder):
+        return self.client.post(f"/api/documents/{self.doc.pk}/move/", {"folder": folder}, format="json")
+
+    def test_a_fraction_is_not_found(self):
+        self.assertEqual(self.move(self.tree.ctrl2.pk + 0.5).status_code, 400)
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.folder_id, self.tree.ctrl1.pk)
+
+    def test_true_is_not_found(self):
+        folder_one, _ = Folder.objects.get_or_create(pk=1, defaults={"name": "Pk one"})
+        grant(folder_one, user=self.owner, level=EDIT)
+        self.assertEqual(self.move(True).status_code, 400)
+        self.doc.refresh_from_db()
+        self.assertEqual(self.doc.folder_id, self.tree.ctrl1.pk)
+
+    def test_a_whole_number_past_the_database_integer_is_not_found(self):
+        # Django drops an out-of-range integer from an exact lookup before any
+        # SQL, so this is "not found" on every database.
+        self.assertEqual(self.move(2 ** 63).status_code, 400)
+        response = self.client.get(f"/api/documents/{self.doc.pk}/versions/{2 ** 63}/download/")
+        self.assertEqual(response.status_code, 400)
 

@@ -24,6 +24,36 @@ class AuditMiddlewareTests(APITestBase):
         self.assertNotIn("password", entry.detail)
         self.assertNotIn("Another-Strong", entry.detail)
 
+    def test_an_upload_records_its_field_names(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from documents.models import EDIT
+        from testutils import grant
+
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        r = self.client_for(self.owner).post("/api/documents/", {
+            "folder": self.tree.ctrl1.pk, "name": "Scan", "file": SimpleUploadedFile("scan.txt", b"evidence"),
+        }, format="multipart")
+        self.assertEqual(r.status_code, 201, r.data)
+        entry = AuditLog.objects.filter(object_type="documents", action="create").latest("timestamp")
+        self.assertIn("fields=", entry.detail)
+        self.assertIn("file", entry.detail)
+        self.assertNotIn("evidence", entry.detail.replace("fields=", ""))
+
+    def test_a_refused_form_or_upload_is_not_parsed_for_the_trail(self):
+        """Reading a form or an upload before the view parsed it for every
+        caller, refused and anonymous ones included, and only an entry that is
+        written needs the names."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+
+        from audit.middleware import AuditLogMiddleware
+
+        request = RequestFactory().post("/api/documents/", {"name": "x", "file": SimpleUploadedFile("a.txt", b"x")})
+        AuditLogMiddleware(lambda r: HttpResponse(status=401))(request)
+        self.assertFalse(hasattr(request, "_files"))
+
     def test_failed_and_read_requests_are_not_logged(self):
         before = AuditLog.objects.count()
         c = self.client_for(self.viewer)

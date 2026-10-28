@@ -73,6 +73,11 @@ def _link(source, destination):
     return True
 
 
+#: Windows refuses to create a name whose file another process is still
+#: deleting (a claim just released) with PermissionError, not FileExistsError.
+DELETE_PENDING_REFUSED = os.name == "nt"
+
+
 def _take(claim):
     """Take the claim on filling an empty key file, or say it is held."""
     try:
@@ -80,6 +85,12 @@ def _take(claim):
         return True
     except FileExistsError:
         return False
+    except PermissionError:
+        # Held for a moment longer on Windows. Anywhere else the directory
+        # cannot be written, which is a real error.
+        if DELETE_PENDING_REFUSED:
+            return False
+        raise
 
 
 def _age(path):

@@ -75,17 +75,22 @@ def _client_ip(request):
         return None
 
 
-def _summarise_body(request):
+def _summarise_body(request, form=False):
     """Return the *names* of the top-level fields in a JSON or form body, so
     an entry reads 'PATCH /api/users/3/ fields=role,is_active' rather than
     just the path. Values are deliberately not recorded: the trail must be
-    safe to hand to an auditor without leaking document text or secrets."""
+    safe to hand to an auditor without leaking document text or secrets.
+
+    A JSON body is read before the view, capped. A form or an upload is read
+    only once the view has answered and the entry is being written (``form``):
+    the view has parsed it by then, and parsing it before the view did that
+    work for every caller, refused and anonymous ones included."""
     if request.method not in ("POST", "PUT", "PATCH"):
         return ""
     ctype = (request.META.get("CONTENT_TYPE") or "").split(";")[0].strip().lower()
     keys = []
     try:
-        if ctype == "application/json":
+        if ctype == "application/json" and not form:
             length = int(request.META.get("CONTENT_LENGTH") or 0)
             if 0 < length <= MAX_BODY_CAPTURE:
                 # Reading .body here caches it on the request, so DRF's parser
@@ -93,7 +98,7 @@ def _summarise_body(request):
                 payload = json.loads(request.body.decode("utf-8") or "null")
                 if isinstance(payload, dict):
                     keys = list(payload.keys())
-        elif ctype in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        elif ctype in ("application/x-www-form-urlencoded", "multipart/form-data") and form:
             keys = list(request.POST.keys()) + list(request.FILES.keys())
     except Exception:  # malformed body: the view will reject it, so there is nothing to record
         return ""
@@ -134,6 +139,7 @@ class AuditLogMiddleware:
         if target is None:
             return
         action, object_type, object_id = target
+        fields = fields or _summarise_body(request, form=True)
 
         from .models import AuditLog
         names = [f for f in fields.split(",") if f and f not in ADMIN_FORM_NOISE
@@ -158,6 +164,7 @@ class AuditLogMiddleware:
             return
         if not (user and user.is_authenticated) or response.status_code >= 400:
             return
+        fields = fields or _summarise_body(request, form=True)
 
         from .models import AuditLog
         ip = _client_ip(request)

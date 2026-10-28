@@ -20,6 +20,34 @@ class PbcItemSerializer(serializers.ModelSerializer):
         read_only_fields = ["document_name", "version", "size_bytes", "content_sha256",
                             "attached_by_name", "attached_at"]
 
+    def __init__(self, *args, **kwargs):
+        """A document or a request the caller cannot see is a missing id.
+
+        Both fields otherwise accept any row in the workspace, and the view
+        then answers 403. That 403 confirms the id. The 400 a missing id
+        already gets does not.
+        """
+        super().__init__(*args, **kwargs)
+        from documents.access import accessible_folder_ids
+        from documents.models import Document
+
+        from . import access
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        document = self.fields.get("document")
+        line = self.fields.get("request")
+        if user is None or not getattr(user, "is_authenticated", False):
+            if document is not None:
+                document.queryset = Document.objects.none()
+            if line is not None:
+                line.queryset = line.queryset.none()
+            return
+        if document is not None:
+            document.queryset = Document.objects.filter(folder_id__in=accessible_folder_ids(user))
+        if line is not None:
+            line.queryset = access.readable_pbc_requests(user)
+
     def get_download_url(self, obj):
         return f"/pbc-items/{obj.pk}/file/"
 
@@ -58,6 +86,10 @@ class PbcRequestSerializer(serializers.ModelSerializer):
             user = getattr(self.context.get("request"), "user", None)
             if is_external_auditor(user):
                 field.queryset = field.queryset.none()
+        # Same rule as a sample's control. An id in a package this caller
+        # cannot read has to be "does not exist", not a 400 that says the
+        # control is real and simply in some other package.
+        self.fields["package_control"] = ReadablePackageControlField(allow_null=True, required=False)
 
     class Meta:
         model = PbcRequest

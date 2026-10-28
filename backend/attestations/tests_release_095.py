@@ -1,5 +1,7 @@
 """0.9.5: the bundled verifier refuses an unsigned bundle, and the public key
-list does not enumerate the organisations on an installation."""
+list does not enumerate the organisations on an installation. 0.9.5oa: an id
+the caller cannot read, in a PBC line or an attachment, answers as an id that
+is not there."""
 import subprocess
 import sys
 import tempfile
@@ -7,9 +9,12 @@ from pathlib import Path
 
 from accounts import tenancy
 from accounts.models import Workspace
-from testutils import APITestBase
+from attestations.models import EvidencePackage, PackageControl
+from documents.models import VIEW
+from testutils import APITestBase, assert_same_as_missing, grant, make_doc
 
 from .tests import PackageTestBase
+from .tests_pbc import PbcBase
 
 
 def run_verifier(root, *flags):
@@ -139,3 +144,52 @@ class SigningKeyDirectoryTests(APITestBase):
         self.assertNotIn("old-co", body)
         self.assertNotIn("Old Co", body)
         self.assertNotIn("deadbeefdeadbeef", body)
+
+
+class PbcHiddenIdTests(PbcBase):
+    """A PBC line's control and an attachment's document and request accepted
+    any row in the workspace, and the view then answered 403, which confirmed
+    the id."""
+
+    def setUp(self):
+        super().setUp()
+        raised = self.raise_line(self.auditor_client).data
+        self.line = self.manager_client.patch(
+            f"/api/pbc-requests/{raised['id']}/", {"assignee": self.owner.pk}, format="json").data
+        self.hidden = make_doc(self.tree.ctrl2, owner=self.manager, name="Hidden report", content=b"secret")
+        grant(self.tree.ctrl1, user=self.owner, level=VIEW)
+
+    def test_a_control_of_a_package_the_auditor_cannot_read(self):
+        other = EvidencePackage.objects.create(name="Draft elsewhere", created_by=self.manager)
+        row = PackageControl.objects.create(package=other, control_ref="ZZ", title="Hidden control")
+        real = self.raise_line(self.auditor_client, package_control=row.pk)
+        missing = self.raise_line(self.auditor_client, package_control=999999)
+        assert_same_as_missing(self, real, missing, row.pk)
+        own = self.package.controls.first()
+        created = self.raise_line(self.auditor_client, package_control=own.pk)
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["control_ref"], own.control_ref)
+        line = self.raise_line(self.auditor_client).data
+        patched = self.auditor_client.patch(f"/api/pbc-requests/{line['id']}/", {"package_control": row.pk},
+                                            format="json")
+        patched_missing = self.auditor_client.patch(f"/api/pbc-requests/{line['id']}/",
+                                                    {"package_control": 999999}, format="json")
+        assert_same_as_missing(self, patched, patched_missing, row.pk)
+
+    def test_a_document_in_a_folder_the_assignee_cannot_see(self):
+        attached = self.owner_client.post("/api/pbc-items/", {"request": self.line["id"], "document": self.doc.pk},
+                                          format="json")
+        self.assertEqual(attached.status_code, 201, attached.data)
+        real = self.owner_client.post("/api/pbc-items/", {"request": self.line["id"], "document": self.hidden.pk},
+                                      format="json")
+        missing = self.owner_client.post("/api/pbc-items/", {"request": self.line["id"], "document": 999999},
+                                         format="json")
+        assert_same_as_missing(self, real, missing, self.hidden.pk)
+
+    def test_a_request_the_caller_cannot_read(self):
+        other = self.raise_line(self.manager_client).data
+        real = self.owner_client.post("/api/pbc-items/", {"request": other["id"], "document": self.doc.pk},
+                                      format="json")
+        missing = self.owner_client.post("/api/pbc-items/", {"request": 999999, "document": self.doc.pk},
+                                         format="json")
+        assert_same_as_missing(self, real, missing, other["id"])

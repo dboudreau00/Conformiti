@@ -179,11 +179,14 @@ class WebhookTests(PackageTestBase):
         """A vendor types their name into the public questionnaire and it ends
         up in the organisation's channel. Slack reads `<!channel>` as a mention
         of everyone and `<url|label>` as a link, so the three characters it
-        reserves are escaped; Teams renders a TextBlock literally."""
+        reserves are escaped, in the blocks and in the fallback text that the
+        notification itself shows; Teams renders a TextBlock literally."""
         webhooks.post_event("test", "Returned by <!channel>", "<https://evil.example|Approve in Conformiti> & co",
                             facts=[("Vendor tier", "<b>")], sync=True)
         by_url = {c["url"]: c["body"] for c in self.http.calls}
         slack = by_url[SLACK_HOOK]
+        self.assertEqual(slack["text"],
+                         "Returned by &lt;!channel&gt;: &lt;https://evil.example|Approve in Conformiti&gt; &amp; co")
         body = slack["blocks"][0]["text"]["text"]
         self.assertIn("*Returned by &lt;!channel&gt;*", body)
         self.assertIn("&lt;https://evil.example|Approve in Conformiti&gt; &amp; co", body)

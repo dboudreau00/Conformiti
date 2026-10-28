@@ -5,7 +5,7 @@ import django_filters as filters
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ErrorDetail, PermissionDenied, ValidationError
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -59,6 +59,12 @@ def _visible_folders(user):
     )
 
 
+def _missing_pk(pk):
+    """DRF's own wording for a primary key that is not in the queryset, code
+    included, so a hidden row and a missing id are the same answer."""
+    return [ErrorDetail(f'Invalid pk "{pk}" - object does not exist.', code="does_not_exist")]
+
+
 class FolderViewSet(viewsets.ModelViewSet):
     serializer_class = FolderSerializer
     permission_classes = [IsAuthenticated, FolderAccessPermission]
@@ -86,6 +92,10 @@ class FolderViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user
         parent = serializer.validated_data.get("parent")
+        # A parent the caller cannot see is answered as one that does not
+        # exist. A 403 here would confirm a folder hidden from them.
+        if parent is not None and not parent.can_view(user):
+            raise ValidationError({"parent": _missing_pk(parent.pk)})
         allowed = user.can_manage_folders or (parent and parent.can_edit(user))
         if not allowed:
             raise PermissionDenied("You cannot create a folder here.")
@@ -100,6 +110,8 @@ class FolderViewSet(viewsets.ModelViewSet):
         user = self.request.user
         new_parent = serializer.validated_data.get("parent", folder.parent)
         if (new_parent.id if new_parent else None) != folder.parent_id:
+            if new_parent is not None and not new_parent.can_view(user):
+                raise ValidationError({"parent": _missing_pk(new_parent.pk)})
             if folder.is_seeded:
                 raise PermissionDenied("Framework folders are generated from the control library and cannot be moved.")
             if not folder.can_manage(user):
@@ -206,7 +218,12 @@ class FolderPermissionViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You must be able to manage this folder to change its access.")
 
     def perform_create(self, serializer):
-        self._check_manage(serializer.validated_data["folder"])
+        folder = serializer.validated_data["folder"]
+        # Manage is checked second. A folder they cannot see must not be
+        # confirmed by the 403 that "you cannot manage this" would be.
+        if not folder.can_view(self.request.user):
+            raise ValidationError({"folder": _missing_pk(folder.pk)})
+        self._check_manage(folder)
         serializer.save()
 
     def perform_update(self, serializer):
@@ -214,6 +231,8 @@ class FolderPermissionViewSet(viewsets.ModelViewSet):
         self._check_manage(serializer.instance.folder)
         target = serializer.validated_data.get("folder")
         if target is not None:
+            if not target.can_view(self.request.user):
+                raise ValidationError({"folder": _missing_pk(target.pk)})
             self._check_manage(target)
         serializer.save()
 
@@ -270,7 +289,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         missing id), so the reply never confirms a folder hidden from them;
         one they can see but not edit is the usual 403."""
         if not folder.can_view(self.request.user):
-            raise ValidationError({"folder": [f'Invalid pk "{folder.pk}" - object does not exist.']})
+            raise ValidationError({"folder": _missing_pk(folder.pk)})
         self._require_folder_edit(folder)
 
     def perform_create(self, serializer):
@@ -303,8 +322,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
         # evidence out of a folder is a change to that folder.
         new_folder = serializer.validated_data.get("folder")
         if new_folder is not None and new_folder.id != serializer.instance.folder_id:
-            self._require_folder_edit(serializer.instance.folder)
+            # Destination first. The owner may PATCH with only view on the
+            # source, and checking that edit first answered 403 for a folder
+            # they cannot see and 400 for one that is not there.
             self._require_target_folder(new_folder)
+            self._require_folder_edit(serializer.instance.folder)
         before = serializer.instance.next_review_date
         doc = serializer.save()
         doc.compute_next_review()
@@ -336,8 +358,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def move(self, request, pk=None):
         doc = self.get_object()
         self._require_folder_edit(doc.folder)  # edit on source
+        raw = request.data.get("folder")
+        # True is 1 and 1.5 truncates to 1, so either would move the document
+        # into a folder the caller never named.
+        if isinstance(raw, (bool, float)):
+            raise ValidationError({"folder": "Target folder not found."})
         try:
-            target = Folder.objects.get(pk=request.data.get("folder"))
+            target = Folder.objects.get(pk=raw)
         except (Folder.DoesNotExist, TypeError, ValueError):
             raise ValidationError({"folder": "Target folder not found."})
         # A folder hidden from the caller is "not found" too, never a 403 that
