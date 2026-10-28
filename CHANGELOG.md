@@ -11,6 +11,23 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5oa], 2026-10-28
+
+What a second review of the 0.9.5o changes found, closed. No migration and no stored data changed.
+
+**On upgrade.** Nothing to do.
+
+**Fixed.**
+- A Slack notification's fallback text, the line the notification itself shows, was not escaped like the message, so a name typed into the vendor questionnaire or an auditor's returned note could still mention the whole channel or show a disguised link there. It is escaped the same way now.
+- A folder hidden from the caller was still told apart from one that does not exist when a document was edited into it, when a folder was made or moved under it, and when a grant was made on it or moved to it: a 403 for the one and a 400 for the other. Each is now the same 400.
+- The control of a line on the auditor's request list, and the document and the request of an attachment to one, accepted any row in the workspace, and the answer for a row the caller could not read confirmed that it existed. Each now takes only what the caller can read, and anything else is the same 400 as an id that does not exist.
+- Moving a document with `true` or a fraction as the folder moved it into folder 1, or into the folder the fraction rounds down to. Only a whole number names a folder.
+- The sign-in page opened with an error code that is the name of something every JavaScript object has (`?sso_error=__proto__`) was blank instead of showing the refusal.
+- The audit trail read the fields of a form or an upload before the view had decided anything, so the body of every such request was parsed, refused and anonymous ones included. It reads them after the view now, and only for an entry it writes.
+- On Windows, a worker creating a key file while another was still releasing its claim stopped with "access denied" instead of waiting its turn.
+
+---
+
 ## [0.9.5o], 2026-10-24
 
 What a review of the API found, closed. No migration and no stored data changed.
