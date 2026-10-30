@@ -11,6 +11,26 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5ob], 2026-10-30
+
+A tidy of the code and the defects it turned up. No migration and no stored data changed.
+
+**On upgrade.** Nothing to do.
+
+**Changed.** Comments and docstrings across the code are cut to the reasons a maintainer needs, long lines are wrapped, and a few large functions (the notification feed, the analytics summary, the evidence read actions) are split into private helpers with the same behaviour. The built stylesheet is 232 bytes smaller: two utility rules existed only because a comment used the word.
+
+**Fixed.**
+- A POST to the single sign-on redeem endpoint with no ticket in the browser session wrote a permanent failed-sign-in row each time, so an anonymous caller could grow the audit trail without limit. That refusal is no longer recorded; a wrong ticket in a real sign-in still is.
+- A package the caller cannot read is answered like one that does not exist (a 400) when raising an auditor request line or issuing a grant; the first answered 403, which told a signed-in user which package ids exist.
+- Editing a line on the auditor's request list saves from the row under its lock, so a concurrent accept, return or withdraw is no longer written back over.
+- Adding controls to a package reads the controls already in it under the package lock, so two concurrent adds no longer end in a 500.
+- `remove_demo_data` deleted any audit row from the three demo addresses whose detail began with a lowercase letter, real ones included. It now matches the nine rows the seeder writes.
+- A new access review and its list of accounts are saved together, so a failure part-way no longer leaves an open review with no rows.
+- The last-administrator guard no longer counts an account on an auditor role as an administrator who remains.
+- Answered with a clear error instead of a 500: a Jira reply that is not a JSON object, a form body sent to token refresh in cookie mode, a list or object given as a `responsibility` in the vendor matrix, an audit-log `?days=` too large for a date, and an identity-provider endpoint that redirects.
+- The end-to-end suite pins `POSTGRES_DB` empty, so it can never seed a developer's own database.
+
+---
 ## [0.9.5oa], 2026-10-28
 
 What a second review of the 0.9.5o changes found, closed. No migration and no stored data changed.
