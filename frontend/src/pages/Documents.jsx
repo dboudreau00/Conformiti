@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DownloadIcon, FileUpIcon, FolderPlusIcon, KeyRoundIcon, MoreHorizontalIcon, SearchIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
+import {
+  DownloadIcon,
+  FileUpIcon,
+  FolderPlusIcon,
+  KeyRoundIcon,
+  MoreHorizontalIcon,
+  SearchIcon,
+  Trash2Icon,
+  UploadIcon,
+  XIcon,
+} from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import DocumentViewer, { documentViewerProps } from "../components/documents/DocumentViewer.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
@@ -27,15 +37,9 @@ const GRANT_BY = [{ id: "role", label: "Role" }, { id: "user", label: "User" }];
 const EMPTY_UPLOAD = { name: "", cadence: "annual", owner: "", file: null };
 const MAX_CHIPS = 3;
 
-// Mirrors Document.CADENCE_MONTHS on the server, for the Mark reviewed
-// confirmation: a cadence missing here schedules no next review at all.
+// Mirrors Document.CADENCE_MONTHS on the server: a cadence missing here schedules no next review at all.
 const CADENCE_MONTHS = { monthly: 1, quarterly: 3, semiannual: 6, annual: 12, biennial: 24 };
 
-// Table columns. The grid template and the scroll wrapper's min-width both
-// come from the same numbers: a wrapper narrower than its tracks let the
-// header band and the row dividers stop short of the last column whenever
-// the table scrolled sideways. With the actions column the document table
-// needs 756px, inside the roughly 785px panel a 1366 by 768 laptop leaves.
 const COL_GAP = 12; // gap-3 on the header and every row
 const ROW_PAD = 40; // px-5, both sides
 const track = (px, fr) => [fr ? `minmax(${px}px, ${fr}fr)` : `${px}px`, px];
@@ -46,15 +50,15 @@ function columns(tracks) {
   };
 }
 const DOC_TRACKS = [
-  track(176, 1.6), // document name and its download button
-  track(100), // status, with room for the quarantined badge under it
-  track(92), // review due
-  track(80, 1), // owner
-  track(56), // version
-  track(112, 1), // controls
+  track(176, 1.6),
+  track(100), // room for the quarantined badge under the status
+  track(92),
+  track(80, 1),
+  track(56),
+  track(112, 1),
 ];
 const DOC_COLS = columns(DOC_TRACKS);
-const DOC_COLS_EDIT = columns([...DOC_TRACKS, track(28)]); // plus one IconButton
+const DOC_COLS_EDIT = columns([...DOC_TRACKS, track(28)]);
 const SEARCH_COLS = columns([track(176, 1.6), track(140, 1), track(100), track(92), track(80, 1)]);
 
 function findNode(nodes, id) {
@@ -65,12 +69,6 @@ function findNode(nodes, id) {
   }
   return null;
 }
-
-// Why a read failed, for LoadError to show, comes from utils/a11y.js
-// (loadFailReason): a folder deleted meanwhile is a 400 that a retry only
-// repeats, and its own words say so.
-
-// --- Row editors --------------------------------------------------------------
 
 function MapEditor({ doc, choices, busy, onAdd, onRemove }) {
   const linked = new Set((doc.satisfies || []).map((s) => s.control));
@@ -130,16 +128,11 @@ function RenameEditor({ doc, value, onChange, onSubmit, onCancel, busy }) {
   );
 }
 
-// Per document: the menu that is closing is still in the page for the length
-// of its exit while the next row's opens.
+// Per document: a closing menu stays in the page during its exit while the next row's opens, so their ids must differ.
 const menuId = (doc) => `doc-actions-${doc.id}`;
 
-/** Trigger for the per-row actions menu. The menu itself renders at the page
- * root (see DocActionsMenu below): the row lives inside an overflow-x-auto
- * table and a framer-motion element with its own transform, either of which
- * would clip or mis-place a popover nested directly inside the row. Enter,
- * Space and ArrowDown open it on its first item, ArrowUp on its last. On a
- * menu that is already open the arrow keys move focus into it instead. */
+/** The menu renders at the page root (DocActionsMenu): inside the overflow-x-auto table or a transformed motion
+ * element it would be clipped or mis-placed. Enter, Space and ArrowDown open it on the first item, ArrowUp on the last. */
 function RowActionsTrigger({ doc, open, busy, onToggle }) {
   return (
     <IconButton
@@ -161,29 +154,18 @@ function RowActionsTrigger({ doc, open, busy, onToggle }) {
   );
 }
 
-const MENU_GAP = 6; // between the trigger and the menu
-const MENU_EDGE = 8; // the least room kept between the menu and the viewport edge
+const MENU_GAP = 6;
+const MENU_EDGE = 8;
 
-/** Map, Rename, Mark reviewed and Upload new version behind one menu button,
- * so the row's last column stays one button wide at laptop width (the four
- * as inline buttons need about 260px, a third of the panel).
- *
- * A menu in the WAI-ARIA sense, because it is the only way to reach those
- * four: focus moves to an item on open, ArrowUp and ArrowDown (wrapping),
- * Home and End move between items, Enter and Space activate one, and Escape
- * or Tab closes it and puts focus back on the trigger. Choosing an item does
- * the same before the action runs, so a dialog it opens hands focus back to
- * the trigger rather than to an item that has since unmounted.
- *
- * Positioned from the trigger's own rect, and re-positioned whenever the page
- * or the table scrolls, the window resizes or the page grows or shrinks, so
- * it stays with its row. It opens upwards when there is no room below, which
- * is where the last rows of a long folder are. */
-function DocActionsMenu({ doc, trigger, focusAt, openRequest, mapOpen, renameOpen, onMap, onRename, onMarkReviewed, onNewVersion, onClose }) {
+/** A WAI-ARIA menu: focus moves to an item on open, arrows wrap, Home and End jump, Escape or Tab closes it and refocuses
+ * the trigger (choosing an item does the same before its action runs, so a dialog it opens hands focus back to the trigger).
+ * Positioned from the trigger's rect and re-positioned on scroll and resize; it opens upwards when there is no room below. */
+function DocActionsMenu({
+  doc, trigger, focusAt, openRequest, mapOpen, renameOpen, onMap, onRename, onMarkReviewed, onNewVersion, onClose,
+}) {
   const ref = useRef(null);
 
-  // Placed by writing to the node, not through state, so it is in place
-  // before the first paint and before focus moves into it.
+  // Placed by writing to the node, not state, so it is in place before the first paint and before focus moves in.
   useLayoutEffect(() => {
     function place() {
       const el = ref.current;
@@ -216,10 +198,7 @@ function DocActionsMenu({ doc, trigger, focusAt, openRequest, mapOpen, renameOpe
   useLayoutEffect(() => {
     const items = ref.current?.querySelectorAll('[role="menuitem"]') || [];
     items[focusAt === "last" ? items.length - 1 : 0]?.focus({ preventScroll: true });
-    // Focus moves in on every request to open, not once per mount: a menu
-    // reopened for the same document inside its exit is the same instance
-    // brought back by AnimatePresence, and the trigger's arrow keys on an open
-    // menu mount nothing either.
+    // Focus moves in on every open request, not once per mount: AnimatePresence can bring the same instance back mid-exit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest]);
 
@@ -292,9 +271,7 @@ function DocActionsMenu({ doc, trigger, focusAt, openRequest, mapOpen, renameOpe
       className="w-[200px] overflow-hidden rounded-xl border border-line bg-surface shadow-pop"
     >
       <ul role="none" className="p-1.5">
-        {/* Map and Rename open an editor under the row; choosing one again
-            closes it, and the label says so rather than a pressed state,
-            which a menu item cannot carry. */}
+        {/* Choosing Map or Rename again closes its editor; the label says so, as a menu item cannot carry a pressed state. */}
         {item(mapOpen ? "Close control mapping" : "Map to controls", onMap, mapOpen)}
         {item(renameOpen ? "Cancel rename" : "Rename", onRename, renameOpen)}
         {item("Mark reviewed", onMarkReviewed)}
@@ -327,7 +304,13 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{who}</span>
                 <Badge tone="faint" mono>{p.role ? "role" : "user"}</Badge>
                 <Badge tone={ACCESS_TONE[p.access_level] || "muted"} mono>{p.access_level}</Badge>
-                <Button size="sm" variant="ghost" onClick={() => onRemove(p.id)} disabled={busy} aria-label={`Remove ${p.access_level} access for ${who}`}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onRemove(p.id)}
+                  disabled={busy}
+                  aria-label={`Remove ${p.access_level} access for ${who}`}
+                >
                   Remove
                 </Button>
               </li>
@@ -342,7 +325,13 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
         </div>
         <div className="min-w-[200px] flex-1">
           <label htmlFor="grant-target" className="field-label">{grantBy === "role" ? "Role" : "User"}</label>
-          <select id="grant-target" className="input input-sm" value={grant.target} onChange={(e) => onGrantChange({ ...grant, target: e.target.value })} disabled={busy}>
+          <select
+            id="grant-target"
+            className="input input-sm"
+            value={grant.target}
+            onChange={(e) => onGrantChange({ ...grant, target: e.target.value })}
+            disabled={busy}
+          >
             <option value="">{!list ? "Loading…" : grantBy === "role" ? "Choose a role…" : "Choose a user…"}</option>
             {(list || []).map((x) => (
               <option key={x.id} value={x.id}>
@@ -353,7 +342,13 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
         </div>
         <div>
           <label htmlFor="grant-level" className="field-label">Level</label>
-          <select id="grant-level" className="input input-sm" value={grant.level} onChange={(e) => onGrantChange({ ...grant, level: e.target.value })} disabled={busy}>
+          <select
+            id="grant-level"
+            className="input input-sm"
+            value={grant.level}
+            onChange={(e) => onGrantChange({ ...grant, level: e.target.value })}
+            disabled={busy}
+          >
             {LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </div>
@@ -363,23 +358,19 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
   );
 }
 
-// --- Page -----------------------------------------------------------------------
-
 export default function Documents({ me }) {
   const [tree, setTree] = useState([]);
   const [treeLoading, setTreeLoading] = useState(true);
-  // A failed read is { reason } (see failReason), never an empty list: an empty
-  // tree would read as "No folders yet" and offer to make the first.
+  // A failed read is { reason }, never an empty list: an empty tree would read as "No folders yet" and offer to make the first.
   const [treeErr, setTreeErr] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
   const [folderId, setFolderId] = useState(null);
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [docsErr, setDocsErr] = useState(null);
-  const [msg, setMsg] = useState(null); // {ok, text}
+  const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // Pick-lists, fetched the first time they are needed (null = not loaded yet).
   const [users, setUsers] = useState(null);
   const [roles, setRoles] = useState(null);
   const [controlChoices, setControlChoices] = useState(null);
@@ -391,11 +382,11 @@ export default function Documents({ me }) {
   const [permsErr, setPermsErr] = useState(null);
   const [grantBy, setGrantBy] = useState("role");
   const [grant, setGrant] = useState({ target: "", level: "view" });
-  const [editor, setEditor] = useState(null); // { id, mode: "map" | "rename" }
+  const [editor, setEditor] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [newFolder, setNewFolder] = useState("");
-  const [viewing, setViewing] = useState(null); // props for the in-browser viewer
-  const [actionsFor, setActionsFor] = useState(null); // { doc, trigger, focusAt: "first" | "last", openRequest }
+  const [viewing, setViewing] = useState(null);
+  const [actionsFor, setActionsFor] = useState(null);
 
   const fileRef = useRef(null);
   const versionRef = useRef(null);
@@ -406,15 +397,12 @@ export default function Documents({ me }) {
 
   const folder = useMemo(() => findNode(tree, folderId), [tree, folderId]);
   const canEdit = !!folder && ["edit", "manage"].includes(folder.my_access);
-  // Making a folder at the root is not granted by a folder, because there is
-  // no folder to grant it: it takes the workspace-wide capability.
+  // A root folder has no parent to grant creation: it takes the workspace-wide manage_folders capability.
   const canManageFolders = !!me?.capabilities?.manage_folders || !!me?.is_superuser;
   const { ask, confirmDialog } = useConfirm();
   const canManage = !!folder && folder.my_access === "manage";
   const canDelete = canManage && !folder.is_seeded;
 
-  // Every write goes through this so a rejected request becomes a visible
-  // notice instead of an unhandled rejection and a dead button.
   async function run(fn, okText) {
     setMsg(null);
     setBusy(true);
@@ -440,9 +428,7 @@ export default function Documents({ me }) {
         setExpanded(new Set(r.data.map((n) => n.id)));
       }
     } catch (e) {
-      // A refresh after a change that fails leaves the tree on screen, which
-      // is still right apart from that change, so a notice says so. A first
-      // load that fails has no tree at all, and says that in its place.
+      // expandedOnce marks a loaded tree: a failed refresh keeps it on screen with a notice, only a failed first load shows the error.
       if (expandedOnce.current) setMsg({ ok: false, text: errorText(e, "Couldn't load the folder tree.") });
       else setTreeErr({ reason: failReason(e) });
     } finally {
@@ -456,8 +442,7 @@ export default function Documents({ me }) {
     loadTree();
   }
 
-  // The document list is paginated; fetchAll follows `next` so a folder with
-  // more than a page of documents is never silently truncated.
+  // fetchAll follows the paginated list's next links, so a folder with more than a page is never silently truncated.
   async function loadDocs(id, { silent = false } = {}) {
     const req = ++docsReq.current;
     if (!silent) setDocsLoading(true);
@@ -487,9 +472,8 @@ export default function Documents({ me }) {
     setActionsFor(null);
     loadDocs(node.id);
   }
-  /** `openOnly` is the trigger's arrow keys, which open the menu and never
-   * close it. Every open carries a fresh `openRequest`, which is what moves
-   * focus into the menu, so it does even when no new menu mounts. */
+  /** openOnly is for the trigger's arrow keys: they open the menu and never close it. Every open carries a fresh
+   * openRequest, which moves focus into the menu even when no new menu mounts. */
   function toggleActions(doc, trigger, focusAt = "first", openOnly = false) {
     const openRequest = ++menuRequests.current;
     setActionsFor((cur) => (cur?.doc.id === doc.id && !openOnly ? null : { doc, trigger, focusAt, openRequest }));
@@ -498,14 +482,10 @@ export default function Documents({ me }) {
   const closeActions = useCallback(() => setActionsFor(null), []);
   const refreshDocs = () => { if (folderId != null) loadDocs(folderId, { silent: true }); };
 
-  // Search across every folder the person can see, through the API's
-  // ?search=. Two letters start it, a short pause between keystrokes, and the
-  // newest answer wins.
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState(null); // null = not searching
+  const [hits, setHits] = useState(null);
   const [searching, setSearching] = useState(false);
-  // A search that failed is not one that found nothing: "0 matches, try a
-  // shorter word" would send the reader off to retype a name that does exist.
+  // A failed search is not an empty one: "0 matches, try a shorter word" would send the reader off to retype a real name.
   const [searchErr, setSearchErr] = useState(null);
   const [searchTry, setSearchTry] = useState(0);
   const searchReq = useRef(0);
@@ -541,7 +521,6 @@ export default function Documents({ me }) {
     return () => clearTimeout(t);
   }, [query, searchTry]);
 
-  // Open a hit's folder: expand the path down to it and select it.
   function jumpTo(doc) {
     const node = findNode(tree, doc.folder);
     if (!node) return;
@@ -569,7 +548,6 @@ export default function Documents({ me }) {
     });
   }
 
-  // --- lazy pick-lists ---------------------------------------------------------
   async function ensureUsers() {
     if (users) return;
     try { setUsers(await fetchAll("/users/")); }
@@ -590,7 +568,6 @@ export default function Documents({ me }) {
     }
   }
 
-  // --- upload --------------------------------------------------------------------
   function toggleUpload() {
     if (!canEdit) return;
     const next = !showUpload;
@@ -616,10 +593,6 @@ export default function Documents({ me }) {
     }
   }
 
-  // --- document actions ---------------------------------------------------------
-  // A download that fails says why in the notice at the top of the page
-  // instead of doing nothing. That includes a file the server handed to an nginx that is
-  // not there: the error then names MEDIA_INTERNAL=false.
   async function downloadDoc(d) {
     setMsg(null);
     try {
@@ -656,9 +629,8 @@ export default function Documents({ me }) {
     if (ok) { setEditor(null); refreshDocs(); }
   }
 
-  // Runs inside the confirmation dialog, so a failure has to throw: the dialog
-  // then stays open and says why. Through run() it would be swallowed and the
-  // dialog would close as if the review had been recorded.
+  // Runs inside the confirmation dialog, so a failure must throw: the dialog stays open and says why.
+  // Through run() it would be swallowed and the dialog would close as if the action had succeeded.
   async function markReviewed(d) {
     setMsg(null);
     setBusy(true);
@@ -672,10 +644,7 @@ export default function Documents({ me }) {
     setMsg({ ok: true, text: "Marked as reviewed." });
     refreshDocs();
   }
-  // Says everything the server does: it also approves the document whatever
-  // its status was. The only way off Approved on this page is Upload new
-  // version, which always lands on Draft, so a Draft can go back and an In
-  // review or Expired document cannot.
+  // The confirmation must say everything the server does: marking reviewed also approves the document, whatever its status was.
   function confirmMarkReviewed(d) {
     const months = CADENCE_MONTHS[d.review_cadence];
     const from = DOC_STATUS[d.status]?.label || d.status;
@@ -710,9 +679,7 @@ export default function Documents({ me }) {
     if (ok) refreshDocs();
   }
 
-  // --- folder access --------------------------------------------------------------
-  // A slow reply for a folder the user has since left must not replace the
-  // access list of the one now on screen.
+  // A slow reply for a folder the user has left must not replace the access list of the one now on screen.
   const permsReq = useRef(0);
   async function loadPerms(id) {
     const req = ++permsReq.current;
@@ -752,8 +719,7 @@ export default function Documents({ me }) {
     if (ok) loadPerms(folder.id);
   }
 
-  // --- folders ----------------------------------------------------------------------
-  /** `parent` null makes a folder at the root, which is how the first one is made. */
+  /** parentId: undefined creates inside the open folder, null at the root. */
   async function createFolder(e, parentId) {
     e.preventDefault();
     const name = newFolder.trim();
@@ -787,14 +753,11 @@ export default function Documents({ me }) {
     }
   }
 
-  // --- derived -----------------------------------------------------------------------
   const mix = useMemo(
     () => Object.entries(DOC_STATUS).map(([key, m]) => ({ key, ...m, count: docs.filter((d) => d.status === key).length })),
     [docs]
   );
-  // The counts describe the selected folder's list only once it has arrived.
-  // Before that, or when it failed, they show a dash, not a confident zero
-  // (or, mid-load, the previous folder's numbers under this folder's name).
+  // Counts show a dash until this folder's list has arrived: never zeros, or the previous folder's numbers.
   const countsKnown = !!folder && !docsLoading && !docsErr;
   const cols = canEdit ? DOC_COLS_EDIT : DOC_COLS;
   const meName = me?.full_name || me?.username || "Me";
@@ -812,9 +775,17 @@ export default function Documents({ me }) {
             transition={{ duration: 0.18, ease: EASE }}
             className="mb-4"
           >
-            <div className={cn("notice flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
+            <div
+              className={cn("notice flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")}
+              role={msg.ok ? "status" : "alert"}
+            >
               <span>{msg.text}</span>
-              <button type="button" aria-label="Dismiss" onClick={() => setMsg(null)} className="shrink-0 opacity-70 transition-opacity hover:opacity-100">
+              <button
+                type="button"
+                aria-label="Dismiss"
+                onClick={() => setMsg(null)}
+                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+              >
                 <XIcon className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -823,7 +794,6 @@ export default function Documents({ me }) {
       </AnimatePresence>
 
       <Stack className="grid grid-cols-12 gap-4">
-        {/* ---------------- Left: folders + status mix ---------------- */}
         <StackItem className="col-span-12 lg:col-span-3">
           <Panel className="overflow-hidden">
             <PanelHeader title="Folders" />
@@ -860,8 +830,6 @@ export default function Documents({ me }) {
                 className="max-h-[60vh] overflow-y-auto"
               />
             )}
-            {/* Upload is in the folder's header, so a folder the reader
-                can edit leaves nothing to say here. */}
             {treeErr || canEdit || !folder ? null : (
               <div className="border-t border-line p-3">
                 <p className="text-center text-2xs text-faint">This folder is view-only for you.</p>
@@ -886,12 +854,15 @@ export default function Documents({ me }) {
           </Panel>
         </StackItem>
 
-        {/* ---------------- Right: documents in the selected folder ---------------- */}
         <StackItem className="col-span-12 lg:col-span-9">
           <Panel className="overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
               <div className="relative min-w-[240px] flex-1">
-                <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" strokeWidth={2} aria-hidden="true" />
+                <SearchIcon
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
                 <input
                   type="search"
                   className="input input-sm pl-8"
@@ -921,7 +892,10 @@ export default function Documents({ me }) {
                 ) : (
                   <div className="overflow-x-auto">
                     <div style={{ minWidth: SEARCH_COLS.minWidth }}>
-                      <div className="grid gap-3 border-b border-line bg-surface-2 px-5 py-2" style={{ gridTemplateColumns: SEARCH_COLS.template }}>
+                      <div
+                        className="grid gap-3 border-b border-line bg-surface-2 px-5 py-2"
+                        style={{ gridTemplateColumns: SEARCH_COLS.template }}
+                      >
                         <Label>Document</Label>
                         <Label>Folder</Label>
                         <Label>Status</Label>
@@ -933,7 +907,11 @@ export default function Documents({ me }) {
                           const status = DOC_STATUS[d.status] || { label: d.status, tone: "muted" };
                           const days = d.days_until_review;
                           return (
-                            <li key={d.id} className="grid items-center gap-3 px-5 py-3 transition-colors duration-150 ease-out hover:bg-surface-2" style={{ gridTemplateColumns: SEARCH_COLS.template }}>
+                            <li
+                              key={d.id}
+                              className="grid items-center gap-3 px-5 py-3 transition-colors duration-150 ease-out hover:bg-surface-2"
+                              style={{ gridTemplateColumns: SEARCH_COLS.template }}
+                            >
                               <span className="flex min-w-0 items-center gap-1">
                                 <button
                                   type="button"
@@ -957,10 +935,14 @@ export default function Documents({ me }) {
                               </button>
                               <span><Badge tone={status.tone} dot>{status.label}</Badge></span>
                               <span className="flex flex-col items-start gap-1">
-                                <span className="tabular font-mono text-xs" style={{ color: toneVar(dueTone(days)) }}>{fmtDate(d.next_review_date)}</span>
+                                <span className="tabular font-mono text-xs" style={{ color: toneVar(dueTone(days)) }}>
+                                  {fmtDate(d.next_review_date)}
+                                </span>
                                 <Badge tone={dueTone(days)} mono>{dueLabel(days)}</Badge>
                               </span>
-                              <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "-"}</span>
+                              <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>
+                                {d.owner_name || "-"}
+                              </span>
                             </li>
                           );
                         })}
@@ -1004,7 +986,13 @@ export default function Documents({ me }) {
                       </Button>
                     ) : null}
                     {canDelete ? (
-                      <Button size="sm" variant="danger" icon={<Trash2Icon className="h-3.5 w-3.5" strokeWidth={2} />} onClick={deleteFolder} disabled={busy}>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon={<Trash2Icon className="h-3.5 w-3.5" strokeWidth={2} />}
+                        onClick={deleteFolder}
+                        disabled={busy}
+                      >
                         Delete folder
                       </Button>
                     ) : null}
@@ -1029,13 +1017,23 @@ export default function Documents({ me }) {
                           </div>
                           <div>
                             <label htmlFor="upload-cadence" className="field-label">Review cadence</label>
-                            <select id="upload-cadence" className="input input-sm" value={upload.cadence} onChange={(e) => setUpload((u) => ({ ...u, cadence: e.target.value }))}>
+                            <select
+                              id="upload-cadence"
+                              className="input input-sm"
+                              value={upload.cadence}
+                              onChange={(e) => setUpload((u) => ({ ...u, cadence: e.target.value }))}
+                            >
                               {CADENCE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                             </select>
                           </div>
                           <div>
                             <label htmlFor="upload-owner" className="field-label">Owner</label>
-                            <select id="upload-owner" className="input input-sm" value={upload.owner} onChange={(e) => setUpload((u) => ({ ...u, owner: e.target.value }))}>
+                            <select
+                              id="upload-owner"
+                              className="input input-sm"
+                              value={upload.owner}
+                              onChange={(e) => setUpload((u) => ({ ...u, owner: e.target.value }))}
+                            >
                               <option value="">{meName} (me)</option>
                               {(users || []).filter((u) => u.id !== me?.id).map((u) => (
                                 <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
@@ -1052,9 +1050,11 @@ export default function Documents({ me }) {
                             aria-label="Document file"
                             onChange={(e) => {
                               const file = e.target.files?.[0] || null;
-                              // A blank name takes the file's own, minus the
-                              // extension; a name already typed is kept.
-                              setUpload((u) => ({ ...u, file, name: u.name.trim() || !file ? u.name : file.name.replace(/\.[^.]*$/, "") }));
+                              setUpload((u) => ({
+                                ...u,
+                                file,
+                                name: u.name.trim() || !file ? u.name : file.name.replace(/\.[^.]*$/, ""),
+                              }));
                             }}
                           />
                           <Button
@@ -1064,7 +1064,9 @@ export default function Documents({ me }) {
                             onClick={() => fileRef.current?.click()}
                             disabled={busy}
                           >
-                            <span className={cn("truncate", !upload.file && "text-muted")}>{upload.file ? upload.file.name : "Choose file…"}</span>
+                            <span className={cn("truncate", !upload.file && "text-muted")}>
+                              {upload.file ? upload.file.name : "Choose file…"}
+                            </span>
                           </Button>
                         </div>
                         <div className="flex gap-2">
@@ -1101,15 +1103,17 @@ export default function Documents({ me }) {
 
                 <div className="overflow-x-auto">
                   <div style={{ minWidth: cols.minWidth }}>
-                    <div className="relative grid gap-3 border-b border-line bg-surface-2 px-5 py-2" style={{ gridTemplateColumns: cols.template }}>
+                    <div
+                      className="relative grid gap-3 border-b border-line bg-surface-2 px-5 py-2"
+                      style={{ gridTemplateColumns: cols.template }}
+                    >
                       <Label>Document</Label>
                       <Label>Status</Label>
                       <Label>Review due</Label>
                       <Label>Owner</Label>
                       <Label>Version</Label>
                       <Label>Controls</Label>
-                      {/* Named for screen readers only: the column is one
-                          button wide, narrower than the word. */}
+                      {/* sr-only: the column is one button wide, narrower than the word. */}
                       {canEdit ? <span className="sr-only">Actions</span> : null}
                     </div>
                     {docsLoading ? (
@@ -1166,7 +1170,9 @@ export default function Documents({ me }) {
                                     </span>
                                     <Badge tone={dueTone(days)} mono>{dueLabel(days)}</Badge>
                                   </span>
-                                  <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>{d.owner_name || "-"}</span>
+                                  <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>
+                                    {d.owner_name || "-"}
+                                  </span>
                                   <span className="tabular font-mono text-xs text-muted">v{d.version}</span>
                                   <span className="flex flex-wrap gap-1">
                                     {chips.length === 0 ? <span className="text-2xs text-faint">-</span> : null}
@@ -1189,7 +1195,13 @@ export default function Documents({ me }) {
                                 <AnimatePresence initial={false}>
                                   {mode === "map" ? (
                                     <Collapse key="map" open>
-                                      <MapEditor doc={d} choices={controlChoices} busy={busy} onAdd={(id) => addLink(d, id)} onRemove={removeLink} />
+                                      <MapEditor
+                                        doc={d}
+                                        choices={controlChoices}
+                                        busy={busy}
+                                        onAdd={(id) => addLink(d, id)}
+                                        onRemove={removeLink}
+                                      />
                                     </Collapse>
                                   ) : mode === "rename" ? (
                                     <Collapse key="rename" open>
@@ -1255,7 +1267,6 @@ export default function Documents({ me }) {
         ) : null}
       </AnimatePresence>
 
-      {/* Single hidden picker for "Upload new version": the row's menu records which document, then opens it. */}
       <input
         ref={versionRef}
         type="file"

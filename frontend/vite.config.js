@@ -1,16 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Dev server proxies API + media calls to the Django backend so the SPA can
-// use relative URLs. The backend is expected on 127.0.0.1 at
-// CONFORMITI_DEV_API_PORT (default 8000), the port the local runserver
-// listens on. It is deliberately not CONFORMITI_API_PORT, which moves only the
-// Docker stack's API publish: a value exported for Docker must never point the
-// local web app at the Docker backend and its database. Read from the shell
-// environment: Vite does not load the repository's .env into this file.
-// `vite preview` gets the same proxy so the end-to-end suite (e2e/) can drive
-// the *built* bundle rather than the dev server; E2E_API_PORT points it at the
-// throwaway backend the suite starts, and wins over CONFORMITI_DEV_API_PORT.
+// Not CONFORMITI_API_PORT, which moves the Docker stack's API publish: a value exported for Docker must never
+// point the local app at the Docker backend and its database.
 const API_PORT = process.env.E2E_API_PORT || process.env.CONFORMITI_DEV_API_PORT || 8000;
 const API_TARGET = `http://127.0.0.1:${API_PORT}`;
 const proxy = {
@@ -18,9 +10,6 @@ const proxy = {
   "/media": { target: API_TARGET, changeOrigin: true },
 };
 
-// Long-lived vendor code gets its own cacheable chunks. Written as a function
-// rather than the object form because Vite's Rolldown bundler accepts only a
-// function here.
 const VENDOR = [
   ["react", ["react", "react-dom", "react-router-dom"]],
   ["motion", ["framer-motion"]],
@@ -28,6 +17,7 @@ const VENDOR = [
   ["pdf", ["pdfjs-dist"]],
 ];
 
+// A function, not the object form: Vite's Rolldown bundler accepts only a function here.
 function manualChunks(id) {
   const path = id.split("\\").join("/");
   if (!path.includes("/node_modules/")) return undefined;
@@ -37,18 +27,12 @@ function manualChunks(id) {
   return undefined;
 }
 
-// The dev server's own port: CONFORMITI_DEV_PORT, default 5173 (never
-// CONFORMITI_PORT, which is the Docker stack's nginx). strictPort
-// makes a busy port an error instead of a quiet move to the next one, because
-// the API refuses sign-in from any origin missing from CSRF_TRUSTED_ORIGINS
-// (.env.example sets http://localhost:5173). Moving the port means adding
-// its origin to CSRF_TRUSTED_ORIGINS and CORS_ALLOWED_ORIGINS in .env too.
+// strictPort: sign-in is refused from any origin missing from CSRF_TRUSTED_ORIGINS (.env.example allows 5173),
+// so a busy port must fail, not move; a new port needs its origin in CSRF_TRUSTED_ORIGINS and CORS_ALLOWED_ORIGINS.
 const DEV_PORT = Number(process.env.CONFORMITI_DEV_PORT) || 5173;
 
-// The pages are imported eagerly, so the application's own code is one chunk
-// by design and crosses Vite's 500 kB default, which prints a "(!)" that
-// reads like a failure. 700 kB clears it and still warns if a large
-// dependency is bundled into that chunk by accident.
+// The pages are imported eagerly, so the app's own chunk passes Vite's 500 kB default by design;
+// 700 kB still warns if a large dependency lands in it by accident.
 const CHUNK_WARNING_KB = 700;
 
 export default defineConfig({

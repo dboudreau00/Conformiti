@@ -23,20 +23,14 @@ const REVIEW_STATUS = {
   completed: { label: "Completed", tone: "success" },
 };
 const COLUMNS = ["User", "Role", "Capabilities", "Decision", "Notes"];
-// One template for the header row and every body row so the columns stay aligned.
 const GRID = "grid-cols-[minmax(220px,1.4fr)_minmax(130px,0.9fr)_minmax(150px,1fr)_240px_minmax(200px,1fr)]";
-// The narrowest those rows can be: the five track floors (940px), four 16px
-// gaps and 20px of padding each side. The scroll wrapper holds exactly this,
-// so a narrower panel scrolls instead of the cells running past the header
-// band and the row dividers. Change the two together.
+// GRID_MIN_W is GRID's narrowest width (tracks 940px + four 16px gaps + 2 x 20px padding): change them together.
 const GRID_MIN_W = "min-w-[1044px]";
 
 function fmtDate(s) {
   return s ? s.slice(0, 10) : "never";
 }
 
-/** Keep / Modify / Revoke radio group with a spring-animated tone wash, plus a
- * "pending" marker or a reset affordance so a decision can be cleared again. */
 function DecisionControl({ item, disabled, onChange }) {
   const name = item.full_name || item.username;
   const decision = item.decision;
@@ -93,8 +87,7 @@ function DecisionControl({ item, disabled, onChange }) {
 
 export default function UserAudit({ me }) {
   const canWrite = !!me?.capabilities?.manage_users;
-  // The API answers those who manage users and auditors (AccessAuditPermission)
-  // and refuses everyone else, so the page does not ask on their behalf.
+  // AccessAuditPermission answers those who manage users and auditors and refuses everyone else, so the page does not ask.
   const canRead = canWrite || !!me?.capabilities?.auditor;
 
   const [reviews, setReviews] = useState([]);
@@ -134,7 +127,6 @@ export default function UserAudit({ me }) {
 
   async function loadReviews(selectId) {
     try {
-      // Paginated at 50, follow `next` so older reviews stay selectable.
       const list = await fetchAll("/access-reviews/");
       setReviews(list);
       const pick = selectId
@@ -175,7 +167,6 @@ export default function UserAudit({ me }) {
     try {
       const { data } = await api.patch(`/access-review-items/${item.id}/`, patch);
       setItems((prev) => prev.map((i) => (i.id === item.id ? data : i)));
-      // Keep the picker's decided/total label current without a refetch.
       const delta = (data.decision !== "pending" ? 1 : 0) - (item.decision !== "pending" ? 1 : 0);
       if (delta) {
         const reviewId = data.review ?? item.review;
@@ -190,15 +181,23 @@ export default function UserAudit({ me }) {
     }
   }
 
+  function clearDraft(id) {
+    setDrafts((d) => {
+      const rest = { ...d };
+      delete rest[id];
+      return rest;
+    });
+  }
+
   async function commitNote(item) {
     const draft = drafts[item.id];
     if (draft === undefined) return;
     if (draft === (item.decision_notes || "")) {
-      setDrafts((d) => { const n = { ...d }; delete n[item.id]; return n; });
+      clearDraft(item.id);
       return;
     }
     const ok = await saveItem(item, { decision_notes: draft });
-    if (ok) setDrafts((d) => { const n = { ...d }; delete n[item.id]; return n; });
+    if (ok) clearDraft(item.id);
   }
 
   async function complete() {
@@ -206,9 +205,7 @@ export default function UserAudit({ me }) {
     setMsg(null);
     try {
       const { data } = await api.post(`/access-reviews/${review.id}/complete/`);
-      // Completing deactivates every Revoke row it can and reports the rows
-      // it would not touch. That report is recorded nowhere else, so it stays
-      // on screen for the reviewer to finish those by hand.
+      // Completing reports the Revoke rows it would not touch; that report is recorded nowhere else, so it stays on screen.
       const { applied, ...rev } = data;
       setReview(rev);
       setReviews((rs) => rs.map((r) => (r.id === rev.id ? rev : r)));
@@ -251,25 +248,27 @@ export default function UserAudit({ me }) {
   const allDecided = total > 0 && decided === total;
   const revoking = items.filter((i) => i.decision === "revoke");
   const isOwnRow = (it) => it.user != null && it.user === me?.id;
-  // The server never revokes the reviewer's own access, so that row does not
-  // count toward what completing will change.
+  // The server never revokes the reviewer's own access, so that row does not count toward what completing will change.
   const deactivating = revoking.filter((i) => !isOwnRow(i));
+
+  let completeDescription;
+  if (deactivating.length) {
+    completeDescription = "The accounts marked Revoke are deactivated and signed out of all their sessions straight away. The decisions then become read-only evidence, and nothing can be changed afterwards.";
+  } else if (revoking.length) {
+    completeDescription = "No account will be deactivated: your own row is the only one marked Revoke, and a review never revokes its reviewer's access. Every decision becomes read-only evidence, and nothing can be changed afterwards.";
+  } else {
+    completeDescription = "No row is marked Revoke, so no account changes. Every decision becomes read-only evidence, and nothing can be changed afterwards.";
+  }
 
   return (
     <PanelTransition>
-      {/* Completing also acts on accounts: the backend deactivates the Revoke
-          rows it can and revokes their refresh tokens, and an inactive
-          account's access token is refused on its next request. The dialog
-          says so, names the accounts, and says which rows it leaves alone. */}
+      {/* Completing also deactivates accounts and revokes their refresh tokens, so the dialog names them and says which
+          rows it leaves alone. */}
       <ConfirmDialog
         open={confirmComplete}
         onClose={() => setConfirmComplete(false)}
         title="Complete this review?"
-        description={deactivating.length
-          ? "The accounts marked Revoke are deactivated and signed out of all their sessions straight away. The decisions then become read-only evidence, and nothing can be changed afterwards."
-          : revoking.length
-            ? "No account will be deactivated: your own row is the only one marked Revoke, and a review never revokes its reviewer's access. Every decision becomes read-only evidence, and nothing can be changed afterwards."
-            : "No row is marked Revoke, so no account changes. Every decision becomes read-only evidence, and nothing can be changed afterwards."}
+        description={completeDescription}
         confirmLabel="Complete review"
         tone={deactivating.length ? "danger-solid" : "primary"}
         onConfirm={complete}
@@ -374,7 +373,10 @@ export default function UserAudit({ me }) {
 
         {report && report.reviewId === review?.id ? (
           <StackItem>
-            <div className={cn("notice flex items-start justify-between gap-3", report.skipped.length ? "notice-warn" : "notice-ok")} role="status">
+            <div
+              className={cn("notice flex items-start justify-between gap-3", report.skipped.length ? "notice-warn" : "notice-ok")}
+              role="status"
+            >
               <div className="min-w-0">
                 <p className="font-medium">Review completed.</p>
                 <p className="mt-1">
@@ -395,7 +397,12 @@ export default function UserAudit({ me }) {
                   </>
                 ) : null}
               </div>
-              <button type="button" aria-label="Dismiss" onClick={() => setReport(null)} className="shrink-0 opacity-70 transition-opacity hover:opacity-100">
+              <button
+                type="button"
+                aria-label="Dismiss"
+                onClick={() => setReport(null)}
+                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+              >
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -459,8 +466,6 @@ export default function UserAudit({ me }) {
                         {items.map((it, i) => {
                           const name = it.full_name || it.username;
                           const rowBusy = savingId === it.id;
-                          // Activity sits under the name; the grant count sits with the
-                          // capabilities, where a 220px User column cannot cut it off.
                           const activity = `${it.is_active ? "active" : "inactive"} · last login ${fmtDate(it.last_login)}`;
                           const grants = it.folder_grants ?? 0;
                           return (

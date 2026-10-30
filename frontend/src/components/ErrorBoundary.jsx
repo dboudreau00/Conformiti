@@ -2,12 +2,6 @@ import { Component } from "react";
 import { Button } from "./ui/Button.jsx";
 import { Panel } from "./ui/Panel.jsx";
 
-/**
- * Catches render errors below it and shows a recoverable card instead of a
- * white screen. State-corruption from one page can't take down the shell.
- * The bar and the side menu use it too, with a `fallback` of their own, so
- * a crash in the chrome costs that piece and not the page under it.
- */
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -42,7 +36,6 @@ export default class ErrorBoundary extends Component {
   }
 }
 
-/** What the top bar shows if it cannot be drawn: the way out and nothing else. */
 export function ChromeFallback() {
   return (
     <header className="flex h-[60px] items-center justify-between gap-3 border-b border-line bg-surface px-4 text-[13px] text-muted">

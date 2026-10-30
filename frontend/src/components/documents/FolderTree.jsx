@@ -3,8 +3,6 @@ import { motion } from "framer-motion";
 import { ChevronRightIcon, FolderIcon, FolderOpenIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
 
-/** Flatten the expanded part of the tree in display order so keyboard
- * navigation is a matter of stepping through one list. */
 function flatten(nodes, expanded, depth = 0, parentId = null, out = []) {
   for (const node of nodes) {
     const has = node.children?.length > 0;
@@ -15,16 +13,7 @@ function flatten(nodes, expanded, depth = 0, parentId = null, out = []) {
   return out;
 }
 
-/**
- * Accessible folder tree (WAI-ARIA tree pattern, flat treeitems with aria-level).
- *  - ArrowUp / ArrowDown move focus, ArrowRight expands (or steps into the
- *    first child), ArrowLeft collapses (or steps back to the parent),
- *    Home / End jump, Enter / Space select.
- *  - Roving tabindex: the row last focused (else the selected row, else the
- *    first row) is the single tab stop.
- * Whatever the API returns as roots is rendered as roots, a folder whose
- * parent is not visible to this user is a root of *their* view.
- */
+/** Renders whatever the API returns as roots: a folder whose parent this user cannot see is a root of their view. */
 export function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, className, label = "Folders" }) {
   const rows = useMemo(() => flatten(nodes, expanded), [nodes, expanded]);
   const refs = useRef(new Map());
@@ -115,8 +104,7 @@ export function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, cl
                 aria-hidden="true"
               />
             ) : null}
-            {/* Mouse affordance only (out of the tab order, hidden from AT): keyboard
-                users expand/collapse with ArrowRight/ArrowLeft on the row itself. */}
+            {/* Mouse-only: out of the tab order and hidden from AT; the keyboard expands with ArrowRight/ArrowLeft. */}
             {has ? (
               <button
                 type="button"

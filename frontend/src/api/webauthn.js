@@ -1,12 +1,3 @@
-/**
- * The browser half of a passkey ceremony.
- *
- * The server speaks base64url for every byte field (challenge, ids, the
- * authenticator's outputs); the WebAuthn API wants ArrayBuffers. These helpers
- * translate in both directions and nothing else. Policy (which keys are
- * allowed, what the challenge is, whether the counter moved) is the server's.
- */
-
 function encode(buffer) {
   const bytes = new Uint8Array(buffer);
   let text = "";
@@ -23,14 +14,11 @@ function decode(text) {
   return out.buffer;
 }
 
-/** Whether this browser can do passkeys at all (and is on a secure origin). */
 export function passkeysSupported() {
   return typeof window !== "undefined" && !!window.PublicKeyCredential
     && !!navigator.credentials && typeof navigator.credentials.create === "function";
 }
 
-/** Run navigator.credentials.create() with the server's options and return
- *  the credential in the shape the server verifies. */
 export async function createPasskey(options) {
   const publicKey = {
     ...options,
@@ -52,7 +40,6 @@ export async function createPasskey(options) {
   };
 }
 
-/** Run navigator.credentials.get() for a sign-in challenge. */
 export async function getAssertion(options) {
   const publicKey = {
     ...options,
@@ -74,7 +61,6 @@ export async function getAssertion(options) {
   };
 }
 
-/** What a failed ceremony means to a person. */
 export function passkeyErrorText(err) {
   const name = err?.name || "";
   if (name === "NotAllowedError") return "The passkey prompt was cancelled or timed out. Try again.";

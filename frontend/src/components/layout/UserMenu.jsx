@@ -5,10 +5,6 @@ import { cn } from "../../utils/cn.js";
 import { Menu, MenuItem, MenuSeparator, Popover } from "../ui/Popover.jsx";
 import { NavIcon } from "./NavIcon.jsx";
 
-/** The workspace a person is working in, or null where naming it tells them
- * nothing: an installation with only the default workspace, where a label
- * reading "Default" would be an empty-looking section. A superuser who has switched
- * into another organisation's workspace is always told. */
 export function workspaceNote(me) {
   const ws = me?.active_workspace || me?.workspace_detail;
   const switched = !!me?.active_workspace?.switched;
@@ -28,9 +24,6 @@ function initialsOf(name) {
   return (first + last).toUpperCase();
 }
 
-/** The person: name and role on the button, Settings and Sign out in the
- * menu. Below 1240px the role goes, below 1180px the name too, and the avatar
- * stays. */
 export function UserMenu({ onSignOut }) {
   const { me } = useShell();
   const { account } = useShellNav();
@@ -56,7 +49,11 @@ export function UserMenu({ onSignOut }) {
             open && "border-line bg-surface-2"
           )}
         >
-          <span data-initials={initialsOf(name)} className="flex h-[30px] w-[30px] before:content-[attr(data-initials)] shrink-0 items-center justify-center rounded-full bg-accent/[0.14] font-mono text-[11px] font-medium tracking-[0.02em] text-ink ring-1 ring-inset ring-accent/35" aria-hidden="true" />
+          <span
+            data-initials={initialsOf(name)}
+            className="flex h-[30px] w-[30px] before:content-[attr(data-initials)] shrink-0 items-center justify-center rounded-full bg-accent/[0.14] font-mono text-[11px] font-medium tracking-[0.02em] text-ink ring-1 ring-inset ring-accent/35"
+            aria-hidden="true"
+          />
           <span className="hidden min-w-0 flex-col leading-[1.2] min-[1181px]:flex" aria-hidden="true">
             <span className="max-w-[140px] truncate text-[13px] font-semibold text-ink">{name}</span>{" "}
             <span className="hidden max-w-[140px] truncate text-[11.5px] text-muted min-[1241px]:block">{role}</span>
@@ -68,7 +65,13 @@ export function UserMenu({ onSignOut }) {
         <p className="truncate text-[13px] font-semibold text-ink">{name}</p>
         <p className="truncate text-xs text-muted">{role}</p>
         {note ? (
-          <p className={cn("mt-1.5 truncate text-2xs font-medium uppercase tracking-[0.08em]", note.switched ? "text-warning" : "text-muted")} title={note.title}>
+          <p
+            className={cn(
+              "mt-1.5 truncate text-2xs font-medium uppercase tracking-[0.08em]",
+              note.switched ? "text-warning" : "text-muted"
+            )}
+            title={note.title}
+          >
             {note.text}
           </p>
         ) : null}

@@ -3,20 +3,15 @@ import { SearchIcon } from "lucide-react";
 import { Label } from "../ui/Panel.jsx";
 import { cn } from "../../utils/cn.js";
 
-/**
- * Find one control in a library of a few thousand.
- *
- * A native select is the wrong instrument here: the browser's type-ahead
- * matches the start of the option text, which is the framework name, so
- * reaching CC6.1 in twenty-five libraries means scrolling. This takes a
- * reference or a few words of a title, shows what matches, and returns the
- * control that is chosen.
- *
- * `controls`: [{ id, label, title, framework, framework_name }] as
- * /control-evidence/choices/ returns them, or null while they load.
- * `onPick(control)` is called with the whole row; the caller decides what a
- * pick means (link it, assign it, attach it).
- */
+function rankOf(ref, title, needle) {
+  if (ref === needle) return 0;
+  if (ref.startsWith(needle)) return 1;
+  if (title.startsWith(needle)) return 2;
+  return ref.includes(needle) || title.includes(needle) ? 3 : -1;
+}
+
+/** `controls`: rows as /control-evidence/choices/ returns them ({ id, label, title, framework, framework_name }),
+ * or null while they load. `onPick(control)` receives the whole row. */
 export function ControlPicker({
   controls,
   onPick,
@@ -38,13 +33,8 @@ export function ControlPicker({
     for (const c of pool) {
       const ref = String(c.label || c.control_id || "").toLowerCase();
       const title = String(c.title || "").toLowerCase();
-      // A reference the person typed in full comes first, then a reference
-      // that starts with it, then anything with the words in its title.
-      const rank = ref === needle ? 0 : ref.startsWith(needle) ? 1
-        : title.startsWith(needle) ? 2
-          : ref.includes(needle) || title.includes(needle) ? 3 : -1;
-      // Every match is ranked before the list is cut: stopping early let a
-      // few hundred loose matches crowd out the exact reference typed in full.
+      const rank = rankOf(ref, title, needle);
+      // Rank every match before cutting to the limit, or loose matches can crowd out an exact reference.
       if (rank >= 0) scored.push([rank, c]);
     }
     scored.sort((a, b) => a[0] - b[0]);

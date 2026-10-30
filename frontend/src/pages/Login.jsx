@@ -8,8 +8,6 @@ import { ConformitiLogo } from "../components/brand/ConformitiLogo.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Panel } from "../components/ui/Panel.jsx";
 
-// What the server's sso_error codes mean to a person. Anything unlisted is a
-// plain refusal; the audit log has the specifics.
 const SSO_ERRORS = {
   disabled: "Single sign-on is not configured on this server.",
   state: "That sign-in link expired or was already used. Start again.",
@@ -29,8 +27,7 @@ const SSO_ERRORS = {
   mfa_required: "This server requires a second factor for single sign-on. Sign in with your password once and enrol an authenticator, or have your identity provider assert one.",
 };
 
-// A code is used as a key. Only a code this map owns is a message. An
-// inherited name is a function or an object, and rendering that blanks the page.
+// Own keys only: a code like "constructor" would resolve to an inherited function, and rendering that blanks the page.
 function ssoErrorText(code) {
   if (typeof code !== "string" || !Object.prototype.hasOwnProperty.call(SSO_ERRORS, code)) return "";
   return SSO_ERRORS[code];
@@ -38,18 +35,13 @@ function ssoErrorText(code) {
 
 const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0, backup_codes: false };
 
-// createsuperuser as each install path runs it, the forms INSTALL.md gives. A
-// bare "manage.py createsuperuser" is not runnable as typed on a local
-// install: it needs the backend directory and the checkout's own virtualenv.
+// As INSTALL.md gives them: a bare "manage.py createsuperuser" is not runnable as typed on a local install.
 const CREATE_ADMIN = [
   ["Local install (Linux, macOS)", "cd backend && ../.venv/bin/python manage.py createsuperuser"],
   ["Local install (Windows)", "cd backend; ..\\.venv\\Scripts\\python.exe manage.py createsuperuser"],
   ["Docker", "docker compose exec backend python manage.py createsuperuser"],
 ];
 
-// The list's accessible name follows the hint it sits under: an administrator
-// when no account can sign in, or an administrator of the operator's own
-// beside the seeded demo accounts (whose admin already is one).
 function CreateAdminCommands({ label }) {
   return (
     <ul className="mt-2 space-y-1.5 text-left text-2xs text-faint" aria-label={label}>
@@ -63,12 +55,8 @@ function CreateAdminCommands({ label }) {
   );
 }
 
-// Why a sign-in request failed, when the answer was not about the credentials
-// at all; null when it was (a JSON 400, or a 401) or is the throttle (429),
-// so the caller's own wording applies. A CSRF or origin refusal is the
-// server's configuration and an error page or silence is the server itself:
-// telling someone with the right password that it is wrong sends them after
-// the wrong problem.
+// Why a sign-in failed when it was not about the credentials; null when it was (JSON 400, 401) or the throttle (429).
+// Telling someone with the right password that it is wrong sends them after the wrong problem.
 function serverRefusal(ex) {
   const res = ex?.response;
   if (!res) {
@@ -79,41 +67,29 @@ function serverRefusal(ex) {
   const { status, data } = res;
   const detail = typeof data?.detail === "string" ? data.detail : "";
   if (status >= 500) {
-    // 502 to 504 is a proxy (nginx, or the Vite dev server) with no backend
-    // answering behind it; a 500 is the backend failing.
+    // 502 to 504: a proxy with no backend behind it; 500: the backend itself failing.
     return `The server could not complete the sign-in (HTTP ${status}). Try again in a moment. `
       + "If it keeps happening, tell your administrator"
       + (status >= 502 && status <= 504 ? ": the backend may be down." : ".");
   }
   if (status === 403) {
-    // Django's CSRF check. "Origin checking failed - X does not match any
-    // trusted origins", or the Referer form of the same sentence (an https
-    // request that carried no Origin): this address is not among
-    // CSRF_TRUSTED_ORIGINS, which is the fix.
+    // Django's CSRF origin check, or its Referer form: this address is not among CSRF_TRUSTED_ORIGINS.
     if (/origin checking failed|does not match any trusted origins/i.test(detail)) {
       return `This server does not trust the address you opened it from (${window.location.origin}), `
         + "so it refused the sign-in. An administrator decides which addresses it accepts: "
         + "its allowed origins, set in CSRF_TRUSTED_ORIGINS.";
     }
-    // The other Referer reasons ("no Referer", "Referer is malformed", "is
-    // insecure while host is secure") are the browser's doing, over https
-    // with no Origin header: a privacy setting or extension withheld the
-    // referrer. The allowed origins would not change the answer.
     if (/referer checking failed/i.test(detail)) {
       return `The server refused the sign-in (${detail.replace(/\.$/, "")}). `
         + "Your browser did not send a usable referrer with it, which the server requires over https. "
         + "A privacy setting or extension that strips referrers usually does this: allow them for this site "
         + "and try again.";
     }
-    // The rest of the CSRF check (no cookie or token to echo: cookies
-    // blocked, or secure cookies over plain http), or a proxy's own refusal.
     return `The server refused the sign-in (${detail.replace(/\.$/, "") || "HTTP 403"}). `
       + "Reload the page and try again. If it keeps happening, tell your administrator"
       + (/csrf/i.test(detail) ? ": the server's security settings may not match this address." : ".");
   }
   if (status === 400 && (data === null || typeof data !== "object")) {
-    // Not DRF's JSON: Django's own "Bad Request (400)" page, which is what a
-    // host name missing from DJANGO_ALLOWED_HOSTS gets on every request.
     return "The server refused the request before checking your password (HTTP 400). "
       + "The address you opened it from is probably not one of its allowed host names "
       + "(DJANGO_ALLOWED_HOSTS), which an administrator sets.";
@@ -132,21 +108,16 @@ export default function Login({ onDone }) {
   const [mfaStep, setMfaStep] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  // What the server said after the password: which factors may satisfy the
-  // second step, and the passkey challenge when one is on offer.
   const [factors, setFactors] = useState(NO_FACTORS);
   const [passkey, setPasskey] = useState(null);
   const [method, setMethod] = useState("code");
-  // A single sign-on that still needs the local second factor: the ticket
-  // waits here, never in the URL, while the person types the code.
+  // The SSO ticket waits here, never in the URL, while the person types the second factor.
   const [ssoTicket, setSsoTicket] = useState(null);
   const [ssoNext, setSsoNext] = useState("/");
   const sso = oidcConfig();
   const samlSso = samlConfig();
   const canPasskey = passkeysSupported();
 
-  // The demo hint is only shown while the seeded demo accounts still exist,
-  // and the first-administrator hint only while no account exists at all.
   useEffect(() => {
     axios.get("/api/health/").then((r) => setHealth(r.data)).catch(() => setHealth(null));
   }, []);
@@ -160,8 +131,6 @@ export default function Login({ onDone }) {
     setErr("");
   }
 
-  // Back from the identity provider: the callback left a one-time ticket (or
-  // a reason) in the query string.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ticket = params.get("sso");
@@ -298,10 +267,7 @@ export default function Login({ onDone }) {
     }
   }
 
-  // Something typed can satisfy the step: an authenticator code, or a backup
-  // code, which a passkey-only account holds too.
   const codeWorks = factors.totp || factors.backup_codes;
-  // Nothing usable: every passkey is suspect, no app, no codes left.
   const lockedOut = mfaStep && !codeWorks && !factors.passkey && factors.passkey_suspect > 0;
   const showCode = mfaStep && !lockedOut && (method === "code" || !factors.passkey);
   const showPasskey = mfaStep && !lockedOut && factors.passkey && method === "passkey";
@@ -327,7 +293,12 @@ export default function Login({ onDone }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }} className="w-full max-w-[400px]">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+        className="w-full max-w-[400px]"
+      >
         <Panel as="div" className="p-6">
           <form onSubmit={submit} noValidate>
             <ConformitiLogo colour="accent" size={40} />
@@ -338,11 +309,29 @@ export default function Login({ onDone }) {
               <>
                 <div className="mt-5">
                   <label htmlFor="login-username" className="field-label">Username</label>
-                  <input id="login-username" name="username" autoComplete="username" className="input" value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={onEnter} autoFocus />
+                  <input
+                    id="login-username"
+                    name="username"
+                    autoComplete="username"
+                    className="input"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onKeyDown={onEnter}
+                    autoFocus
+                  />
                 </div>
                 <div className="mt-4">
                   <label htmlFor="login-password" className="field-label">Password</label>
-                  <input id="login-password" name="password" type="password" autoComplete="current-password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={onEnter} />
+                  <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    className="input"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={onEnter}
+                  />
                 </div>
               </>
             ) : null}
@@ -364,23 +353,43 @@ export default function Login({ onDone }) {
               </div>
             ) : null}
             {showPasskey ? (
-              <Button type="button" variant="primary" className="mt-5 w-full" disabled={busy || !passkey} onClick={usePasskey} autoFocus>
+              <Button
+                type="button"
+                variant="primary"
+                className="mt-5 w-full"
+                disabled={busy || !passkey}
+                onClick={usePasskey}
+                autoFocus
+              >
                 {busy ? "Waiting for your passkey…" : "Use passkey"}
               </Button>
             ) : !lockedOut ? (
-              <Button type="submit" variant="primary" className="mt-5 w-full"
-                      disabled={busy || (mfaStep ? !otp : (!username || !password))}>
+              <Button
+                type="submit"
+                variant="primary"
+                className="mt-5 w-full"
+                disabled={busy || (mfaStep ? !otp : (!username || !password))}
+              >
                 {busy ? "Signing in…" : mfaStep ? "Verify" : "Sign in"}
               </Button>
             ) : null}
             {mfaStep && !lockedOut && factors.passkey && codeWorks ? (
-              <button type="button" className="link mt-3 block" disabled={busy}
-                      onClick={() => { setErr(""); setMethod(method === "passkey" ? "code" : "passkey"); }}>
+              <button
+                type="button"
+                className="link mt-3 block"
+                disabled={busy}
+                onClick={() => {
+                  setErr("");
+                  setMethod(method === "passkey" ? "code" : "passkey");
+                }}
+              >
                 {method === "passkey" ? (factors.totp ? "Use a code instead" : "Use a backup code instead") : "Use a passkey instead"}
               </button>
             ) : null}
             {mfaStep && !lockedOut && factors.passkey && !canPasskey && !codeWorks ? (
-              <p className="mt-3 text-xs text-muted">This browser cannot use passkeys. Sign in from a browser that can, or ask an administrator to reset your second factor.</p>
+              <p className="mt-3 text-xs text-muted">
+                This browser cannot use passkeys. Sign in from a browser that can, or ask an administrator to reset your second factor.
+              </p>
             ) : null}
             {(sso.enabled || samlSso.enabled) && !mfaStep ? (
               <>
@@ -390,14 +399,24 @@ export default function Login({ onDone }) {
                   <span className="h-px flex-1 bg-line" />
                 </div>
                 {sso.enabled ? (
-                  <Button type="button" variant="secondary" className="w-full" disabled={busy}
-                          onClick={() => window.location.assign("/api/auth/oidc/start/")}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => window.location.assign("/api/auth/oidc/start/")}
+                  >
                     {sso.label}
                   </Button>
                 ) : null}
                 {samlSso.enabled ? (
-                  <Button type="button" variant="secondary" className={sso.enabled ? "mt-2 w-full" : "w-full"} disabled={busy}
-                          onClick={() => window.location.assign("/api/auth/saml/start/")}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className={sso.enabled ? "mt-2 w-full" : "w-full"}
+                    disabled={busy}
+                    onClick={() => window.location.assign("/api/auth/saml/start/")}
+                  >
                     {samlSso.label}
                   </Button>
                 ) : null}
@@ -419,12 +438,13 @@ export default function Login({ onDone }) {
                 <CreateAdminCommands label="Create an administrator of your own" />
               </div>
             ) : health?.first_admin_needed === true ? (
-              // Only while no active account exists at all, so a deployment
-              // anyone signs in to never shows it.
+              // Only while no active account exists, so a working deployment never shows it.
               <div className="mt-4 text-xs text-muted">
                 <p className="text-center">
                   No account can sign in on this installation.
-                  <span className="block text-2xs text-faint">Create an administrator on the server, or reactivate an existing account there, then sign in here.</span>
+                  <span className="block text-2xs text-faint">
+                    Create an administrator on the server, or reactivate an existing account there, then sign in here.
+                  </span>
                 </p>
                 <CreateAdminCommands label="Create an administrator" />
               </div>
@@ -434,9 +454,7 @@ export default function Login({ onDone }) {
             ) : null}
           </form>
         </Panel>
-        {/* The version keeps its case: releases are named by a lower-case
-            revision letter (0.9.5k), as /api/health/, the tags and the
-            changelog spell them. */}
+        {/* normal-case: the revision letter in a release name is lower-case, as /api/health/ and the tags spell it. */}
         <p className="mt-4 text-center font-mono text-2xs uppercase tracking-label text-faint">
           {health?.version ? <>Conformiti <span className="normal-case">v{health.version}</span></> : ""}
         </p>

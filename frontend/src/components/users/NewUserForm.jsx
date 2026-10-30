@@ -4,8 +4,6 @@ import { Panel, PanelHeader } from "../ui/Panel.jsx";
 
 export const BLANK_USER_FORM = { username: "", first: "", last: "", email: "", job: "", role: "", password: "" };
 
-/** Inline "New user" panel. Controlled: the page owns the form state so a
- * successful create can reset it and collapse the panel. */
 export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, busy, error }) {
   const set = (k) => (e) => onChange({ ...form, [k]: e.target.value });
   const minLength = passwordMinLength();
@@ -17,7 +15,14 @@ export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, bus
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
         <div>
           <label htmlFor="nu-username" className="field-label">Username *</label>
-          <input id="nu-username" className="input font-mono" autoComplete="off" required value={form.username} onChange={set("username")} />
+          <input
+            id="nu-username"
+            className="input font-mono"
+            autoComplete="off"
+            required
+            value={form.username}
+            onChange={set("username")}
+          />
         </div>
         <div>
           <label htmlFor="nu-first" className="field-label">First name</label>

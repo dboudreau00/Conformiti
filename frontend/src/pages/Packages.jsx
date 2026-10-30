@@ -37,6 +37,7 @@ const CONCLUSION = {
   exceptions: { label: "Exceptions noted", tone: "danger" },
   not_tested: { label: "Not tested", tone: "muted" },
 };
+const conclusionOf = (value) => CONCLUSION[value] || CONCLUSION.pending;
 
 const ASSURANCE = [
   ["readiness", "Readiness assessment"],
@@ -72,8 +73,7 @@ export default function Packages({ me }) {
   const [draft, setDraft] = useState({ name: "", engagement: "", audit_firm: "", assurance_type: "type_ii" });
   const [viewing, setViewing] = useState(null);
 
-  // Pinned evidence opens through the package's own preview route, so the
-  // auditor's grant, not folder permissions, is what admits them.
+  // Pinned evidence opens through the package's preview route: the auditor's grant, not folder permissions, admits them.
   const openEvidence = (e) => setViewing({
     title: e.document_name,
     subtitle: `Pinned v${e.pinned_version} in ${selected?.name || "this package"}`,
@@ -106,9 +106,7 @@ export default function Packages({ me }) {
     setSelectedId(next ? next.id : null);
   }
 
-  // A failed list load must not read as "0 total" and "No packages yet":
-  // `listErr` holds the count and the empty state back, and only a load that
-  // succeeds clears it, so a retry in flight does not read as empty either.
+  // A failed list load must not read as an empty list: listErr holds the count and empty state back until a load succeeds.
   function loadList() {
     return loadPackages().catch((e) => {
       setPackages([]);
@@ -122,17 +120,8 @@ export default function Packages({ me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Controls, grants and the integrity check for the selected package. A
-  // failed load must not read as an empty package: the caller is often an
-  // auditor forming a view of this organisation's access control, so the two
-  // panels below check `detailErr` before they show "No controls yet" or
-  // "Not issued yet". Only the latest call may write: choosing another
-  // package does not cancel the previous one's requests, and /verify/
-  // re-hashes every pinned file, so the package the user left can answer
-  // last and would put its rows, its grants (with live Revoke buttons) and
-  // its verdict under the new one's header. `detailErr` is cleared only by a
-  // load that succeeds: cleared when a retry starts, the empty rows and
-  // grants the failure left would read as an empty package until it answers.
+  // Only the latest call may write: a slow answer for a package the user left would put its rows, grants (with live Revoke
+  // buttons) and verdict under the new header. A failed load is detailErr, never an empty package; only a success clears it.
   const detailSeq = useRef(0);
   async function loadDetail(id) {
     const seq = ++detailSeq.current;
@@ -163,11 +152,8 @@ export default function Packages({ me }) {
     }
   }
 
-  // Keyed on the status as well as the id: sealing and withdrawing change the
-  // grants and the integrity verdict, and a withdrawn package must not keep
-  // offering Revoke on grants the withdrawal has already closed. The verdict
-  // is cleared first so the card reads "Not checked" rather than the previous
-  // package's result while this one is re-hashed.
+  // Keyed on the status too: sealing or withdrawing changes the grants and the verdict, and a withdrawn package must not
+  // offer Revoke on closed grants. The verdict is cleared first so the card never shows the previous package's result.
   const selectedStatus = selected?.status;
   useEffect(() => {
     setIntegrity(null);
@@ -206,16 +192,13 @@ export default function Packages({ me }) {
     }, "Package opened.");
   };
 
-  // Every question is a dialog rather than a browser prompt: `ask`
-  // names which one is open, and the dialog's onSubmit runs the request.
   const [ask, setAsk] = useState(null);
 
   const DEFAULT_ASSERTION =
     "Management asserts that the controls described in this package were designed and "
     + "implemented as described, and that the evidence attached is complete and accurate.";
 
-  // A thrown error keeps the dialog open, with the error in it and any text
-  // intact; `act` also shows it in the page notice.
+  // Rethrows so the dialog stays open with the error in it and its text intact; act() also shows the page notice.
   const rethrowing = (kind, fn, okText) => async () => {
     let failed = null;
     await act(kind, async () => {
@@ -241,14 +224,15 @@ export default function Packages({ me }) {
       downloadFile(`/evidence-packages/${selectedId}/export/`,
         `${(selected?.name || "evidence-package").replace(/[^\w-]+/g, "-")}.zip`));
 
-  // Next year's draft from this sealed package: same controls re-snapshotted
-  // today, today's visible evidence pinned, this package as predecessor.
   const rollForward = () => setAsk({ kind: "roll" });
   const submitRollForward = (name) => rethrowing("roll", async () => {
     const { data } = await api.post(`/evidence-packages/${selectedId}/roll_forward/`, { name });
     await loadPackages(data.id);
     const skipped = (data.skipped || []).length;
-    setMsg({ ok: true, text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}.` });
+    setMsg({
+      ok: true,
+      text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}.`,
+    });
   })();
 
   const conclude = (row, field, value) => {
@@ -266,9 +250,7 @@ export default function Packages({ me }) {
     setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
   })();
 
-  // Both confirmations rethrow, so a refused request (the draft was sealed
-  // in another tab, say) is reported in the dialog instead of closing it as
-  // if it had worked, with the only trace in a notice scrolled out of view.
+  // Both confirmations rethrow: a refused request (a draft sealed in another tab) must show in the dialog, not close it as if it worked.
   const removeControl = (row) => rethrowing(`row-${row.id}`, async () => {
     await api.delete(`/package-controls/${row.id}/`);
     setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
@@ -284,11 +266,12 @@ export default function Packages({ me }) {
     await reloadRows();
     await loadPackages();
     const skipped = data.skipped || [];
+    const listed = skipped.slice(0, 3).map((s) => `${s.document} (${s.control})`).join(", ");
     setMsg({
       ok: true,
       text: `${data.added} control(s) added to the package.`
         + (skipped.length
-          ? ` ${skipped.length} evidence file(s) were not pinned because you cannot see them: ${skipped.slice(0, 3).map((s) => `${s.document} (${s.control})`).join(", ")}${skipped.length > 3 ? "…" : ""}.`
+          ? ` ${skipped.length} evidence file(s) were not pinned because you cannot see them: ${listed}${skipped.length > 3 ? "…" : ""}.`
           : ""),
     });
   };
@@ -304,7 +287,6 @@ export default function Packages({ me }) {
   return (
     <PanelTransition>
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
-      {/* ---------------------------------------------------------- list */}
       <div className="flex flex-col gap-4">
         <Panel className="overflow-hidden">
           <PanelHeader title="Evidence packages" meta={listErr ? "- total" : `${packages.length} total`}>
@@ -312,9 +294,7 @@ export default function Packages({ me }) {
               <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New package</Button>
             ) : null}
           </PanelHeader>
-          {/* The form opens under the header that holds its button, and takes
-              focus: below the list it mounted out of view on a laptop, and the
-              only visible effect of the click was the button disappearing. */}
+          {/* The form opens under the header that holds its button and takes focus: below the list it mounted out of view. */}
           {canAssemble && creating ? (
             <form onSubmit={createPackage}
                   className={cn("grid gap-2.5 p-4", packages.length || listErr ? "border-b border-line" : "")}>
@@ -387,14 +367,12 @@ export default function Packages({ me }) {
           )}
         </Panel>
 
-        {/* A control owner with no package access still answers the lines
-            assigned to them from here. */}
+        {/* A control owner with no package access still answers their assigned lines from here. */}
         {!canAssemble && !me?.role_detail?.is_auditor ? (
           <PbcList mine onOpen={setViewing} onMessage={setMsg} />
         ) : null}
       </div>
 
-      {/* -------------------------------------------------------- detail */}
       <div className="flex min-w-0 flex-col gap-4">
         <Notice msg={msg} />
         {!selected ? (
@@ -442,14 +420,19 @@ export default function Packages({ me }) {
               {selected.prior_package ? (
                 <p className="mt-2 text-xs text-muted">
                   Rolled forward from{" "}
-                  <button type="button" className="link" onClick={() => setSelectedId(selected.prior_package)}>{selected.prior_package_name}</button>
+                  <button type="button" className="link" onClick={() => setSelectedId(selected.prior_package)}>
+                    {selected.prior_package_name}
+                  </button>
                 </p>
               ) : null}
               {(selected.successors || []).length ? (
                 <p className="mt-1 text-xs text-muted">
                   Rolled forward into{" "}
                   {selected.successors.map((s, i) => (
-                    <span key={s.id}>{i ? ", " : ""}<button type="button" className="link" onClick={() => setSelectedId(s.id)}>{s.name}</button></span>
+                    <span key={s.id}>
+                      {i ? ", " : ""}
+                      <button type="button" className="link" onClick={() => setSelectedId(s.id)}>{s.name}</button>
+                    </span>
                   ))}
                 </p>
               ) : null}
@@ -460,7 +443,6 @@ export default function Packages({ me }) {
                 <StatCard
                   label="Integrity"
                   value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length}`) : "-"}
-                  // A draft's files are checked against their pins: it has not been sealed.
                   detail={integrity
                     ? (integrity.ok
                         ? `Every file matches what was ${selected.status === "draft" ? "pinned" : "sealed"}`
@@ -509,11 +491,7 @@ export default function Packages({ me }) {
               ) : null}
             </Panel>
 
-            {/* -------------------------------------------------- grants */}
-            {/* While the detail load has failed neither list is known, so the
-                headers show "-" for the count (a "0" reads as an empty package),
-                and the Issue form and the picker below stay closed until a
-                retry loads what they would be adding to. */}
+            {/* After a failed detail load neither list is known: headers show "-" (not 0) and the Issue form and picker stay closed. */}
             <Panel className="overflow-hidden">
               <PanelHeader title="Issued to" meta={detailErr ? "- live" : `${grants.filter((g) => g.is_live).length} live`}>
                 {canAssemble && selected.status === "sealed" && !detailErr ? (
@@ -558,7 +536,6 @@ export default function Packages({ me }) {
 
             {selected.prior_package ? <YearOverYear key={`yoy-${selected.id}`} pkg={selected} /> : null}
 
-            {/* ------------------------------------------ request list */}
             <PbcList key={selected.id} pkg={selected} controls={rows}
                      canRaise={(canAssemble || isGrantee) && selected.status !== "withdrawn"}
                      canAssemble={canAssemble} onOpen={setViewing} onMessage={setMsg} />
@@ -568,7 +545,6 @@ export default function Packages({ me }) {
                            onAdded={onControlsAdded} onError={(text) => setMsg({ ok: false, text })} />
             ) : null}
 
-            {/* ------------------------------------------------ workpaper */}
             <Panel className="overflow-hidden">
               <PanelHeader title="Controls in scope" meta={detailErr ? "- rows" : `${rows.length} rows`} />
               {detailErr ? (
@@ -598,11 +574,11 @@ export default function Packages({ me }) {
                             </Label>
                           </span>
                           <span className="flex flex-wrap items-center gap-1.5">
-                            <Badge tone={(CONCLUSION[row.design_conclusion] || CONCLUSION.pending).tone}>
-                              Design: {(CONCLUSION[row.design_conclusion] || CONCLUSION.pending).label}
+                            <Badge tone={conclusionOf(row.design_conclusion).tone}>
+                              Design: {conclusionOf(row.design_conclusion).label}
                             </Badge>
-                            <Badge tone={(CONCLUSION[row.operating_conclusion] || CONCLUSION.pending).tone}>
-                              Operating: {(CONCLUSION[row.operating_conclusion] || CONCLUSION.pending).label}
+                            <Badge tone={conclusionOf(row.operating_conclusion).tone}>
+                              Operating: {conclusionOf(row.operating_conclusion).label}
                             </Badge>
                           </span>
                         </div>
@@ -664,8 +640,13 @@ export default function Packages({ me }) {
                           ) : null}
                           {row.risk ? <Badge tone="info">Tracked as a risk</Badge> : null}
                           {canAssemble && selected.status === "draft" ? (
-                            <Button size="sm" variant="ghost" disabled={busy === `row-${row.id}`}
-                                    onClick={() => setAsk({ kind: "remove", row })} aria-label={`Remove ${row.control_ref} from the package`}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={busy === `row-${row.id}`}
+                              onClick={() => setAsk({ kind: "remove", row })}
+                              aria-label={`Remove ${row.control_ref} from the package`}
+                            >
                               Remove
                             </Button>
                           ) : null}
@@ -745,8 +726,6 @@ export default function Packages({ me }) {
   );
 }
 
-/** What changed since the predecessor, from the two packages' own snapshots:
- * scope and controls in and out, evidence replaced, last year's exceptions. */
 function YearOverYear({ pkg }) {
   const [diff, setDiff] = useState(null);
   const [err, setErr] = useState(null);
@@ -790,10 +769,14 @@ function YearOverYear({ pkg }) {
           {open ? (
             <ul className="divide-y divide-line border-t border-line">
               {diff.controls.added.map((c) => (
-                <li key={`a-${c.id}`} className="px-5 py-2 text-xs"><Badge tone="info" mono>new</Badge> <span className="font-mono text-muted">{c.control_ref}</span> {c.title}</li>
+                <li key={`a-${c.id}`} className="px-5 py-2 text-xs">
+                  <Badge tone="info" mono>new</Badge> <span className="font-mono text-muted">{c.control_ref}</span> {c.title}
+                </li>
               ))}
               {diff.controls.removed.map((c) => (
-                <li key={`r-${c.id}`} className="px-5 py-2 text-xs"><Badge tone="warning" mono>dropped</Badge> <span className="font-mono text-muted">{c.control_ref}</span> {c.title}</li>
+                <li key={`r-${c.id}`} className="px-5 py-2 text-xs">
+                  <Badge tone="warning" mono>dropped</Badge> <span className="font-mono text-muted">{c.control_ref}</span> {c.title}
+                </li>
               ))}
               {diff.controls.kept.map((c) => (
                 <li key={`k-${c.id}`} className="px-5 py-2 text-xs">
@@ -829,10 +812,7 @@ const SAMPLING = [["", "Method not stated"], ["random", "Random"], ["haphazard",
 const EMPTY_SAMPLE = { identifier: "", description: "", population_ref: "", evidence: "" };
 const DATE = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
-/** The operating-effectiveness workpaper for one control: the population the
- * organisation stated, the items sampled from it, and the auditor's result
- * per item. Items listed before sealing are part of the manifest; results are
- * the auditor's alone. */
+/** Items listed before sealing are part of the manifest; results are the auditor's alone. */
 function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, onOpen }) {
   const draft = pkg?.status === "draft";
   const sealed = pkg?.status === "sealed";
@@ -857,7 +837,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
       await reload();
     }, "Sample item listed.");
   };
-  const [failing, setFailing] = useState(null); // the sample being marked as an exception
+  const [failing, setFailing] = useState(null);
   const judge = (sample, result) => {
     if (result === "fail") {
       setFailing(sample);
@@ -910,8 +890,18 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
         </span>
         <span className="flex gap-1.5">
           {canAssemble && draft && !pop ? (
-            <Button size="sm" variant="ghost" disabled={busy != null && busy !== false && busy !== null}
-                    onClick={() => setPop({ population_size: row.population_size ?? "", population_source: row.population_source || "", sampling_method: row.sampling_method || "" })}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy != null && busy !== false}
+              onClick={() =>
+                setPop({
+                  population_size: row.population_size ?? "",
+                  population_source: row.population_source || "",
+                  sampling_method: row.sampling_method || "",
+                })
+              }
+            >
               Population
             </Button>
           ) : null}
@@ -975,12 +965,17 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
                 const artefact = (row.evidence || []).find((e) => e.id === sm.evidence);
                 return (
                   <tr key={sm.id} className="align-top">
-                    <td className="py-1.5 pr-3 font-mono text-ink">{sm.identifier}{sm.sealed_in ? "" : <span className="ml-1 text-faint" title="Added by the auditor after sealing">†</span>}</td>
+                    <td className="py-1.5 pr-3 font-mono text-ink">
+                      {sm.identifier}
+                      {sm.sealed_in ? "" : <span className="ml-1 text-faint" title="Added by the auditor after sealing">†</span>}
+                    </td>
                     <td className="py-1.5 pr-3 text-muted">{sm.description || "-"}</td>
                     <td className="py-1.5 pr-3 text-muted">{sm.population_ref || "-"}</td>
                     <td className="py-1.5 pr-3">
                       {artefact ? (
-                        <button type="button" onClick={() => onOpen(artefact)} className="text-accent hover:underline">{sm.evidence_name}</button>
+                        <button type="button" onClick={() => onOpen(artefact)} className="text-accent hover:underline">
+                          {sm.evidence_name}
+                        </button>
                       ) : <span className="text-faint">{sm.evidence_name || "-"}</span>}
                     </td>
                     <td className="py-1.5 pr-3">
@@ -995,7 +990,15 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
                                   onClick={() => judge(sm, v)}>{SAMPLE_RESULT[v].label}</Button>
                         )) : null}
                         {(canAssemble && draft) || (canJudge && !sm.sealed_in) ? (
-                          <Button size="sm" variant="ghost" aria-label={`Remove ${sm.identifier}`} disabled={busy === `sample-${sm.id}`} onClick={() => remove(sm)}>Remove</Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Remove ${sm.identifier}`}
+                            disabled={busy === `sample-${sm.id}`}
+                            onClick={() => remove(sm)}
+                          >
+                            Remove
+                          </Button>
                         ) : null}
                       </span>
                     </td>
@@ -1039,7 +1042,14 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
             </select>
           </div>
           <div className="flex items-end gap-1.5">
-            <Button size="sm" variant="primary" type="submit" disabled={busy === `sample-add-${row.id}` || !form.identifier.trim()}>Add</Button>
+            <Button
+              size="sm"
+              variant="primary"
+              type="submit"
+              disabled={busy === `sample-add-${row.id}` || !form.identifier.trim()}
+            >
+              Add
+            </Button>
             <Button size="sm" variant="ghost" type="button" onClick={() => setAdding(false)}>Cancel</Button>
           </div>
         </form>
@@ -1064,8 +1074,7 @@ function IssueForm({ packageId, canAddAuditor, onDone, onError }) {
   const [auditors, setAuditors] = useState([]);
   const [user, setUser] = useState("");
   const [busy, setBusy] = useState(false);
-  // An empty list has two different causes, and a bare placeholder tells
-  // the reader neither: nobody holds the Auditor role, or the list did not load.
+  // An empty list has two causes, nobody holding the Auditor role or a failed load; state tells them apart.
   const [state, setState] = useState("loading");
 
   useEffect(() => {

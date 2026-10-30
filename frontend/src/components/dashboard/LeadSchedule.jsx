@@ -5,19 +5,18 @@ import { Empty, Label, LoadError, Panel, PanelHeader } from "../ui/Panel.jsx";
 import { ShowMore } from "../ui/ShowMore.jsx";
 import { StatusGlyph } from "./StatusGlyph.jsx";
 
-/** Rows drawn before "Show all": the schedule sits beside the readiness card,
- * and twenty-five frameworks would run it several screens past it. */
 const ROWS = 6;
 
 const num = (v) => (v === null || v === undefined ? "-" : Number(v).toLocaleString());
 
 function Head({ glyph, children, first }) {
   return (
-    <th scope="col" className={cn("px-[var(--sc-pad)] pb-2 pt-3 align-bottom font-normal", first ? "pl-5 text-left" : "text-right last:pr-5")}>
+    <th
+      scope="col"
+      className={cn("px-[var(--sc-pad)] pb-2 pt-3 align-bottom font-normal", first ? "pl-5 text-left" : "text-right last:pr-5")}
+    >
       <span className={cn("flex flex-col gap-1.5", first ? "items-start" : "items-end")}>
         <span className="flex h-3.5 items-center text-muted">{glyph}</span>
-        {/* Two short lines beat a wide one: six numeric columns have to share
-         * what the framework names leave of a narrow page. */}
         <Label className="whitespace-normal text-[10px] leading-[13px] tracking-[0.05em]">{children}</Label>
       </span>
     </th>
@@ -42,12 +41,7 @@ function Sub({ total, notApplicable }) {
 
 const CELL = "tabular px-[var(--sc-pad)] text-right font-mono text-[13px] text-ink last:pr-5";
 
-/** One row per framework, footed. Applicable is everything not marked not
- * applicable, so it is also implemented plus in progress plus not started.
- * Readiness is the mean control score (what the headline is, framework by
- * framework), which is not the share implemented: the two answer different
- * questions and the register uses the first. The total row quotes the
- * programme's own figures rather than adding the rounded rows up. */
+/** The total row quotes the programme's own figures (readiness, controls), not the sum of the rounded rows. */
 export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
   const known = Array.isArray(frameworks) && readiness && controls;
   const rows = known ? frameworks : [];
@@ -60,7 +54,13 @@ export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
       ) : rows.length === 0 ? (
         <Empty title="No frameworks yet" />
       ) : (
-        <ShowMore total={rows.length} initial={ROWS} noun="frameworks" className="flex flex-1 flex-col" buttonClassName="mx-5 mb-3 self-start">
+        <ShowMore
+          total={rows.length}
+          initial={ROWS}
+          noun="frameworks"
+          className="flex flex-1 flex-col"
+          buttonClassName="mx-5 mb-3 self-start"
+        >
           {(n) => (
             <div className="sched min-w-0 flex-1 overflow-x-auto">
               <table className="h-full w-full min-w-[var(--sc-min)] table-fixed border-collapse">
@@ -111,7 +111,10 @@ export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
                 </tbody>
                 <tfoot>
                   <tr className="bg-surface-2/50 font-semibold">
-                    <th scope="row" className="h-[46px] border-b-4 border-t border-double border-b-ink/70 border-t-ink/70 py-1 pl-5 pr-3 text-left font-normal">
+                    <th
+                      scope="row"
+                      className="h-[46px] border-b-4 border-t border-double border-b-ink/70 border-t-ink/70 py-1 pl-5 pr-3 text-left font-normal"
+                    >
                       <span className="block text-[13px] font-semibold leading-[18px] text-ink">Total</span>
                       <Sub total={controls.total} notApplicable={controls.by_status?.not_applicable || 0} />
                     </th>

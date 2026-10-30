@@ -14,7 +14,6 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-/** Feed `type` -> chip label + tone. Overdue items always render as danger. */
 const KIND_META = {
   review_due: { label: "Review", tone: "info" },
   audit: { label: "Audit", tone: "accent" },
@@ -26,9 +25,7 @@ const KINDS = Object.keys(KIND_META);
 const kindOf = (e) => KIND_META[e.type] || { label: e.type || "Event", tone: "muted" };
 const eventTone = (e) => (e.overdue ? "danger" : kindOf(e).tone);
 
-// --- Tiny local-date helpers (no date-fns). Keys are LOCAL calendar dates:
-// toISOString() would shift local midnight to UTC and land events on the
-// wrong cell for anyone not on UTC.
+// Keys are LOCAL calendar dates: toISOString() would shift local midnight to UTC and land events on the wrong day.
 const pad = (n) => String(n).padStart(2, "0");
 const localKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
@@ -38,7 +35,6 @@ function parseKey(key) {
 }
 const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
 const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
-/** Every day from the Monday on/before the 1st to the Sunday on/after the last. */
 function monthGrid(cursor) {
   const y = cursor.getFullYear();
   const m = cursor.getMonth();
@@ -50,8 +46,6 @@ function monthGrid(cursor) {
 }
 const longDate = (d) => `${DAYS_LONG[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 
-/** Month calendar fed by GET /calendar/feed/ for the visible grid. Re-fetches
- * when the month changes or the parent bumps `refreshKey`. */
 export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [direction, setDirection] = useState(1);
@@ -63,15 +57,11 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   const [attempt, setAttempt] = useState(0);
   const [viewing, setViewing] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  // What the last "Mark reviewed" came to, tied to the day it was clicked on,
-  // so a refusal on the 5th never reads as one for the 12th's items.
   const [outcome, setOutcome] = useState(null);
   const reqRef = useRef(0);
   const [todayKey] = useState(() => localKey(new Date()));
 
-  // Marking a review done needs edit access to its folder, the API returns
-  // 403 otherwise, so the action is only offered to users who can manage
-  // documents or folders (same rule ReviewQueue applies on the dashboard).
+  // The API returns 403 without edit access to the folder; ReviewQueue applies the same rule.
   const canReview = !!(me?.capabilities?.manage_documents || me?.capabilities?.manage_folders);
 
   const days = useMemo(() => monthGrid(cursor), [cursor]);
@@ -90,9 +80,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       })
       .catch((e) => {
         if (id !== reqRef.current) return;
-        // What this range holds is unknown now. The previous feed belongs to
-        // another range or an older state, so it is dropped, and the counts
-        // below read as unknown rather than as a confident zero.
+        // The previous feed is dropped so the counts read as unknown, not as a confident zero.
         setEvents([]);
         setError(errorText(e, "Couldn't load the calendar feed."));
       })
@@ -101,12 +89,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       });
   }, [rangeStart, rangeEnd, refreshKey, attempt]);
 
-  // Audit, task and other events can only be created through the API today,
-  // so most workspaces never see one; showing a chip that always empties the
-  // grid is a dead control. Only chips for kinds present survive,
-  // and a filter dropped this way is cleared rather than left hiding a grid
-  // with no visible reason why. A failed load empties the feed with a visible
-  // reason, so the filter survives it and applies again once a retry lands.
+  // A filter whose kind has no events is cleared, except after a failed load, so it applies again once a retry lands.
   const presentKinds = useMemo(() => new Set(events.map((e) => e.type)), [events]);
   useEffect(() => {
     if (filter && !error && !presentKinds.has(filter)) setFilter(null);
@@ -126,14 +109,15 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   }, [visibleEvents]);
 
   const cursorMonth = monthKey(cursor);
-  const monthCount = useMemo(() => visibleEvents.filter((e) => (e.date || "").startsWith(cursorMonth)).length, [visibleEvents, cursorMonth]);
+  const monthCount = useMemo(
+    () => visibleEvents.filter((e) => (e.date || "").startsWith(cursorMonth)).length,
+    [visibleEvents, cursorMonth]
+  );
   const onCurrentMonth = cursorMonth === todayKey.slice(0, 7);
   const selectedEvents = selected ? byDate.get(selected) || [] : [];
-  // The feed for this range did not arrive, so no day's count is known.
   const unknown = !!error;
 
-  // Every change of the open day goes through here, so an outcome shown under
-  // one day never carries over to another, or to the same day reopened.
+  // Every change of the open day goes through here so an outcome never carries over to another day.
   function select(key) {
     setSelected(key);
     setOutcome(null);
@@ -156,10 +140,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
     setBusyId(event.id);
     try {
       await api.post(`/documents/${event.document}/mark_reviewed/`);
-      // The review moves the document's next review date on, so the entry has
-      // left this day. It is removed now: until the dashboard and the feed
-      // reload, an enabled "Mark reviewed" on an attested row would let a
-      // second click attest it again.
+      // Drop the entry now: until the feed reloads, a second click on it would attest it again.
       setEvents((list) => list.filter((e) => e.id !== event.id));
       setOutcome({ day: event.date, ok: true, text: `Marked "${name}" reviewed.` });
       await onChanged?.();
@@ -175,7 +156,9 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
         <div className="flex items-baseline gap-3">
           <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Compliance calendar</h2>
-          <Label>{loading ? "Loading…" : unknown ? "- items this month" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}</Label>
+          <Label>
+            {loading ? "Loading…" : unknown ? "- items this month" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}
+          </Label>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1" role="group" aria-label="Filter calendar by item type">
@@ -191,7 +174,9 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                   className={cn(
                     "flex items-center gap-1.5 rounded-full border px-2 py-1 font-mono text-2xs uppercase tracking-label",
                     "transition-[background-color,border-color,color] duration-150 ease-out",
-                    on ? cn("border-transparent", TONE_WASH[tone], TONE_TEXT[tone]) : "border-line text-faint hover:border-line-strong hover:text-muted"
+                    on
+                      ? cn("border-transparent", TONE_WASH[tone], TONE_TEXT[tone])
+                      : "border-line text-faint hover:border-line-strong hover:text-muted"
                   )}
                 >
                   <span className={cn("h-1.5 w-1.5 rounded-full", TONE_FILL[tone])} aria-hidden="true" />
@@ -274,10 +259,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                   >
                     {day.getDate()}
                   </span>
-                  {/* The name is the cell's own text, then the date and the count
-                      for a screen reader. A label of its own left out the entries
-                      a sighted person reads, which a voice user has to say. The
-                      space keeps the day apart from the first entry's words. */}
+                  {/* The space keeps the day number apart from the first entry's words in the accessible name. */}
                   {" "}
                   <span className="flex flex-col gap-1 overflow-hidden">
                     {dayEvents.slice(0, 2).map((event) => {
@@ -302,7 +284,9 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                         </motion.span>
                       );
                     })}
-                    {dayEvents.length > 2 ? <span className="px-1.5 font-mono text-2xs text-faint">+{dayEvents.length - 2} more</span> : null}
+                    {dayEvents.length > 2 ? (
+                      <span className="px-1.5 font-mono text-2xs text-faint">+{dayEvents.length - 2} more</span>
+                    ) : null}
                   </span>
                   <span className="sr-only">
                     , {day.getDate()} {MONTHS[day.getMonth()]} {day.getFullYear()}, {
@@ -346,13 +330,8 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                   {selectedEvents.map((event, i) => {
                     const tone = eventTone(event);
                     const kind = kindOf(event);
-                    // A review entry is the feed's own view of a document the
-                    // caller can open, named in its title. A stored event may
-                    // link a document in a folder the caller cannot see, and
-                    // its title is the event's, not the document's, so neither
-                    // the viewer nor "Mark reviewed" is offered for one. The
-                    // review_due type alone is not the test: a stored event can
-                    // carry it with no document, or with one it never completes.
+                    // Only the feed's own review entries open the viewer or Mark reviewed: a stored event may link a
+                    // document the caller cannot see, and its title is the event's, not the document's.
                     const review = event.source === "review" && event.document != null;
                     const docName = event.title.replace(/^Review due: /, "");
                     return (
@@ -368,7 +347,10 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                           {review ? (
                             <button
                               type="button"
-                              className={cn("block min-w-0 max-w-full truncate text-left text-[13px] font-medium text-ink hover:text-accent", event.completed && "line-through text-muted")}
+                              className={cn(
+                                "block min-w-0 max-w-full truncate text-left text-[13px] font-medium text-ink hover:text-accent",
+                                event.completed && "line-through text-muted"
+                              )}
                               onClick={() =>
                                 setViewing({
                                   title: docName,
@@ -381,7 +363,14 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                               {event.title}
                             </button>
                           ) : (
-                            <span className={cn("block truncate text-[13px] font-medium text-ink", event.completed && "line-through text-muted")}>{event.title}</span>
+                            <span
+                              className={cn(
+                                "block truncate text-[13px] font-medium text-ink",
+                                event.completed && "line-through text-muted"
+                              )}
+                            >
+                              {event.title}
+                            </span>
                           )}
                           <span className="block font-mono text-2xs uppercase tracking-label text-faint">
                             {kind.label}

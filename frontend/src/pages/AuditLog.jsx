@@ -8,8 +8,6 @@ import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../compone
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { errorText, loadFailReason } from "../utils/a11y.js";
 
-// Every action the server records, mapped to a status tone. Unknown actions
-// fall back to "muted" so a new server-side verb never renders unstyled.
 const ACTION_TONE = {
   create: "success",
   update: "info",
@@ -37,8 +35,7 @@ export default function AuditLog({ me }) {
   const caps = me?.capabilities || {};
   const canSee = !!(caps.manage_users || caps.auditor || caps.view_all);
 
-  // rows + the index the most recent page started at, so only freshly loaded
-  // rows stagger in (existing rows must not re-animate on "Load more").
+  // `from` is where the latest page starts, so only fresh rows animate in on "Load more".
   const [list, setList] = useState({ rows: [], from: 0 });
   const [next, setNext] = useState(null);
   const [page, setPage] = useState(1);
@@ -49,9 +46,8 @@ export default function AuditLog({ me }) {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [err, setErr] = useState(null);
-  // The first page failed, so there is no trail to show for these filters. A
-  // failed load is not an empty trail, and the empty states below must not
-  // stand in for it. Kept apart from `err`, which the facets request also sets.
+  // First page failed: that is not an empty trail, so the empty states must not stand in for it. Separate from `err`,
+  // which the facets request also sets.
   const [loadFailed, setLoadFailed] = useState(false);
   const loadSeq = useRef(0);
 
@@ -88,9 +84,7 @@ export default function AuditLog({ me }) {
         return;
       }
       setErr(errorText(e, "Couldn't load the audit trail."));
-      // A failed "Load more" keeps the rows already shown, and its button
-      // stays to try again. A failed first page leaves the previous filters'
-      // rows and count describing a query that did not run, so drop them.
+      // A failed "Load more" keeps the rows; a failed first page must drop them, or they describe a query that did not run.
       if (p === 1) {
         setList({ rows: [], from: 0 });
         setNext(null);
@@ -118,8 +112,7 @@ export default function AuditLog({ me }) {
         })
       )
       .catch((e) => {
-        // A 403 here is reported by the list request; anything else should
-        // still surface rather than leaving the filters silently empty.
+        // A 403 is reported by the list request; anything else must surface, not leave the filters silently empty.
         if (e?.response?.status !== 403) setErr(errorText(e, "Couldn't load the filter options."));
       });
   }, [canSee]);
@@ -146,10 +139,25 @@ export default function AuditLog({ me }) {
 
   const { rows, from } = list;
   const filtered = !!(f.q || f.action || f.type || f.user);
-  // The time range is not one of the filters Clear resets, and it starts at 30
-  // days, so an empty page inside it is not an empty trail.
+  // The time range is not reset by Clear and starts at 30 days, so an empty page inside it is not an empty trail.
   const range = f.days ? DAY_RANGES.find((d) => d.id === f.days) : null;
   const initialLoading = loading && rows.length === 0;
+
+  let emptyState;
+  if (loadFailed) {
+    emptyState = <LoadError what="The audit trail" reason={loadFailed.reason} onRetry={() => load(1)} />;
+  } else if (filtered) {
+    emptyState = <Empty title="No entries match these filters" />;
+  } else if (f.days) {
+    emptyState = (
+      <Empty
+        title={`No entries in the ${range ? range.label.toLowerCase() : "selected time range"}`}
+        action={<Button size="sm" variant="secondary" onClick={() => setF({ ...f, days: "" })}>Show all time</Button>}
+      />
+    );
+  } else {
+    emptyState = <Empty title="No entries yet" />;
+  }
 
   return (
     <PanelTransition>
@@ -255,18 +263,7 @@ export default function AuditLog({ me }) {
             {initialLoading ? (
               <Loading>Loading audit trail…</Loading>
             ) : rows.length === 0 ? (
-              loadFailed ? (
-                <LoadError what="The audit trail" reason={loadFailed.reason} onRetry={() => load(1)} />
-              ) : filtered ? (
-                <Empty title="No entries match these filters" />
-              ) : f.days ? (
-                <Empty
-                  title={`No entries in the ${range ? range.label.toLowerCase() : "selected time range"}`}
-                  action={<Button size="sm" variant="secondary" onClick={() => setF({ ...f, days: "" })}>Show all time</Button>}
-                />
-              ) : (
-                <Empty title="No entries yet" />
-              )
+              emptyState
             ) : (
               <div className="overflow-x-auto" role="region" aria-label="Audit log entries" tabIndex={0}>
                 <table className="w-full min-w-[1040px] border-collapse text-left">

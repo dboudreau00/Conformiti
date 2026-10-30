@@ -25,8 +25,7 @@ export function Meter({ value, total, tone = "accent", height = 6, delay = 0, cl
   );
 }
 
-/** Stacked single-row bar, used where the parts must sum visibly.
- * segments: [{label, value, tone}] */
+/** segments: [{label, value, tone}] */
 export function SegmentBar({ segments, total, height = 8, delay = 0, className, ariaLabel }) {
   return (
     <div className={cn("flex w-full overflow-hidden rounded-full bg-grid", className)} style={{ height }} role="img" aria-label={ariaLabel}>
@@ -44,7 +43,7 @@ export function SegmentBar({ segments, total, height = 8, delay = 0, className, 
   );
 }
 
-/** Legend rows for a SegmentBar / Donut: [{label, value, tone}] */
+/** items: [{label, value, tone}] */
 export function Legend({ items, className, columns = 2 }) {
   return (
     <ul className={cn("grid gap-y-1.5 gap-x-4", columns === 1 ? "grid-cols-1" : "grid-cols-2", className)}>

@@ -1,5 +1,4 @@
-/** Keyboard activation for non-button elements that must stay non-buttons
- * (table rows, tree nodes). Enter/Space trigger the handler like a click. */
+/** For elements that must stay non-buttons (table rows, tree nodes): Enter and Space fire `fn` like a click. */
 export function onActivate(fn) {
   return (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -9,12 +8,8 @@ export function onActivate(fn) {
   };
 }
 
-/** What a LoadError should say about a failed load, or "" to keep its default.
- *
- * LoadError's own sentence ("The request did not come back") is only true when
- * no response arrived. A server that answered with a
- * refusal or an error deserves its own words, and a raw HTML error page never
- * reaches the screen. */
+/** "" keeps LoadError's default sentence, which is only true when no response arrived. A 5xx answers with a status
+ * line, never the body, so a raw HTML error page cannot reach the screen. */
 export function loadFailReason(e) {
   const r = e?.response;
   if (!r) return "";
@@ -23,7 +18,6 @@ export function loadFailReason(e) {
   return `The server returned an error (${r.status}). Try again.`;
 }
 
-/** Extract a human-readable message from a failed axios call. */
 export function errorText(e, fallback = "Something went wrong. Please try again.") {
   const d = e?.response?.data;
   if (typeof d === "string" && d) return d;
@@ -33,7 +27,6 @@ export function errorText(e, fallback = "Something went wrong. Please try again.
     if (first) {
       const [k, v] = first;
       const msg = Array.isArray(v) ? v.join(" ") : String(v);
-      // The field's name in words ("Base url"), not the API's key ("base_url").
       const field = k.replace(/_/g, " ");
       return k === "non_field_errors" ? msg : `${field.charAt(0).toUpperCase()}${field.slice(1)}: ${msg}`;
     }

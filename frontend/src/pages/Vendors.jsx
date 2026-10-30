@@ -1,15 +1,3 @@
-/**
- * Third-party risk: the vendor register, the assurance each vendor has given
- * us (SOC 2 reports, PCI AOCs, pen tests, questionnaires), and the shared
- * responsibility matrix, which of our controls the provider does, which we
- * do, which are split, with the statement for each side.
- *
- * The matrix is an in-browser grid over every control in scope. It can be
- * filled three ways: typing into the grid, being walked through the unstated
- * controls one at a time, or importing the vendor's own CSV/XLSX, which the
- * server reads with column and value recognition and reports back before
- * anything is written.
- */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -55,7 +43,12 @@ const KINDS = [
   ["bridge_letter", "Bridge letter"], ["other", "Other"],
 ];
 const KIND_LABEL = Object.fromEntries(KINDS);
-const RESULTS = [["pending", "Pending review"], ["satisfactory", "Satisfactory"], ["exceptions", "Exceptions noted"], ["unsatisfactory", "Unsatisfactory"]];
+const RESULTS = [
+  ["pending", "Pending review"],
+  ["satisfactory", "Satisfactory"],
+  ["exceptions", "Exceptions noted"],
+  ["unsatisfactory", "Unsatisfactory"],
+];
 const RESULT_TONE = { pending: "faint", satisfactory: "success", exceptions: "warning", unsatisfactory: "danger" };
 const RESP = [["provider", "Provider"], ["customer", "Us"], ["shared", "Shared"], ["not_applicable", "N/A"]];
 const RESP_LABEL = { provider: "Provider", customer: "Us", shared: "Shared", not_applicable: "N/A" };
@@ -71,7 +64,7 @@ const EMPTY_VENDOR = {
   data_handled: "", services: "", owner: "", review_cadence: "annual", notes: "",
 };
 
-const slug =(s) => String(s || "vendor").replace(/[^\w-]+/g, "-").toLowerCase();
+const slug = (s) => String(s || "vendor").replace(/[^\w-]+/g, "-").toLowerCase();
 function hostOf(url) {
   try { return new URL(url).host; } catch { return url; }
 }
@@ -80,10 +73,24 @@ function Notice({ msg, onClose }) {
   return (
     <AnimatePresence initial={false}>
       {msg ? (
-        <motion.div key={`${msg.ok}-${msg.text}`} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18, ease: EASE }}>
-          <div className={cn("notice flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
+        <motion.div
+          key={`${msg.ok}-${msg.text}`}
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, ease: EASE }}
+        >
+          <div
+            className={cn("notice flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")}
+            role={msg.ok ? "status" : "alert"}
+          >
             <span>{msg.text}</span>
-            <button type="button" aria-label="Dismiss" onClick={onClose} className="shrink-0 opacity-70 transition-opacity hover:opacity-100">
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={onClose}
+              className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+            >
               <XIcon className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -102,8 +109,6 @@ function Field({ id, label, children, className }) {
   );
 }
 
-// --- Register form --------------------------------------------------------------------
-
 function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "Save", autoFocus = false }) {
   const [v, setV] = useState(() => ({ ...EMPTY_VENDOR, ...initial, owner: initial?.owner ?? "" }));
   const set = (k) => (e) => setV((cur) => ({ ...cur, [k]: e.target.value }));
@@ -118,7 +123,15 @@ function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "S
       }}
     >
       <Field id={id("name")} label="Vendor name" className="sm:col-span-2">
-        <input id={id("name")} className="input input-sm" required value={v.name} onChange={set("name")} placeholder="Amazon Web Services" autoFocus={autoFocus} />
+        <input
+          id={id("name")}
+          className="input input-sm"
+          required
+          value={v.name}
+          onChange={set("name")}
+          placeholder="Amazon Web Services"
+          autoFocus={autoFocus}
+        />
       </Field>
       <Field id={id("category")} label="What they do for us">
         <input id={id("category")} className="input input-sm" value={v.category} onChange={set("category")} placeholder="Cloud hosting" />
@@ -137,10 +150,22 @@ function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "S
         </select>
       </Field>
       <Field id={id("data")} label="Data of ours they touch" className="sm:col-span-2">
-        <input id={id("data")} className="input input-sm" value={v.data_handled} onChange={set("data_handled")} placeholder="customer PII, cardholder data" />
+        <input
+          id={id("data")}
+          className="input input-sm"
+          value={v.data_handled}
+          onChange={set("data_handled")}
+          placeholder="customer PII, cardholder data"
+        />
       </Field>
       <Field id={id("services")} label="Services in scope" className="sm:col-span-2">
-        <input id={id("services")} className="input input-sm" value={v.services} onChange={set("services")} placeholder="EC2, RDS, S3 in eu-west-1" />
+        <input
+          id={id("services")}
+          className="input input-sm"
+          value={v.services}
+          onChange={set("services")}
+          placeholder="EC2, RDS, S3 in eu-west-1"
+        />
       </Field>
       <Field id={id("contact")} label="Contact name">
         <input id={id("contact")} className="input input-sm" value={v.contact_name} onChange={set("contact_name")} />
@@ -170,22 +195,26 @@ function VendorForm({ initial, users, busy, onSubmit, onCancel, submitLabel = "S
   );
 }
 
-// --- Overview -------------------------------------------------------------------------
-
 function OverviewTab({ vendor, users, canManage, busy, onSave, onReviewed }) {
   const [editing, setEditing] = useState(false);
   const a = vendor.assurance || {};
   const posture = POSTURE[a.posture] || POSTURE.none;
   const rating = RATING[vendor.risk_rating] || RATING.moderate;
+  const unsatisfactoryNote = a.unsatisfactory ? ` · ${a.unsatisfactory} unsatisfactory` : "";
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Risk rating" value={rating.label} tone={rating.tone} detail={`${vendor.tier_display} tier × assurance held`} />
         <StatCard label="Assurance" value={posture.label} tone={posture.tone}
-                  detail={`${a.current || 0} current · ${a.expired || 0} expired${a.unsatisfactory ? ` · ${a.unsatisfactory} unsatisfactory` : ""}`} />
+                  detail={`${a.current || 0} current · ${a.expired || 0} expired${unsatisfactoryNote}`} />
         <StatCard label="Next review" value={fmtDate(vendor.next_review_date)} tone={vendor.is_review_overdue ? "danger" : "muted"}
                   detail={vendor.last_reviewed ? `Last reviewed ${fmtDate(vendor.last_reviewed)}` : "Never reviewed"} />
-        <StatCard label="Controls stated" value={vendor.control_count} detail={`${vendor.open_risk_count} open risk(s)`} tone={vendor.control_count ? "accent" : "warning"} />
+        <StatCard
+          label="Controls stated"
+          value={vendor.control_count}
+          detail={`${vendor.open_risk_count} open risk(s)`}
+          tone={vendor.control_count ? "accent" : "warning"}
+        />
       </div>
 
       <Panel className="p-5">
@@ -228,9 +257,10 @@ function OverviewTab({ vendor, users, canManage, busy, onSave, onReviewed }) {
   );
 }
 
-// --- Assurance on file ------------------------------------------------------------------
-
-const EMPTY_ASSESSMENT = { kind: "soc2_type2", title: "", issued_at: "", expires_at: "", period_start: "", period_end: "", result: "pending", document: "", findings: "" };
+const EMPTY_ASSESSMENT = {
+  kind: "soc2_type2", title: "", issued_at: "", expires_at: "", period_start: "", period_end: "",
+  result: "pending", document: "", findings: "",
+};
 
 function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpen }) {
   const [adding, setAdding] = useState(false);
@@ -267,7 +297,13 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                   </select>
                 </Field>
                 <Field id="as-title" label="Title">
-                  <input id="as-title" className="input input-sm" value={a.title} onChange={set("title")} placeholder="SOC 2 Type II, FY2026" />
+                  <input
+                    id="as-title"
+                    className="input input-sm"
+                    value={a.title}
+                    onChange={set("title")}
+                    placeholder="SOC 2 Type II, FY2026"
+                  />
                 </Field>
                 <Field id="as-issued" label="Issued">
                   <input id="as-issued" type="date" className="input input-sm" value={a.issued_at} onChange={set("issued_at")} />
@@ -329,7 +365,17 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                   ) : r.document_hidden ? (
                     <Badge tone="muted" mono title="A copy is filed in a folder you cannot see">copy filed · not visible to you</Badge>
                   ) : <Badge tone="faint" mono>no copy filed</Badge>}
-                  {canManage ? <Button size="sm" variant="ghost" onClick={() => onRemove(r)} disabled={busy} aria-label={`Remove ${KIND_LABEL[r.kind] || r.kind}`}>Remove</Button> : null}
+                  {canManage ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onRemove(r)}
+                      disabled={busy}
+                      aria-label={`Remove ${KIND_LABEL[r.kind] || r.kind}`}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -340,13 +386,15 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
   );
 }
 
-// --- Questionnaire ----------------------------------------------------------------------
-
 const INVITE_TONE = { open: "info", submitted: "success", expired: "warning", revoked: "muted" };
 const OUTCOMES = [["satisfactory", "Satisfactory"], ["exceptions", "Exceptions noted"], ["unsatisfactory", "Unsatisfactory"]];
 
-/** Emailing the questionnaire to the vendor: a time-boxed link they answer
- * themselves, the links sent so far, and the link shown exactly once. */
+const answeredBy = (inv) => {
+  if (!inv.respondent_name) return "-";
+  const title = inv.respondent_title ? ` (${inv.respondent_title})` : "";
+  return `${inv.respondent_name}${title} · ${fmtDate(inv.submitted_at)}`;
+};
+
 function SendToVendor({ vendor, busy, act, refresh }) {
   const invites = vendor.questionnaire_invites || [];
   const [sending, setSending] = useState(false);
@@ -365,12 +413,22 @@ function SendToVendor({ vendor, busy, act, refresh }) {
       await refresh();
     }, "Questionnaire sent to the vendor.");
   };
-  const revoke = (inv) => act(async () => { await api.post(`/questionnaire-invites/${inv.id}/revoke/`); await refresh(); }, "Link withdrawn.");
+  const revoke = (inv) =>
+    act(async () => {
+      await api.post(`/questionnaire-invites/${inv.id}/revoke/`);
+      await refresh();
+    }, "Link withdrawn.");
 
   return (
     <Panel className="overflow-hidden" aria-label="Send to the vendor">
       <PanelHeader title="Sent to the vendor" meta={openCount ? `${openCount} open link${openCount === 1 ? "" : "s"}` : "No open link"}>
-        <Button size="sm" variant={sending ? "secondary" : "primary"} aria-expanded={sending} disabled={busy} onClick={() => { setSending((x) => !x); setSent(null); }}>
+        <Button
+          size="sm"
+          variant={sending ? "secondary" : "primary"}
+          aria-expanded={sending}
+          disabled={busy}
+          onClick={() => { setSending((x) => !x); setSent(null); }}
+        >
           Send to the vendor
         </Button>
       </PanelHeader>
@@ -385,8 +443,13 @@ function SendToVendor({ vendor, busy, act, refresh }) {
                    onChange={(e) => setForm({ ...form, days: e.target.value })} />
           </Field>
           <Field id="qsend-message" label="A note to them (optional)" className="sm:col-span-2">
-            <textarea id="qsend-message" className="input min-h-[72px]" value={form.message} placeholder="We are preparing for our SOC 2 audit and need this back before the 20th."
-                      onChange={(e) => setForm({ ...form, message: e.target.value })} />
+            <textarea
+              id="qsend-message"
+              className="input min-h-[72px]"
+              value={form.message}
+              placeholder="We are preparing for our SOC 2 audit and need this back before the 20th."
+              onChange={(e) => setForm({ ...form, message: e.target.value })}
+            />
           </Field>
           <div className="flex items-center gap-2 sm:col-span-2">
             <Button type="submit" size="sm" variant="primary" disabled={busy || !form.email.trim()}>Send</Button>
@@ -397,7 +460,9 @@ function SendToVendor({ vendor, busy, act, refresh }) {
       ) : null}
       {sent ? (
         <div className="notice notice-ok m-4" role="status">
-          <span className="block font-medium">{sent.email_sent ? `Emailed to ${sent.sent_to}.` : "The email could not be sent, paste the link into your own message."}</span>
+          <span className="block font-medium">
+            {sent.email_sent ? `Emailed to ${sent.sent_to}.` : "The email could not be sent, paste the link into your own message."}
+          </span>
           <span className="mt-1 block text-xs">The link, shown once:</span>
           <code id="questionnaire-link" className="mt-1 block select-all break-all font-mono text-xs text-ink">{sent.link}</code>
         </div>
@@ -418,16 +483,23 @@ function SendToVendor({ vendor, busy, act, refresh }) {
             <tbody className="divide-y divide-line">
               {invites.map((inv) => (
                 <tr key={inv.id} className="align-top">
-                  <td className="px-5 py-2 text-ink">{inv.sent_to}<span className="block text-faint">by {inv.sent_by_name}{inv.email_sent ? "" : " · email not sent"}</span></td>
+                  <td className="px-5 py-2 text-ink">
+                    {inv.sent_to}
+                    <span className="block text-faint">by {inv.sent_by_name}{inv.email_sent ? "" : " · email not sent"}</span>
+                  </td>
                   <td className="py-2 pr-3 text-muted">{fmtDate(inv.sent_at)}</td>
                   <td className="py-2 pr-3 text-muted">{fmtDate(inv.expires_at)}</td>
                   <td className="py-2 pr-3">
                     <Badge tone={INVITE_TONE[inv.status] || "muted"} dot>{inv.status}</Badge>
-                    {inv.status === "open" && inv.opened_at ? <span className="block text-faint">opened {fmtDate(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span> : null}
+                    {inv.status === "open" && inv.opened_at ? (
+                      <span className="block text-faint">opened {fmtDate(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span>
+                    ) : null}
                   </td>
-                  <td className="py-2 pr-3 text-muted">{inv.respondent_name ? `${inv.respondent_name}${inv.respondent_title ? ` (${inv.respondent_title})` : ""} · ${fmtDate(inv.submitted_at)}` : "-"}</td>
+                  <td className="py-2 pr-3 text-muted">{answeredBy(inv)}</td>
                   <td className="py-2 pr-5 text-right">
-                    {inv.status === "open" ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => revoke(inv)}>Revoke</Button> : null}
+                    {inv.status === "open" ? (
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => revoke(inv)}>Revoke</Button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -442,9 +514,10 @@ function SendToVendor({ vendor, busy, act, refresh }) {
 }
 
 function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
-  const latest = (vendor.assessments || []).filter((x) => x.kind === "questionnaire").sort((x, y) => (x.created_at < y.created_at ? 1 : -1))[0];
+  const latest = (vendor.assessments || [])
+    .filter((x) => x.kind === "questionnaire")
+    .sort((x, y) => (x.created_at < y.created_at ? 1 : -1))[0];
   const [answers, setAnswers] = useState(() => latest?.answers || {});
-  // A submission arriving from the vendor replaces what is on screen.
   useEffect(() => { setAnswers(latest?.answers || {}); }, [latest?.id]);
   const returned = latest && latest.result === "pending"
     ? (vendor.questionnaire_invites || []).find((i) => i.assessment === latest.id) : null;
@@ -468,64 +541,100 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
 
   return (
     <div className="flex flex-col gap-4">
-    {canManage ? <SendToVendor vendor={vendor} busy={busy} act={act} refresh={refresh} /> : null}
-    {returned ? (
-      <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
-        <span className="font-medium">Returned by {returned.respondent_name || returned.sent_to}{returned.respondent_title ? ` (${returned.respondent_title})` : ""} on {fmtDate(latest.created_at)}.</span>
-        {canManage ? (
-          <span className="flex flex-wrap gap-2">
-            {OUTCOMES.map(([k, l]) => (
-              <Button key={k} size="sm" variant={k === "unsatisfactory" ? "danger" : k === "satisfactory" ? "primary" : "secondary"} disabled={busy}
-                      onClick={() => act(async () => { await api.patch(`/vendor-assessments/${latest.id}/`, { result: k }); await refresh(); }, `Outcome recorded: ${l.toLowerCase()}.`)}>
-                {l}
-              </Button>
-            ))}
+      {canManage ? <SendToVendor vendor={vendor} busy={busy} act={act} refresh={refresh} /> : null}
+      {returned ? (
+        <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
+          <span className="font-medium">
+            Returned by {returned.respondent_name || returned.sent_to}
+            {returned.respondent_title ? ` (${returned.respondent_title})` : ""} on {fmtDate(latest.created_at)}.
           </span>
-        ) : null}
-      </div>
-    ) : null}
-    <Panel className="overflow-hidden">
-      <PanelHeader className="flex-wrap" title="Security questionnaire" meta={lastMeta}>
-        <div className="flex items-center gap-3">
-          <Meter value={answered} total={questions.length || 1} className="w-32" ariaLabel="Questions answered" />
-          <Label>{answered}/{questions.length}</Label>
-        </div>
-      </PanelHeader>
-      <div className="divide-y divide-line">
-        {areas.map((a) => (
-          <fieldset key={a.area} className="px-5 py-4">
-            <legend className="mb-2 font-mono text-2xs uppercase tracking-label text-faint">{a.area}</legend>
-            <ul className="space-y-3">
-              {a.items.map((q) => (
-                <li key={q.id} className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
-                  <p className="text-[13px] text-ink">{q.text}</p>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
-                      <Chip key={k} active={answers[q.id]?.answer === k} disabled={!canManage} onClick={() => canManage && setAnswer(q.id, { answer: k })}>{l}</Chip>
-                    ))}
-                    <input className="input input-sm w-48" placeholder="Note" aria-label={`Note for: ${q.text}`} value={answers[q.id]?.note || ""}
-                           disabled={!canManage} onChange={(e) => setAnswer(q.id, { note: e.target.value })} />
-                  </div>
-                </li>
+          {canManage ? (
+            <span className="flex flex-wrap gap-2">
+              {OUTCOMES.map(([k, l]) => (
+                <Button
+                  key={k}
+                  size="sm"
+                  variant={k === "unsatisfactory" ? "danger" : k === "satisfactory" ? "primary" : "secondary"}
+                  disabled={busy}
+                  onClick={() =>
+                    act(async () => {
+                      await api.patch(`/vendor-assessments/${latest.id}/`, { result: k });
+                      await refresh();
+                    }, `Outcome recorded: ${l.toLowerCase()}.`)
+                  }
+                >
+                  {l}
+                </Button>
               ))}
-            </ul>
-          </fieldset>
-        ))}
-      </div>
-      {canManage ? (
-        <div className="flex flex-wrap items-center gap-3 border-t border-line bg-surface-2 px-5 py-3">
-          <Button size="sm" variant="primary" disabled={busy || answered === 0}
-                  onClick={() => onSubmit({ vendor: vendor.id, kind: "questionnaire", title: `Questionnaire ${new Date().toISOString().slice(0, 10)}`, result: suggested, answers })}>
-            {busy ? "Saving…" : "Save questionnaire"}
-          </Button>
+            </span>
+          ) : null}
         </div>
       ) : null}
-    </Panel>
+      <Panel className="overflow-hidden">
+        <PanelHeader className="flex-wrap" title="Security questionnaire" meta={lastMeta}>
+          <div className="flex items-center gap-3">
+            <Meter value={answered} total={questions.length || 1} className="w-32" ariaLabel="Questions answered" />
+            <Label>{answered}/{questions.length}</Label>
+          </div>
+        </PanelHeader>
+        <div className="divide-y divide-line">
+          {areas.map((a) => (
+            <fieldset key={a.area} className="px-5 py-4">
+              <legend className="mb-2 font-mono text-2xs uppercase tracking-label text-faint">{a.area}</legend>
+              <ul className="space-y-3">
+                {a.items.map((q) => (
+                  <li key={q.id} className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+                    <p className="text-[13px] text-ink">{q.text}</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
+                        <Chip
+                          key={k}
+                          active={answers[q.id]?.answer === k}
+                          disabled={!canManage}
+                          onClick={() => canManage && setAnswer(q.id, { answer: k })}
+                        >
+                          {l}
+                        </Chip>
+                      ))}
+                      <input
+                        className="input input-sm w-48"
+                        placeholder="Note"
+                        aria-label={`Note for: ${q.text}`}
+                        value={answers[q.id]?.note || ""}
+                        disabled={!canManage}
+                        onChange={(e) => setAnswer(q.id, { note: e.target.value })}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </fieldset>
+          ))}
+        </div>
+        {canManage ? (
+          <div className="flex flex-wrap items-center gap-3 border-t border-line bg-surface-2 px-5 py-3">
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={busy || answered === 0}
+              onClick={() =>
+                onSubmit({
+                  vendor: vendor.id,
+                  kind: "questionnaire",
+                  title: `Questionnaire ${new Date().toISOString().slice(0, 10)}`,
+                  result: suggested,
+                  answers,
+                })
+              }
+            >
+              {busy ? "Saving…" : "Save questionnaire"}
+            </Button>
+          </div>
+        ) : null}
+      </Panel>
     </div>
   );
 }
-
-// --- Shared responsibility matrix --------------------------------------------------------
 
 function RespPicker({ value, onChange, disabled, compact = false, label = "Responsibility" }) {
   return (
@@ -544,12 +653,10 @@ function RespPicker({ value, onChange, disabled, compact = false, label = "Respo
 }
 
 function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
-  // `rows` is the live list of unstated controls: a saved control leaves it,
-  // so the next one slides into the same index. Only a skip advances.
+  // `rows` is the live list of unstated controls: a saved one leaves it, so the next takes the same index; only Skip advances.
   const [i, setI] = useState(0);
   const [draft, setDraft] = useState({ responsibility: null, provider_statement: "", customer_statement: "" });
-  // Skipped items come round again: when the index runs past the end of a
-  // list that still has entries, start over rather than declare it done.
+  // Skipped items come round again: past the end of a non-empty list, start over rather than finish.
   const index = rows.length && i >= rows.length ? 0 : i;
   const row = rows[index];
   useEffect(() => { if (rows.length && i >= rows.length) setI(0); }, [i, rows.length]);
@@ -575,7 +682,9 @@ function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
       </h3>
       <Label className="mt-0.5 block">{row.framework_name || row.framework} · {row.category}</Label>
       <p className="mt-3 text-[13px] text-muted">Who does this control for the services {vendorName} provides?</p>
-      <div className="mt-2"><RespPicker value={draft.responsibility} onChange={(v) => setDraft((d) => ({ ...d, responsibility: v }))} /></div>
+      <div className="mt-2">
+        <RespPicker value={draft.responsibility} onChange={(v) => setDraft((d) => ({ ...d, responsibility: v }))} />
+      </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <Field id="pm-provider" label={`What ${vendorName} does`}>
           <textarea id="pm-provider" className="input input-sm min-h-[64px]" value={draft.provider_statement}
@@ -599,17 +708,12 @@ function PromptMode({ rows, vendorName, busy, onSave, onDone }) {
   );
 }
 
-/** The control cell of an import row: a matched row shows compact text with
- * a way to change it, so a 200-row file does not render 200 native selects
- * each scrolling through the framework's whole catalogue. While a matched row
- * is being changed its current control stays on screen, since that is still
- * what the row imports to, with Keep to close the search without a pick. */
+/** Matched rows show text plus Change, not a picker, so a 200-row import does not render 200 searchable lists. */
 function ImportControlCell({ r, fw, controls, open, onOpen, onClose, onPick }) {
   const chosen = r.control_id ? controls.find((c) => c.id === r.control_id) : null;
   const pickerId = `import-control-${r.key}`;
   const changeRef = useRef(null);
-  // The button that had focus is gone after the swap, so say where it goes:
-  // into the search after Change, back to Change after a pick or Keep.
+  // The focused button is gone after the swap: focus moves to the search after Change, back to Change after a pick or Keep.
   const focusTo = useRef(null);
   useEffect(() => {
     if (focusTo.current === "picker") document.getElementById(pickerId)?.focus();
@@ -659,9 +763,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
   const [parsing, setParsing] = useState(false);
   const [review, setReview] = useState(null);
   const [openKeys, setOpenKeys] = useState(() => new Set());
-  // A bare "6.1" is a PCI requirement, an ISO clause and a SOC 2 point of
-  // focus; the file is about one of them and only the person knows which.
-  // `frameworks` is [key, name] pairs; one framework means one obvious choice.
+  // A bare "6.1" matches several frameworks: only the person knows which, unless there is exactly one.
   const [fw, setFw] = useState(framework || (frameworks.length === 1 ? frameworks[0][0] : ""));
 
   async function parse(e) {
@@ -674,7 +776,11 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
     setParsing(true);
     try {
       const { data } = await api.post(`/vendors/${vendor.id}/matrix/parse/`, fd);
-      setReview({ ...data, file_name: file.name, rows: data.rows.map((r, i) => ({ ...r, key: i, include: r.matched && !!r.responsibility })) });
+      setReview({
+        ...data,
+        file_name: file.name,
+        rows: data.rows.map((r, i) => ({ ...r, key: i, include: r.matched && !!r.responsibility })),
+      });
       setOpenKeys(new Set());
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't read that file.") });
@@ -699,7 +805,13 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="import-framework" className="sr-only">Framework in the file</label>
-          <select id="import-framework" className="input input-sm w-44" value={fw} onChange={(e) => { setFw(e.target.value); setReview(null); }} disabled={parsing || busy}>
+          <select
+            id="import-framework"
+            className="input input-sm w-44"
+            value={fw}
+            onChange={(e) => { setFw(e.target.value); setReview(null); }}
+            disabled={parsing || busy}
+          >
             <option value="">Framework in the file…</option>
             {frameworks.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
           </select>
@@ -722,7 +834,11 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
           ) : null}
           <div className="flex flex-wrap gap-1.5" aria-label="How the columns were read">
             {review.columns.map((c) => (
-              <Badge key={c.index} tone={c.role ? (c.role === "control" ? "accent" : "info") : "faint"} title={c.role ? `Read as ${c.role.replace("_", " ")} (${c.confidence}%)` : "Ignored"}>
+              <Badge
+                key={c.index}
+                tone={c.role ? (c.role === "control" ? "accent" : "info") : "faint"}
+                title={c.role ? `Read as ${c.role.replace("_", " ")} (${c.confidence}%)` : "Ignored"}
+              >
                 {c.column} → {c.role ? c.role.replace("_", " ") : "ignored"}
               </Badge>
             ))}
@@ -733,7 +849,9 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                 <Label>{review.summary.total} rows</Label>
                 <Label>{review.summary.matched} matched a control</Label>
                 <Label className={review.summary.unmatched ? "text-warning" : ""}>{review.summary.unmatched} unmatched</Label>
-                <Label className={review.summary.unrecognised_responsibility ? "text-warning" : ""}>{review.summary.unrecognised_responsibility} without a recognised responsibility</Label>
+                <Label className={review.summary.unrecognised_responsibility ? "text-warning" : ""}>
+                  {review.summary.unrecognised_responsibility} without a recognised responsibility
+                </Label>
               </div>
               <div className="max-h-[420px] overflow-auto rounded-lg border border-line bg-surface">
                 <table className="w-full text-xs">
@@ -750,7 +868,14 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                   <tbody className="divide-y divide-line">
                     {review.rows.map((r) => (
                       <tr key={r.key} className={cn(!r.matched && "bg-warning/[0.06]")}>
-                        <td className="px-2 py-1.5"><input type="checkbox" checked={r.include} aria-label={`Import line ${r.line}`} onChange={(e) => patch(r.key, { include: e.target.checked })} /></td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="checkbox"
+                            checked={r.include}
+                            aria-label={`Import line ${r.line}`}
+                            onChange={(e) => patch(r.key, { include: e.target.checked })}
+                          />
+                        </td>
                         <td className="px-2 py-1.5 font-mono text-muted">{r.raw_ref}</td>
                         <td className="px-2 py-1.5">
                           <ImportControlCell
@@ -761,25 +886,60 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                           />
                         </td>
                         <td className="px-2 py-1.5">
-                          <select className={cn("input input-sm", !r.responsibility && "border-warning")} aria-label={`Responsibility for line ${r.line}`} value={r.responsibility || ""}
-                                  onChange={(e) => patch(r.key, { responsibility: e.target.value || null, include: !!e.target.value && !!r.control_id })}>
+                          <select
+                            className={cn("input input-sm", !r.responsibility && "border-warning")}
+                            aria-label={`Responsibility for line ${r.line}`}
+                            value={r.responsibility || ""}
+                            onChange={(e) =>
+                              patch(r.key, { responsibility: e.target.value || null, include: !!e.target.value && !!r.control_id })
+                            }
+                          >
                             <option value="">Not recognised, choose</option>
                             {RESP.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                           </select>
                         </td>
-                        <td className="px-2 py-1.5"><input className="input input-sm" aria-label={`Provider statement for line ${r.line}`} value={r.provider_statement} onChange={(e) => patch(r.key, { provider_statement: e.target.value })} /></td>
-                        <td className="px-2 py-1.5"><input className="input input-sm" aria-label={`Customer statement for line ${r.line}`} value={r.customer_statement} onChange={(e) => patch(r.key, { customer_statement: e.target.value })} /></td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            className="input input-sm"
+                            aria-label={`Provider statement for line ${r.line}`}
+                            value={r.provider_statement}
+                            onChange={(e) => patch(r.key, { provider_statement: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            className="input input-sm"
+                            aria-label={`Customer statement for line ${r.line}`}
+                            value={r.customer_statement}
+                            onChange={(e) => patch(r.key, { customer_statement: e.target.value })}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <div className="flex items-center gap-3">
-                <Button size="sm" variant="primary" disabled={busy || ready.length === 0}
-                        onClick={() => onConfirm(
-                          ready.map((r) => ({ control: r.control_id, responsibility: r.responsibility, provider_statement: r.provider_statement, customer_statement: r.customer_statement })),
-                          { layout: review.columns.map((c) => ({ name: c.column, role: c.role, index: c.index })), layout_name: review.file_name || "", framework: fw },
-                        )}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={busy || ready.length === 0}
+                  onClick={() =>
+                    onConfirm(
+                      ready.map((r) => ({
+                        control: r.control_id,
+                        responsibility: r.responsibility,
+                        provider_statement: r.provider_statement,
+                        customer_statement: r.customer_statement,
+                      })),
+                      {
+                        layout: review.columns.map((c) => ({ name: c.column, role: c.role, index: c.index })),
+                        layout_name: review.file_name || "",
+                        framework: fw,
+                      },
+                    )
+                  }
+                >
                   {busy ? "Importing…" : `Import ${ready.length} row(s)`}
                 </Button>
                 <Label>Rows already stated for this vendor are replaced.</Label>
@@ -799,7 +959,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   const [onlyUnstated, setOnlyUnstated] = useState(false);
   const [edits, setEdits] = useState({});
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState(null); // "prompt" | "import"
+  const [mode, setMode] = useState(null);
   const [loadErr, setLoadErr] = useState(false);
 
   async function load() {
@@ -815,17 +975,20 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   useEffect(() => { setEdits({}); load(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [vendor.id]);
   useEffect(() => { if (intent) { setMode(intent); onIntentDone(); } }, [intent, onIntentDone]);
 
-  // [key, name] pairs, so every framework reads as its name: a hard-coded map
-  // of three keys would show the other twenty-two as slugs on a screen that is
-  // shared with the vendor.
   const frameworks = useMemo(() => {
     const seen = new Map();
     for (const r of data?.rows || []) if (!seen.has(r.framework)) seen.set(r.framework, r.framework_name || r.framework);
     return Array.from(seen.entries());
   }, [data]);
   const names = useMemo(() => Object.fromEntries(frameworks), [frameworks]);
-  const controls = useMemo(() => (data?.rows || []).map((r) => ({ id: r.control, label: r.control_id, title: r.title, framework: r.framework })), [data]);
-  const merged = useMemo(() => (data?.rows || []).map((r) => ({ ...r, ...(edits[r.control] || {}), dirty: !!edits[r.control] })), [data, edits]);
+  const controls = useMemo(
+    () => (data?.rows || []).map((r) => ({ id: r.control, label: r.control_id, title: r.title, framework: r.framework })),
+    [data]
+  );
+  const merged = useMemo(
+    () => (data?.rows || []).map((r) => ({ ...r, ...(edits[r.control] || {}), dirty: !!edits[r.control] })),
+    [data, edits]
+  );
   const visible = useMemo(() => merged.filter((r) =>
     (!fw || r.framework === fw)
     && (!onlyUnstated || !r.responsibility)
@@ -834,11 +997,22 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   const unstated = merged.filter((r) => !r.responsibility && (!fw || r.framework === fw));
   const dirtyCount = Object.keys(edits).length;
   // A statement with nothing to belong to: the server refuses it, so say so first.
-  const orphaned = merged.filter((r) => r.dirty && !r.responsibility && ((r.provider_statement || "").trim() || (r.customer_statement || "").trim()));
+  const orphaned = merged.filter(
+    (r) => r.dirty && !r.responsibility && ((r.provider_statement || "").trim() || (r.customer_statement || "").trim())
+  );
 
   const edit = (control, patch) => setEdits((cur) => {
     const base = data.rows.find((r) => r.control === control) || {};
-    return { ...cur, [control]: { responsibility: base.responsibility, provider_statement: base.provider_statement, customer_statement: base.customer_statement, ...(cur[control] || {}), ...patch } };
+    return {
+      ...cur,
+      [control]: {
+        responsibility: base.responsibility,
+        provider_statement: base.provider_statement,
+        customer_statement: base.customer_statement,
+        ...(cur[control] || {}),
+        ...patch,
+      },
+    };
   });
 
   async function put(rows, source = "manual", okText, extra = {}) {
@@ -860,9 +1034,6 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
     const rows = Object.entries(edits).map(([control, e]) => ({ control: Number(control), ...e }));
     if (await put(rows, "manual", `${rows.length} control(s) saved.`)) setEdits({});
   };
-  // `theirLayout` is the vendor's own column layout, remembered from their
-  // last import. A refused or failed export says so in the page notice, as
-  // the other exports do, rather than the button doing nothing.
   async function exportMatrix(theirLayout = false) {
     setMsg(null);
     try {
@@ -883,7 +1054,12 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard label="Controls in scope" value={s.controls} />
-        <StatCard label="Stated" value={s.stated} tone="success" detail={`${s.controls ? Math.round((s.stated / s.controls) * 100) : 0}% of the matrix`}>
+        <StatCard
+          label="Stated"
+          value={s.stated}
+          tone="success"
+          detail={`${s.controls ? Math.round((s.stated / s.controls) * 100) : 0}% of the matrix`}
+        >
           <Meter value={s.stated} total={s.controls || 1} tone="success" className="mt-2" ariaLabel="Matrix completion" />
         </StatCard>
         <StatCard label="Unstated" value={s.unstated} tone={s.unstated ? "warning" : "muted"} />
@@ -893,8 +1069,18 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
         <PromptMode rows={unstated} vendorName={vendor.name} busy={busy}
                     onSave={(row) => put([row], "manual")} onDone={() => setMode(null)} />
       ) : mode === "import" ? (
-        <ImportWizard vendor={vendor} framework={fw} frameworks={frameworks} controls={controls} busy={busy} setMsg={setMsg} onCancel={() => setMode(null)}
-                      onConfirm={async (rows, extra) => { if (await put(rows, "import", `${rows.length} row(s) imported from ${vendor.name}'s matrix.`, extra)) setMode(null); }} />
+        <ImportWizard
+          vendor={vendor}
+          framework={fw}
+          frameworks={frameworks}
+          controls={controls}
+          busy={busy}
+          setMsg={setMsg}
+          onCancel={() => setMode(null)}
+          onConfirm={async (rows, extra) => {
+            if (await put(rows, "import", `${rows.length} row(s) imported from ${vendor.name}'s matrix.`, extra)) setMode(null);
+          }}
+        />
       ) : null}
 
       <Panel className="overflow-hidden">
@@ -902,12 +1088,22 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
           <div className="flex flex-wrap items-center gap-2">
             {canManage ? (
               <>
-                <Button size="sm" variant={mode === "prompt" ? "secondary" : "primary"} disabled={busy || unstated.length === 0} onClick={() => setMode(mode === "prompt" ? null : "prompt")}
-                        icon={<SparklesIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                <Button
+                  size="sm"
+                  variant={mode === "prompt" ? "secondary" : "primary"}
+                  disabled={busy || unstated.length === 0}
+                  onClick={() => setMode(mode === "prompt" ? null : "prompt")}
+                  icon={<SparklesIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+                >
                   Walk me through {unstated.length ? `(${unstated.length})` : ""}
                 </Button>
-                <Button size="sm" variant={mode === "import" ? "secondary" : "ghost"} disabled={busy} onClick={() => setMode(mode === "import" ? null : "import")}
-                        icon={<FileUpIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                <Button
+                  size="sm"
+                  variant={mode === "import" ? "secondary" : "ghost"}
+                  disabled={busy}
+                  onClick={() => setMode(mode === "import" ? null : "import")}
+                  icon={<FileUpIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+                >
                   Import CSV/XLSX
                 </Button>
               </>
@@ -934,7 +1130,13 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
           </select>
           <Chip active={onlyUnstated} onClick={() => setOnlyUnstated((x) => !x)} tone="warning">Unstated only</Chip>
           <label htmlFor="matrix-search" className="sr-only">Search controls</label>
-          <input id="matrix-search" className="input input-sm ml-auto w-56" placeholder="Search controls…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input
+            id="matrix-search"
+            className="input input-sm ml-auto w-56"
+            placeholder="Search controls…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-xs">
@@ -950,21 +1152,37 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
               {visible.length === 0 ? (
                 <tr><td colSpan={5}>
                   {fw || onlyUnstated || q ? (
-                    <Empty title="No controls match"
-                           action={<Button size="sm" onClick={() => { setFw(""); setOnlyUnstated(false); setQ(""); }}>Clear filters</Button>} />
+                    <Empty
+                      title="No controls match"
+                      action={<Button size="sm" onClick={() => { setFw(""); setOnlyUnstated(false); setQ(""); }}>Clear filters</Button>}
+                    />
                   ) : (
                     <Empty title="No controls in scope" />
                   )}
                 </td></tr>
               ) : visible.map((r) => (
-                <tr key={r.control} className={cn("align-top transition-colors duration-150 hover:bg-surface-2", r.dirty && "bg-accent/[0.04]")}>
+                <tr
+                  key={r.control}
+                  className={cn("align-top transition-colors duration-150 hover:bg-surface-2", r.dirty && "bg-accent/[0.04]")}
+                >
                   <td className="w-[280px] px-4 py-2">
                     <span className="block font-mono text-[11px] text-muted">{names[r.framework] || r.framework} · {r.control_id}</span>
                     <span className="block text-[13px] text-ink">{r.title}</span>
                   </td>
                   <td className="w-[230px] px-2 py-2">
-                    {canManage ? <RespPicker compact label={`Responsibility for ${r.control_id}`} value={r.responsibility} disabled={busy} onChange={(v) => edit(r.control, { responsibility: v })} />
-                      : r.responsibility ? <Badge tone={RESP_TONE[r.responsibility]}>{RESP_LABEL[r.responsibility]}</Badge> : <span className="text-faint">-</span>}
+                    {canManage ? (
+                      <RespPicker
+                        compact
+                        label={`Responsibility for ${r.control_id}`}
+                        value={r.responsibility}
+                        disabled={busy}
+                        onChange={(v) => edit(r.control, { responsibility: v })}
+                      />
+                    ) : r.responsibility ? (
+                      <Badge tone={RESP_TONE[r.responsibility]}>{RESP_LABEL[r.responsibility]}</Badge>
+                    ) : (
+                      <span className="text-faint">-</span>
+                    )}
                   </td>
                   <td className="px-2 py-2" colSpan={2}>
                     {canManage ? (
@@ -1014,8 +1232,6 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   );
 }
 
-// --- Page --------------------------------------------------------------------------------
-
 export default function Vendors({ me }) {
   const { ask, confirmDialog } = useConfirm();
   const [params, setParams] = useSearchParams();
@@ -1035,13 +1251,9 @@ export default function Vendors({ me }) {
   const [viewing, setViewing] = useState(null);
   const [intent, setIntent] = useState(null);
   const canManage = !!(me?.is_superuser || me?.capabilities?.manage_frameworks);
-  // An add-on that scores the register sends the features it has switched on
-  // with the signed-in user. On a core-only install `pro` is absent, so this is
-  // false and the link below is not drawn.
+  // me.pro.features comes from an add-on; it is absent on a core-only install, so the portfolio link is not drawn.
   const hasPortfolio = Array.isArray(me?.pro?.features) && me.pro.features.includes("tprm.advanced");
-  // Register is hidden while the form is open, so when the form closes
-  // (Cancel, or a vendor registered) focus goes back to it rather than to
-  // the page: the button that had focus went with the form.
+  // The Register button is hidden while the form is open: focus returns to it when the form closes.
   const registerRef = useRef(null);
   const wasCreating = useRef(false);
   useEffect(() => {
@@ -1056,9 +1268,7 @@ export default function Vendors({ me }) {
     const next = rows.find((v) => v.id === keep) || (keep ? null : rows[0]) || rows[0] || null;
     setSelectedId(next ? next.id : null);
   }
-  // A failed register load must not read as "0 total", "No vendors yet" and a
-  // risk mix of zeros: `vendorsErr` holds all three back, and only a load that
-  // succeeds clears it, so a retry in flight does not read as empty either.
+  // A failed load must not read as an empty register: vendorsErr holds the zeros back until a load succeeds.
   function loadRegister() {
     return loadVendors().catch((e) => {
       setVendors([]);
@@ -1066,8 +1276,7 @@ export default function Vendors({ me }) {
       setMsg({ ok: false, text: errorText(e, "Couldn't load the vendor register.") });
     });
   }
-  // The vendor whose detail was asked for last. A slower reply for a vendor the
-  // user has already moved off must not overwrite the one now on screen.
+  // A slower reply for a vendor the user has moved off must not overwrite the one now on screen.
   const detailWanted = useRef(null);
   async function loadDetail(id) {
     detailWanted.current = id;
@@ -1104,11 +1313,8 @@ export default function Vendors({ me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
   useEffect(() => {
-    // The router changes the address before it draws the next page, so for a
-    // moment this page is still on screen under another page's address. A
-    // replace from here in that moment sends the person back to the vendors
-    // they just left, which is what a click made while the list was still
-    // loading used to do.
+    // The router changes the address before it draws the next page: a replace from here in that moment would send
+    // the person back to the vendors they just left.
     if (window.location.pathname !== pathname) return;
     const next = new URLSearchParams();
     if (selectedId) next.set("vendor", String(selectedId));
@@ -1146,39 +1352,34 @@ export default function Vendors({ me }) {
   const openAssessmentDoc = (r) => setViewing({
     title: r.document_name, subtitle: `${KIND_LABEL[r.kind] || r.kind} · ${detail?.name}`,
     previewUrl: `/documents/${r.document}/preview/`, downloadUrl: `/documents/${r.document}/download/`, filename: r.document_name,
-    facts: [{ label: "Filed as", value: KIND_LABEL[r.kind] || r.kind }, { label: "Issued", value: fmtDate(r.issued_at) }, { label: "Expires", value: fmtDate(r.expires_at) }],
+    facts: [
+      { label: "Filed as", value: KIND_LABEL[r.kind] || r.kind },
+      { label: "Issued", value: fmtDate(r.issued_at) },
+      { label: "Expires", value: fmtDate(r.expires_at) },
+    ],
   });
 
   if (vendors === null) return <PanelTransition><Panel><Loading /></Panel></PanelTransition>;
 
   const needsMatrix = detail && detail.control_count === 0 && detail.status !== "offboarded";
+  const detailPosture = POSTURE[detail?.assurance?.posture] || POSTURE.none;
 
   return (
     <PanelTransition>
       {confirmDialog}
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
-        {/* ------------------------------------------------------------ register */}
         <div className="flex flex-col gap-4">
           <Panel className="overflow-hidden">
             <PanelHeader title="Vendor register" meta={vendorsErr ? "- total" : `${vendors.length} total`}
                          className={hasPortfolio ? "flex-wrap gap-y-1" : undefined}>
-              {/* The panel is already titled "Vendor register", so the noun
-                  would be on screen twice and the button would wrap to two
-                  lines in the 300px column. The accessible name keeps the full
-                  phrase: that is what a screen reader announces, and what the
-                  viewer test asserts is absent. It is hidden while the form is
-                  open: the form has its own Cancel and "Register vendor", and a
-                  second click here would close it and throw away what was
-                  typed. */}
+              {/* The visible label is short for the 300px column; aria-label keeps the full phrase for screen readers.
+                  Hidden while the form is open: a second click would close it and throw away what was typed. */}
               {canManage && !creating ? (
                 <Button ref={registerRef} size="sm" variant="primary"
                         aria-label="Register a vendor" onClick={() => setCreating(true)}>
                   Register
                 </Button>
               ) : null}
-              {/* The 300px column has no room for it beside the title, the
-                  count and the button, so it takes a line of its own below
-                  them, after the button in the tab order as on the screen. */}
               {hasPortfolio ? (
                 <div className="basis-full text-xs">
                   <Link to="/pro/tprm" className="text-xs text-muted underline underline-offset-4 hover:text-ink">Portfolio view</Link>
@@ -1199,10 +1400,25 @@ export default function Vendors({ me }) {
             ) : null}
             <div className="space-y-2 border-b border-line bg-surface-2 px-3 py-2.5">
               <label htmlFor="vendor-search" className="sr-only">Search vendors</label>
-              <input id="vendor-search" className="input input-sm" placeholder="Search vendors, categories or data handled" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />
+              <input
+                id="vendor-search"
+                className="input input-sm"
+                placeholder="Search vendors, categories or data handled"
+                value={filter.q}
+                onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
+              />
               <div className="flex flex-wrap gap-1">
                 <Chip active={!filter.tier} onClick={() => setFilter((f) => ({ ...f, tier: "" }))}>All</Chip>
-                {TIERS.map(([k, l]) => <Chip key={k} active={filter.tier === k} tone={TIER_TONE[k]} onClick={() => setFilter((f) => ({ ...f, tier: f.tier === k ? "" : k }))}>{l}</Chip>)}
+                {TIERS.map(([k, l]) => (
+                  <Chip
+                    key={k}
+                    active={filter.tier === k}
+                    tone={TIER_TONE[k]}
+                    onClick={() => setFilter((f) => ({ ...f, tier: f.tier === k ? "" : k }))}
+                  >
+                    {l}
+                  </Chip>
+                ))}
               </div>
             </div>
             {vendorsErr ? (
@@ -1215,8 +1431,15 @@ export default function Vendors({ me }) {
                   const rating = RATING[v.risk_rating] || RATING.moderate;
                   return (
                     <li key={v.id}>
-                      <button type="button" onClick={() => { setSelectedId(v.id); setTab("overview"); }} aria-current={v.id === selectedId || undefined}
-                              className={cn("block w-full px-4 py-3 text-left transition-colors duration-150 ease-out", v.id === selectedId ? "bg-accent/10" : "hover:bg-surface-2")}>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedId(v.id); setTab("overview"); }}
+                        aria-current={v.id === selectedId || undefined}
+                        className={cn(
+                          "block w-full px-4 py-3 text-left transition-colors duration-150 ease-out",
+                          v.id === selectedId ? "bg-accent/10" : "hover:bg-surface-2"
+                        )}
+                      >
                         <span className="flex items-center gap-2">
                           <Building2Icon className="h-3.5 w-3.5 shrink-0 text-faint" strokeWidth={2} aria-hidden="true" />
                           <span className="block truncate text-[13px] font-medium text-ink">{v.name}</span>
@@ -1248,7 +1471,6 @@ export default function Vendors({ me }) {
           </Panel>
         </div>
 
-        {/* -------------------------------------------------------------- detail */}
         <div className="flex min-w-0 flex-col gap-4">
           <Notice msg={msg} onClose={() => setMsg(null)} />
           {!selectedId || !detail ? (
@@ -1269,14 +1491,23 @@ export default function Vendors({ me }) {
                     <h2 className="truncate text-[15px] font-semibold text-ink">{detail.name}</h2>
                     <p className="mt-0.5 text-xs text-muted">
                       {detail.category || "Third party"}{detail.website ? " · " : ""}
-                      {detail.website ? <a href={detail.website} target="_blank" rel="noreferrer noopener" className="text-accent underline underline-offset-2 hover:opacity-80">{hostOf(detail.website)}</a> : null}
+                      {detail.website ? (
+                        <a
+                          href={detail.website}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="text-accent underline underline-offset-2 hover:opacity-80"
+                        >
+                          {hostOf(detail.website)}
+                        </a>
+                      ) : null}
                       {detail.owner_name ? ` · owned by ${detail.owner_name}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge tone={TIER_TONE[detail.tier]} mono>{detail.tier} tier</Badge>
                     <Badge tone={detail.status === "active" ? "success" : "muted"} dot>{detail.status_display}</Badge>
-                    <Badge tone={(POSTURE[detail.assurance?.posture] || POSTURE.none).tone} dot>{(POSTURE[detail.assurance?.posture] || POSTURE.none).label}</Badge>
+                    <Badge tone={detailPosture.tone} dot>{detailPosture.label}</Badge>
                   </div>
                 </div>
                 {needsMatrix ? (
@@ -1284,7 +1515,13 @@ export default function Vendors({ me }) {
                     <span className="font-medium">New vendor, no responsibilities stated yet.</span>
                     {canManage ? (
                       <span className="flex gap-2">
-                        <Button size="sm" variant="primary" onClick={() => { setTab("matrix"); setIntent("prompt"); }}>Walk me through it</Button>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => { setTab("matrix"); setIntent("prompt"); }}
+                        >
+                          Walk me through it
+                        </Button>
                         <Button size="sm" onClick={() => { setTab("matrix"); setIntent("import"); }}>Import their matrix</Button>
                       </span>
                     ) : null}
@@ -1296,36 +1533,79 @@ export default function Vendors({ me }) {
               </Panel>
 
               {tab === "overview" ? (
-                <OverviewTab vendor={detail} users={users} canManage={canManage} busy={busy}
-                             onSave={(body) => act(async () => { await api.patch(`/vendors/${detail.id}/`, body); await refresh(); }, "Vendor updated.")}
-                             onReviewed={() => act(async () => { await api.post(`/vendors/${detail.id}/mark_reviewed/`); await refresh(); }, "Review recorded.")} />
+                <OverviewTab
+                  vendor={detail}
+                  users={users}
+                  canManage={canManage}
+                  busy={busy}
+                  onSave={(body) =>
+                    act(async () => {
+                      await api.patch(`/vendors/${detail.id}/`, body);
+                      await refresh();
+                    }, "Vendor updated.")
+                  }
+                  onReviewed={() =>
+                    act(async () => {
+                      await api.post(`/vendors/${detail.id}/mark_reviewed/`);
+                      await refresh();
+                    }, "Review recorded.")
+                  }
+                />
               ) : tab === "assessments" ? (
-                <AssessmentsTab vendor={detail} docs={docs} canManage={canManage} busy={busy} onOpen={openAssessmentDoc}
-                                onFile={(body) => act(async () => { await api.post("/vendor-assessments/", body); await refresh(); }, "Filed.")}
-                                onRemove={(r) => ask({
-                                  title: `Remove this ${KIND_LABEL[r.kind] || r.kind}?`,
-                                  description: `It comes off ${detail.name}'s file, and any assurance date it carried stops counting.`,
-                                  confirmLabel: "Remove it",
-                                  // `act` resolves on a failure; a refused DELETE
-                                  // is rethrown so the dialog stays open with the
-                                  // error in it. Only the DELETE is guarded: once
-                                  // it succeeds the record is gone, and a reload
-                                  // that fails afterwards is `act`'s notice to
-                                  // report, not a refusal to show in the dialog.
-                                  onConfirm: async () => {
-                                    let refused = null;
-                                    await act(async () => {
-                                      try { await api.delete(`/vendor-assessments/${r.id}/`); } catch (e) { refused = e; throw e; }
-                                      await refresh();
-                                    }, "Removed.");
-                                    if (refused) throw new Error(errorText(refused));
-                                  },
-                                })} />
+                <AssessmentsTab
+                  vendor={detail}
+                  docs={docs}
+                  canManage={canManage}
+                  busy={busy}
+                  onOpen={openAssessmentDoc}
+                  onFile={(body) =>
+                    act(async () => {
+                      await api.post("/vendor-assessments/", body);
+                      await refresh();
+                    }, "Filed.")
+                  }
+                  onRemove={(r) =>
+                    ask({
+                      title: `Remove this ${KIND_LABEL[r.kind] || r.kind}?`,
+                      description: `It comes off ${detail.name}'s file, and any assurance date it carried stops counting.`,
+                      confirmLabel: "Remove it",
+                      // act() swallows failures, so a refused DELETE is rethrown to keep the dialog open with the error;
+                      // a reload that fails after a successful DELETE is act's notice to report.
+                      onConfirm: async () => {
+                        let refused = null;
+                        await act(async () => {
+                          try { await api.delete(`/vendor-assessments/${r.id}/`); } catch (e) { refused = e; throw e; }
+                          await refresh();
+                        }, "Removed.");
+                        if (refused) throw new Error(errorText(refused));
+                      },
+                    })
+                  }
+                />
               ) : tab === "questionnaire" ? (
-                <QuestionnaireTab key={detail.id} vendor={detail} canManage={canManage} busy={busy} act={act} refresh={refresh}
-                                  onSubmit={(body) => act(async () => { await api.post("/vendor-assessments/", body); await refresh(); }, "Questionnaire saved.")} />
+                <QuestionnaireTab
+                  key={detail.id}
+                  vendor={detail}
+                  canManage={canManage}
+                  busy={busy}
+                  act={act}
+                  refresh={refresh}
+                  onSubmit={(body) =>
+                    act(async () => {
+                      await api.post("/vendor-assessments/", body);
+                      await refresh();
+                    }, "Questionnaire saved.")
+                  }
+                />
               ) : (
-                <MatrixTab vendor={detail} canManage={canManage} intent={intent} onIntentDone={() => setIntent(null)} setMsg={setMsg} onChanged={refresh} />
+                <MatrixTab
+                  vendor={detail}
+                  canManage={canManage}
+                  intent={intent}
+                  onIntentDone={() => setIntent(null)}
+                  setMsg={setMsg}
+                  onChanged={refresh}
+                />
               )}
             </>
           )}

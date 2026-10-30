@@ -1,10 +1,3 @@
-// The Conformiti identity: a shield split along its centreline with a single
-// check struck across it, in four colourways. Governance Blue is the corporate
-// mark and the default colourway; the other three are semantic and used where
-// their meaning applies. The app's own lockups (the top bar and the sign-in
-// page) take colour="accent" instead and follow the theme's accent, so the
-// shield changes with it; a colourway pins the mark where it must not (the
-// public pages, which an add-on may paint in a brand colour of its own).
 export const BRAND_PALETTES = [
   { id: "green", name: "Assurance Green", role: "Controls passing, audit ready",
     base: "#0E9F6E", shade: "#08704D", soft: "#E9F7F1", onDark: "#34D399" },
@@ -22,8 +15,7 @@ export function paletteById(id) {
   return BRAND_PALETTES.find((p) => p.id === id) || BRAND_PALETTES[1];
 }
 
-// Geometry shared by the React component and the static SVG files in
-// assets/brand and public/favicon.svg. Change it in one place.
+// The same geometry is baked into the static SVGs (assets/brand, public/favicon.svg): change them together.
 export const SHIELD = "M32 3.5 L57 12.8 V32.6 C57 46.9 46.6 55.7 32 60.5 C17.4 55.7 7 46.9 7 32.6 V12.8 Z";
 export const SHIELD_LEFT = "M32 3.5 L7 12.8 V32.6 C7 46.9 17.4 55.7 32 60.5 Z";
 export const CHECK = "M19.5 32 L28.5 41 L45.5 22.5";

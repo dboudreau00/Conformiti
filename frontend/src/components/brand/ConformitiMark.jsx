@@ -1,13 +1,3 @@
-/**
- * The Conformiti mark: a shield split along its centreline, a check knocked
- * out in white across it. Solid by default; `outline` for stamps and small
- * monochrome uses.
- *
- * `colour` is one of the four brand colourways, which stay put whatever the
- * theme (the lighter `onDark` tint on the dark packs unless `onDark` is
- * forced), or "accent": the shield takes the theme's accent, its darker half
- * the accent's deep shade, so it changes when the accent does.
- */
 import { useEffect, useState } from "react";
 import { CHECK, SHIELD, SHIELD_LEFT, paletteById } from "../../brand.js";
 import { isDark } from "../../theme.js";

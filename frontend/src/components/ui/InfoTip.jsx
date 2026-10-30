@@ -2,24 +2,8 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { InfoIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
 
-// The least room left between the box and the edge of the screen.
 const EDGE = 8;
 
-/**
- * A small "i" that explains a figure on request rather than at first glance.
- *
- * The text box opens while the pointer rests on the icon, or while the icon
- * has keyboard focus, and closes the moment either ends, or on Escape. A tap
- * toggles it for touch screens, and a tap anywhere else closes it. The box
- * takes no pointer events itself, so sliding the mouse onto it does not hold
- * it open. `label` is what a screen reader announces for the icon; the
- * children are the explanation, read as its description while open.
- *
- *   <Label>Readiness score</Label>
- *   <InfoTip label="How the readiness score is worked out">
- *     The mean score across every applicable control.
- *   </InfoTip>
- */
 export function InfoTip({ label = "More about this", children, align = "left", className }) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -28,9 +12,7 @@ export function InfoTip({ label = "More about this", children, align = "left", c
   const box = useRef(null);
   const visible = open || pinned;
 
-  // The box hangs from the icon, so beside a long label on a phone it ran
-  // past the edge of the screen, open or closed, and the page scrolled
-  // sideways. It is moved back inside, measured from where it would sit.
+  // Keeps the box inside the viewport: on a phone it would otherwise widen the page and scroll it sideways.
   const place = useCallback(() => {
     const el = box.current;
     if (!el) return;

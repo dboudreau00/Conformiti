@@ -13,7 +13,10 @@ import { cn } from "../utils/cn.js";
 function Notice({ notice }) {
   if (!notice) return null;
   return (
-    <div className={cn("notice", notice.kind === "ok" ? "notice-ok" : "notice-err")} role={notice.kind === "ok" ? "status" : "alert"}>
+    <div
+      className={cn("notice", notice.kind === "ok" ? "notice-ok" : "notice-err")}
+      role={notice.kind === "ok" ? "status" : "alert"}
+    >
       {notice.text}
     </div>
   );
@@ -25,8 +28,7 @@ function memberErrorText(e) {
   return /unique/i.test(msg) ? "That person is already a champion in this group." : msg;
 }
 
-/** Group names are unique per workspace; DRF's "unique set" error names the
- * internal workspace field, so say what it means instead. */
+/** Group names are unique per workspace; DRF's "unique set" error names the internal field, so say what it means. */
 function groupErrorText(e) {
   const msg = errorText(e);
   return /unique/i.test(msg) ? "A group with that name already exists." : msg;
@@ -50,14 +52,12 @@ export default function Groups({ me }) {
   const membersReq = useRef(0);
   const activeIdRef = useRef(null);
 
-  // New-group form (left column)
+  // Prefixes: g new group, eg edit group, m add champion, em edit champion.
   const [gName, setGName] = useState("");
   const [gPurpose, setGPurpose] = useState("");
   const [gOwner, setGOwner] = useState("");
   const [gBusy, setGBusy] = useState(false);
   const [gNotice, setGNotice] = useState(null);
-
-  // Edit/delete the selected group
   const [editingGroup, setEditingGroup] = useState(false);
   const [egName, setEgName] = useState("");
   const [egPurpose, setEgPurpose] = useState("");
@@ -65,8 +65,6 @@ export default function Groups({ me }) {
   const [egBusy, setEgBusy] = useState(false);
   const [egNotice, setEgNotice] = useState(null);
   const [deletingGroup, setDeletingGroup] = useState(null);
-
-  // Add-champion form (right column)
   const [mUser, setMUser] = useState("");
   const [mDept, setMDept] = useState("");
   const [mNote, setMNote] = useState("");
@@ -74,8 +72,6 @@ export default function Groups({ me }) {
   const [mNotice, setMNotice] = useState(null);
   const [removingId, setRemovingId] = useState(null);
   const [removing, setRemoving] = useState(null);
-
-  // Edit a champion's department/note in place
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [emDept, setEmDept] = useState("");
   const [emNote, setEmNote] = useState("");
@@ -174,8 +170,7 @@ export default function Groups({ me }) {
     const payload = { name: egName.trim(), purpose: egPurpose.trim(), owner: egOwner ? Number(egOwner) : null };
     try {
       const { data } = await api.patch(`/champion-groups/${active.id}/`, payload);
-      // Show what the server saved now rather than after the refetch: that can
-      // fail, and the next edit seeds from `active`, so stale values left here
+      // Show the saved values before the refetch, which can fail: the next edit seeds from `active`, and stale values
       // would be sent back and undo this save.
       setActive(data);
       setGroups((list) => list.map((g) => (g.id === data.id ? data : g)));
@@ -213,9 +208,7 @@ export default function Groups({ me }) {
     }
   }
 
-  /** Runs inside the confirm dialog, which closes on a resolved promise and
-   * shows a thrown error's message, so a failure throws the server's reason
-   * rather than leaving it behind the modal. */
+  /** Runs inside the confirm dialog, which closes on resolve and shows a thrown error's message: a failure must throw. */
   async function removeMember(m) {
     if (!canEdit || !active || removingId) throw new Error("Couldn't remove that champion.");
     const name = m.user_name || m.username;
@@ -226,8 +219,7 @@ export default function Groups({ me }) {
       try {
         await api.delete(`/group-members/${m.id}/`);
       } catch (ex) {
-        // Already gone (another administrator removed them first): what was
-        // asked for is true, so refresh instead of refusing over a ghost row.
+        // 404: another administrator removed them first. The outcome holds, so refresh instead of refusing over a ghost row.
         if (ex?.response?.status !== 404) throw new Error(errorText(ex, "Couldn't remove that champion."));
         text = `${name} had already been removed from ${active.name}.`;
       }
@@ -252,8 +244,6 @@ export default function Groups({ me }) {
     setMNotice(null);
     try {
       const { data } = await api.patch(`/group-members/${m.id}/`, { department: emDept.trim(), note: emNote.trim() });
-      // As in saveGroup: show the saved row now, so a failed refetch cannot
-      // leave the old values on screen for the next edit to send back.
       setMembers((list) => list.map((x) => (x.id === data.id ? data : x)));
       setEditingMemberId(null);
       await loadGroups(active.id);
@@ -267,19 +257,24 @@ export default function Groups({ me }) {
   const memberIds = new Set(members.map((m) => m.user));
   const addable = users.filter((u) => !memberIds.has(u.id));
   const memberLabel = (n) => `${n} ${n === 1 ? "member" : "members"}`;
-  // A save to the selected group ends by reselecting it and reports its error
-  // in that group's panel, so the list stays put until the save lands.
+  // A save ends by reselecting the group and reports in its panel, so the list is disabled until the save lands.
   const saving = egBusy || emBusy || mBusy;
 
   return (
     <PanelTransition>
       <Stack className="grid grid-cols-12 gap-4">
-        {/* ---- Group list + new-group form ---- */}
         <StackItem className="col-span-12 lg:col-span-4">
           <Panel className="overflow-hidden">
-            <PanelHeader title="Champion groups" meta={!loading ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : undefined} />
+            <PanelHeader
+              title="Champion groups"
+              meta={!loading ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : undefined}
+            />
 
-            {loadErr ? <div className="px-4 pt-3"><div className="notice notice-err" role="alert">{loadErr}</div></div> : null}
+            {loadErr ? (
+              <div className="px-4 pt-3">
+                <div className="notice notice-err" role="alert">{loadErr}</div>
+              </div>
+            ) : null}
 
             {loading ? (
               <Loading />
@@ -310,7 +305,11 @@ export default function Groups({ me }) {
                             aria-hidden="true"
                           />
                         ) : null}
-                        <FlagIcon className={cn("relative h-3.5 w-3.5 shrink-0", on ? "text-accent" : "text-faint")} strokeWidth={2} aria-hidden="true" />
+                        <FlagIcon
+                          className={cn("relative h-3.5 w-3.5 shrink-0", on ? "text-accent" : "text-faint")}
+                          strokeWidth={2}
+                          aria-hidden="true"
+                        />
                         <span className="relative min-w-0 flex-1 truncate text-[13px] font-medium">{g.name}</span>
                         <Badge tone={on ? "accent" : "muted"} className="tabular relative shrink-0">
                           {memberLabel(g.member_count ?? 0)}
@@ -352,7 +351,13 @@ export default function Groups({ me }) {
                 {users.length > 0 ? (
                   <div>
                     <label htmlFor="cg-owner" className="field-label">Accountable owner</label>
-                    <select id="cg-owner" className="input input-sm" value={gOwner} onChange={(e) => setGOwner(e.target.value)} disabled={gBusy}>
+                    <select
+                      id="cg-owner"
+                      className="input input-sm"
+                      value={gOwner}
+                      onChange={(e) => setGOwner(e.target.value)}
+                      disabled={gBusy}
+                    >
                       <option value="">Unassigned</option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>{displayName(u)}</option>
@@ -373,11 +378,9 @@ export default function Groups({ me }) {
                 <Notice notice={gNotice} />
               </form>
             ) : null}
-
           </Panel>
         </StackItem>
 
-        {/* ---- Selected group + add-champion form ---- */}
         <StackItem className="col-span-12 space-y-4 lg:col-span-8">
           {loading ? (
             <Panel>
@@ -429,11 +432,16 @@ export default function Groups({ me }) {
                         </div>
                         <div>
                           <label htmlFor="eg-owner" className="field-label">Accountable owner</label>
-                          <select id="eg-owner" className="input input-sm" value={egOwner} onChange={(e) => setEgOwner(e.target.value)} disabled={egBusy}>
+                          <select
+                            id="eg-owner"
+                            className="input input-sm"
+                            value={egOwner}
+                            onChange={(e) => setEgOwner(e.target.value)}
+                            disabled={egBusy}
+                          >
                             <option value="">Unassigned</option>
-                            {/* Until /users/ arrives (or when it failed) the current owner is not in
-                                the list, and a select whose value matches no option shows the first
-                                one: "Unassigned" on screen while Save kept the owner. */}
+                            {/* Until /users/ arrives (or fails) the current owner is not among the options, and a select
+                                whose value matches none shows the first: "Unassigned" on screen while Save kept the owner. */}
                             {active.owner && !users.some((u) => u.id === active.owner) ? (
                               <option value={String(active.owner)}>{active.owner_name || "Current owner"}</option>
                             ) : null}
@@ -456,12 +464,21 @@ export default function Groups({ me }) {
                       </div>
                       {egNotice ? <Notice notice={egNotice} /> : null}
                       <div className="flex justify-end gap-2">
-                        <Button type="button" size="sm" variant="ghost" onClick={() => setEditingGroup(false)} disabled={egBusy}>Cancel</Button>
-                        <Button type="submit" size="sm" variant="primary" disabled={egBusy || !egName.trim()}>{egBusy ? "Saving…" : "Save"}</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setEditingGroup(false)} disabled={egBusy}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" size="sm" variant="primary" disabled={egBusy || !egName.trim()}>
+                          {egBusy ? "Saving…" : "Save"}
+                        </Button>
                       </div>
                     </form>
                   ) : (
-                    <p className={cn("border-b border-line px-5 py-3 text-[13px] leading-snug", active.purpose ? "text-muted" : "italic text-faint")}>
+                    <p
+                      className={cn(
+                        "border-b border-line px-5 py-3 text-[13px] leading-snug",
+                        active.purpose ? "text-muted" : "italic text-faint"
+                      )}
+                    >
                       {active.purpose || "No stated purpose yet."}
                     </p>
                   )}
@@ -480,7 +497,11 @@ export default function Groups({ me }) {
                             <th scope="col" className="table-head px-5 py-2 font-normal">Champion</th>
                             <th scope="col" className="table-head px-5 py-2 font-normal">Department</th>
                             <th scope="col" className="table-head px-5 py-2 font-normal">Note</th>
-                            {canEdit ? <th scope="col" className="table-head relative w-[170px] px-5 py-2 text-right font-normal"><span className="sr-only">Actions</span></th> : null}
+                            {canEdit ? (
+                              <th scope="col" className="table-head relative w-[170px] px-5 py-2 text-right font-normal">
+                                <span className="sr-only">Actions</span>
+                              </th>
+                            ) : null}
                           </tr>
                         </thead>
                         <tbody>
@@ -533,8 +554,15 @@ export default function Groups({ me }) {
                                   <td className="px-5 py-2 text-right align-top">
                                     {editingMemberId === m.id ? (
                                       <div className="flex justify-end gap-1.5">
-                                        <Button size="sm" variant="ghost" onClick={() => setEditingMemberId(null)} disabled={emBusy}>Cancel</Button>
-                                        <Button size="sm" variant="primary" onClick={(e) => saveMember(e, m)} disabled={emBusy || !emDept.trim()}>
+                                        <Button size="sm" variant="ghost" onClick={() => setEditingMemberId(null)} disabled={emBusy}>
+                                          Cancel
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="primary"
+                                          onClick={(e) => saveMember(e, m)}
+                                          disabled={emBusy || !emDept.trim()}
+                                        >
                                           {emBusy ? "Saving…" : "Save"}
                                         </Button>
                                       </div>
@@ -589,7 +617,14 @@ export default function Groups({ me }) {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_200px_minmax(0,1fr)_auto] md:items-end">
                   <div>
                     <label htmlFor="cm-user" className="field-label">User</label>
-                    <select id="cm-user" className="input input-sm" value={mUser} onChange={(e) => setMUser(e.target.value)} required disabled={mBusy}>
+                    <select
+                      id="cm-user"
+                      className="input input-sm"
+                      value={mUser}
+                      onChange={(e) => setMUser(e.target.value)}
+                      required
+                      disabled={mBusy}
+                    >
                       <option value="">Select a person…</option>
                       {addable.map((u) => (
                         <option key={u.id} value={u.id}>
@@ -653,9 +688,7 @@ export default function Groups({ me }) {
           try {
             await api.delete(`/champion-groups/${deletingGroup.id}/`);
           } catch (e) {
-            // A 404 means another administrator deleted it first: the outcome
-            // asked for already holds, so refresh rather than keep a ghost
-            // group that every retry fails on.
+            // 404: another administrator deleted it first; refresh rather than keep a ghost group that every retry fails on.
             if (e?.response?.status !== 404) throw new Error(errorText(e, "Couldn't delete that group."));
           }
           await loadGroups();

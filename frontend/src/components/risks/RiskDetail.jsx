@@ -9,15 +9,10 @@ import { Label, Loading, Panel } from "../ui/Panel.jsx";
 import { Field } from "./Field.jsx";
 import { IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, STATUSES, TREATMENTS, treatmentLabel } from "./vocab.js";
 
-const day =(iso) => (iso ? String(iso).slice(0, 10) : "");
+const day = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
-/**
- * The selected risk: description, the treatment fields, the mitigation plan
- * and the progress-note thread (anyone may add a note). A framework manager
- * edits every field. The risk's owner edits only the status, the mitigation
- * plan, the due date and the Jira key (the server refuses the rest), so the
- * other fields are shown but disabled for them (`canManage`).
- */
+/** `canManage` (a framework manager) edits every field; the risk's owner edits only status, plan, due date and
+ * Jira key, as the server enforces, so the other fields are disabled for them. */
 export function RiskDetail({
   risk,
   canEdit,
@@ -46,8 +41,7 @@ export function RiskDetail({
   const ratingTone = RISK_RATING[risk.rating] || "muted";
   const planDirty = planDraft !== (risk.mitigation_plan || "");
   const id = (suffix) => `risk-${risk.id}-${suffix}`;
-  // Fall back to the current owner alone if the directory could not be loaded,
-  // so the select never silently drops the assignment.
+  // If the directory failed to load, the current owner alone keeps the select from dropping the assignment.
   const ownerOptions = users.length ? users : risk.owner ? [{ id: risk.owner, full_name: risk.owner_name }] : [];
 
   function commitJira() {
@@ -85,7 +79,9 @@ export function RiskDetail({
         </div>
       </div>
 
-      <p className={cn("mt-3 max-w-[70ch] whitespace-pre-line text-[13px] leading-relaxed", risk.description ? "text-muted" : "text-faint")}>
+      <p
+        className={cn("mt-3 max-w-[70ch] whitespace-pre-line text-[13px] leading-relaxed", risk.description ? "text-muted" : "text-faint")}
+      >
         {risk.description || "No description recorded."}
       </p>
 
@@ -98,35 +94,65 @@ export function RiskDetail({
       {canEdit ? (
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4" aria-busy={saving}>
           <Field id={id("status")} label="Status">
-            <select id={id("status")} className="input input-sm" value={risk.status} disabled={saving} onChange={(e) => onPatch({ status: e.target.value })}>
+            <select
+              id={id("status")}
+              className="input input-sm"
+              value={risk.status}
+              disabled={saving}
+              onChange={(e) => onPatch({ status: e.target.value })}
+            >
               {STATUSES.map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
           </Field>
           <Field id={id("treatment")} label="Treatment">
-            <select id={id("treatment")} className="input input-sm" value={risk.treatment} disabled={saving || !canManage} onChange={(e) => onPatch({ treatment: e.target.value })}>
+            <select
+              id={id("treatment")}
+              className="input input-sm"
+              value={risk.treatment}
+              disabled={saving || !canManage}
+              onChange={(e) => onPatch({ treatment: e.target.value })}
+            >
               {TREATMENTS.map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
           </Field>
           <Field id={id("likelihood")} label="Likelihood">
-            <select id={id("likelihood")} className="input input-sm" value={risk.likelihood} disabled={saving || !canManage} onChange={(e) => onPatch({ likelihood: Number(e.target.value) })}>
+            <select
+              id={id("likelihood")}
+              className="input input-sm"
+              value={risk.likelihood}
+              disabled={saving || !canManage}
+              onChange={(e) => onPatch({ likelihood: Number(e.target.value) })}
+            >
               {SCALE.map((n) => (
                 <option key={n} value={n}>{n} · {LIKELIHOOD_WORDS[n - 1]}</option>
               ))}
             </select>
           </Field>
           <Field id={id("impact")} label="Impact">
-            <select id={id("impact")} className="input input-sm" value={risk.impact} disabled={saving || !canManage} onChange={(e) => onPatch({ impact: Number(e.target.value) })}>
+            <select
+              id={id("impact")}
+              className="input input-sm"
+              value={risk.impact}
+              disabled={saving || !canManage}
+              onChange={(e) => onPatch({ impact: Number(e.target.value) })}
+            >
               {SCALE.map((n) => (
                 <option key={n} value={n}>{n} · {IMPACT_WORDS[n - 1]}</option>
               ))}
             </select>
           </Field>
           <Field id={id("owner")} label="Owner">
-            <select id={id("owner")} className="input input-sm" value={risk.owner ?? ""} disabled={saving || !canManage} onChange={(e) => onPatch({ owner: e.target.value ? Number(e.target.value) : null })}>
+            <select
+              id={id("owner")}
+              className="input input-sm"
+              value={risk.owner ?? ""}
+              disabled={saving || !canManage}
+              onChange={(e) => onPatch({ owner: e.target.value ? Number(e.target.value) : null })}
+            >
               <option value="">Unassigned</option>
               {ownerOptions.map((u) => (
                 <option key={u.id} value={u.id}>{displayName(u)}</option>
@@ -135,7 +161,14 @@ export function RiskDetail({
             {usersErr ? <p className="mt-1 text-2xs text-danger">{usersErr}</p> : null}
           </Field>
           <Field id={id("due")} label="Due date">
-            <input id={id("due")} type="date" className="input input-sm" value={risk.due_date || ""} disabled={saving} onChange={(e) => onPatch({ due_date: e.target.value || null })} />
+            <input
+              id={id("due")}
+              type="date"
+              className="input input-sm"
+              value={risk.due_date || ""}
+              disabled={saving}
+              onChange={(e) => onPatch({ due_date: e.target.value || null })}
+            />
           </Field>
           <Field id={id("jira")} label="Jira key">
             <input
@@ -189,11 +222,15 @@ export function RiskDetail({
           </div>
           <div>
             <dt><Label>Owner</Label></dt>
-            <dd className={cn("mt-1 truncate text-[13px]", risk.owner_name ? "text-ink" : "text-danger")}>{risk.owner_name || "Unassigned"}</dd>
+            <dd className={cn("mt-1 truncate text-[13px]", risk.owner_name ? "text-ink" : "text-danger")}>
+              {risk.owner_name || "Unassigned"}
+            </dd>
           </div>
           <div>
             <dt><Label>Due</Label></dt>
-            <dd className={cn("tabular mt-1 font-mono text-[13px]", risk.is_overdue ? "text-danger" : "text-ink")}>{risk.due_date || "-"}</dd>
+            <dd className={cn("tabular mt-1 font-mono text-[13px]", risk.is_overdue ? "text-danger" : "text-ink")}>
+              {risk.due_date || "-"}
+            </dd>
           </div>
           <div>
             <dt><Label>Jira</Label></dt>
@@ -202,7 +239,6 @@ export function RiskDetail({
         </dl>
       )}
 
-      {/* ---------------------------------------------------------- mitigation plan */}
       <div className="mt-5">
         <div className="flex min-h-[28px] items-center justify-between gap-3">
           {canEdit ? (
@@ -232,13 +268,17 @@ export function RiskDetail({
             onChange={(e) => setPlanDraft(e.target.value)}
           />
         ) : (
-          <p className={cn("mt-1.5 max-w-[70ch] whitespace-pre-line text-[13px] leading-relaxed", risk.mitigation_plan ? "text-ink" : "text-faint")}>
+          <p
+            className={cn(
+              "mt-1.5 max-w-[70ch] whitespace-pre-line text-[13px] leading-relaxed",
+              risk.mitigation_plan ? "text-ink" : "text-faint"
+            )}
+          >
             {risk.mitigation_plan || "No plan recorded yet."}
           </p>
         )}
       </div>
 
-      {/* ---------------------------------------------------------- notes */}
       <div className="mt-5 border-t border-line pt-4">
         <div className="flex items-center justify-between gap-3">
           <Label>Progress notes</Label>

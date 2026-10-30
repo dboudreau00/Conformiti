@@ -18,10 +18,6 @@ export function Panel({ children, className, padded = false, as: Tag = "section"
 }
 
 export function PanelHeader({ title, meta, children, className }) {
-  // A string (or a number) is a caption and gets the Label treatment. Anything
-  // else is markup the caller built, and wrapping it in a Label would apply its
-  // typography to it: buttons in a letter-spaced monospace face and badges in
-  // capitals.
   const caption = typeof meta === "string" || typeof meta === "number";
   return (
     <header className={cn("flex items-center justify-between gap-4 border-b border-line px-5 py-3.5", className)}>
@@ -46,7 +42,6 @@ export function Divider({ className }) {
   return <div className={cn("h-px w-full bg-line", className)} />;
 }
 
-/** Centered empty state used inside panels and tables. */
 export function Empty({ title, children, action, className }) {
   return (
     <div className={cn("px-5 py-12 text-center", className)}>
@@ -57,18 +52,7 @@ export function Empty({ title, children, action, className }) {
   );
 }
 
-/**
- * What a list shows when its request failed, as opposed to when it is empty.
- *
- * "No frameworks available, seed a framework to populate the register" under a
- * red banner describes a state the workspace is not in, and sends the reader
- * to fix something that is not broken. This says the load failed and offers
- * the only useful action.
- *
- * When the server answered, `reason` replaces the "did not come back" copy,
- * because a refusal such as a 400 or a 403 is not a lost request and trying
- * again only repeats it.
- */
+/** Pass `reason` when the server answered: a refusal (400, 403) is not a lost request, and retrying repeats it. */
 export function LoadError({ what = "This", reason, onRetry, className }) {
   return (
     <Empty

@@ -1,20 +1,3 @@
-/**
- * Modal dialogs, so that nothing in the product asks a legal question
- * through window.prompt.
- *
- * A management assertion is the statement an auditor relies on; a withdrawal
- * reason is written into the record for good. A browser prompt is unstyled,
- * unlabelled, invisible to screen readers as a form, impossible to validate
- * before the person commits, and dismissed by one wrong keystroke. Three
- * components cover these cases:
- *
- *   <Dialog>        the frame: overlay, title, Escape, focus, scroll lock
- *   <TextDialog>    one labelled field (input or textarea) with a submit
- *   <ConfirmDialog> a question with a confirm and a cancel
- *
- * Playwright drives them as ordinary dialogs (`getByRole("dialog")`), which
- * is also how a screen reader reaches them.
- */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { XIcon } from "lucide-react";
@@ -23,25 +6,22 @@ import { cn } from "../../utils/cn.js";
 import { Button, IconButton } from "./Button.jsx";
 import { Label } from "./Panel.jsx";
 
-// Two sets. A dialog opens on its first field or action, never on the Close
-// button; Tab, though, wraps over every enabled control, Close included.
 const INITIAL_FOCUS = 'input, textarea, select, button:not([data-dialog-close]), [href], [tabindex]:not([tabindex="-1"])';
 const FOCUSABLE = 'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])';
 
-// A disabled control matches the selector but cannot take focus.
 function firstField(root) {
   return Array.from(root.querySelectorAll(INITIAL_FOCUS)).find((n) => !n.disabled) || null;
 }
 
-export function Dialog({ open, title, description, onClose, children, size = "md", className, closeOnOverlay = true, placement = "center" }) {
+export function Dialog({
+  open, title, description, onClose, children, size = "md", className, closeOnOverlay = true, placement = "center",
+}) {
   const titleId = useId();
   const descId = useId();
   const frame = useRef(null);
   const restoreTo = useRef(null);
-  // Escape reads the latest onClose through a ref. Callers pass a fresh arrow,
-  // or `busy ? undefined : onClose`, on every render; as a dependency of the
-  // effect below it would tear the trap down and rebuild it whenever the page
-  // behind re-rendered, and each rebuild would send focus to the first control.
+  // Read through a ref: as an effect dependency a fresh onClose each render would rebuild the focus
+  // trap and send focus back to the first control.
   const closeRef = useRef(onClose);
   useLayoutEffect(() => {
     closeRef.current = onClose;
@@ -52,11 +32,7 @@ export function Dialog({ open, title, description, onClose, children, size = "md
     restoreTo.current = document.activeElement;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Focus the first field, else the frame itself, once it is in the DOM.
-    // Content that loads after opening (a spinner, then the form) has no field
-    // yet, so the frame holds focus and the dialog is watched until one
-    // appears or is enabled. It takes focus only if the frame still has it:
-    // focus the user has moved stays where they put it.
+    // Late-loading content is watched for its first field; focus moves only if the frame still has it.
     let watch = null;
     const t = setTimeout(() => {
       const node = frame.current;
@@ -78,12 +54,7 @@ export function Dialog({ open, title, description, onClose, children, size = "md
         e.stopPropagation();
         closeRef.current?.();
       } else if (e.key === "Tab" && frame.current) {
-        // Keep Tab inside the dialog. The page behind it is not inert, so
-        // focus that is anywhere but one of the dialog's own controls (the
-        // frame, the page) is brought back to the first or last one rather
-        // than left to walk onto the page. The close button is one of them
-        // and comes first, so the cycle runs Close, fields, actions, Close.
-        // While a request is in flight it is the only enabled control left.
+        // The page behind is not inert, so focus outside the dialog's controls is pulled back in.
         let nodes = Array.from(frame.current.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled);
         if (!nodes.length) nodes = [frame.current];
         const first = nodes[0];
@@ -110,14 +81,16 @@ export function Dialog({ open, title, description, onClose, children, size = "md
     <AnimatePresence>
       {open ? (
         <motion.div
-          className={cn("fixed inset-0 z-50 flex justify-center bg-ink/40 p-4", placement === "top" ? "items-start overflow-y-auto pt-[10vh]" : "items-center")}
+          className={cn(
+            "fixed inset-0 z-50 flex justify-center bg-ink/40 p-4",
+            placement === "top" ? "items-start overflow-y-auto pt-[10vh]" : "items-center"
+          )}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: EASE }}
-          // A press on the backdrop never takes focus: a dialog that stays open
-          // keeps its field focused, and one that closes keeps the focus it
-          // just handed back to the control that opened it.
+          // preventDefault: a backdrop press must not take focus from the field, or from the control that
+          // focus was handed back to on close.
           onMouseDown={(e) => {
             if (e.target !== e.currentTarget) return;
             e.preventDefault();
@@ -154,11 +127,7 @@ export function Dialog({ open, title, description, onClose, children, size = "md
   );
 }
 
-/**
- * One field, one decision. `onSubmit(value)` may return a promise; the
- * dialog stays open and disabled until it settles, and closes only on
- * success, so a failed request is not lost with its text.
- */
+/** `onSubmit(value)` may be async: the dialog stays open and disabled until it settles, and closes only on success. */
 export function TextDialog({
   open, title, description, label, initial = "", placeholder = "", multiline = false,
   minLength = 0, maxLength = 2000, required = true, submitLabel = "Save", tone = "primary",
@@ -258,28 +227,8 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "Confir
   );
 }
 
-/**
- * `window.confirm` for the places that still use it, with the product's own
- * dialog instead of the browser's.
- *
- *   const { ask, confirmDialog } = useConfirm();
- *   …
- *   ask({
- *     title: `Delete ${user.username}?`,
- *     description: "This cannot be undone. Deactivating is usually safer.",
- *     confirmLabel: "Delete the account",
- *     onConfirm: () => api.delete(`/users/${user.id}/`),
- *   });
- *   …
- *   {confirmDialog}
- *
- * The browser's own prompt is unstyled, unlabelled, dismissed by one wrong
- * keystroke and impossible to word carefully. `onConfirm` may be async: the
- * dialog stays open and shows a working state until it settles, and reports
- * a failure in place rather than closing over it. The confirm button is the
- * solid danger one; pass `tone: "primary"` for a question that destroys
- * nothing.
- */
+/** `ask({ title, description, confirmLabel, tone, children, onConfirm })` opens it; render `confirmDialog`
+ * somewhere. `onConfirm` may be async: the dialog stays open and busy until it settles. */
 export function useConfirm() {
   const [request, setRequest] = useState(null);
   const confirmDialog = (

@@ -8,12 +8,9 @@ import { isLive, ratingFor } from "./vocab.js";
 
 const LIKELIHOOD = [1, 2, 3, 4, 5];
 const IMPACT = [5, 4, 3, 2, 1];
-// Cell wash per rating band, the same tone the rating Badge uses.
 const CELL_ALPHA = { low: 0.08, moderate: 0.12, high: 0.16, critical: 0.22 };
 const MAX_BUBBLES = 4;
 
-/** Likelihood × impact matrix of the live register. Each live risk is a bubble
- * in its cell; activating one selects it in the register beside / below. */
 export function RiskHeatmap({ risks, stats, loading, selectedId, onSelect }) {
   const live = risks.filter(isLive);
   const byRating = stats?.by_rating;

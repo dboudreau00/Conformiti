@@ -7,7 +7,9 @@ import { Field } from "../components/risks/Field.jsx";
 import { RiskDetail } from "../components/risks/RiskDetail.jsx";
 import { RiskHeatmap } from "../components/risks/RiskHeatmap.jsx";
 import { RiskTable } from "../components/risks/RiskTable.jsx";
-import { FILTERS, IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, TEMPLATE_CSV, TYPES, deriveSummary, filterRisks } from "../components/risks/vocab.js";
+import {
+  FILTERS, IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, TEMPLATE_CSV, TYPES, deriveSummary, filterRisks,
+} from "../components/risks/vocab.js";
 import { Button } from "../components/ui/Button.jsx";
 import { Empty, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
@@ -17,8 +19,7 @@ import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
 import { displayName } from "../utils/format.js";
 
-// Named states for the detail panel, so onAnimationComplete can tell its
-// entrance from its exit.
+// Named so onAnimationComplete can tell the entrance ("shown") from the exit.
 const DETAIL_MOTION = {
   enter: { opacity: 0, y: 10 },
   shown: { opacity: 1, y: 0 },
@@ -33,10 +34,9 @@ export default function Risks({ me }) {
   const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
   const [usersErr, setUsersErr] = useState("");
-  // null until the choices arrive: an empty list is a workspace with no
-  // controls, which the picker must not show as loading for ever.
+  // null until the choices arrive: [] is a workspace with no controls, which the picker must not show as loading.
   const [controls, setControls] = useState(null);
-  const [riskControl, setRiskControl] = useState(null); // the control picked on the new-risk form
+  const [riskControl, setRiskControl] = useState(null);
   const [filter, setFilter] = useState("live");
   const [selectedId, setSelectedId] = useState(null);
   const [notes, setNotes] = useState([]);
@@ -86,19 +86,12 @@ export default function Risks({ me }) {
     api.get("/control-evidence/choices/").then((r) => setControls(r.data.controls || [])).catch(() => setControls([]));
   }, [loadRisks]);
 
-  // A row can sit well below the fold in a long register; walk the reader down
-  // to the detail that just opened instead of leaving them to find it. This
-  // waits for the panel to finish entering: a target measured when the
-  // selection changes still counts the height of whatever is leaving above it
-  // (the New risk form collapsing after Create risk), and is stale by the time
-  // that has gone. The previous risk's panel is not a factor, because the
-  // presence below runs in "wait" mode and mounts the next one after it left.
-  // scroll-mt on the panel keeps its heading clear of the sticky 60px top bar.
+  // Waits for the panel to finish entering: a target measured at selection still counts the height of the New risk form
+  // collapsing above it. The panel's scroll-mt keeps its heading clear of the sticky top bar.
   function revealDetail(definition) {
     if (definition === "shown") detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Notes for the selected risk.
   useEffect(() => {
     if (!selectedId) return;
     let alive = true;
@@ -243,7 +236,13 @@ export default function Risks({ me }) {
         <StackItem className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2" role="group" aria-label="Filter the register">
             {FILTERS.map((key) => (
-              <Chip key={key} active={filter === key} onClick={() => setFilter(key)} tone={chipMeta[key].tone} count={chipMeta[key].count}>
+              <Chip
+                key={key}
+                active={filter === key}
+                onClick={() => setFilter(key)}
+                tone={chipMeta[key].tone}
+                count={chipMeta[key].count}
+              >
                 {chipMeta[key].label}
               </Chip>
             ))}
@@ -251,20 +250,46 @@ export default function Risks({ me }) {
           <div className="flex flex-wrap items-center gap-2">
             {canManage ? (
               <>
-                <Button size="sm" onClick={downloadTemplate} icon={<FileSpreadsheetIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                <Button
+                  size="sm"
+                  onClick={downloadTemplate}
+                  icon={<FileSpreadsheetIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+                >
                   Import template
                 </Button>
-                <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={doImport} aria-label="Import risks from CSV or XLSX" />
-                <Button size="sm" onClick={() => fileRef.current?.click()} disabled={importing} icon={<UploadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,.xlsx"
+                  className="hidden"
+                  onChange={doImport}
+                  aria-label="Import risks from CSV or XLSX"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={importing}
+                  icon={<UploadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+                >
                   {importing ? "Importing…" : "Import CSV/XLSX"}
                 </Button>
               </>
             ) : null}
-            <Button size="sm" onClick={exportCsv} icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+            <Button
+              size="sm"
+              onClick={exportCsv}
+              icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+            >
               Export
             </Button>
             {canManage ? (
-              <Button size="sm" variant="primary" onClick={() => setShowNew((v) => !v)} aria-expanded={showNew} icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => setShowNew((v) => !v)}
+                aria-expanded={showNew}
+                icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />}
+              >
                 {showNew ? "Cancel" : "New risk"}
               </Button>
             ) : null}
@@ -281,7 +306,13 @@ export default function Risks({ me }) {
 
         <AnimatePresence initial={false}>
           {importResult ? (
-            <motion.div key="import" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2, ease: EASE }}>
+            <motion.div
+              key="import"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2, ease: EASE }}
+            >
               <Panel>
                 <PanelHeader title="Import result">
                   <Button size="sm" variant="ghost" onClick={() => setImportResult(null)}>Dismiss</Button>
@@ -294,7 +325,9 @@ export default function Risks({ me }) {
                       <p className="text-ink">
                         <span className="tabular font-semibold">{importResult.created}</span> risk{importResult.created === 1 ? "" : "s"} created
                         {importResult.skipped?.length ? <> · {importResult.skipped.length} skipped</> : null}
-                        {importResult.warnings?.length ? <> · {importResult.warnings.length} warning{importResult.warnings.length === 1 ? "" : "s"}</> : null}
+                        {importResult.warnings?.length ? (
+                          <> · {importResult.warnings.length} warning{importResult.warnings.length === 1 ? "" : "s"}</>
+                        ) : null}
                       </p>
                       {importResult.skipped?.slice(0, 8).map((s, i) => (
                         <p key={`s${i}`} className="mt-1.5 text-xs text-muted">Row {s.row}: {s.title}, {s.reason}</p>
@@ -304,7 +337,9 @@ export default function Risks({ me }) {
                           {importResult.warnings.slice(0, 10).map((w, i) => (
                             <p key={`w${i}`} className="text-xs">Row {w.row}: {w.message}</p>
                           ))}
-                          {importResult.warnings.length > 10 ? <p className="mt-1 text-2xs">+{importResult.warnings.length - 10} more</p> : null}
+                          {importResult.warnings.length > 10 ? (
+                            <p className="mt-1 text-2xs">+{importResult.warnings.length - 10} more</p>
+                          ) : null}
                         </div>
                       ) : null}
                     </>
@@ -322,7 +357,14 @@ export default function Risks({ me }) {
                 <PanelHeader title="New risk" />
                 <form onSubmit={createRisk} className="grid grid-cols-1 gap-3 p-5 md:grid-cols-4" aria-busy={creating}>
                   <Field id="new-title" label="Title" className="md:col-span-2">
-                    <input id="new-title" name="title" className="input" required maxLength={255} placeholder="e.g. Laptops without disk encryption" />
+                    <input
+                      id="new-title"
+                      name="title"
+                      className="input"
+                      required
+                      maxLength={255}
+                      placeholder="e.g. Laptops without disk encryption"
+                    />
                   </Field>
                   <Field id="new-type" label="Type">
                     <select id="new-type" name="rtype" className="input" defaultValue="control_gap">
@@ -354,8 +396,11 @@ export default function Risks({ me }) {
                       <div className="flex items-baseline gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5">
                         <span className="shrink-0 font-mono text-xs text-accent">{riskControl.label}</span>
                         <span className="truncate text-xs text-ink">{riskControl.title}</span>
-                        <button type="button" className="ml-auto shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink"
-                                onClick={() => setRiskControl(null)}>
+                        <button
+                          type="button"
+                          className="ml-auto shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink"
+                          onClick={() => setRiskControl(null)}
+                        >
                           Clear
                         </button>
                       </div>
@@ -370,10 +415,22 @@ export default function Risks({ me }) {
                     )}
                   </Field>
                   <Field id="new-description" label="Description" className="md:col-span-4">
-                    <textarea id="new-description" name="description" className="input" rows={2} placeholder="What is exposed, and how" />
+                    <textarea
+                      id="new-description"
+                      name="description"
+                      className="input"
+                      rows={2}
+                      placeholder="What is exposed, and how"
+                    />
                   </Field>
                   <Field id="new-plan" label="Mitigation plan" className="md:col-span-4">
-                    <textarea id="new-plan" name="plan" className="input" rows={2} placeholder="How it will be reduced, transferred or avoided" />
+                    <textarea
+                      id="new-plan"
+                      name="plan"
+                      className="input"
+                      rows={2}
+                      placeholder="How it will be reduced, transferred or avoided"
+                    />
                   </Field>
                   <div className="flex gap-2 md:col-span-4">
                     <Button type="submit" variant="primary" disabled={creating}>{creating ? "Creating…" : "Create risk"}</Button>
@@ -404,13 +461,29 @@ export default function Risks({ me }) {
             </Panel>
           </div>
           <div className="col-span-12 xl:col-span-5">
-            <RiskHeatmap risks={risks} stats={stats} loading={loading} selectedId={selectedId} onSelect={(r) => setSelectedId(r.id)} />
+            <RiskHeatmap
+              risks={risks}
+              stats={stats}
+              loading={loading}
+              selectedId={selectedId}
+              onSelect={(r) => setSelectedId(r.id)}
+            />
           </div>
         </StackItem>
 
         <AnimatePresence initial={false} mode="wait">
           {selected ? (
-            <motion.div ref={detailRef} key={`detail-${selected.id}`} className="scroll-mt-20" variants={DETAIL_MOTION} initial="enter" animate="shown" exit="leave" transition={{ duration: 0.22, ease: EASE }} onAnimationComplete={revealDetail}>
+            <motion.div
+              ref={detailRef}
+              key={`detail-${selected.id}`}
+              className="scroll-mt-20"
+              variants={DETAIL_MOTION}
+              initial="enter"
+              animate="shown"
+              exit="leave"
+              transition={{ duration: 0.22, ease: EASE }}
+              onAnimationComplete={revealDetail}
+            >
               <RiskDetail
                 risk={selected}
                 canEdit={canEditRisk(selected)}
@@ -430,7 +503,6 @@ export default function Risks({ me }) {
             </motion.div>
           ) : null}
         </AnimatePresence>
-
       </Stack>
     </PanelTransition>
   );

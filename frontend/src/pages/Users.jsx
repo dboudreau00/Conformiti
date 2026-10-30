@@ -38,10 +38,8 @@ const ROLE_COLS = [
   { id: "caps", label: "Capabilities", className: "w-[340px]" },
 ];
 
-// Labels the create-user form itself uses, so a rejected field reads the
-// same way here as it did under the input the person just typed in. The
-// blank ones are not fields (DRF's form-wide errors, and the "detail" of a
-// refused or throttled request), so their message reads without a label.
+// Labels match the create-user form so a rejected field reads as it did under its input. The blank ones are not fields
+// (DRF's form-wide errors, a refused request's "detail"), so their message reads without a label.
 const FIELD_LABELS = {
   username: "Username",
   email: "Email",
@@ -55,9 +53,7 @@ const FIELD_LABELS = {
 };
 
 const cell = "px-5 py-3 align-middle";
-// `relative` contains the screen-reader-only header text: sr-only is absolutely
-// positioned, and with no positioned ancestor it escapes the scrolling wrapper
-// and stretches the whole page sideways.
+// relative contains the sr-only header text: with no positioned ancestor it escapes the scroll wrapper and stretches the page.
 const headCell = "table-head relative px-5 py-2 text-left font-normal";
 
 export default function Users({ me }) {
@@ -68,10 +64,10 @@ export default function Users({ me }) {
   const [denied, setDenied] = useState(false);
   const [rolesErr, setRolesErr] = useState(null);
   const [showNew, setShowNew] = useState(false);
-  const [banner, setBanner] = useState(null); // {kind:"ok"|"err", text}
-  const [pwFor, setPwFor] = useState(null); // user id with password editor open
+  const [banner, setBanner] = useState(null);
+  const [pwFor, setPwFor] = useState(null);
   const [pwValue, setPwValue] = useState("");
-  const [busyId, setBusyId] = useState(null); // user id with a request in flight
+  const [busyId, setBusyId] = useState(null);
   const [form, setForm] = useState(BLANK_USER_FORM);
   const [formErr, setFormErr] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -331,7 +327,11 @@ export default function Users({ me }) {
             {users.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
                 <div className="relative min-w-[240px] flex-1">
-                  <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" strokeWidth={2} aria-hidden="true" />
+                  <SearchIcon
+                    className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  />
                   <input
                     type="search"
                     className="input input-sm pl-8"
@@ -378,8 +378,14 @@ export default function Users({ me }) {
                         pwOpen={pwFor === u.id}
                         pwValue={pwValue}
                         onPwChange={setPwValue}
-                        onPwOpen={() => { setPwFor(u.id); setPwValue(""); }}
-                        onPwClose={() => { setPwFor(null); setPwValue(""); }}
+                        onPwOpen={() => {
+                          setPwFor(u.id);
+                          setPwValue("");
+                        }}
+                        onPwClose={() => {
+                          setPwFor(null);
+                          setPwValue("");
+                        }}
                         onPwSave={() => savePassword(u)}
                         onRole={(role) => patchUser(u, { role }, `Role updated for ${u.username}.`)}
                         onToggleActive={() =>
@@ -533,8 +539,14 @@ function UserRow({
               value={pwValue}
               onChange={(e) => onPwChange(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); if (pwValid && !busy) onPwSave(); }
-                if (e.key === "Escape") { e.preventDefault(); onPwClose(); }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (pwValid && !busy) onPwSave();
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  onPwClose();
+                }
               }}
             />
             <Button size="sm" variant="primary" disabled={!pwValid || busy} onClick={onPwSave}>
@@ -556,7 +568,13 @@ function UserRow({
               <Button size="sm" variant="ghost" disabled={busy} onClick={onResetMfa}>Reset 2FA</Button>
             ) : null}
             {touchable && !self && !u.is_superuser ? (
-              <Button size="sm" variant="ghost" className="text-danger hover:bg-danger/10 hover:text-danger" disabled={busy} onClick={onDelete}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-danger hover:bg-danger/10 hover:text-danger"
+                disabled={busy}
+                onClick={onDelete}
+              >
                 Delete
               </Button>
             ) : null}

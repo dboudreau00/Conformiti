@@ -1,5 +1,4 @@
-// Register vocabulary shared by the Risks page and its private components.
-// Values mirror governance/models.py (Risk.Type / Risk.Treatment / rating bands).
+// Values mirror governance/models.py (Risk.Type, Risk.Treatment, rating bands).
 import { RISK_STATUS } from "../../utils/tone.js";
 
 export const STATUSES = Object.entries(RISK_STATUS).map(([value, meta]) => [value, meta.label]);
@@ -31,10 +30,9 @@ export const TEMPLATE_CSV =
 export const typeLabel = (v) => TYPES.find(([k]) => k === v)?.[1] || v || "-";
 export const treatmentLabel = (v) => TREATMENTS.find(([k]) => k === v)?.[1] || v || "-";
 
-/** Open or mitigating, the rows the summary counters and the heatmap describe. */
 export const isLive = (r) => r.status === "open" || r.status === "mitigating";
 
-/** Same 5×5 banding as Risk.rating on the server: 1-4 low, 5-9 moderate, 10-15 high, 16-25 critical. */
+/** Banding mirrors Risk.rating on the server. */
 export function ratingFor(score) {
   if (score >= 16) return "critical";
   if (score >= 10) return "high";
@@ -52,8 +50,7 @@ export function daysUntil(iso) {
   return Math.round((new Date(y, m - 1, d) - today) / 86400000);
 }
 
-/** Register filters, in chip order. "severe" = live risks rated high or critical,
- * matching what GET /risks/summary/ counts in by_rating. */
+/** Chip order. "severe" matches what GET /risks/summary/ counts as high or critical (live risks). */
 export const FILTERS = ["live", "overdue", "severe", "closed", "all"];
 
 export function filterRisks(risks, filter) {
@@ -71,8 +68,7 @@ export function filterRisks(risks, filter) {
   }
 }
 
-/** Client-side stand-in for GET /risks/summary/ so the filter chips keep
- * working when that call fails. Same shape, same live-only semantics. */
+/** Stand-in for GET /risks/summary/ when that call fails: same shape, same live-only semantics. */
 export function deriveSummary(risks) {
   const s = { open: 0, mitigating: 0, overdue: 0, accepted: 0, closed: 0, by_rating: { low: 0, moderate: 0, high: 0, critical: 0 } };
   for (const r of risks) {

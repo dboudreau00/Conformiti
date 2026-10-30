@@ -12,10 +12,8 @@ import { Empty, Label, Panel } from "../ui/Panel.jsx";
 
 const PAGE = 8;
 
-/** Upcoming document reviews (rows from GET /documents/reviews/?days=120,
- * loaded by the dashboard). Marking one reviewed needs edit access to its
- * folder, the API returns 403 otherwise, so the action is only offered to
- * users who can manage documents or folders, and a refusal is surfaced. */
+/** `reviews`: rows of GET /documents/reviews/?days=120. The API refuses Mark reviewed without edit access to the
+ * folder, so it is offered only to those who can manage documents or folders, and a refusal is shown. */
 export function ReviewQueue({ me, reviews = [], onChanged }) {
   const { refreshCounts } = useShell();
   const [busyId, setBusyId] = useState(null);
@@ -97,7 +95,12 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
           ))}
         </AnimatePresence>
         {sorted.length === 0 ? (
-          <motion.li initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.24, ease: EASE }} className="flex flex-col items-center pt-8">
+          <motion.li
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.24, ease: EASE }}
+            className="flex flex-col items-center pt-8"
+          >
             <CheckIcon className="h-5 w-5 text-success" strokeWidth={2} aria-hidden="true" />
             <Empty className="py-3" title="Every scheduled review is attested" />
           </motion.li>

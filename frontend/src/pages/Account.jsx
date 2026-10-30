@@ -45,18 +45,11 @@ const CAP_LABELS = {
   auditor: "Auditor (read-only)",
 };
 
-// What the account is called in the profile card and the Role & access panel,
-// the same fallback as the user menu's. The first administrator comes from
-// manage.py createsuperuser with no role, and "No role" read as an account
-// without permissions when it holds all of them.
 const roleLabel = (me) => me?.role_detail?.name || (me?.is_superuser ? "Superuser" : "No role");
 
 const DOCS_URL = "https://github.com/dboudreau00/Conformiti";
-// The author's page, credited at the foot of About in small print.
 const CREDIT_URL = "https://dboudreau00.github.io";
 const isHex = (v) => /^#[0-9a-f]{6}$/i.test(v || "");
-
-/* ---------- small page-private helpers ---------- */
 
 function SectionTitle({ title, badge }) {
   return (
@@ -92,24 +85,14 @@ function Notice({ msg, className }) {
   );
 }
 
-/* ---------- Profile ---------- */
-
-// Email is not here on purpose: it is what an identity provider matches on,
-// so it is an administrator's field rather than a preference. The server does
-// not accept it from this page.
+// Email is left out on purpose: an identity provider matches on it, so only an administrator changes it.
 const pickProfile = (u) => ({
   first_name: u?.first_name || "",
   last_name: u?.last_name || "",
   job_title: u?.job_title || "",
 });
 
-// Where a superuser finds the Django admin, which is served by the API, not
-// this app. Behind nginx (the Docker stack, a bare-metal install) /admin/ on
-// the site's own address is proxied to it. The local install's Vite dev
-// server proxies only /api and /media (vite.config.js), and this app's
-// catch-all route sends /admin to the dashboard (App.jsx), so there it is on
-// the API's port: runserver on 127.0.0.1:8000 unless CONFORMITI_DEV_API_PORT
-// moves it.
+// The admin is served by the API; the Vite dev server proxies only /api and /media, so a local install uses the API port.
 function AdminWhere() {
   return (
     <>
@@ -124,8 +107,7 @@ function ProfileSection({ me, onUpdate }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // `me` loads asynchronously; if the user lands directly on /settings the form
-  // mounts before the profile arrives, so sync the fields when it does.
+  // `me` can arrive after mount (a direct landing on /settings): resync the fields when it does.
   useEffect(() => {
     setForm(pickProfile(me));
   }, [me?.id]);
@@ -172,7 +154,14 @@ function ProfileSection({ me, onUpdate }) {
           <input id="acct-email" type="email" className="input" value={me.email || ""} disabled />
         </Field>
         <Field id="acct-title" label="Job title" className="sm:col-span-2">
-          <input id="acct-title" className="input" autoComplete="organization-title" placeholder="e.g. Security Analyst" value={form.job_title} onChange={set("job_title")} />
+          <input
+            id="acct-title"
+            className="input"
+            autoComplete="organization-title"
+            placeholder="e.g. Security Analyst"
+            value={form.job_title}
+            onChange={set("job_title")}
+          />
         </Field>
         <Field id="acct-username" label="Username" className="sm:col-span-2"
                hint={me.is_superuser
@@ -191,14 +180,11 @@ function ProfileSection({ me, onUpdate }) {
   );
 }
 
-/* ---------- Appearance ---------- */
-
 function AppearanceSection() {
   const { theme, accent, setTheme, setAccent } = useTheme();
   const custom = isHex(accent);
   const [hex, setHex] = useState(() => accentHex(accent));
 
-  // Keep the picker in step when the accent changes elsewhere (top bar, another tab).
   useEffect(() => {
     setHex(accentHex(accent));
   }, [accent]);
@@ -275,7 +261,12 @@ function AppearanceSection() {
         })}
       </div>
 
-      <div className={cn("mt-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2", custom ? "border-accent bg-accent/[0.06]" : "border-line")}>
+      <div
+        className={cn(
+          "mt-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2",
+          custom ? "border-accent bg-accent/[0.06]" : "border-line"
+        )}
+      >
         <label htmlFor="acct-accent-custom" className="flex items-center gap-2 text-[13px] font-medium text-ink">
           <input
             id="acct-accent-custom"
@@ -327,8 +318,6 @@ function AppearanceSection() {
   );
 }
 
-/* ---------- Security ---------- */
-
 function PasswordBlock() {
   const [form, setForm] = useState({ current_password: "", new_password: "", confirm: "" });
   const [saving, setSaving] = useState(false);
@@ -336,8 +325,6 @@ function PasswordBlock() {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const mismatch = form.confirm.length > 0 && form.new_password !== form.confirm;
 
-  // The minimum is an operator setting (PASSWORD_MIN_LENGTH). The server
-  // reported it in the auth config the app loads before any page renders.
   const minLength = passwordMinLength();
 
   async function submit(e) {
@@ -369,12 +356,32 @@ function PasswordBlock() {
       <SubTitle title="Password" />
       <form onSubmit={submit} noValidate className="mt-4 grid max-w-[640px] grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="pw-current" label="Current password" className="sm:col-span-2">
-          <input id="pw-current" type="password" autoComplete="current-password" className="input sm:max-w-[312px]" value={form.current_password} onChange={set("current_password")} />
+          <input
+            id="pw-current"
+            type="password"
+            autoComplete="current-password"
+            className="input sm:max-w-[312px]"
+            value={form.current_password}
+            onChange={set("current_password")}
+          />
         </Field>
         <Field id="pw-new" label="New password" hint={`At least ${minLength} characters.`}>
-          <input id="pw-new" type="password" autoComplete="new-password" minLength={minLength} className="input" value={form.new_password} onChange={set("new_password")} />
+          <input
+            id="pw-new"
+            type="password"
+            autoComplete="new-password"
+            minLength={minLength}
+            className="input"
+            value={form.new_password}
+            onChange={set("new_password")}
+          />
         </Field>
-        <Field id="pw-confirm" label="Confirm new password" hint={mismatch ? "Doesn't match the new password." : undefined} error={mismatch}>
+        <Field
+          id="pw-confirm"
+          label="Confirm new password"
+          hint={mismatch ? "Doesn't match the new password." : undefined}
+          error={mismatch}
+        >
           <input
             id="pw-confirm"
             type="password"
@@ -417,7 +424,12 @@ function BackupCodes({ codes }) {
           </li>
         ))}
       </ul>
-      <Button size="sm" className="mt-3" onClick={download} icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+      <Button
+        size="sm"
+        className="mt-3"
+        onClick={download}
+        icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+      >
         Download .txt
       </Button>
     </div>
@@ -425,12 +437,12 @@ function BackupCodes({ codes }) {
 }
 
 function MfaBlock() {
-  const [status, setStatus] = useState(null); // {enabled, pending, backup_codes_remaining}
+  const [status, setStatus] = useState(null);
   const [statusErr, setStatusErr] = useState(null);
-  const [setup, setSetup] = useState(null); // {secret, otpauth_uri}
+  const [setup, setSetup] = useState(null);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const [codes, setCodes] = useState(null); // freshly issued backup codes
+  const [codes, setCodes] = useState(null);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -522,6 +534,7 @@ function MfaBlock() {
 
   const secretGrouped = setup?.secret ? setup.secret.replace(/(.{4})/g, "$1 ").trim() : "";
   const remaining = status?.backup_codes_remaining ?? 0;
+  const codesLeft = `${remaining} backup ${remaining === 1 ? "code" : "codes"} left`;
 
   return (
     <>
@@ -548,8 +561,7 @@ function MfaBlock() {
               </span>
             </span>
             <Badge tone={status.enabled ? "success" : "muted"} dot>
-              {status.enabled ? `On · ${remaining} backup ${remaining === 1 ? "code" : "codes"} left`
-                : status.second_factor ? `Off · ${remaining} backup ${remaining === 1 ? "code" : "codes"} left (passkey)` : "Off"}
+              {status.enabled ? `On · ${codesLeft}` : status.second_factor ? `Off · ${codesLeft} (passkey)` : "Off"}
             </Badge>
             {!status.enabled && !setup ? (
               <Button size="sm" variant="primary" onClick={begin} disabled={busy}>
@@ -563,10 +575,7 @@ function MfaBlock() {
       <Notice msg={msg} className="mt-4 max-w-[640px]" />
       {codes ? <BackupCodes codes={codes} /> : null}
 
-      {/* Enrolling the first factor asks for the same proof removing one does:
-          a session somebody else is holding must not be able to make their
-          authenticator the one this account needs. An account with nothing to
-          prove with yet (no password, no factor) may leave it empty. */}
+      {/* Same proof as removing a factor: a hijacked session must not be able to enrol its own authenticator. */}
       {status && !status.enabled && !status.second_factor && !setup ? (
         <div className="mt-4 max-w-[640px]">
           <Field id="mfa-enable-password" label="Confirm your password to add an authenticator">
@@ -585,16 +594,23 @@ function MfaBlock() {
         </div>
       ) : null}
 
-      {/* Enrolment in progress */}
       {setup ? (
         <form onSubmit={confirm} noValidate className="mt-4 max-w-[640px] rounded-xl border border-line bg-surface-2 p-4">
           <div className="grid grid-cols-1 gap-4">
             <div>
               <Label as="p" className="mb-1.5">Setup key</Label>
-              <p className="select-all rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[13px] tracking-[0.14em] text-ink">{secretGrouped}</p>
+              <p className="select-all rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[13px] tracking-[0.14em] text-ink">
+                {secretGrouped}
+              </p>
             </div>
             <Field id="mfa-uri" label="otpauth URI">
-              <input id="mfa-uri" className="input font-mono text-xs" readOnly value={setup.otpauth_uri} onFocus={(e) => e.target.select()} />
+              <input
+                id="mfa-uri"
+                className="input font-mono text-xs"
+                readOnly
+                value={setup.otpauth_uri}
+                onFocus={(e) => e.target.select()}
+              />
             </Field>
             <Field id="mfa-code" label="6-digit code">
               <input
@@ -621,7 +637,6 @@ function MfaBlock() {
         </form>
       ) : null}
 
-      {/* A second factor of either kind → manage backup codes; the app → turn off */}
       {status?.second_factor && !codes ? (
         <div className="mt-4 max-w-[640px]">
           <Field id="mfa-password" label="Confirm your password to make changes">
@@ -635,7 +650,11 @@ function MfaBlock() {
             />
           </Field>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button onClick={regen} disabled={busy || !password} icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+            <Button
+              onClick={regen}
+              disabled={busy || !password}
+              icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+            >
               Regenerate backup codes
             </Button>
             {status.enabled ? (
@@ -650,22 +669,16 @@ function MfaBlock() {
   );
 }
 
-/** Passkeys and security keys as a second factor. Enrolling one is a browser
- * ceremony (the server issues a challenge, the authenticator signs it).
- * Adding and removing both take proof the account is yours: the password,
- * or a code from a factor you still hold (which is what an account signed in
- * through an identity provider has instead), so a hijacked session can
- * neither strip a factor nor plant the attacker's own key and keep
- * the account. A key the server has flagged as possibly cloned is shown
- * as such and can only be removed. */
+/** Adding or removing a key takes proof of the account (the password, or a code from a factor still held), so a
+ * hijacked session can neither strip a factor nor plant its own key. */
 function PasskeysBlock() {
-  const [state, setState] = useState(null); // {results, factors, rp_id, max}
+  const [state, setState] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [codes, setCodes] = useState(null); // backup codes issued with the first factor
+  const [codes, setCodes] = useState(null);
   const supported = passkeysSupported();
 
   function load() {
@@ -681,8 +694,7 @@ function PasskeysBlock() {
     setMsg(null);
     setBusy(true);
     try {
-      // Asked for before the ceremony starts, so nobody touches their
-      // authenticator only to be turned away afterwards.
+      // The proof goes with the options request, before the ceremony, so nobody touches their authenticator only to be refused.
       const { data } = await api.post("/auth/webauthn/register/options/", { password, otp: password });
       const credential = await createPasskey(data.options);
       const done = await api.post("/auth/webauthn/register/", { state: data.state, name: name.trim(), credential });
@@ -759,7 +771,11 @@ function PasskeysBlock() {
               <li className="px-4 py-3 text-xs text-muted">No passkeys enrolled.</li>
             ) : rows.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-                <FingerprintIcon className={cn("h-4 w-4 shrink-0", r.usable ? "text-muted" : "text-danger")} strokeWidth={1.75} aria-hidden="true" />
+                <FingerprintIcon
+                  className={cn("h-4 w-4 shrink-0", r.usable ? "text-muted" : "text-danger")}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                />
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] font-medium text-ink">{r.name}</span>
                   <span className="block text-xs text-muted">
@@ -793,7 +809,9 @@ function PasskeysBlock() {
           </Button>
         </form>
       ) : state && !supported ? (
-        <p className="mt-3 max-w-[640px] text-xs text-muted">This browser cannot enrol passkeys (it needs a secure https address and a modern browser).</p>
+        <p className="mt-3 max-w-[640px] text-xs text-muted">
+          This browser cannot enrol passkeys (it needs a secure https address and a modern browser).
+        </p>
       ) : null}
       <TextDialog
         open={!!renaming}
@@ -824,11 +842,11 @@ function SecuritySection() {
   );
 }
 
-/* ---------- Notifications ---------- */
+const deliveryLine = (d) => {
+  const outcome = d.ok ? "ok" : `failed${d.error ? ` (${d.error})` : ""}`;
+  return `${d.channel} ${d.event} ${outcome}`;
+};
 
-/** The emailed digest of the person's own tray, and the chat channels the
- * deployment posts to (configured by an operator; an administrator can send
- * a test message and see the last deliveries). */
 function ChannelsBlock({ me, onUpdate }) {
   const [info, setInfo] = useState(null);
   const [digest, setDigest] = useState(me?.digest || "off");
@@ -836,8 +854,7 @@ function ChannelsBlock({ me, onUpdate }) {
   const [busy, setBusy] = useState(false);
   const admin = !!(me?.is_superuser || me?.capabilities?.manage_users);
 
-  // A failed read is not "nothing configured": saying "Slack not configured"
-  // would send an administrator off to set up a channel that works.
+  // A failed read is not "nothing configured": that would send an administrator to set up a channel that already works.
   const [loadErr, setLoadErr] = useState(null);
   const load = () => {
     setLoadErr(null);
@@ -857,7 +874,7 @@ function ChannelsBlock({ me, onUpdate }) {
       onUpdate?.(data);
       setMsg({ ok: true, text: value === "off" ? "Digest emails are off." : `You'll get a ${value} digest of your tray by email.` });
     } catch (e) {
-      setDigest(before); // the select must show what is actually saved
+      setDigest(before);
       setMsg({ ok: false, text: errorText(e, "Couldn't save the preference.") });
     } finally {
       setBusy(false);
@@ -881,7 +898,11 @@ function ChannelsBlock({ me, onUpdate }) {
     }
   }
 
-  const choices = info?.digest_choices || [{ id: "off", label: "Off" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly (Monday)" }];
+  const choices = info?.digest_choices || [
+    { id: "off", label: "Off" },
+    { id: "daily", label: "Daily" },
+    { id: "weekly", label: "Weekly (Monday)" },
+  ];
   return (
     <>
       <div className="grid grid-cols-1 gap-1 px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
@@ -912,7 +933,7 @@ function ChannelsBlock({ me, onUpdate }) {
               </span>
               {admin && info.deliveries?.length ? (
                 <span className="mt-2 block font-mono text-2xs text-faint">
-                  Last deliveries: {info.deliveries.slice(0, 5).map((d) => `${d.channel} ${d.event} ${d.ok ? "ok" : `failed${d.error ? ` (${d.error})` : ""}`}`).join(" · ")}
+                  Last deliveries: {info.deliveries.slice(0, 5).map(deliveryLine).join(" · ")}
                 </span>
               ) : null}
             </>
@@ -938,8 +959,6 @@ function NotificationsSection({ me, onUpdate }) {
       v: me.email ? (
         <span className="font-mono text-xs text-ink">{me.email}</span>
       ) : (
-        // The Profile tab cannot set it: an administrator does, in the
-        // Django admin (see AdminWhere).
         <span>
           No email on file. {me.is_superuser ? <>Add it in <AdminWhere /></> : "Ask an administrator to add one."}
         </span>
@@ -969,8 +988,6 @@ function NotificationsSection({ me, onUpdate }) {
     </Panel>
   );
 }
-
-/* ---------- Role & access ---------- */
 
 function AccessSection({ me }) {
   if (!me) {
@@ -1043,8 +1060,6 @@ function AccessSection({ me }) {
   );
 }
 
-/* ---------- Workspaces ---------- */
-
 function WorkspacesBlock({ me }) {
   const { ask, confirmDialog } = useConfirm();
   const [current, setCurrent] = useState(null);
@@ -1059,8 +1074,7 @@ function WorkspacesBlock({ me }) {
   const superuser = !!me?.is_superuser;
   const [currentErr, setCurrentErr] = useState(null);
 
-  // Only the newest answer counts: a slower, older one must not put back what a
-  // newer one has replaced.
+  // Only the newest answer counts: a slower, older one must not overwrite a newer one.
   const asked = useRef(0);
   const load = () => {
     setCurrentErr(null);
@@ -1069,12 +1083,8 @@ function WorkspacesBlock({ me }) {
       .then((r) => {
         if (mine !== asked.current) return;
         setCurrent(r.data || null);
-        // The reminder address is filled in once and never over what has been
-        // typed since: an answer that lands late used to empty the boxes under
-        // a person's hands. A webhook URL is a credential and never comes back
-        // from the API, so those boxes are not filled at all. They say whether
-        // one is already configured; typing in one replaces it, and Remove
-        // clears it.
+        // Fill the address once, never over what was typed since. Webhook URLs are credentials the API never returns,
+        // so those boxes stay empty and only say whether one is configured.
         setInbox((typed) => typed || r.data?.notification_email || "");
       })
       .catch((e) => {
@@ -1082,13 +1092,16 @@ function WorkspacesBlock({ me }) {
         setCurrent(null);
         setCurrentErr(errorText(e, "Couldn't load the workspace."));
       });
-    if (superuser) api.get("/workspaces/", { params: { page_size: 100 } }).then((r) => setList(r.data.results || r.data)).catch(() => setList([]));
+    if (superuser)
+      api
+        .get("/workspaces/", { params: { page_size: 100 } })
+        .then((r) => setList(r.data.results || r.data))
+        .catch(() => setList([]));
   };
   useEffect(() => { load(); }, [superuser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function switchTo(slug) {
-    // Always send the slug. Blanking it for "default" would leave a superuser
-    // whose own workspace is something else in the workspace they were in.
+    // Always send the slug: blanking it for "default" leaves a superuser whose own workspace differs in the one they were in.
     chooseWorkspace(slug);
     window.location.assign("/");
   }
@@ -1116,21 +1129,17 @@ function WorkspacesBlock({ me }) {
     setBusy(true);
     setMsg(null);
     try {
-      // Only send a webhook the operator typed. An empty box means
-      // "leave it as it is", not "delete it": the boxes are always empty on
-      // load, so sending them would wipe a configured channel on every save
-      // of the reminder address.
+      // Send a webhook only when typed: the boxes are always empty on load, so an empty one means "leave it", never "clear it".
       const body = { notification_email: inbox.trim() };
       if (slack.trim()) body.slack_webhook_url = slack.trim();
       if (teams.trim()) body.teams_webhook_url = teams.trim();
       await api.patch(`/workspaces/${current.id}/`, body);
-      // What was sent is what is stored. The URLs are never shown again, so
-      // their boxes empty and the hint above them takes over.
       setInbox(inbox.trim());
       setSlack("");
       setTeams("");
+      const chatNote = slack.trim() || teams.trim() ? ", and its chat events to its own channel" : "";
       setMsg({ ok: true, text: inbox.trim()
-        ? `Reminders for ${current.name} now go to ${inbox.trim()}${slack.trim() || teams.trim() ? ", and its chat events to its own channel" : ""}.`
+        ? `Reminders for ${current.name} now go to ${inbox.trim()}${chatNote}.`
         : `Reminders for ${current.name} fall back to the installation address.` });
       load();
     } catch (err) {
@@ -1140,9 +1149,6 @@ function WorkspacesBlock({ me }) {
     }
   }
 
-  /** The only path that clears a configured webhook, so that clearing one is
-   *  always something the operator chose rather than a side effect of saving
-   *  the form with an empty box. */
   async function removeWebhook(field) {
     if (!current) return;
     setBusy(true);
@@ -1254,7 +1260,14 @@ function WorkspacesBlock({ me }) {
           </ul>
           <form onSubmit={create} className="mt-3 flex flex-wrap items-end gap-2">
             <Field id="new-workspace" label="New workspace" className="min-w-[220px] flex-1">
-              <input id="new-workspace" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Organisation name" disabled={busy} />
+              <input
+                id="new-workspace"
+                className="input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Organisation name"
+                disabled={busy}
+              />
             </Field>
             <label className="flex items-center gap-2 pb-2 text-xs text-muted">
               <input type="checkbox" checked={withFrameworks} onChange={(e) => setWithFrameworks(e.target.checked)} disabled={busy} />
@@ -1269,14 +1282,15 @@ function WorkspacesBlock({ me }) {
   );
 }
 
-/* ---------- About ---------- */
+const signingLabel = (key) => {
+  if (key?.key_id) return `Ed25519 · key ${key.key_id}`;
+  if (key?.enabled === false) return "Off";
+  return key?.per_workspace ? "One key per workspace" : "No key configured";
+};
 
 function AboutSection() {
   const { me, health } = useShell();
-  // The control library belongs to the organisation, not to the engagement:
-  // an external auditor is refused /frameworks/, so do not ask for it, put a
-  // 403 on their console, or tell them nothing is loaded. They see the rest of
-  // the panel.
+  // An external auditor is refused /frameworks/: do not request it, so there is no 403 on their console and no "nothing loaded".
   const auditor = !!me?.capabilities?.auditor;
   const [frameworks, setFrameworks] = useState(null);
   const [err, setErr] = useState(null);
@@ -1298,10 +1312,8 @@ function AboutSection() {
     };
   }, [auditor]);
 
-  // The key that signs this workspace's packages. /health/ answers with no
-  // workspace, so on an installation serving several organisations it names
-  // no key; this asks as the signed-in person. An auditor is refused it and
-  // keeps the health figures, as does anyone if the call fails.
+  // /health/ has no workspace, so on a multi-organisation install it names no key: ask as the signed-in person.
+  // An auditor is refused and keeps the health figures, as does anyone if the call fails.
   const [workspaceKey, setWorkspaceKey] = useState(null);
   useEffect(() => {
     if (auditor) return undefined;
@@ -1329,10 +1341,7 @@ function AboutSection() {
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
     ...(auditor ? [] : [["Frameworks", frameworks ? `${frameworks.length} loaded` : "…"]]),
     ["Malware scanning", scannerLabel],
-    ["Package signing", signingKey?.key_id
-      ? `Ed25519 · key ${signingKey.key_id}`
-      : signingKey?.enabled === false ? "Off"
-        : signingKey?.per_workspace ? "One key per workspace" : "No key configured"],
+    ["Package signing", signingLabel(signingKey)],
     ...(signingKey?.fingerprint ? [["Signing key fingerprint", `sha256:${signingKey.fingerprint}`]] : []),
   ];
 
@@ -1353,8 +1362,7 @@ function AboutSection() {
         {rows.map(([k, v]) => (
           <div key={k} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-line py-2.5">
             <dt className="shrink-0 text-xs text-muted">{k}</dt>
-            {/* A value too long to sit beside its label drops under it, and a fingerprint, one 71-character word,
-                breaks to fit. */}
+            {/* A 71-character fingerprint is one word: break-words stops it overflowing. */}
             <dd className="tabular min-w-0 grow break-words text-right font-mono text-xs text-ink">{v}</dd>
           </div>
         ))}
@@ -1420,8 +1428,6 @@ function AboutSection() {
   );
 }
 
-/* ---------- Page ---------- */
-
 export default function Account({ me, onUpdate }) {
   const [section, setSection] = useState("profile");
   const initial = (me?.full_name || me?.username || "?").trim().slice(0, 1).toUpperCase() || "?";
@@ -1430,11 +1436,13 @@ export default function Account({ me, onUpdate }) {
     <PanelTransition>
       <Stack className="grid grid-cols-12 gap-4">
         <StackItem className="col-span-12 lg:col-span-3">
-          {/* Sticky below the 60px top bar, so a long section never scrolls the
-              section list out of reach. */}
+          {/* The sticky offset clears the 60px top bar. */}
           <Panel as="aside" className="overflow-hidden lg:sticky lg:top-[76px]">
             <div className="flex items-center gap-3 border-b border-line px-4 py-4">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-[15px] font-semibold text-accent-ink" aria-hidden="true">
+              <span
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-[15px] font-semibold text-accent-ink"
+                aria-hidden="true"
+              >
                 {initial}
               </span>
               <span className="min-w-0">

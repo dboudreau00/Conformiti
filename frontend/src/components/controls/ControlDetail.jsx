@@ -11,19 +11,9 @@ import { Label, Loading } from "../ui/Panel.jsx";
 
 const STATUS_KEYS = Object.keys(CONTROL_STATUS);
 
-// /control-evidence/choices/ sends at most this many documents, the first by
-// name, so a list that long may not hold the one being looked for.
+// Mirrors CHOICES_DOCUMENT_CAP in backend/compliance/views.py.
 const CHOICES_CAP = 500;
 
-/** Expanded body of a control register row: objective, status/owner fields,
- * the linked-evidence list and the attach form. Mounted only while the row is
- * open, so evidence state starts fresh on every expand.
- *
- * Write controls are gated on the same capabilities the API enforces:
- *   status / owner   -> manage_frameworks (PATCH /controls/{id}/ 403s otherwise)
- *   attach evidence  -> manage_frameworks || manage_documents
- *   unlink           -> link.can_unlink (server-computed per link)
- */
 export function ControlDetail({
   control,
   canManage,
@@ -39,21 +29,18 @@ export function ControlDetail({
   const [links, setLinks] = useState([]);
   const [linksLoading, setLinksLoading] = useState(true);
   const [linksError, setLinksError] = useState("");
-  // Ticked documents, kept whole: a search that no longer lists one still
-  // attaches it, and still knows its name if the server skips it.
+  // Whole documents, not ids: a later search may not list a ticked one, which must still attach and keep its name.
   const [selDocs, setSelDocs] = useState([]);
   const [docQuery, setDocQuery] = useState("");
-  const [found, setFound] = useState(null); // server matches for docQuery, when the list is capped
+  const [found, setFound] = useState(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false); // attach / unlink in flight
-  const [saving, setSaving] = useState(false); // status / owner PATCH in flight
-  const [notice, setNotice] = useState(null); // { ok?, warn?, err?, skipped? }
-  const [viewing, setViewing] = useState(null); // in-browser viewer props
-  // The test interval is typed, so it needs a draft of its own: a controlled
-  // input whose onChange does not set state is put back by React after every
-  // keystroke, and the field refuses everything typed into it.
+  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  // Draft state: a controlled input whose onChange sets no state rejects every keystroke.
   const [interval, setIntervalDraft] = useState(control.test_interval_days ?? "");
   useEffect(() => {
     setIntervalDraft(control.test_interval_days ?? "");
@@ -99,11 +86,6 @@ export function ControlDetail({
 
   const [readiness, setReadiness] = useState(null);
   const readinessReq = useRef(0);
-  // The breakdown is read again after anything that moves the score (status,
-  // owner, test date, evidence), so it never disagrees with the row's number:
-  // the new score goes up to the register row as well, which only a patch of
-  // the control itself used to refresh. A reply that has been overtaken by a
-  // newer request is dropped.
   const loadReadiness = useCallback(() => {
     const req = ++readinessReq.current;
     return api.get(`/controls/${id}/readiness/`)
@@ -120,18 +102,12 @@ export function ControlDetail({
   }, [loadReadiness]);
 
   const linkedIds = useMemo(() => new Set(links.map((l) => l.document)), [links]);
-  // The server says when it held documents back; a server that does not say
-  // (an older one) is guessed at from the length.
   const capped = docsTruncated ?? (docChoices || []).length >= CHOICES_CAP;
   const available = useMemo(
     () => (docChoices || []).filter((d) => !linkedIds.has(d.id)),
     [docChoices, linkedIds]
   );
 
-  // Filtering a capped list in the browser cannot find a document that sorts
-  // after the cap. When the list is capped, a search also asks the server,
-  // which matches the name across every document the caller can see, and its
-  // matches join the list.
   useEffect(() => {
     const term = docQuery.trim();
     if (!capped || !term) {
@@ -158,8 +134,7 @@ export function ControlDetail({
   const visibleDocs = useMemo(() => {
     const q = docQuery.trim().toLowerCase();
     if (!q) return available;
-    // The server's matches for an earlier query can still be here while the
-    // next one is in flight, so the merged list goes through the same filter.
+    // Server matches from an earlier query may linger while the next is in flight, so the merged list is filtered again.
     const listed = new Set(available.map((d) => d.id));
     const more = (found || []).filter((d) => !listed.has(d.id) && !linkedIds.has(d.id));
     return available.concat(more).filter((d) => `${d.name} ${d.path}`.toLowerCase().includes(q));
@@ -208,8 +183,7 @@ export function ControlDetail({
       setSelDocs([]);
       setDocQuery("");
       setNote("");
-      // Re-read the list so each new link carries its server-computed
-      // can_unlink flag (the bulk response is serialized without it).
+      // Re-read: the bulk response lacks the server-computed can_unlink flag.
       await loadLinks();
       if (created.length) loadReadiness();
       setNotice({
@@ -244,7 +218,6 @@ export function ControlDetail({
 
   return (
     <div className="grid grid-cols-1 gap-6 px-5 py-4 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      {/* ---- Left: readiness + objective + assignment ----------------------- */}
       <div className="space-y-4">
         {readiness ? <ReadinessBreakdown readiness={readiness} /> : null}
         <div>
@@ -308,8 +281,6 @@ export function ControlDetail({
           </div>
         </div>
 
-        {/* Testing is 15 points of the readiness score, so the last test date
-            and the test interval are edited here. */}
         <div className="rounded-xl border border-line bg-surface p-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -378,7 +349,6 @@ export function ControlDetail({
         </div>
       </div>
 
-      {/* ---- Right: evidence ---------------------------------------------- */}
       <div className="space-y-4">
         {notice?.ok ? <div className="notice notice-ok" role="status">{notice.ok}</div> : null}
         {notice?.skipped?.length ? (
@@ -436,10 +406,6 @@ export function ControlDetail({
         {canLink ? (
           <form onSubmit={attach} className="rounded-lg border border-line bg-surface p-3">
             <Label className="mb-2 block">Attach evidence</Label>
-            {/* A failed load leaves docChoices null. That is reported on its
-                own, not above a claim that every document is already linked,
-                and an error left over from before a retry filled the list is
-                stale, so it only shows while there is no list. */}
             {!docChoices ? (
               choicesError ? (
                 <div className="notice notice-err" role="alert">{choicesError}</div>
@@ -453,8 +419,7 @@ export function ControlDetail({
                   <p className="text-xs text-muted">Every document you can see is already linked to this control.</p>
                 ) : (
                   <>
-                    {/* The box sits inside the attach form, and Enter in a
-                        search box means search, not attach what is ticked. */}
+                    {/* Enter in the search box must not submit the attach form. */}
                     <input
                       id={`attach-docs-${id}`}
                       className="input input-sm"
@@ -538,12 +503,6 @@ export function ControlDetail({
   );
 }
 
-
-/** Why a control scores what it scores.
- *
- * The breakdown turns a bare number such as "68" into a list of the specific
- * things that would move it, which is what a control owner can act on.
- */
 function ReadinessBreakdown({ readiness }) {
   const band = READINESS_BAND[readiness.band] || READINESS_BAND.not_started;
   if (readiness.score === null) {

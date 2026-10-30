@@ -1,9 +1,3 @@
-/**
- * The logo lockup: mark plus wordmark ("Conform" in ink, "iti" in the
- * colourway). Horizontal for headers, stacked for cover screens, `mark` alone
- * below 20px where the wordmark stops resolving. `colour` is a brand
- * colourway, or "accent" to follow the theme's accent (see ConformitiMark).
- */
 import { paletteById } from "../../brand.js";
 import { cn } from "../../utils/cn.js";
 import { ConformitiMark } from "./ConformitiMark.jsx";

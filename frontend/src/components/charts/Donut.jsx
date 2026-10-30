@@ -74,13 +74,19 @@ export function Donut({ slices, size = 168, thickness = 18, centerValue, centerL
   );
 }
 
-/** Donut + interactive legend with percentages, laid out side by side. */
 export function DonutLegend({ slices, centerValue, centerLabel, size = 168 }) {
   const [active, setActive] = useState(null);
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   return (
     <div className="flex flex-wrap items-center gap-6">
-      <Donut slices={slices} size={size} centerValue={centerValue} centerLabel={centerLabel} activeLabel={active} onActiveChange={setActive} />
+      <Donut
+        slices={slices}
+        size={size}
+        centerValue={centerValue}
+        centerLabel={centerLabel}
+        activeLabel={active}
+        onActiveChange={setActive}
+      />
       <ul className="min-w-[180px] flex-1 space-y-2">
         {slices.map((s) => (
           <li

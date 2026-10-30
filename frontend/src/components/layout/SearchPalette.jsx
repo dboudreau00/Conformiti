@@ -13,19 +13,13 @@ const MIN_CHARS = 2;
 const DEBOUNCE_MS = 220;
 const PER_GROUP = 6;
 
-// Each result links to its page with `?search=` set to the record's own
-// reference or name (and `?framework=` for a control, whose reference is not
-// unique across frameworks): the pages read those, filter to the record and,
-// for a control that matches exactly, open it. Each section asks the endpoint
-// the page itself lists from, so the palette can never show what that page
-// refuses, and People is offered only to someone who can open the Users page.
+// Each section asks the endpoint its page lists from, so the palette never shows what that page refuses.
 const SECTIONS = [
   {
     key: "controls",
     label: "Controls",
     Icon: ShieldCheckIcon,
     url: "/controls/",
-    // An auditor is refused the control library, so they are never asked.
     allowed: (me) => !me?.capabilities?.auditor,
     row: (c) => ({
       id: c.id,
@@ -56,9 +50,7 @@ const SECTIONS = [
     label: "People",
     Icon: UserIcon,
     url: "/users/",
-    // The directory answers any member, but the Users page it links to is for
-    // whoever manages users; anyone else would be sent to a refusal. A 403 is
-    // still handled below, and leaves People out.
+    // The directory answers any member, but the Users page it links to needs manage_users.
     allowed: (me) => !me?.capabilities?.auditor && !!me?.capabilities?.manage_users,
     row: (u) => ({
       id: u.id,
@@ -70,9 +62,6 @@ const SECTIONS = [
   },
 ];
 
-// The reference or name that equals the query ranks first, then the one it
-// starts, then a title it starts, then anything that contains it, and the
-// rest keep the order the API gave them.
 function rankOf([key, text], q) {
   const k = String(key || "").toLowerCase();
   const t = String(text || "").toLowerCase();
@@ -98,8 +87,7 @@ function PaletteBody({ onClose }) {
       return undefined;
     }
     setState((was) => ({ ...was, status: "loading" }));
-    // A stale answer is dropped, not cancelled: an aborted request is a
-    // failed request to anything watching the network.
+    // Stale answers are dropped, not aborted: an aborted request counts as a failed one to a network watcher.
     let live = true;
     const timer = setTimeout(async () => {
       const lower = q.toLowerCase();
@@ -129,7 +117,6 @@ function PaletteBody({ onClose }) {
     };
   }, [query, sections]);
 
-  // One flat list for the arrow keys; each row knows its place in it.
   const options = useMemo(
     () => state.groups.flatMap((g) => g.rows.map((r) => ({ ...r, group: g.key, optionId: `${listId}-${g.key}-${r.id}` }))),
     [state.groups, listId]
@@ -169,7 +156,11 @@ function PaletteBody({ onClose }) {
     <div>
       <label htmlFor={`${listId}-q`} className="sr-only">Jump to a control, document or person</label>
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" strokeWidth={1.75} aria-hidden="true" />
+        <SearchIcon
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+          strokeWidth={1.75}
+          aria-hidden="true"
+        />
         <input
           id={`${listId}-q`}
           type="text"
@@ -211,12 +202,19 @@ function PaletteBody({ onClose }) {
                   aria-selected={on}
                   onMouseMove={() => { if (!on) setActive(at); }}
                   onClick={() => go(option)}
-                  className={cn("flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2", on ? "bg-accent/10" : "hover:bg-ink/[0.04]")}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2",
+                    on ? "bg-accent/10" : "hover:bg-ink/[0.04]"
+                  )}
                 >
                   <g.Icon className="h-4 w-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden="true" />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
-                      <span className={cn("truncate text-[13px] font-medium text-ink", g.key === "controls" && "shrink-0 font-mono")}>{r.primary}</span>
+                      <span
+                        className={cn("truncate text-[13px] font-medium text-ink", g.key === "controls" && "shrink-0 font-mono")}
+                      >
+                        {r.primary}
+                      </span>
                       {r.title ? <span className="truncate text-[13px] text-ink">{r.title}</span> : null}
                     </span>
                     {r.secondary ? <span className="block truncate text-xs text-muted">{r.secondary}</span> : null}
@@ -233,8 +231,6 @@ function PaletteBody({ onClose }) {
   );
 }
 
-/** Ctrl K or Cmd K, or the search button in the top bar. One input, three
- * existing list endpoints, grouped results. */
 export function SearchPalette({ open, onClose }) {
   return (
     <Dialog open={open} onClose={onClose} title="Jump to" placement="top">

@@ -16,12 +16,6 @@ import { joinAll } from "../components/ui/ShowMore.jsx";
 import { loadFailReason } from "../utils/a11y.js";
 import { CONTROL_STATUS } from "../utils/tone.js";
 
-/** Everything the page loads up front. The summary already names every
- * framework, counts its controls and totals the documents, so neither the
- * framework list nor the document list is fetched for those. The
- * calendar fetches its own feed for the visible month, mark-reviewed lives in
- * the review queue, and the atlas is requested beside these rather than after
- * them: it is the largest response and must not hold the rest back. */
 const SOURCES = [
   { key: "summary", label: "the analytics summary", url: "/analytics/summary/" },
   { key: "reviews", label: "upcoming reviews", url: "/documents/reviews/?days=120" },
@@ -33,15 +27,18 @@ function joinNames(names) {
   return joinAll(names);
 }
 
-/** Three frameworks read as a list; twenty-five read as a count. */
 function frameworkPhrase(names) {
   return names.length > 3 ? `${names.length} frameworks` : joinAll(names);
 }
 
+function monthDelta(delta) {
+  if (delta > 0) return { tone: "success", text: `+${delta} pts this month` };
+  if (delta < 0) return { tone: "danger", text: `${delta} pts this month` };
+  return { tone: "muted", text: "No change this month" };
+}
+
 export default function Dashboard({ me }) {
-  // null until its request has succeeded once: a source that never arrived is
-  // unknown, which is not the same as empty, and the figures built from it
-  // show a dash rather than a zero.
+  // null until its request has succeeded once: an unknown source is not an empty one, so its figures show a dash.
   const [summary, setSummary] = useState(null);
   const [reviews, setReviews] = useState(null);
   const [failed, setFailed] = useState([]);
@@ -66,18 +63,13 @@ export default function Dashboard({ me }) {
     setVersion((v) => v + 1);
   }, []);
 
-  // Waits for `me`. The dashboard reads the whole programme, which an external
-  // auditor may not: the shell sends them to /packages instead, but only once
-  // it knows who they are. Firing on mount would put two 403s on their console
-  // at every sign-in and load a screen they cannot fill.
+  // Waits for `me`: an external auditor may not read the whole programme, and the shell only redirects them once it
+  // knows who they are, so firing on mount would put 403s on their console at every sign-in.
   useEffect(() => {
     if (!me) return;
     load();
   }, [load, me]);
 
-  // The atlas has its own request and its own failure: a refusal or a slow
-  // answer leaves the rest of the dashboard standing, and a late answer to an
-  // attempt that has since been replaced is dropped.
   useEffect(() => {
     if (!me) return undefined;
     let alive = true;
@@ -97,19 +89,13 @@ export default function Dashboard({ me }) {
   const revs = summary?.reviews;
   const risks = summary?.risks;
 
-  // Display names only. A number is bound to the word before it with a
-  // non-breaking space, so a narrow card never ends a line on "SOC" and starts
-  // the next with "2" (or splits "ISO/IEC 27001" the same way).
+  // The space before a digit is replaced by a literal non-breaking space (U+00A0) so a narrow card never wraps "SOC 2".
   const fwNames = (summary?.frameworks || []).map((f) => (f.name || "").replace(/ (?=\d)/g, " "));
 
   const statusSegments = useMemo(() => {
     const by = controls?.by_status || {};
     return Object.entries(CONTROL_STATUS).map(([key, meta]) => ({ label: meta.label, value: by[key] || 0, tone: meta.tone }));
   }, [controls]);
-  // The headline is the register's score: implementation, an owner, evidence,
-  // its freshness and a test, less open risks. The implemented share is shown
-  // beside it. History recorded before 0.9.5 knew only the share, so the
-  // trend line is the score once it exists and the share until then.
   const scored = readiness?.score !== null && readiness?.score !== undefined;
   const hero = scored ? readiness.score : readiness?.pct;
   const trendPoints = useMemo(() => {
@@ -119,10 +105,8 @@ export default function Dashboard({ me }) {
       ? withScore.map((p) => ({ label: p.label, value: p.score }))
       : points.map((p) => ({ label: p.label, value: p.pct }));
   }, [readiness]);
-  // The month-on-month badge sits beside the headline, so it must be the
-  // headline's own delta: the score's once two scored snapshots exist (null
-  // before that, so no badge), the share's when the share is the headline.
   const delta = scored ? readiness?.score_delta_pts : readiness?.delta_pts;
+  const deltaBadge = delta != null ? monthDelta(delta) : null;
   const bandSegments = useMemo(() => {
     const by = readiness?.bands || {};
     return [
@@ -146,8 +130,7 @@ export default function Dashboard({ me }) {
     );
   }
 
-  // A phone has no room for the readiness tip's box, which hangs past the
-  // card's right edge even while it is closed: clipped, not scrolled to.
+  // max-md:overflow-x-clip: on a phone the readiness tip's box hangs past the card's edge even while closed.
   return (
     <PanelTransition className="max-md:overflow-x-clip">
       <Stack className="dash grid grid-cols-12 gap-4">
@@ -160,7 +143,6 @@ export default function Dashboard({ me }) {
           </StackItem>
         ) : null}
 
-        {/* Row A: the one number the workspace is judged on, beside the schedule that foots to it */}
         <StackItem className="col-span-12">
           <div className="dash-lead">
             <Panel className="dash-ready flex h-full min-w-0 flex-col justify-between p-5">
@@ -176,11 +158,7 @@ export default function Dashboard({ me }) {
                             : `${readiness.implemented.toLocaleString()} of ${readiness.applicable.toLocaleString()} applicable controls${fwNames.length ? ` across ${frameworkPhrase(fwNames)}` : ""} are marked implemented.`}
                         </InfoTip>
                       </span>
-                      {delta != null ? (
-                        <Badge tone={delta > 0 ? "success" : delta < 0 ? "danger" : "muted"} mono>
-                          {delta > 0 ? `+${delta} pts this month` : delta < 0 ? `${delta} pts this month` : "No change this month"}
-                        </Badge>
-                      ) : null}
+                      {deltaBadge ? <Badge tone={deltaBadge.tone} mono>{deltaBadge.text}</Badge> : null}
                     </div>
                     <div className="mt-3 flex items-end gap-2">
                       <span className="tabular text-[64px] font-semibold leading-[0.85] tracking-[-0.045em] text-ink">{hero}</span>
@@ -195,7 +173,11 @@ export default function Dashboard({ me }) {
 
                   <div className="mt-4">
                     {trendPoints.length >= 2 ? (
-                      <TrendLine points={trendPoints} height={72} ariaLabel={`Readiness trend over the last ${trendPoints.length} months`} />
+                      <TrendLine
+                        points={trendPoints}
+                        height={72}
+                        ariaLabel={`Readiness trend over the last ${trendPoints.length} months`}
+                      />
                     ) : (
                       <div className="flex h-[72px] items-center justify-center rounded-lg border border-dashed border-line">
                         <Label>No history yet</Label>
@@ -206,12 +188,22 @@ export default function Dashboard({ me }) {
                   <div className="mt-4">
                     {scored ? (
                       <>
-                        <SegmentBar segments={bandSegments} total={readiness.applicable} height={10} ariaLabel={`Readiness bands across ${readiness.applicable} applicable controls`} />
+                        <SegmentBar
+                          segments={bandSegments}
+                          total={readiness.applicable}
+                          height={10}
+                          ariaLabel={`Readiness bands across ${readiness.applicable} applicable controls`}
+                        />
                         <Legend items={bandSegments} className="mt-3" />
                       </>
                     ) : (
                       <>
-                        <SegmentBar segments={statusSegments} total={controlTotal} height={10} ariaLabel={`Control status distribution across ${controlTotal} controls`} />
+                        <SegmentBar
+                          segments={statusSegments}
+                          total={controlTotal}
+                          height={10}
+                          ariaLabel={`Control status distribution across ${controlTotal} controls`}
+                        />
                         <Legend items={statusSegments} className="mt-3" />
                       </>
                     )}
@@ -229,7 +221,6 @@ export default function Dashboard({ me }) {
           </div>
         </StackItem>
 
-        {/* Row B: every control as a square, lit by what answers the same theme */}
         <StackItem className="col-span-12">
           <CoverageAtlas
             data={atlas.data}
@@ -255,12 +246,8 @@ export default function Dashboard({ me }) {
         </StackItem>
 
         <StackItem className="dash-span-4 col-span-12">
-          {/* Anchor for the "Open the review queue" link on the Reviews overdue
-           * cell above: ReviewQueue itself is a shared component, so the id
-           * lives on this wrapper instead of inside it. Until the upcoming
-           * reviews have loaded once, the queue is not drawn: given nothing, it
-           * says every scheduled review is attested, and the link would land
-           * the reader on that claim. */}
+          {/* #review-queue is the target of NeedsAttention's "Open the review queue" link. The queue is not drawn until
+              reviews have loaded: given nothing, it claims every scheduled review is attested. */}
           <div id="review-queue" className="h-full">
             {reviews ? (
               <ReviewQueue me={me} reviews={reviews} onChanged={load} />

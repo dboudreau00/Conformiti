@@ -1,12 +1,3 @@
-/**
- * Put controls into a draft package from the page.
- *
- * The picker lists every control in the workspace, filtered by framework and
- * text and chosen with checkboxes. The controls are added in one request with
- * the evidence already linked to each one pinned, and a plain report says
- * which evidence was skipped because the person assembling the package
- * cannot see it.
- */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import api, { fetchAll } from "../../api/client.js";
@@ -28,16 +19,10 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
-  // The loads below report through the latest onError without depending on
-  // it. The parent passes a fresh arrow on every render, so as a dependency
-  // it would re-fetch every framework's controls whenever the page re-rendered,
-  // and a failing fetch would loop: the report re-renders the parent, which
-  // re-runs the fetch, which fails again.
+  // Latest onError via a ref: as an effect dependency it would re-fetch on every parent render, and a failing fetch would loop.
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; });
 
-  // A failed load stays failed, shown in place with a retry, rather than
-  // reading as "No controls match." or loading for ever.
   useEffect(() => {
     if (!open || frameworks) return;
     let alive = true;
@@ -136,7 +121,11 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
         <div className="min-w-[220px] flex-1">
           <label htmlFor={`add-q-${packageId}`} className="field-label">Find</label>
           <div className="relative">
-            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" strokeWidth={2} aria-hidden="true" />
+            <SearchIcon
+              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
+              strokeWidth={2}
+              aria-hidden="true"
+            />
             <input id={`add-q-${packageId}`} className="input input-sm pl-8" value={query} placeholder="Control id, title or category"
                    onChange={(e) => setQuery(e.target.value)} />
           </div>

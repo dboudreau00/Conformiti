@@ -1,10 +1,8 @@
-// Tones map semantic meaning to theme tokens. Status colours (success /
-// warning / danger) are deliberately NOT affected by the accent pack so they
-// stay meaningful in evidence exports.
+// Status colours (success / warning / danger) are deliberately independent of the accent pack, so they stay meaningful in
+// evidence exports.
 
 export const TONES = ["accent", "success", "warning", "danger", "info", "muted", "faint", "line-strong"];
 
-/** Solid text colour per tone. */
 export const TONE_TEXT = {
   accent: "text-accent",
   success: "text-success",
@@ -13,12 +11,10 @@ export const TONE_TEXT = {
   info: "text-info",
   muted: "text-muted",
   faint: "text-faint",
-  // The line colour is a border, not an ink: as text it is 1.5:1 on a dark
-  // pack. A line-strong badge keeps its grey wash and ring and reads in muted.
+  // A border colour is not an ink (1.5:1 as text on a dark pack), so line-strong text reads in muted.
   "line-strong": "text-muted",
 };
 
-/** Low-alpha wash used behind badges and chips. */
 export const TONE_WASH = {
   accent: "bg-accent/10",
   success: "bg-success/[0.12]",
@@ -52,12 +48,10 @@ export const TONE_FILL = {
   "line-strong": "bg-line-strong",
 };
 
-/** Raw CSS colour for SVG fills/strokes and inline styles, stays reactive to the active theme. */
 export function toneVar(tone, alpha) {
   return alpha === undefined ? `rgb(var(--${tone}))` : `rgb(var(--${tone}) / ${alpha})`;
 }
 
-// --- Domain vocab -> tone ----------------------------------------------------
 export const CONTROL_STATUS = {
   not_started: { label: "Not started", tone: "faint" },
   in_progress: { label: "In progress", tone: "warning" },
@@ -86,12 +80,9 @@ export const RISK_RATING = {
   critical: "danger",
 };
 
-/** The answer scale of a vendor questionnaire, [value, label]. One list for
- *  the public form a vendor fills in and the vendor file that reads it back,
- *  so the two can never offer different answers. */
+// [value, label]. One list for the public form and the vendor file that reads it back, so they cannot disagree.
 export const QUESTIONNAIRE_ANSWERS = [["yes", "Yes"], ["partial", "Partial"], ["no", "No"], ["n/a", "N/A"]];
 
-/** Tone for a review that is due in `days` (negative = overdue). */
 export function dueTone(days) {
   if (days == null) return "muted";
   if (days < 0) return "danger";
@@ -106,9 +97,7 @@ export function dueLabel(days) {
   return `${days}d`;
 }
 
-/** Readiness bands. The labels deliberately avoid "Not started" and "Not
- *  applicable": CONTROL_STATUS already uses those words, and both render as
- *  buttons on the same row. */
+// Labels avoid "Not started" and "Not applicable": CONTROL_STATUS uses them, and both render as buttons on one row.
 export const READINESS_BAND = {
   not_started: { label: "Not ready", tone: "faint" },
   at_risk: { label: "At risk", tone: "danger" },

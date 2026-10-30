@@ -8,11 +8,6 @@ import { Popover } from "../ui/Popover.jsx";
 import { NavCount, editionTitle } from "./NavParts.jsx";
 import { NavIcon } from "./NavIcon.jsx";
 
-/** Under 768px the tabs and the side menu do not fit, so both become this one
- * sheet under the bar, listing every section the person has: Workspace,
- * Governance, any sections an add-on adds, its foot items and Account. It is the
- * same data the wide layout draws, so nothing is reachable on a desktop that a
- * phone cannot reach. */
 export function MobileMenu() {
   const { me, counts } = useShell();
   const { tabs, governance, side, foot, account } = useShellNav();
@@ -43,7 +38,11 @@ export function MobileMenu() {
             open && "border-line-strong bg-surface-2"
           )}
         >
-          {open ? <XIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" /> : <MenuIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />}
+          {open ? (
+            <XIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          ) : (
+            <MenuIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          )}
           Menu
         </button>
       )}

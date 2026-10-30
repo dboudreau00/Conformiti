@@ -1,6 +1,4 @@
-/** Tailwind maps every colour to a CSS token (raw RGB triple) so utilities can
- * carry alpha (`bg-accent/10`) and every theme/accent pack re-colours the whole
- * product by swapping the tokens on <html>. See src/styles/index.css. */
+/** Colours are CSS tokens (raw RGB triples) so utilities can carry alpha and theme packs re-colour by swapping them. */
 export default {
   content: ["./index.html", "./src/**/*.{js,jsx}"],
   theme: {
@@ -28,9 +26,7 @@ export default {
       textColor: {
         accent: "rgb(var(--accent-text, var(--accent)) / <alpha-value>)",
       },
-      // Stacks, not downloads: Inter and JetBrains Mono are used when the
-      // reader already has them, and the platform's own UI faces otherwise.
-      // Nothing is fetched from a font CDN; see index.html.
+      // Stacks, not downloads: nothing is fetched from a font CDN (see index.html).
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system",
                "Segoe UI", "Roboto", "Helvetica Neue", "Arial",

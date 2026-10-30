@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { cn } from "../../utils/cn.js";
 import { toneVar } from "../../utils/tone.js";
 
-/** points: [{label, value}], renders a filled line; a single point renders as a marker. */
+/** points: [{label, value}] */
 export function TrendLine({ points, tone = "accent", height = 96, className, ariaLabel }) {
   const w = 320;
   const h = height;
@@ -24,7 +24,13 @@ export function TrendLine({ points, tone = "accent", height = 96, className, ari
     <div className={cn("w-full", className)}>
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
         {area ? (
-          <motion.path d={area} fill={toneVar(tone, 0.1)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1], delay: 0.2 }} />
+          <motion.path
+            d={area}
+            fill={toneVar(tone, 0.1)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1], delay: 0.2 }}
+          />
         ) : null}
         {coords.length > 1 ? (
           <motion.path

@@ -8,32 +8,20 @@ import { Empty, Label, LoadError, Loading, Panel } from "../ui/Panel.jsx";
 import { joinSome } from "../ui/ShowMore.jsx";
 import { STATUS_FILL, StatusGlyph } from "./StatusGlyph.jsx";
 
-/** Above this many controls the field offers framework chips, and draws only
- * the largest few until the reader chooses more: a thousand squares of nine
- * pixels cannot be read as a map. */
 const CHIP_FROM = 600;
 const DEFAULT_DRAWN = 4;
-/** Past this many squares a change of light is not animated: thousands of
- * simultaneous fades are work for the browser and no help to the reader. */
 const BIG_FROM = 800;
-/** Partners named in the place card before "and N more". */
 const LISTED = 6;
 const NONE = new Set();
-/** The legend reads in the schedule's order, not the vocabulary's. */
 const LEGEND = ["implemented", "in_progress", "not_started", "not_applicable"];
 
-/** The edge of a square shrinks as the field grows, down to a floor. */
 function cellFor(count) {
   const step = Math.floor(Math.sqrt(220000 / Math.max(count, 1)));
   return Math.max(9, Math.min(20, step - 3));
 }
 
-/** A territory is drawn roughly square-ish, wider than tall. */
 const columnsFor = (n) => Math.max(4, Math.ceil(Math.sqrt(n * 1.5)));
 
-/** Everything the interaction needs, built once per response: territories in
- * the schedule's order holding their controls in register order, and the
- * crosswalk turned into an index from a control to the themes it sits in. */
 function buildModel(data) {
   const territories = data.frameworks.map((fw) => ({ fw, controls: [], by: {} }));
   const place = new Map();
@@ -60,7 +48,6 @@ function buildModel(data) {
   return { territories: territories.filter((t) => t.controls.length), byId, themes: data.themes, themesOf, total: byId.size };
 }
 
-/** Every control that shares a theme with `id`: its crosswalk partners. */
 function partnersOf(model, id) {
   const out = new Set();
   for (const ti of model.themesOf.get(id) || []) {
@@ -69,8 +56,6 @@ function partnersOf(model, id) {
   return out;
 }
 
-/** The place card's view of the partners: strongest first (most themes in
- * common), then the territories' order, and how many sit in each framework. */
 function partnerDetail(model, id) {
   const shared = new Map();
   const themes = model.themesOf.get(id) || [];
@@ -105,18 +90,14 @@ const SQUARE =
   "group-data-[big=true]/field:transition-none " +
   "group-data-[light=true]/field:[&:not([data-lit=true])]:opacity-[0.38] " +
   "data-[lit=true]:shadow-[0_0_0_1.5px_rgb(var(--accent)),0_0_8px_1px_rgb(var(--accent)/0.55)]";
-// Important, so they win over the global :focus-visible ring on the one
-// square the keyboard is on: that square is the probe, and this is its focus.
+// Important, to win over the global :focus-visible ring on the keyboard's square (the probe).
 const HOT = "!opacity-100 z-10 !outline !outline-2 !outline-offset-1 !outline-ink";
 const PINNED = "!opacity-100 z-10 !outline !outline-[length:3px] !outline-offset-1 !outline-ink";
 
-/** One control. Memoised, and fed only primitives besides the control itself,
- * so moving the pointer re-renders the few squares whose state changed and
- * not the thousand beside them. */
+/** Memoised and fed only primitives besides `c`: a pointer move must not re-render the other squares. */
 const Square = memo(function Square({ c, tab, lit, hot, pinned }) {
   const label = `${c.ref}, ${c.title}, ${CONTROL_STATUS[c.status]?.label || c.status}`;
-  // Not through cn(): tailwind-merge reads `outline` as a width, as in Tailwind
-  // 4, and would drop the style these classes need.
+  // Not through cn(): tailwind-merge reads `outline` as a width and would drop the style these classes need.
   const className = pinned ? `${SQUARE} ${PINNED}` : hot ? `${SQUARE} ${HOT}` : SQUARE;
   return (
     <button
@@ -139,15 +120,6 @@ const cidOf = (e) => {
   return el ? Number(el.dataset.cid) : null;
 };
 
-/** What the coverage atlas draws, and what it does with it.
- *
- * Every control is one small square, grouped into a territory per framework in
- * the schedule's order. Hovering or focusing a square lights the controls that
- * answer the same theme in any territory (its crosswalk partners) and dims
- * the rest; a click or Enter pins it and opens its place card. There are no
- * lines between squares: with a few hundred partners they would be a hairball,
- * and a lit square is something a keyboard can reach and a screen reader can
- * be told about. The field is one tab stop with arrow keys inside it. */
 export function CoverageAtlas({ data, loading, error, onRetry }) {
   const uid = useId();
   const fieldRef = useRef(null);
@@ -157,19 +129,14 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
   const [focusId, setFocusId] = useState(null);
   const [pinnedId, setPinnedId] = useState(null);
   const [rovingId, setRovingId] = useState(null);
-  // Escape puts the lights out even while a square still has focus.
   const [quiet, setQuiet] = useState(false);
 
   const model = useMemo(() => (data ? buildModel(data) : null), [data]);
 
-  // A refreshed response can drop a control the reader had pinned.
   useEffect(() => {
     if (model && pinnedId !== null && !model.byId.has(pinnedId)) setPinnedId(null);
   }, [model, pinnedId]);
 
-  // On a narrow page the selected-control card sits under the field, which can
-  // put it below the fold when a square is chosen: bring it into view, and only
-  // that far. Beside the field it is already where the reader is looking.
   useEffect(() => {
     const side = sideRef.current;
     const field = fieldRef.current;
@@ -187,8 +154,6 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
   }, [model, chips, chosen]);
   const shown = useMemo(() => (model ? model.territories.filter((t) => drawnIds.has(t.fw.id)) : []), [model, drawnIds]);
 
-  // Where each drawn control sits, for the arrow keys: its territory, its
-  // place inside it, and its place in the whole field.
   const { flat, where, counts } = useMemo(() => {
     const list = [];
     const at = new Map();
@@ -213,7 +178,6 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
   const pinned = model && pinnedId !== null ? model.byId.get(pinnedId) : null;
   const detail = useMemo(() => (pinned ? partnerDetail(model, pinned.id) : null), [model, pinned]);
   const probe = model && probeId !== null && probeId !== pinnedId ? model.byId.get(probeId) : null;
-  // Of the pinned control's partners, the ones in a territory that is drawn.
   const litDrawn = useMemo(() => (detail ? detail.list.reduce((n, p) => n + (where.has(p.id) ? 1 : 0), 0) : 0), [detail, where]);
   const tabId = rovingId !== null && where.has(rovingId) ? rovingId : flat[0]?.id;
 
@@ -240,8 +204,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
       case "ArrowLeft": next = flat[here.f - 1]; break;
       case "ArrowDown":
       case "ArrowUp": {
-        // As many columns as the territory is drawn with right now, which
-        // depends on the width of the page and not on anything stored.
+        // Columns come from the computed grid: they depend on the page width, not on stored state.
         const columns = getComputedStyle(e.target.parentElement).gridTemplateColumns.split(" ").length || 1;
         next = terr.controls[here.i + (e.key === "ArrowDown" ? columns : -columns)];
         break;
@@ -286,9 +249,14 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
     );
   }
 
-  const announce = pinned
-    ? `${pinned.ref} selected. ${detail.list.length === 0 ? "No other control answers the same theme." : `${detail.list.length.toLocaleString()} other ${detail.list.length === 1 ? "control answers" : "controls answer"} the same themes.`}`
-    : "";
+  let announce = "";
+  if (pinned) {
+    const n = detail.list.length;
+    const others = n === 0
+      ? "No other control answers the same theme."
+      : `${n.toLocaleString()} other ${n === 1 ? "control answers" : "controls answer"} the same themes.`;
+    announce = `${pinned.ref} selected. ${others}`;
+  }
 
   return (
     <Panel className="min-w-0">
@@ -340,7 +308,15 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
               </button>
             );
           })}
-          <button type="button" className="link ml-1" onClick={() => setChosen(drawnIds.size === model.territories.length ? defaultDrawn(model) : new Set(model.territories.map((t) => t.fw.id)))}>
+          <button
+            type="button"
+            className="link ml-1"
+            onClick={() =>
+              setChosen(
+                drawnIds.size === model.territories.length ? defaultDrawn(model) : new Set(model.territories.map((t) => t.fw.id))
+              )
+            }
+          >
             {drawnIds.size === model.territories.length ? `Draw the largest ${DEFAULT_DRAWN}` : "Draw all"}
           </button>
         </div>
@@ -436,7 +412,13 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
 
         <div ref={sideRef} role="group" aria-label="Selected control" className="dash-atlas-side flex min-w-0 flex-col gap-3">
           {pinned ? (
-            <PlaceCard control={pinned} detail={detail} litDrawn={litDrawn} onPick={pin} onClear={() => { setPinnedId(null); setQuiet(true); }} />
+            <PlaceCard
+              control={pinned}
+              detail={detail}
+              litDrawn={litDrawn}
+              onPick={pin}
+              onClear={() => { setPinnedId(null); setQuiet(true); }}
+            />
           ) : (
             <div className="rounded-xl border border-line border-t-2 border-t-accent bg-surface-2 p-4">
               <Label>Crosswalk</Label>
@@ -448,7 +430,9 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
                   </p>
                   <p className="mt-1 text-xs text-muted">
                     {probe.fw.name}, {CONTROL_STATUS[probe.status]?.label.toLowerCase()}.{" "}
-                    {partners.size === 0 ? "No other control answers the same theme." : `${partners.size.toLocaleString()} ${partners.size === 1 ? "control answers" : "controls answer"} the same themes.`}
+                    {partners.size === 0
+                      ? "No other control answers the same theme."
+                      : `${partners.size.toLocaleString()} ${partners.size === 1 ? "control answers" : "controls answer"} the same themes.`}
                   </p>
                 </>
               ) : (

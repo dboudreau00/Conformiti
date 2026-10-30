@@ -21,31 +21,25 @@ const GRID = "grid-cols-[110px_minmax(0,1fr)_120px_130px_130px_120px_80px]";
 export default function Controls({ me }) {
   const { refreshCounts } = useShell();
 
-  const [frameworks, setFrameworks] = useState(null); // null until loaded
+  const [frameworks, setFrameworks] = useState(null);
   const [wantedFramework, setFramework] = useState("all");
   const [status, setStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [controls, setControls] = useState([]);
-  // The framework `controls` was last fetched for, and a reference that a link
-  // asked to open once its register has arrived.
   const [loadedFor, setLoadedFor] = useState(null);
   const [openRef, setOpenRef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [exporting, setExporting] = useState(false);
-  // A failed load is not an empty catalogue: emptying the list would tell the reader
-  // to seed a framework they already have.
+  // A failed load is not an empty catalogue: showing it as one would tell the reader to seed a framework they have.
   const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  // The notice a failed controls fetch put up, so a later good fetch (another
-  // framework tab) can take it down again without touching other notices.
+  // The notice a failed controls fetch put up, so a later good fetch can clear just that one.
   const controlsNotice = useRef("");
 
-  // Pick-lists shared by every expanded row.
-  const [users, setUsers] = useState(null); // null = not loaded / unavailable
+  const [users, setUsers] = useState(null);
   const [docChoices, setDocChoices] = useState(null);
-  // Whether the server held back documents beyond the ones it listed.
   const [docsTruncated, setDocsTruncated] = useState(undefined);
   const [choicesError, setChoicesError] = useState("");
   const choicesRequested = useRef(false);
@@ -53,17 +47,12 @@ export default function Controls({ me }) {
   const canManage = !!me?.capabilities?.manage_frameworks;
   const canLink = canManage || !!me?.capabilities?.manage_documents;
 
-  // A link names a framework by key. One that is not in this workspace (retired,
-  // mistyped) shows every framework instead of asking the API for a register
-  // that does not exist.
+  // A link naming a framework this workspace lacks shows every framework instead of asking for a missing register.
   const framework =
     frameworks && wantedFramework !== "all" && !frameworks.some((f) => f.key === wantedFramework) ? "all" : wantedFramework;
 
-  // ?framework=<key> picks that framework's tab and ?search=<text> fills the
-  // search box, on arrival and whenever a link lands here again. A link
-  // replaces the view (the status filter goes back to every status, so the
-  // control it names is not hidden by an earlier choice), and a reference
-  // that matches exactly one control opens that control.
+  // A link replaces the view: ?framework= picks the tab, ?search= fills the box, and the status filter resets so an
+  // earlier choice cannot hide the control it names.
   useDeepLink((params) => {
     const key = params.get("framework");
     const text = params.get("search");
@@ -74,11 +63,8 @@ export default function Controls({ me }) {
     setOpenRef(text && text.trim() ? text.trim().toLowerCase() : null);
   });
 
-  // ---- data ----------------------------------------------------------------
   useEffect(() => {
     let alive = true;
-    // Paginated at 50, follow `next` so every framework reaches the filter
-    // (and the "all frameworks" fetch below covers the whole catalog).
     fetchAll("/frameworks/")
       .then((list) => {
         if (alive) setFrameworks(list);
@@ -128,8 +114,7 @@ export default function Controls({ me }) {
     };
   }, [framework, frameworks, attempt]);
 
-  // Opens the control a link named, once the register it belongs to is here.
-  // A reference that is in several frameworks, or in none, opens nothing.
+  // Opens the control a link named once its register is here; a reference in several frameworks, or none, opens nothing.
   useEffect(() => {
     if (openRef === null || loading || loadedFor !== framework) return;
     const hits = controls.filter((c) => String(c.control_id).toLowerCase() === openRef);
@@ -137,7 +122,6 @@ export default function Controls({ me }) {
     setOpenRef(null);
   }, [openRef, loading, loadedFor, framework, controls]);
 
-  // Owner pick-list: only needed by users who can reassign controls.
   useEffect(() => {
     if (!canManage) return;
     let alive = true;
@@ -173,7 +157,6 @@ export default function Controls({ me }) {
     if (expanded !== null && canLink) ensureChoices();
   }, [expanded, canLink, ensureChoices]);
 
-  // ---- writes --------------------------------------------------------------
   const patchControl = useCallback(
     async (id, patch) => {
       const { data } = await api.patch(`/controls/${id}/`, patch);
@@ -183,8 +166,6 @@ export default function Controls({ me }) {
     [refreshCounts]
   );
 
-  // A control's score after something moved it (evidence attached or unlinked),
-  // so the row and the breakdown open beneath it agree.
   const applyScore = useCallback((id, score) => {
     setControls((cs) => cs.map((c) => (c.id === id ? { ...c, ...score } : c)));
   }, []);
@@ -213,7 +194,6 @@ export default function Controls({ me }) {
     }
   }
 
-  // ---- derived -------------------------------------------------------------
   const statusCounts = useMemo(() => {
     const counts = { all: controls.length };
     for (const k of STATUS_KEYS) counts[k] = 0;
@@ -302,18 +282,13 @@ export default function Controls({ me }) {
 
           <Panel className="overflow-hidden">
             <PanelHeader title="Control register">
-              {/* Rendered, then loaded. The second number stays the whole
-                  register even while a filter is on, so this line still shows
-                  that every page of the API's results arrived; how many the
-                  filter matched is on the button at the foot of the list. */}
+              {/* The second number is the whole register, filter or not: it shows every page of results arrived. */}
               <Label className="tabular">
                 {ready ? `Showing ${page.shown.toLocaleString()} of ${controls.length.toLocaleString()}` : "Loading"}
               </Label>
             </PanelHeader>
 
             <div className="overflow-x-auto">
-              {/* Below this width the fixed columns leave the title nothing,
-                  so the register scrolls sideways instead (a phone). */}
               <div className={cn("grid min-w-[960px] items-center gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
                 {["Ref", "Control", "Framework", "Status", "Owner", "Readiness", "Evidence"].map((h) => (
                   <Label key={h} className={h === "Evidence" ? "text-right" : undefined}>
@@ -328,7 +303,12 @@ export default function Controls({ me }) {
                 <LoadError
                   what="The control register"
                   reason={loadFailed.reason}
-                  onRetry={() => { setLoadFailed(false); setPageError(""); setLoading(true); setAttempt((a) => a + 1); }}
+                  onRetry={() => {
+                    setLoadFailed(false);
+                    setPageError("");
+                    setLoading(true);
+                    setAttempt((a) => a + 1);
+                  }}
                 />
               ) : frameworks.length === 0 ? (
                 <Empty title="No frameworks yet" />
@@ -361,7 +341,16 @@ export default function Controls({ me }) {
                     <li>
                       <Empty title="No controls match these filters" />
                       <div className="pb-8 text-center">
-                        <Button size="sm" onClick={() => { setQuery(""); setStatus("all"); setFramework("all"); }}>Clear filters</Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setQuery("");
+                            setStatus("all");
+                            setFramework("all");
+                          }}
+                        >
+                          Clear filters
+                        </Button>
                       </div>
                     </li>
                   ) : null}
@@ -384,6 +373,7 @@ export default function Controls({ me }) {
 
 function ControlRow({ control, expanded, onToggle, children }) {
   const meta = CONTROL_STATUS[control.status] || { label: control.status, tone: "muted" };
+  const band = READINESS_BAND[control.readiness_band] || READINESS_BAND.not_started;
   const bodyId = `control-detail-${control.id}`;
   return (
     <motion.li
@@ -426,9 +416,7 @@ function ControlRow({ control, expanded, onToggle, children }) {
           ) : (
             <>
               <span className="tabular font-mono text-xs text-ink">{control.readiness_score}</span>
-              <Badge tone={(READINESS_BAND[control.readiness_band] || READINESS_BAND.not_started).tone}>
-                {(READINESS_BAND[control.readiness_band] || READINESS_BAND.not_started).label}
-              </Badge>
+              <Badge tone={band.tone}>{band.label}</Badge>
             </>
           )}
         </span>

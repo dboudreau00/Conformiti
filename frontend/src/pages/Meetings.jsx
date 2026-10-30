@@ -11,7 +11,6 @@ import { Meter } from "../components/ui/Meter.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 
-/** cadence_status vocabulary -> badge/meter tone. Unknown values read as behind. */
 const CADENCE = {
   complete: { label: "Complete", tone: "success" },
   on_track: { label: "On track", tone: "success" },
@@ -32,18 +31,14 @@ const EMPTY_SERIES = { name: "", required: "4", owner: "", description: "" };
 const EMPTY_SERIES_EDIT = { name: "", required: "4", owner: "", description: "", active: true };
 const EMPTY_MINUTE = { date: "", title: "", attendees: "", notes: "" };
 
-/**
- * "Required per year" as a whole number from 1 (yearly) to 52 (weekly), or
- * null for anything else. The forms are noValidate, so min/max on the input
- * enforce nothing, and a cleared field must not quietly become some default.
- */
+/** A whole number from 1 to 52, else null. The forms are noValidate, so min/max enforce nothing, and a cleared field
+ * must not become a default. */
 function parseRequired(v) {
   const n = Number(v);
   return Number.isInteger(n) && n >= 1 && n <= 52 ? n : null;
 }
 const REQUIRED_RANGE = "Required per year must be a whole number from 1 to 52.";
 
-/** What deleting a minute does to the cadence: only minutes dated this year count toward it. */
 function deleteConsequence(m) {
   const year = Number(String(m?.date || "").slice(0, 4));
   if (!year) return "This cannot be undone.";
@@ -60,6 +55,12 @@ function Notice({ msg, className }) {
       {msg.text}
     </div>
   );
+}
+
+function byDateDesc(a, b) {
+  if (a.date < b.date) return 1;
+  if (a.date > b.date) return -1;
+  return 0;
 }
 
 function Stat({ label, children, className }) {
@@ -100,7 +101,6 @@ export default function Meetings({ me }) {
   const [minuteBusy, setMinuteBusy] = useState(false);
   const [minuteMsg, setMinuteMsg] = useState(null);
   const [deletingMinute, setDeletingMinute] = useState(null);
-  // The notice above the minutes list: a deletion, or a file that would not open.
   const [listMsg, setListMsg] = useState(null);
 
   // Guards against a slow minutes response for a previously selected series overwriting the current one.
@@ -120,11 +120,9 @@ export default function Meetings({ me }) {
     setMinutesLoading(true);
     setMinutesErr("");
     try {
-      // Paginated at 50: follow `next` so a long-running series keeps every
-      // minute (and the cadence count stays truthful).
       const rows = await fetchAll(`/meeting-minutes/?series=${id}`);
       if (req !== minutesReq.current) return;
-      setMinutes([...rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)));
+      setMinutes([...rows].sort(byDateDesc));
     } catch (e) {
       if (req !== minutesReq.current) return;
       setMinutesErr(errorText(e, "The minutes for this series couldn't be loaded."));
@@ -156,8 +154,7 @@ export default function Meetings({ me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The user directory is only needed for the owner pickers on the new-series and edit-series forms.
-  // A failed load is remembered so the edit form can say why its picker offers no one else.
+  // Only the owner pickers need the directory; a failed load is remembered so the edit form can say why.
   useEffect(() => {
     if (!canEdit) return;
     fetchAll("/users/")
@@ -272,16 +269,13 @@ export default function Meetings({ me }) {
     }
   }
 
-  // ConfirmDialog stays open on a throw and shows its message, so a failure is
-  // thrown as the sentence to read, not as axios's "Request failed with status code".
+  // ConfirmDialog stays open on a throw and shows its message, so failures throw a readable sentence, not axios's.
   async function deleteMinute(m) {
     let alreadyGone = false;
     try {
       await api.delete(`/meeting-minutes/${m.id}/`);
     } catch (ex) {
-      // A 404 means another tab or another manager deleted it first. What was
-      // asked for is already true, so refresh the list instead of leaving a row
-      // whose Delete can only ever fail.
+      // 404: deleted first elsewhere. The outcome holds, so refresh instead of leaving a row whose Delete can only fail.
       if (ex?.response?.status !== 404) throw new Error(errorText(ex, "The minutes couldn't be deleted. Please try again."));
       alreadyGone = true;
     }
@@ -296,9 +290,6 @@ export default function Meetings({ me }) {
     await loadSeries(m.series, true);
   }
 
-  // Minutes are stored files, so this can meet a server that hands them to
-  // an nginx that is not there. The notice says so (naming
-  // MEDIA_INTERNAL=false) instead of the button doing nothing.
   async function openMinutesFile(m) {
     setListMsg(null);
     try {
@@ -309,9 +300,8 @@ export default function Meetings({ me }) {
   }
 
   const activeStatus = active ? CADENCE[active.cadence_status] || CADENCE.behind : null;
-  // A controlled select whose value matches no option shows its first one, "Unassigned",
-  // while Save re-sends the real owner. Keep an option for the saved owner even when the
-  // directory failed to load or does not list them.
+  // A select whose value matches no option shows its first ("Unassigned") while Save re-sends the real owner, so the
+  // saved owner always gets an option.
   const savedOwnerMissing = !!active?.owner && !users.some((u) => u.id === active.owner);
   const detailKey = loading ? "loading" : active ? `series-${active.id}` : "none";
 
@@ -336,7 +326,7 @@ export default function Meetings({ me }) {
           </StackItem>
         ) : null}
 
-        {/* Cadence list: first in DOM (it is the navigation), on the right at desktop widths. */}
+        {/* First in the DOM (it is the navigation), shown on the right at desktop widths via order. */}
         <StackItem className="col-span-12 lg:order-2 lg:col-span-4">
           <Panel className="overflow-hidden">
             <PanelHeader title="Meeting cadences" meta={canEdit ? undefined : `${series.length} series`}>
@@ -515,11 +505,9 @@ export default function Meetings({ me }) {
                 })}
               </ul>
             )}
-
           </Panel>
         </StackItem>
 
-        {/* Selected series: minutes as evidence, plus the recording form for document managers. */}
         <StackItem className="col-span-12 lg:order-1 lg:col-span-8">
           <AnimatePresence mode="wait">
             <motion.div
@@ -642,7 +630,13 @@ export default function Meetings({ me }) {
                         </label>
                         <Notice msg={seriesEditMsg} />
                         <div className="flex justify-end gap-2">
-                          <Button type="button" size="sm" variant="ghost" onClick={() => setEditingSeries(false)} disabled={seriesEditBusy}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEditingSeries(false)}
+                            disabled={seriesEditBusy}
+                          >
                             Cancel
                           </Button>
                           <Button type="submit" size="sm" variant="primary" disabled={seriesEditBusy || !es.name.trim()}>

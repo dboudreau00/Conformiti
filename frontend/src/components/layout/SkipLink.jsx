@@ -1,6 +1,4 @@
-/** First tab stop on every shell page: jumps past the bar to the page's <main>.
- * It focuses the element instead of following the hash, so the address bar
- * does not gain "#main" and the router is not asked about it. */
+/** Focuses <main> instead of following the hash, so the address bar gains no "#main" and the router is not asked. */
 export function SkipLink() {
   return (
     <a

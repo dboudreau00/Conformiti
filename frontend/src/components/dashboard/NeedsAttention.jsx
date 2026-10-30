@@ -32,10 +32,7 @@ function ArrowLink({ to, href, children }) {
   );
 }
 
-/** What wants somebody's attention this week, one cell each: overdue reviews,
- * open risk, how much of the register has evidence behind it, and the
- * documents those reviews are of. A figure whose source did not load shows a
- * dash, not a zero: unknown is not empty. */
+/** A figure whose source did not load shows a dash, not a zero: unknown is not empty. */
 export function NeedsAttention({ overdue, due30, risks, controls, docs, docTotal }) {
   const total = controls?.total || 0;
   const withEvidence = controls?.with_evidence || 0;

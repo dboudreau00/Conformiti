@@ -10,8 +10,6 @@ import { NavIcon } from "./NavIcon.jsx";
 
 const K_RAIL = "nav.side.rail";
 const K_SEEN = "nav.side.seen";
-// Below this width a 240px menu would leave the page too little, so the rail
-// is used whatever was chosen.
 const NARROW = "(max-width: 1099px)";
 
 const store = {
@@ -46,8 +44,7 @@ function SideItem({ item, pathname, rail, counts }) {
         )}
       >
         {active ? (
-          // Travels only when the page changes: left to measure on every
-          // render, collapsing the menu would slide it across the rail.
+          // layoutDependency: travel only when the page changes, not when the menu collapses.
           <motion.span
             layoutId="nav-active-pill"
             layoutDependency={pathname}
@@ -58,18 +55,18 @@ function SideItem({ item, pathname, rail, counts }) {
         ) : null}
         <NavIcon name={item.icon} className="relative h-4 w-4 shrink-0" />
         {rail ? null : <span className="relative min-w-0 flex-1 truncate">{item.label}</span>}
-        {rail ? null : <NavCount kind={item.badge} value={item.badge ? counts[item.badge] : undefined} className={cn("relative", active && "bg-accent-ink/20 text-accent-ink ring-0")} />}
+        {rail ? null : (
+          <NavCount
+            kind={item.badge}
+            value={item.badge ? counts[item.badge] : undefined}
+            className={cn("relative", active && "bg-accent-ink/20 text-accent-ink ring-0")}
+          />
+        )}
       </NavLink>
     </li>
   );
 }
 
-/** The left menu. It holds only what the top bar does not: every section
- * beyond Workspace, Governance and Account (an add-on's sections), and the
- * items an add-on appends to Account, which sit at the foot. A core-only
- * install and an external auditor have none of that, so there is no menu, no
- * rail and no reserved width. Collapses to an icon rail (kept per browser) and is a rail below
- * 1100px; under 768px it is part of the Menu sheet instead. */
 export function SideMenu() {
   const { me, counts } = useShell();
   const { side, foot } = useShellNav();
@@ -78,9 +75,7 @@ export function SideMenu() {
   const [pref, setPref] = useState(() => store.get(K_RAIL) === "1");
   const present = side.length > 0 || foot.length > 0;
 
-  // Until /users/me/ answers there is no way to know whether the menu exists,
-  // and drawing it only then shifts the whole page sideways. The last answer
-  // is remembered so the space is held while it is asked.
+  // Remembers whether the menu existed, so its space is held until /users/me/ answers (no layout shift).
   useEffect(() => {
     if (me) store.set(K_SEEN, present ? "1" : "0");
   }, [me, present]);
@@ -107,7 +102,12 @@ export function SideMenu() {
         width
       )}
     >
-      <div className={cn("flex min-h-[62px] items-center gap-2.5 border-b border-line", rail ? "flex-col justify-center gap-1.5 px-0 py-3" : "py-3.5 pl-3.5 pr-2.5")}>
+      <div
+        className={cn(
+          "flex min-h-[62px] items-center gap-2.5 border-b border-line",
+          rail ? "flex-col justify-center gap-1.5 px-0 py-3" : "py-3.5 pl-3.5 pr-2.5"
+        )}
+      >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-accent/[0.14] text-accent ring-1 ring-inset ring-accent/35" aria-hidden="true">
           <GemIcon className="h-4 w-4" strokeWidth={1.75} />
         </span>
@@ -129,7 +129,11 @@ export function SideMenu() {
               !rail && "ml-auto"
             )}
           >
-            {pref ? <ChevronsRightIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" /> : <ChevronsLeftIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />}
+            {pref ? (
+              <ChevronsRightIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+            ) : (
+              <ChevronsLeftIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+            )}
           </button>
         )}
       </div>
@@ -148,8 +152,6 @@ export function SideMenu() {
       ) : null}
 
       {foot.length ? (
-        // At the foot under a menu of sections; straight under the head when
-        // the foot is all there is (an add-on that has no sections to show).
         <nav aria-label={`${title} account`} className={cn("px-2.5 py-1.5", side.length > 0 && "border-t border-line")}>
           <ul>
             {foot.map((item) => <SideItem key={item.id} item={item} pathname={pathname} rail={rail} counts={counts} />)}

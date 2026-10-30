@@ -1,12 +1,3 @@
-/**
- * The auditor's request list ("prepared by client") for one package or, with
- * `mine`, every line assigned to the signed-in person across packages, which
- * is how a control owner with no package access answers what they were
- * asked for.
- *
- * Which buttons appear is decided by the server (`can` on each line), so the
- * screen never offers an action the API will refuse.
- */
 import { useEffect, useState } from "react";
 import { DownloadIcon, FileTextIcon, PaperclipIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../../api/client.js";
@@ -26,6 +17,8 @@ const STATUS = {
 const EMPTY = { title: "", description: "", package_control: "", assignee: "", due_date: "", priority: "normal" };
 const DATE = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
+/** Request list for `pkg`, or with `mine` every line assigned to the signed-in person. Buttons follow the
+ * server's per-line `can` flags. */
 export function PbcList({ pkg, mine = false, controls = [], canRaise = false, canAssemble = false, onOpen, onMessage }) {
   const { ask, confirmDialog } = useConfirm();
   const [rows, setRows] = useState(null);
@@ -106,22 +99,27 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     }, "Request raised.");
   };
 
-  // Both notes are written into the request's record and read by the other
-  // side; they are asked for in a dialog, not a browser prompt.
-  const [asking, setAsking] = useState(null); // { kind: "provide" | "return", request }
+  const [asking, setAsking] = useState(null);
   const provide = (r) => setAsking({ kind: "provide", request: r });
   const accept = (r) => act(`accept-${r.id}`, () => api.post(`/pbc-requests/${r.id}/accept/`), `${r.reference} accepted.`);
   const giveBack = (r) => setAsking({ kind: "return", request: r });
   const submitNote = async (note) => {
     const r = asking.request;
-    // `act` reports a failure in the page notice and resolves; the dialog
-    // needs the failure too, so the note stays on screen to be corrected.
+    // act reports a failure in the page notice and resolves; the dialog needs it too, so the note stays to be corrected.
     let failed = null;
     const guard = (fn) => async () => { try { await fn(); } catch (e) { failed = e; throw e; } };
     if (asking.kind === "provide") {
-      await act(`provide-${r.id}`, guard(() => api.post(`/pbc-requests/${r.id}/provide/`, { response_note: note })), `${r.reference} marked provided.`);
+      await act(
+        `provide-${r.id}`,
+        guard(() => api.post(`/pbc-requests/${r.id}/provide/`, { response_note: note })),
+        `${r.reference} marked provided.`
+      );
     } else {
-      await act(`return-${r.id}`, guard(() => api.post(`/pbc-requests/${r.id}/return/`, { returned_note: note })), `${r.reference} returned.`);
+      await act(
+        `return-${r.id}`,
+        guard(() => api.post(`/pbc-requests/${r.id}/return/`, { returned_note: note })),
+        `${r.reference} returned.`
+      );
     }
     if (failed) throw new Error(errorText(failed));
   };
@@ -129,8 +127,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     title: `Withdraw ${r.reference}?`,
     description: "The line stays on the list, marked withdrawn.",
     confirmLabel: "Withdraw the request",
-    // Rethrown for the same reason as the notes: `act` resolves on a failure,
-    // which would close the dialog as if the withdrawal had gone through.
+    // Rethrown like the notes: act resolves on failure, which would close the dialog as if the withdrawal went through.
     onConfirm: async () => {
       let failed = null;
       await act(`withdraw-${r.id}`, async () => {
@@ -148,8 +145,6 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     }, "Document attached.");
   };
   const detach = (r, item) => act(`detach-${item.id}`, () => api.delete(`/pbc-items/${item.id}/`));
-  // A refused or failed export says so in the page notice, as the other
-  // exports do, rather than the button doing nothing.
   const exportCsv = async () => {
     try {
       await downloadFile(`/pbc-requests/export/?package=${pkg.id}`, "pbc-requests.csv");
@@ -189,11 +184,14 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   }, { overdue: 0 });
   const title = mine ? "Auditor requests assigned to you" : "Request list";
   const id = (k) => `pbc-${k}`;
+  let meta = "";
+  if (failed) meta = "- lines";
+  else if (rows) meta = `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}`;
 
   return (
     <Panel className="overflow-hidden" aria-label={title} role="region">
       {confirmDialog}
-      <PanelHeader className="flex-wrap" title={title} meta={failed ? "- lines" : rows ? `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}` : ""}>
+      <PanelHeader className="flex-wrap" title={title} meta={meta}>
         <span className="flex items-center gap-2">
           {!mine && rows && rows.length ? (
             <Button size="sm" variant="ghost" onClick={exportCsv}
@@ -223,19 +221,35 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
           </div>
           <div>
             <label htmlFor={id("control")} className="field-label">Control</label>
-            <select id={id("control")} className="input" value={form.package_control} onChange={(e) => setForm({ ...form, package_control: e.target.value })}>
+            <select
+              id={id("control")}
+              className="input"
+              value={form.package_control}
+              onChange={(e) => setForm({ ...form, package_control: e.target.value })}
+            >
               <option value="">Not tied to a control</option>
               {controls.map((c) => <option key={c.id} value={c.id}>{c.control_ref}: {c.title}</option>)}
             </select>
           </div>
           <div>
             <label htmlFor={id("due")} className="field-label">Due</label>
-            <input id={id("due")} type="date" className="input" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+            <input
+              id={id("due")}
+              type="date"
+              className="input"
+              value={form.due_date}
+              onChange={(e) => setForm({ ...form, due_date: e.target.value })}
+            />
           </div>
           {canAssemble ? (
             <div>
               <label htmlFor={id("assignee")} className="field-label">Assign to</label>
-              <select id={id("assignee")} className="input" value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
+              <select
+                id={id("assignee")}
+                className="input"
+                value={form.assignee}
+                onChange={(e) => setForm({ ...form, assignee: e.target.value })}
+              >
                 <option value="">Nobody yet</option>
                 {(users || []).map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
               </select>
@@ -243,7 +257,12 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
           ) : null}
           <div>
             <label htmlFor={id("priority")} className="field-label">Priority</label>
-            <select id={id("priority")} className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+            <select
+              id={id("priority")}
+              className="input"
+              value={form.priority}
+              onChange={(e) => setForm({ ...form, priority: e.target.value })}
+            >
               <option value="normal">Normal</option>
               <option value="high">High</option>
             </select>
@@ -296,7 +315,11 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                 {r.response_note ? (
                   <p className="mt-2 text-xs leading-snug text-muted"><span className="text-faint">Answer: </span>{r.response_note}</p>
                 ) : null}
-                {r.accepted_at ? <Label className="mt-1 block whitespace-normal">Accepted by {r.accepted_by_name} · {DATE(r.accepted_at)}</Label> : null}
+                {r.accepted_at ? (
+                  <Label className="mt-1 block whitespace-normal">
+                    Accepted by {r.accepted_by_name} · {DATE(r.accepted_at)}
+                  </Label>
+                ) : null}
 
                 {(r.items || []).length ? (
                   <ul className="mt-2 flex flex-wrap gap-1.5">
@@ -323,9 +346,14 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                   <form onSubmit={(e) => attachDoc(e, r)} className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                     <div>
                       <label htmlFor={id(`doc-${r.id}`)} className="field-label">Document</label>
-                      <select id={id(`doc-${r.id}`)} className="input input-sm" required value={attach.document} onChange={(e) => setAttach({ ...attach, document: e.target.value })}>
+                      <select
+                        id={id(`doc-${r.id}`)}
+                        className="input input-sm"
+                        required
+                        value={attach.document}
+                        onChange={(e) => setAttach({ ...attach, document: e.target.value })}
+                      >
                         <option value="">{docs === null ? "Loading…" : "Choose a document you can see…"}</option>
-                        {/* One already attached here would only be refused as a duplicate. */}
                         {(docs || []).filter((d) => !(r.items || []).some((i) => i.document === d.id)).map((d) => (
                           <option key={d.id} value={d.id}>{d.name}{d.control_id ? ` (${d.control_id})` : ""}</option>
                         ))}
@@ -333,10 +361,17 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                     </div>
                     <div>
                       <label htmlFor={id(`note-${r.id}`)} className="field-label">Note (optional)</label>
-                      <input id={id(`note-${r.id}`)} className="input input-sm" value={attach.note} onChange={(e) => setAttach({ ...attach, note: e.target.value })} />
+                      <input
+                        id={id(`note-${r.id}`)}
+                        className="input input-sm"
+                        value={attach.note}
+                        onChange={(e) => setAttach({ ...attach, note: e.target.value })}
+                      />
                     </div>
                     <div className="flex items-end gap-1.5">
-                      <Button type="submit" size="sm" variant="primary" disabled={!attach.document || busy === `attach-${r.id}`}>Attach</Button>
+                      <Button type="submit" size="sm" variant="primary" disabled={!attach.document || busy === `attach-${r.id}`}>
+                        Attach
+                      </Button>
                       <Button type="button" size="sm" variant="ghost" onClick={() => setAttachTo(null)}>Cancel</Button>
                     </div>
                   </form>
@@ -346,18 +381,34 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                   <form onSubmit={(e) => saveEdit(e, r)} className="mt-2 grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_120px_auto]">
                     <div>
                       <label htmlFor={id(`edit-due-${r.id}`)} className="field-label">Due</label>
-                      <input id={id(`edit-due-${r.id}`)} type="date" className="input input-sm" value={editing.due_date} onChange={(e) => setEditing({ ...editing, due_date: e.target.value })} />
+                      <input
+                        id={id(`edit-due-${r.id}`)}
+                        type="date"
+                        className="input input-sm"
+                        value={editing.due_date}
+                        onChange={(e) => setEditing({ ...editing, due_date: e.target.value })}
+                      />
                     </div>
                     <div>
                       <label htmlFor={id(`edit-assignee-${r.id}`)} className="field-label">Assign to</label>
-                      <select id={id(`edit-assignee-${r.id}`)} className="input input-sm" value={editing.assignee} onChange={(e) => setEditing({ ...editing, assignee: e.target.value })}>
+                      <select
+                        id={id(`edit-assignee-${r.id}`)}
+                        className="input input-sm"
+                        value={editing.assignee}
+                        onChange={(e) => setEditing({ ...editing, assignee: e.target.value })}
+                      >
                         <option value="">Nobody</option>
                         {(users || []).map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
                       </select>
                     </div>
                     <div>
                       <label htmlFor={id(`edit-priority-${r.id}`)} className="field-label">Priority</label>
-                      <select id={id(`edit-priority-${r.id}`)} className="input input-sm" value={editing.priority} onChange={(e) => setEditing({ ...editing, priority: e.target.value })}>
+                      <select
+                        id={id(`edit-priority-${r.id}`)}
+                        className="input input-sm"
+                        value={editing.priority}
+                        onChange={(e) => setEditing({ ...editing, priority: e.target.value })}
+                      >
                         <option value="normal">Normal</option>
                         <option value="high">High</option>
                       </select>
@@ -376,7 +427,11 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                       Attach document
                     </Button>
                   ) : null}
-                  {can.answer ? <Button size="sm" variant="primary" disabled={busy === `provide-${r.id}`} onClick={() => provide(r)}>Mark provided</Button> : null}
+                  {can.answer ? (
+                    <Button size="sm" variant="primary" disabled={busy === `provide-${r.id}`} onClick={() => provide(r)}>
+                      Mark provided
+                    </Button>
+                  ) : null}
                   {can.judge ? (
                     <>
                       <Button size="sm" variant="primary" disabled={busy === `accept-${r.id}`} onClick={() => accept(r)}>Accept</Button>
@@ -384,9 +439,26 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                     </>
                   ) : null}
                   {can.edit && canAssemble && !(editing && editing.id === r.id) ? (
-                    <Button size="sm" variant="ghost" onClick={() => setEditing({ id: r.id, due_date: r.due_date || "", assignee: r.assignee ? String(r.assignee) : "", priority: r.priority })}>Edit</Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setEditing({
+                          id: r.id,
+                          due_date: r.due_date || "",
+                          assignee: r.assignee ? String(r.assignee) : "",
+                          priority: r.priority,
+                        })
+                      }
+                    >
+                      Edit
+                    </Button>
                   ) : null}
-                  {can.withdraw ? <Button size="sm" variant="ghost" disabled={busy === `withdraw-${r.id}`} onClick={() => withdraw(r)}>Withdraw</Button> : null}
+                  {can.withdraw ? (
+                    <Button size="sm" variant="ghost" disabled={busy === `withdraw-${r.id}`} onClick={() => withdraw(r)}>
+                      Withdraw
+                    </Button>
+                  ) : null}
                 </div>
               </li>
             );
@@ -400,7 +472,6 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
         description={asking?.kind !== "return" && !(asking?.request?.items || []).length
           ? "Nothing is attached to this request."
           : undefined}
-        // Required in both of these cases, so the label says what to write.
         label={asking?.kind === "return"
           ? "What is missing or wrong"
           : !(asking?.request?.items || []).length ? "Why it is answered without a document" : "Note"}

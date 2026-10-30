@@ -5,10 +5,6 @@ import { cn } from "../../utils/cn.js";
 import { Label } from "../ui/Panel.jsx";
 import { Menu, MenuItem, Popover } from "../ui/Popover.jsx";
 
-/** Theme pack and accent, the same two choices the Settings page offers. A
- * menu of radio items: the keyboard model is the shared one, and a pick keeps
- * the panel open so a pack and an accent can be tried together. Custom colours
- * and Reset stay on the Settings page. */
 export function AppearanceMenu() {
   const { theme, accent, setTheme, setAccent } = useTheme();
   const activeTheme = THEME_PACKS.find((t) => t.id === theme) ?? THEME_PACKS[2];
@@ -39,7 +35,11 @@ export function AppearanceMenu() {
             </span>
             <span className="absolute -bottom-[5px] -right-[5px] h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-surface" />
           </span>
-          <ChevronDownIcon className={cn("h-3.5 w-3.5 text-muted transition-transform duration-150 ease-out", open && "rotate-180")} strokeWidth={2} aria-hidden="true" />
+          <ChevronDownIcon
+            className={cn("h-3.5 w-3.5 text-muted transition-transform duration-150 ease-out", open && "rotate-180")}
+            strokeWidth={2}
+            aria-hidden="true"
+          />
         </button>
       )}
     >

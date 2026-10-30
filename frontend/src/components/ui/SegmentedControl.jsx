@@ -2,15 +2,8 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "../../utils/cn.js";
 
-/**
- * options: [{id, label, count?}]
- *
- * `collapseAfter`: with more options than this, only the first few (and the
- * selected one) are shown, with a "+N more" tab that opens the rest. A
- * programme with twenty-five frameworks otherwise turns the strip into a
- * five-line wall. Each label stays on one line and is cut with an ellipsis,
- * the full name in its tooltip.
- */
+/** options: [{id, label, count?}]. With more than `collapseAfter` options only the first few and the
+ * selected one show, behind a "+N more" button. */
 export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel, className, collapseAfter }) {
   const [open, setOpen] = useState(false);
   const collapsible = collapseAfter && options.length > collapseAfter + 1;
@@ -22,8 +15,7 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
     if (selected && !shown.includes(selected)) shown = [...shown, selected];
     hidden = options.length - shown.length;
   }
-  // The strip is one box; the tab list inside it holds tabs and nothing else,
-  // so the "+N more" button, which is not a tab, sits beside it.
+  // The tablist holds only tabs, so the "+N more" button sits beside it, not inside.
   return (
     <div
       className={cn(
@@ -33,35 +25,35 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
       )}
     >
       <div role="tablist" aria-label={ariaLabel} className={cn("flex items-center gap-0.5", collapsible && open && "flex-wrap")}>
-      {shown.map((opt) => {
-        const active = opt.id === value;
-        return (
-          <button
-            key={opt.id}
-            role="tab"
-            aria-selected={active}
-            type="button"
-            title={opt.label}
-            onClick={() => onChange(opt.id)}
-            className={cn(
-              "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium",
-              "transition-colors duration-150 ease-out",
-              active ? "text-ink" : "text-muted hover:text-ink"
-            )}
-          >
-            {active ? (
-              <motion.span
-                layoutId={layoutId}
-                className="absolute inset-0 rounded-md border border-line bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.06)]"
-                transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.6 }}
-                aria-hidden="true"
-              />
-            ) : null}
-            <span className="relative max-w-[14rem] truncate whitespace-nowrap">{opt.label}</span>
-            {opt.count !== undefined ? <span className="tabular relative font-mono text-2xs text-faint">{opt.count}</span> : null}
-          </button>
-        );
-      })}
+        {shown.map((opt) => {
+          const active = opt.id === value;
+          return (
+            <button
+              key={opt.id}
+              role="tab"
+              aria-selected={active}
+              type="button"
+              title={opt.label}
+              onClick={() => onChange(opt.id)}
+              className={cn(
+                "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium",
+                "transition-colors duration-150 ease-out",
+                active ? "text-ink" : "text-muted hover:text-ink"
+              )}
+            >
+              {active ? (
+                <motion.span
+                  layoutId={layoutId}
+                  className="absolute inset-0 rounded-md border border-line bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.06)]"
+                  transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.6 }}
+                  aria-hidden="true"
+                />
+              ) : null}
+              <span className="relative max-w-[14rem] truncate whitespace-nowrap">{opt.label}</span>
+              {opt.count !== undefined ? <span className="tabular relative font-mono text-2xs text-faint">{opt.count}</span> : null}
+            </button>
+          );
+        })}
       </div>
       {collapsible ? (
         <button
@@ -77,9 +69,6 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
   );
 }
 
-/** Pill filter chip (status filters etc.). `disabled` shows a choice that
- * cannot be changed here, still readable, rather than a button that does
- * nothing. */
 export function Chip({ active, onClick, tone, count, disabled, children, className }) {
   return (
     <button

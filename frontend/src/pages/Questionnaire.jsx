@@ -1,9 +1,3 @@
-/**
- * The vendor's side of the security questionnaire: a public page reached from
- * the emailed link, outside the signed-in shell. It shows the questions, keeps
- * a draft, and submits once. Nothing else of the product is reachable from
- * here: the token is the only credential and it opens exactly this.
- */
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
@@ -43,6 +37,7 @@ const CLOSED = {
   error: ["Something went wrong", "Try again in a moment."],
 };
 
+// Public page behind the emailed link, outside the signed-in shell: the token is the only credential and opens only this.
 export default function Questionnaire() {
   const { token } = useParams();
   const [state, setState] = useState({ status: "loading" });
@@ -161,8 +156,14 @@ export default function Questionnaire() {
                         {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
                           <Chip key={k} active={answers[q.id]?.answer === k} onClick={() => setAnswer(q.id, { answer: k })}>{l}</Chip>
                         ))}
-                        <input className="input input-sm w-48" placeholder="Note" aria-label={`Note for: ${q.text}`} maxLength={1000}
-                               value={answers[q.id]?.note || ""} onChange={(e) => setAnswer(q.id, { note: e.target.value })} />
+                        <input
+                          className="input input-sm w-48"
+                          placeholder="Note"
+                          aria-label={`Note for: ${q.text}`}
+                          maxLength={1000}
+                          value={answers[q.id]?.note || ""}
+                          onChange={(e) => setAnswer(q.id, { note: e.target.value })}
+                        />
                       </div>
                     </li>
                   ))}
@@ -173,19 +174,44 @@ export default function Questionnaire() {
         </Panel>
 
         <Panel className="p-5">
-          {msg ? <div className={msg.ok ? "notice notice-ok mb-4" : "notice notice-err mb-4"} role={msg.ok ? "status" : "alert"}>{msg.text}</div> : null}
+          {msg ? (
+            <div className={msg.ok ? "notice notice-ok mb-4" : "notice notice-err mb-4"} role={msg.ok ? "status" : "alert"}>
+              {msg.text}
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="q-name" className="field-label">Your name</label>
-              <input id="q-name" className="input" required maxLength={160} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+              <input
+                id="q-name"
+                className="input"
+                required
+                maxLength={160}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="name"
+              />
             </div>
             <div>
               <label htmlFor="q-title" className="field-label">Your role (optional)</label>
-              <input id="q-title" className="input" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="CISO" autoComplete="organization-title" />
+              <input
+                id="q-title"
+                className="input"
+                maxLength={160}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="CISO"
+                autoComplete="organization-title"
+              />
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button type="button" variant="primary" onClick={() => setConfirming(true)} disabled={busy || !name.trim() || answered === 0}>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setConfirming(true)}
+              disabled={busy || !name.trim() || answered === 0}
+            >
               {busy ? "Sending…" : "Submit questionnaire"}
             </Button>
             <Button type="button" onClick={saveDraft} disabled={busy}>Save draft</Button>

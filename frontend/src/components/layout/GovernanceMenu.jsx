@@ -7,14 +7,6 @@ import { Popover } from "../ui/Popover.jsx";
 import { NavCount, TAB_CLASS } from "./NavParts.jsx";
 import { NavIcon } from "./NavIcon.jsx";
 
-/** The Governance section as one tab. It opens a two-column panel of every
- * Governance page with its icon and live count. When the page you
- * are on is one of them the tab is the active one and names it, so the bar
- * still says where you are with the panel closed.
- *
- * The panel hangs from the bar's lower edge rather than from the button, so
- * the root is static and the sticky header is what it is positioned against.
- * Its links take the arrow keys in reading order (a row down is two cells). */
 export function GovernanceMenu() {
   const { counts } = useShell();
   const { governance } = useShellNav();
@@ -27,6 +19,7 @@ export function GovernanceMenu() {
       label="Governance"
       role="group"
       align="none"
+      // Static root: the panel is positioned against the sticky header, not the button.
       className="static flex h-full min-w-0"
       panelClassName="left-3 top-full w-[704px] max-w-[calc(100vw-24px)] rounded-b-[14px] rounded-t-none"
       trigger={(p, { open }) => (
@@ -38,7 +31,11 @@ export function GovernanceMenu() {
               <span className="min-w-0 max-w-[160px] truncate text-ink">{current.label}</span>
             </>
           ) : null}
-          <ChevronDownIcon className={cn("h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-150 ease-out", open && "rotate-180")} strokeWidth={2} aria-hidden="true" />
+          <ChevronDownIcon
+            className={cn("h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-150 ease-out", open && "rotate-180")}
+            strokeWidth={2}
+            aria-hidden="true"
+          />
         </button>
       )}
     >

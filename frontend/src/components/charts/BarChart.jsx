@@ -13,13 +13,23 @@ export function BarChart({ bars, height = 150, unit = "", tone = "accent", class
     <div className={cn("w-full", className)} role="img" aria-label={ariaLabel}>
       <div className="relative" style={{ height }}>
         {ticks.map((t) => (
-          <div key={t} className="absolute left-0 right-0 border-t border-dashed border-line" style={{ bottom: `${t * 100}%` }} aria-hidden="true" />
+          <div
+            key={t}
+            className="absolute left-0 right-0 border-t border-dashed border-line"
+            style={{ bottom: `${t * 100}%` }}
+            aria-hidden="true"
+          />
         ))}
         <div className="absolute inset-0 flex items-end gap-2">
           {bars.map((bar, i) => {
             const isActive = active === bar.label;
             return (
-              <div key={bar.label} className="group relative flex h-full flex-1 items-end" onMouseEnter={() => setActive(bar.label)} onMouseLeave={() => setActive(null)}>
+              <div
+                key={bar.label}
+                className="group relative flex h-full flex-1 items-end"
+                onMouseEnter={() => setActive(bar.label)}
+                onMouseLeave={() => setActive(null)}
+              >
                 <motion.div
                   className="w-full rounded-t-[4px]"
                   style={{ backgroundColor: toneVar(bar.tone ?? tone, isActive ? 1 : 0.82) }}

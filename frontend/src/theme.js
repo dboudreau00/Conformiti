@@ -1,8 +1,5 @@
-// Theme engine: a theme *pack* (surfaces, ink, status colours) plus an accent
-// *pack* (primary actions, active nav, highlights), persisted in localStorage
-// and applied by swapping data-theme / data-accent on <html>. The tokens live
-// in src/styles/index.css; /theme-init.js applies the saved values before the
-// first paint. `useTheme()` keeps React components in sync.
+// Saved in localStorage and applied as data-theme / data-accent on <html>. public/theme-init.js mirrors this before
+// first paint: keep the keys, ids and the custom-accent arithmetic in step.
 import { useEffect, useState } from "react";
 import { CHECK, SHIELD, SHIELD_LEFT } from "./brand.js";
 
@@ -23,9 +20,9 @@ export const ACCENT_PACKS = [
 export const DEFAULT_THEME = "ledger-dark";
 export const DEFAULT_ACCENT = "azure";
 
-// Names used by the pre-0.2 pages; kept so every page keeps compiling while
-// it is ported to THEME_PACKS / ACCENT_PACKS.
-export const THEMES = THEME_PACKS.map((t) => ({ id: t.id, label: t.name, mode: t.mode.toLowerCase(), swatch: t.swatch[1], bg: t.swatch[0] }));
+export const THEMES = THEME_PACKS.map((t) => ({
+  id: t.id, label: t.name, mode: t.mode.toLowerCase(), swatch: t.swatch[1], bg: t.swatch[0],
+}));
 export const ACCENT_PRESETS = ACCENT_PACKS.map((a) => ({ name: a.name, hex: a.hex }));
 
 const LEGACY_THEMES = { blazor: "nimbus", "blazor-dark": "obsidian" };
@@ -61,7 +58,6 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** Resolve the accent's hex for swatches (custom or pack). */
 export function accentHex(id = getAccent()) {
   if (isHex(id)) return id;
   return (ACCENT_PACKS.find((a) => a.id === id) || ACCENT_PACKS[1]).hex;
@@ -73,7 +69,6 @@ const tripleToHex = (triple) => `#${triple.trim().split(/\s+/).map((n) => Number
 const isTriple = (value) => /^\s*\d+\s+\d+\s+\d+\s*$/.test(value);
 const toRgb = (triple) => triple.trim().split(/\s+/).map(Number);
 
-// WCAG 2 contrast between two sRGB triples, and `top` washed into `base` at `alpha` (what a `bg-accent/10` paints).
 const channel = (v) => {
   const c = v / 255;
   return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -85,10 +80,8 @@ function contrast(a, b) {
 }
 const wash = (top, base, alpha) => base.map((v, i) => v * (1 - alpha) + top[i] * alpha);
 
-/** The accent as small text, or null when the accent itself will do. It is read on the page, on a card, on its own 10% wash
- *  (a badge, an active chip) and on that wash stacked on a selected row's, and must hold 4.5:1 on all of them. One that does
- *  not (a mid-tone custom colour, Violet or Ember on some packs) moves toward the pack's ink as little as will clear 4.6:1.
- *  Only `text-accent` reads this; fills, borders and washes keep the accent as chosen. */
+/** Null when the accent itself holds 4.5:1 as small text on the page, a card, its own 10% wash and that wash on a selected
+ * row; else it moves toward the pack's ink just far enough to clear 4.6:1. Only `text-accent` reads this. */
 function accentText(accent, style) {
   const tokens = ["--bg", "--surface", "--surface-2", "--ink"].map((name) => style.getPropertyValue(name));
   if (!tokens.every(isTriple)) return null;
@@ -104,9 +97,8 @@ function accentText(accent, style) {
   return ink;
 }
 
-/** The parts of the browser around the page follow the theme too, rebuilt whenever it changes: the tab icon is the shield
- *  in the current accent (a data: image, which the shipped Content-Security-Policy allows, img-src 'self' data: blob:;
- *  /favicon.svg stays the fallback) and the address bar a phone draws takes the pack's background. */
+/** The tab icon is a data: SVG, which the CSP allows (img-src 'self' data: blob:); /favicon.svg is the fallback. The phone
+ * address bar takes the pack's background. */
 function paintChrome() {
   const style = getComputedStyle(document.documentElement);
   const link = document.querySelector('link[rel~="icon"]');
@@ -131,9 +123,10 @@ function apply() {
     const [r, g, b] = hexToRgb(accent);
     root.setAttribute("data-accent", "custom");
     root.style.setProperty("--accent", `${r} ${g} ${b}`);
-    // The label on the fill is whichever of white and the dark ink reads better on it (a mid-tone like #e91e63 takes the dark).
-    root.style.setProperty("--accent-ink", contrast([r, g, b], [255, 255, 255]) >= contrast([r, g, b], [10, 12, 16]) ? "255 255 255" : "10 12 16");
-    // The shield's darker half: the accent at about two thirds, as the packs' own shades are.
+    root.style.setProperty(
+      "--accent-ink",
+      contrast([r, g, b], [255, 255, 255]) >= contrast([r, g, b], [10, 12, 16]) ? "255 255 255" : "10 12 16"
+    );
     root.style.setProperty("--accent-deep", `${Math.round(r * 0.62)} ${Math.round(g * 0.62)} ${Math.round(b * 0.62)}`);
   } else {
     root.setAttribute("data-accent", accent);
@@ -161,7 +154,6 @@ export function setAccent(idOrHex) {
   apply();
 }
 
-/** Flip between the light/dark sibling of the current pack. */
 export function toggleMode() {
   const cur = getTheme();
   const next = { ledger: "ledger-dark", "ledger-dark": "ledger", nimbus: "obsidian", obsidian: "nimbus" }[cur] || DEFAULT_THEME;
@@ -172,7 +164,6 @@ export function initTheme() {
   apply();
 }
 
-/** React hook: current theme/accent plus setters, re-rendering on change. */
 export function useTheme() {
   const [state, setState] = useState(() => ({ theme: getTheme(), accent: getAccent() }));
   useEffect(() => {

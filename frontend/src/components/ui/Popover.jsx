@@ -1,39 +1,3 @@
-/**
- * The one anchored panel: the Governance menu, Appearance, the bell's tray,
- * the account menu and the narrow-screen sheet are all this.
- *
- *   <Popover
- *     label="Account"
- *     menu
- *     trigger={(p, { open }) => <button {...p}>Ada</button>}
- *   >
- *     <Menu label="Account"><MenuItem>Settings</MenuItem></Menu>
- *   </Popover>
- *
- * The trigger is a render function, so the caller keeps whatever button it
- * already uses and this adds no second button primitive. Spread `p` on it: it
- * carries the ref, aria-expanded, aria-controls, aria-haspopup (menus only) and
- * the click and arrow-key handlers.
- *
- * What it does, once, so no panel has to:
- *   - Closes on a press outside, on Escape, and when focus moves out of it by
- *     Tab. Escape and choosing an item hand focus back to the trigger; a press
- *     outside does not take focus from where the person put it.
- *   - Moves focus in on open: the checked item of a radio menu, else
- *     [data-autofocus], else the first item, else the first control.
- *   - Menus (`menu`): the keyboard model of the document actions menu. Arrow
- *     Down and Up open on the first or last item and wrap, Home and End jump,
- *     Enter and Space activate, Tab closes. A group that sets data-menu-h is a
- *     row, so Left and Right move inside it. A list that sets data-popover-cols
- *     is a grid, so Up and Down step a row and Left and Right a cell.
- *   - Choosing a link or a plain menu item closes the panel. A radio or
- *     checkbox item does not: the person is still choosing.
- *
- * `open` and `onOpenChange` make it controlled; without them it keeps its own
- * state. On a phone a panel anchored to the end becomes a full-width sheet
- * under the header, because a 340px tray anchored to a button near the middle
- * of a 390px bar would run off the screen.
- */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { EASE } from "../layout/PanelTransition.jsx";
@@ -64,6 +28,8 @@ function landingTarget(panel, at) {
   return panel.querySelector("[data-autofocus]") || panel.querySelector(CONTROLS) || panel;
 }
 
+/** Spread `p` from `trigger(p, { open })` onto the button. Callers mark a row [data-menu-h], a grid
+ * [data-popover-cols], the landing control [data-autofocus], a non-role item [data-popover-item]. */
 export function Popover({
   trigger, children, label, role, menu = false, align = "end",
   className, panelClassName, open: openProp, onOpenChange,
@@ -75,10 +41,7 @@ export function Popover({
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const panelRef = useRef(null);
-  // Where focus lands on the next open: the arrow keys on the trigger choose.
   const landing = useRef("first");
-  // Callers pass a fresh handler every render; the listeners below must not
-  // be torn down and rebuilt for it.
   const changed = useRef(onOpenChange);
   useLayoutEffect(() => {
     changed.current = onOpenChange;
@@ -143,8 +106,6 @@ export function Popover({
   };
 
   function onPanelClick(e) {
-    // A link or a plain menu item is a decision; a radio or a checkbox is
-    // not, and the panel stays for the next one.
     const hit = e.target.closest?.('a[href], [role="menuitem"]');
     if (hit && panelRef.current?.contains(hit)) close(true);
   }
@@ -164,8 +125,7 @@ export function Popover({
       target.click();
       return;
     }
-    // Arrow keys belong to the items. Anywhere else (a text field, a plain
-    // button in a tray) they keep their own meaning.
+    // Arrow keys belong to the items; elsewhere (text fields, tray buttons) they keep their own meaning.
     if (!(target === panel || target.closest?.(ITEMS))) return;
     const items = Array.from(panel.querySelectorAll(ITEMS)).filter((n) => !n.disabled && n.getAttribute("aria-disabled") !== "true");
     const n = items.length;
@@ -211,9 +171,8 @@ export function Popover({
     <div
       ref={rootRef}
       className={cn("relative", className)}
-      // Tab out of a panel that is not a menu leaves it open behind the
-      // focus. A null relatedTarget is a press on something that cannot take
-      // focus, which the outside-press listener already answers.
+      // Tab out of a non-menu panel closes it. A null relatedTarget is a press on something that cannot take
+      // focus, which the outside-press listener already handles.
       onBlur={(e) => {
         if (open && e.relatedTarget && !rootRef.current?.contains(e.relatedTarget)) setOpen(false);
       }}
@@ -244,8 +203,7 @@ export function Popover({
   );
 }
 
-/** The menu role itself: put it around the items, so a header or a note can
- *  sit in the same panel without being a child of the menu. */
+/** Wrap only the items: a header or note must sit beside the menu, not inside it. */
 export function Menu({ label, className, children }) {
   return (
     <div role="menu" aria-label={label} className={className}>
@@ -254,9 +212,6 @@ export function Menu({ label, className, children }) {
   );
 }
 
-/** One menu row. `as` is a button by default and a router Link for
- *  navigation; `radio` makes it a checked-or-not choice that keeps the menu
- *  open. */
 export function MenuItem({ as: Tag = "button", radio = false, checked, current, tone, className, children, ...rest }) {
   const props = Tag === "button" ? { type: "button" } : {};
   return (

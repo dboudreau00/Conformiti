@@ -8,8 +8,6 @@ import { daysUntil, isLive, typeLabel } from "./vocab.js";
 
 const HEAD = "table-head px-3 py-2 font-normal";
 
-/** The register itself. Rows are keyboard-activatable toggles: activating the
- * selected row closes the detail panel again. */
 export function RiskTable({ risks, selectedId, onSelect }) {
   return (
     <div className="overflow-x-auto">
@@ -66,7 +64,10 @@ function RiskRow({ risk, active, onSelect }) {
           <span className="tabular font-mono text-faint">#{risk.id}</span>
           <span>{typeLabel(risk.risk_type)}</span>
           {risk.control_label ? (
-            <span className="rounded border border-line bg-surface px-1.5 font-mono text-2xs text-muted" title={risk.control_framework || undefined}>
+            <span
+              className="rounded border border-line bg-surface px-1.5 font-mono text-2xs text-muted"
+              title={risk.control_framework || undefined}
+            >
               {risk.control_label}
             </span>
           ) : null}
@@ -80,13 +81,18 @@ function RiskRow({ risk, active, onSelect }) {
         </Badge>
       </td>
 
-      <td className={cn("truncate px-3 py-3 align-middle text-xs", risk.owner_name ? "text-muted" : "text-danger")} title={risk.owner_name || undefined}>
+      <td
+        className={cn("truncate px-3 py-3 align-middle text-xs", risk.owner_name ? "text-muted" : "text-danger")}
+        title={risk.owner_name || undefined}
+      >
         {risk.owner_name || "Unassigned"}
       </td>
 
       <td className={cn("tabular px-3 py-3 align-middle font-mono text-xs", risk.is_overdue ? "text-danger" : "text-muted")}>
         {risk.due_date || "-"}
-        {days != null ? <span className={cn("block text-2xs", risk.is_overdue ? "text-danger" : "text-faint")}>{dueLabel(days)}</span> : null}
+        {days != null ? (
+          <span className={cn("block text-2xs", risk.is_overdue ? "text-danger" : "text-faint")}>{dueLabel(days)}</span>
+        ) : null}
       </td>
 
       <td className="px-3 py-3 align-middle">

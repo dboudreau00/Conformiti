@@ -12,16 +12,10 @@ import { NavCount, TAB_CLASS } from "./NavParts.jsx";
 import { SearchPalette } from "./SearchPalette.jsx";
 import { UserMenu, workspaceNote } from "./UserMenu.jsx";
 
-// The search shortcut is Cmd K on a Mac and Ctrl K elsewhere.
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
 
-/** The one bar: the product, the Workspace tabs and Governance on the left;
- * search, appearance, the demo and version chip, the bell and the person on
- * the right. The page's title is not here, it opens the page (PanelTransition).
- *
- * Primary is the landmark an add-on finds its logo through. Its first child
- * is the link holding the mark: a white-label painter hides the first thing
- * in that link which draws the mark and puts the customer's own in front. */
+/** The "Primary" nav is the landmark an add-on finds its logo through: its first child is the link holding
+ * the mark, and a white-label painter hides the first thing in that link which draws it. */
 export function TopBar({ onSignOut }) {
   const { pathname } = useLocation();
   const { me, health, counts } = useShell();
@@ -108,9 +102,6 @@ export function TopBar({ onSignOut }) {
             </span>
           ) : null}
 
-          {/* The version keeps its own case: a release is named by a lower-case
-              revision letter (0.9.5k), and "V0.9.5K" matched neither
-              /api/health/ nor the tags. */}
           {health?.demo_accounts || health?.version ? (
             <span className="hidden h-[34px] shrink-0 flex-col justify-center rounded-md border border-line px-2.5 font-mono text-[10px] uppercase leading-[13px] tracking-[0.06em] text-muted min-[941px]:flex">
               {health?.demo_accounts ? (
@@ -127,9 +118,8 @@ export function TopBar({ onSignOut }) {
           <UserMenu onSignOut={onSignOut} />
         </div>
       </header>
-      {/* Outside the header on purpose: its backdrop blur makes it the
-          containing block for anything fixed inside it, and the dialog's
-          overlay must cover the viewport, not a 60px strip. */}
+      {/* Outside the header: its backdrop blur is the containing block for fixed descendants, which would
+          confine the dialog overlay to the 60px bar. */}
       <SearchPalette open={searching} onClose={() => setSearching(false)} />
     </>
   );

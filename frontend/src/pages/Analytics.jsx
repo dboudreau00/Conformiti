@@ -14,13 +14,9 @@ import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
 import { CONTROL_STATUS, DOC_STATUS, TONE_TEXT } from "../utils/tone.js";
 
-/** Everything on this page comes from one read-only call. Control, framework
- * and risk figures are organisation-wide; document figures are already
- * filtered server-side to the folders the caller may see. There are no write
- * controls here, so no role gates apply, `me` is accepted for route parity. */
+// Organisation-wide, except documents: the server already filters those to the folders the caller may see.
 const SUMMARY_URL = "/analytics/summary/";
 
-/** [{label, value, tone}] rows from a vocab map (tone.js) and a by_status block. */
 function slicesFrom(vocab, byStatus) {
   return Object.entries(vocab).map(([key, meta]) => ({
     label: meta.label,
@@ -118,7 +114,6 @@ export default function Analytics({ me }) {
     );
   }
 
-  // --- Derive every figure from the response; nothing here is invented. -----
   const controls = data.controls || {};
   const cs = controls.by_status || {};
   const docs = data.documents || {};
@@ -136,11 +131,8 @@ export default function Analytics({ me }) {
   const readinessPct = readiness.pct ?? pctOf(implemented, applicable);
   const delta = readiness.delta_pts;
 
-  // Worst-first: the panel exists to prompt action, and with 25 frameworks in
-  // arrival order the ones needing attention are wherever the API put them.
-  // A framework with nothing applicable (every control marked not applicable,
-  // or none imported) has no readiness to rank: the API's pct of 0 there means
-  // nothing to measure, so it goes last instead of topping the list.
+  // Worst first. A framework with nothing applicable has no readiness (the API's pct of 0 there means nothing to
+  // measure), so it sorts last instead of topping the list.
   const readinessOf = (f) => (f.applicable ? f.pct ?? pctOf(f.implemented, f.applicable) : null);
   const sortedFrameworks = [...frameworks].sort((a, b) => {
     const pa = readinessOf(a);
@@ -170,9 +162,13 @@ export default function Analytics({ me }) {
   return (
     <PanelTransition>
       <Stack className="flex flex-col gap-4">
-        {/* Headline numbers */}
         <StackItem className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Overall readiness" value={readinessPct} suffix="%" detail={`${implemented} implemented ÷ ${applicable} applicable`}>
+          <StatCard
+            label="Overall readiness"
+            value={readinessPct}
+            suffix="%"
+            detail={`${implemented} implemented ÷ ${applicable} applicable`}
+          >
             <Meter value={readinessPct} total={100} className="mt-3" delay={0.08} ariaLabel="Overall readiness" />
             {delta != null ? (
               <p className={cn("tabular mt-2 font-mono text-2xs", delta > 0 ? "text-success" : delta < 0 ? "text-danger" : "text-faint")}>
@@ -200,7 +196,6 @@ export default function Analytics({ me }) {
           />
         </StackItem>
 
-        {/* Per-framework readiness */}
         <StackItem>
           <Panel>
             <PanelHeader title="Framework readiness" />
@@ -228,7 +223,11 @@ export default function Analytics({ me }) {
                               total={f.total}
                               delay={i * 0.06}
                               segments={slicesFrom(CONTROL_STATUS, f.by_status)}
-                              ariaLabel={pct === null ? `${f.name}: no applicable controls` : `${f.name}: ${pct}% of applicable controls implemented`}
+                              ariaLabel={
+                                pct === null
+                                  ? `${f.name}: no applicable controls`
+                                  : `${f.name}: ${pct}% of applicable controls implemented`
+                              }
                             />
                           </div>
                         );
@@ -242,7 +241,6 @@ export default function Analytics({ me }) {
           </Panel>
         </StackItem>
 
-        {/* Status breakdowns */}
         <StackItem className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <DonutPanel
             title="Control status"
@@ -261,7 +259,6 @@ export default function Analytics({ me }) {
           />
         </StackItem>
 
-        {/* Review load + ownership */}
         <StackItem className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Panel className="flex h-full flex-col">
             <PanelHeader title="Review load" meta="Next 6 months" />
@@ -294,7 +291,6 @@ export default function Analytics({ me }) {
           </Panel>
         </StackItem>
 
-        {/* Overdue sample */}
         <StackItem>
           <Panel className="overflow-hidden">
             <PanelHeader title="Most overdue documents" />
@@ -324,7 +320,9 @@ export default function Analytics({ me }) {
                       </button>
                       <p className="truncate font-mono text-2xs uppercase tracking-label text-faint">{d.folder_path || "-"}</p>
                     </div>
-                    <span className={cn("shrink-0 font-mono text-2xs", d.owner ? "text-muted" : "text-faint")}>{d.owner || "unassigned"}</span>
+                    <span className={cn("shrink-0 font-mono text-2xs", d.owner ? "text-muted" : "text-faint")}>
+                      {d.owner || "unassigned"}
+                    </span>
                   </li>
                 ))}
               </ul>

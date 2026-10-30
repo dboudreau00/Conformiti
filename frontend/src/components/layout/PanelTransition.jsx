@@ -8,20 +8,12 @@ export const EASE = [0.23, 1, 0.32, 1];
 
 const PRODUCT = "Conformiti";
 
-/** Wraps a routed page. Enters after the previous page has left (AnimatePresence mode="wait").
- *
- * It also draws the page's title, the page's only <h1>, when the
- * route has an entry in NAV_LOOKUP (an add-on may add its own), and puts the
- * same title in the tab, so the tab, the history and a bookmark say which page
- * this is. The tab is only named while it still carries the product's own name:
- * an add-on that has renamed the product (a white-label brand) keeps its title.
- * A route with no entry, the public vendor questionnaire, gets neither. The
- * <main> carries id="main" for the skip link. */
 export function PanelTransition({ children, className }) {
   const meta = NAV_LOOKUP[useLocation().pathname];
   const title = meta?.title;
   useEffect(() => {
     if (!title) return undefined;
+    // An add-on that renamed the product (white label) keeps its own tab title.
     const stock = document.title === PRODUCT || document.title.endsWith(` · ${PRODUCT}`);
     if (!stock) return undefined;
     const named = `${title} · ${PRODUCT}`;
@@ -48,7 +40,6 @@ export function PanelTransition({ children, className }) {
   );
 }
 
-/** Staggers the top-level blocks of a page so the layout resolves rather than popping. */
 export const stack = {
   container: { hidden: {}, show: { transition: { staggerChildren: 0.045, delayChildren: 0.02 } } },
   item: { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.26, ease: EASE } } },
@@ -70,7 +61,6 @@ export function StackItem({ children, className }) {
   );
 }
 
-/** Height-animated disclosure region (expanding table rows, drawers). */
 export function Collapse({ open, children, className }) {
   return open ? (
     <motion.div

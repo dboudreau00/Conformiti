@@ -38,13 +38,13 @@ export default function Jira({ me }) {
   const [config, setConfig] = useState(null);
   const [configErr, setConfigErr] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [boards, setBoards] = useState(null); // null = loading
+  const [boards, setBoards] = useState(null);
   const [boardsErr, setBoardsErr] = useState(null);
   const [active, setActive] = useState(null);
   const [issues, setIssues] = useState(null);
   const [issueErr, setIssueErr] = useState(null);
   const [msg, setMsg] = useState(null); // connection panel feedback
-  const [boardMsg, setBoardMsg] = useState(null); // tracked boards feedback
+  const [boardMsg, setBoardMsg] = useState(null);
   const [busy, setBusy] = useState(null); // "save" | "test" | "add" | "remove"
   const [newBoard, setNewBoard] = useState({ board_id: "", name: "" });
   const [removing, setRemoving] = useState(null);
@@ -75,7 +75,6 @@ export default function Jira({ me }) {
 
   function loadBoards(selectId) {
     setBoardsErr(null);
-    // Paginated at 50, follow `next` so every tracked board is listed.
     return fetchAll("/integrations/jira/boards/")
       .then((list) => {
         setBoards(list);
@@ -117,8 +116,7 @@ export default function Jira({ me }) {
       if (form.api_token) payload.api_token = form.api_token;
       const { data } = await api.patch("/integrations/jira/config/", payload);
       setConfig(data);
-      // The server turns the integration off (and drops the saved token) when
-      // the base URL moves to another host; show what it kept, not what was sent.
+      // The server switches the integration off and drops the token when the base URL moves to another host: show what it kept.
       setForm((f) => ({ ...f, api_token: "", enabled: !!data.enabled }));
       setMsg(data.enabled === !!form.enabled
         ? { ok: true, text: "Configuration saved." }
@@ -168,8 +166,7 @@ export default function Jira({ me }) {
     try {
       await api.delete(`/integrations/jira/boards/${b.id}/`);
       if (active && b.id !== active.id) {
-        // Another board went: the one being read stays open with its issues,
-        // rather than the page jumping to the first board and asking Jira again.
+        // Another board went: keep the open one rather than jumping to the first and asking Jira again.
         setBoards((list) => (list || []).filter((x) => x.id !== b.id));
       } else {
         setActive(null);
@@ -184,9 +181,7 @@ export default function Jira({ me }) {
     }
   }
 
-  // Whether Jira is connected is known only once a manager's configuration
-  // has loaded. For anyone else, or while it loads, or when it failed, this
-  // stays null and the copy below does not guess from the list of boards.
+  // Known only once a manager's configuration has loaded; otherwise null, and the copy below does not guess from the boards.
   const connected = config ? !!(config.enabled && config.base_url && config.has_token) : null;
   const dirty =
     !!config &&
@@ -196,6 +191,19 @@ export default function Jira({ me }) {
       form.enabled !== !!config.enabled);
   const issuesLoading = !!active && !issues && !issueErr;
   const canAdd = !busy && Number(newBoard.board_id) > 0 && !!newBoard.name.trim();
+
+  let noBoard;
+  if (boardsErr) {
+    noBoard = <Empty title="No board to show" />;
+  } else if (connected === false) {
+    noBoard = <Empty title="Jira isn't connected yet" />;
+  } else if (connected) {
+    noBoard = <Empty title="No board selected" />;
+  } else if (isManager && !configErr) {
+    noBoard = <Loading>Loading configuration…</Loading>;
+  } else {
+    noBoard = <Empty title="No board to show" />;
+  }
 
   return (
     <PanelTransition>
@@ -303,7 +311,10 @@ export default function Jira({ me }) {
           ) : null}
 
           <Panel className="overflow-hidden">
-            <PanelHeader title="Tracked boards" meta={boards ? `${boards.length} board${boards.length === 1 ? "" : "s"}` : undefined} />
+            <PanelHeader
+              title="Tracked boards"
+              meta={boards ? `${boards.length} board${boards.length === 1 ? "" : "s"}` : undefined}
+            />
             {boards === null ? (
               <Loading>Loading boards…</Loading>
             ) : boardsErr ? (
@@ -433,7 +444,13 @@ export default function Jira({ me }) {
                     variant="ghost"
                     onClick={() => openBoard(active)}
                     disabled={issuesLoading}
-                    icon={<RefreshCwIcon className={cn("h-3.5 w-3.5", issuesLoading && "animate-spin")} strokeWidth={2} aria-hidden="true" />}
+                    icon={
+                      <RefreshCwIcon
+                        className={cn("h-3.5 w-3.5", issuesLoading && "animate-spin")}
+                        strokeWidth={2}
+                        aria-hidden="true"
+                      />
+                    }
                   >
                     Refresh
                   </Button>
@@ -444,17 +461,7 @@ export default function Jira({ me }) {
             {boards === null ? (
               <Loading>Loading boards…</Loading>
             ) : !active ? (
-              boardsErr ? (
-                <Empty title="No board to show" />
-              ) : connected === false ? (
-                <Empty title="Jira isn't connected yet" />
-              ) : connected ? (
-                <Empty title="No board selected" />
-              ) : isManager && !configErr ? (
-                <Loading>Loading configuration…</Loading>
-              ) : (
-                <Empty title="No board to show" />
-              )
+              noBoard
             ) : issueErr ? (
               <div className="p-5">
                 <div className="notice notice-err" role="alert">
@@ -494,7 +501,6 @@ export default function Jira({ me }) {
                         className="transition-colors duration-150 ease-out hover:bg-surface-2"
                       >
                         <td className={CELL}>
-                          {/* An older backend sends no url; the key still reads as it always did. */}
                           {i.url ? (
                             <a
                               href={i.url}

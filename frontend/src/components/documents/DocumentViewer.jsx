@@ -1,37 +1,8 @@
-/**
- * Open a stored document in the browser without leaving the app.
- *
- * Nothing here is rendered as HTML from the file. PDFs and images are fetched
- * through the API client (so the credential travels the same way as every
- * other request, in header or cookie mode). Images are shown from a blob URL
- * in an <img>; PDFs are drawn onto canvases by pdf.js, in a worker that is
- * part of this bundle, with scripting off: no frame, no plugin, and no PDF
- * JavaScript ever runs. Word and Excel
- * files arrive from the server already parsed into a small structured
- * vocabulary (headings, runs, list items, tables, sheets) and are rendered
- * from that. A file whose bytes do not match its extension is refused by the
- * server and shown here as "download instead".
- *
- * The frame around the file is the point of the component: version, status,
- * folder, the controls it satisfies, and a SHA-256 computed in the browser
- * from the bytes on screen, the same digest a sealed package manifest
- * records, so a reviewer can compare the two without downloading anything.
- */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DownloadIcon, FingerprintIcon, PanelRightIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 import * as pdfjs from "pdfjs-dist";
 import api, { downloadFile } from "../../api/client.js";
-
-// pdf.js renders the pages onto canvases in our own page. No frame, no
-// plugin, and nothing in the PDF ever executes: the library's scripting
-// support is off, the worker is a same-origin asset of this bundle, and the
-// bytes never leave the browser. (Chromium's built-in viewer was the
-// alternative; it is a plugin that cannot be sandboxed and runs PDF
-// JavaScript, and the headless browser the test suite drives has no viewer at
-// all.)
-pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-const PDF_PAGE_BATCH = 20;
 import { EASE } from "../layout/PanelTransition.jsx";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
@@ -40,9 +11,11 @@ import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
 import { DOC_STATUS } from "../../utils/tone.js";
 
+pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+const PDF_PAGE_BATCH = 20;
+
 const KIND_LABEL = { pdf: "PDF", image: "Image", docx: "Word document", xlsx: "Spreadsheet", text: "Text" };
 
-/** Viewer props for a row from /documents/. Shared by every page that lists them. */
 export function documentViewerProps(doc) {
   const status = DOC_STATUS[doc.status] || { label: doc.status, tone: "muted" };
   return {
@@ -50,8 +23,6 @@ export function documentViewerProps(doc) {
     subtitle: [doc.folder_path, doc.control_id].filter(Boolean).join(" · "),
     previewUrl: `/documents/${doc.id}/preview/`,
     downloadUrl: doc.download_url || `/documents/${doc.id}/download/`,
-    // The server's own name for the download (display name plus the stored
-    // file's extension); downloadFile prefers the response's header anyway.
     filename: doc.download_name || doc.name,
     badge: status,
     facts: [
@@ -65,6 +36,7 @@ export function documentViewerProps(doc) {
   };
 }
 
+// SHA-256 of the bytes on screen: the digest a sealed package manifest records, so a reviewer can compare the two.
 async function sha256Hex(blob) {
   if (!window.crypto?.subtle) return null;
   const digest = await window.crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
@@ -82,8 +54,6 @@ async function detailFromError(e, fallback) {
   return errorText(e, fallback);
 }
 
-// --- Structured renderers ---------------------------------------------------------
-
 function Runs({ runs }) {
   return runs.map((r, i) => {
     let node = r.t;
@@ -100,7 +70,14 @@ function DocxBody({ blocks }) {
       {blocks.map((b, i) => {
         if (b.type === "heading") {
           const Tag = H[Math.min(b.level, 4) - 1] || "h4";
-          return <Tag key={i} className={cn("font-semibold text-ink", b.level === 1 ? "mt-6 text-xl" : b.level === 2 ? "mt-5 text-lg" : "mt-4 text-base")}>{b.text}</Tag>;
+          return (
+            <Tag
+              key={i}
+              className={cn("font-semibold text-ink", b.level === 1 ? "mt-6 text-xl" : b.level === 2 ? "mt-5 text-lg" : "mt-4 text-base")}
+            >
+              {b.text}
+            </Tag>
+          );
         }
         if (b.type === "list_item") {
           return (
@@ -187,10 +164,8 @@ function SheetBody({ sheets }) {
   );
 }
 
-/** Tear a pdf.js document down without letting anything it throws reach
- *  React: cancel the render tasks first, and destroy on the next tick, so an
- *  effect cleanup never raises mid-commit (an error there takes the whole
- *  page to the error boundary). */
+/** Never throws: an error in an effect cleanup would send the whole page to the error boundary, so tasks are
+ * cancelled first and the document is destroyed on the next tick. */
 function disposePdf(doc, tasks) {
   for (const task of tasks.values()) {
     try { task.cancel(); } catch { /* already finished */ }
@@ -210,7 +185,7 @@ function PdfBody({ bytes, title }) {
   const [zoom, setZoom] = useState(1);
   const docRef = useRef(null);
   const hostRef = useRef(null);
-  const tasksRef = useRef(new Map());   // page number -> in-flight RenderTask
+  const tasksRef = useRef(new Map());
 
   useEffect(() => {
     let live = true;
@@ -237,8 +212,6 @@ function PdfBody({ bytes, title }) {
     };
   }, [bytes]);
 
-  // Draw every visible page whenever the count or the zoom changes. A newer
-  // pass cancels the tasks of the one before it.
   useEffect(() => {
     const doc = docRef.current;
     const host = hostRef.current;
@@ -286,17 +259,35 @@ function PdfBody({ bytes, title }) {
   return (
     <div ref={hostRef} className="min-h-full px-6 py-4" data-pdf-pages={state.pages}>
       <div className="mb-3 flex items-center justify-center gap-2">
-        <Button size="sm" variant="ghost" aria-label="Zoom out" disabled={zoom <= 0.5} onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Zoom out"
+          disabled={zoom <= 0.5}
+          onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+        >
           <ZoomOutIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
         </Button>
         <Label>{state.pages} page{state.pages === 1 ? "" : "s"} · {Math.round(zoom * 100)}%</Label>
-        <Button size="sm" variant="ghost" aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Zoom in"
+          disabled={zoom >= 3}
+          onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}
+        >
           <ZoomInIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
         </Button>
       </div>
       <div className="flex flex-col items-center gap-4">
         {Array.from({ length: state.shown }, (_, i) => (
-          <canvas key={i + 1} data-page={i + 1} className="max-w-full rounded-sm bg-white shadow-md" aria-label={`${title}, page ${i + 1}`} role="img" />
+          <canvas
+            key={i + 1}
+            data-page={i + 1}
+            className="max-w-full rounded-sm bg-white shadow-md"
+            aria-label={`${title}, page ${i + 1}`}
+            role="img"
+          />
         ))}
       </div>
       {state.shown < state.pages ? (
@@ -310,8 +301,8 @@ function PdfBody({ bytes, title }) {
   );
 }
 
-// --- The wrapper ------------------------------------------------------------------
-
+/** Nothing from the file is rendered as HTML or run: PDFs are drawn on canvases by pdf.js (no scripting, same-origin
+ * worker), and Word and Excel files arrive from the server already parsed into blocks and sheets. */
 export default function DocumentViewer({
   open, title, subtitle, previewUrl, downloadUrl, filename, badge, facts = [], chips = [], onClose,
 }) {
@@ -321,18 +312,14 @@ export default function DocumentViewer({
   const [aside, setAside] = useState(true);
   const [downloadError, setDownloadError] = useState("");
   const closeRef = useRef(null);
-  // The latest onClose, read by Escape. Every caller passes an inline arrow,
-  // so depending on onClose itself would re-run the effect below on each parent
-  // render and pull focus back to the close button mid-read.
+  // Read through a ref: a fresh inline onClose in the effect deps would re-run it and pull focus back to Close.
   const onCloseRef = useRef(onClose);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
   });
-  const viewing = useRef(0);   // bumped when the file shown changes or the viewer closes
+  const viewing = useRef(0);
 
-  // Fetch through the API client, never by pointing a frame at the URL: the
-  // media location behind nginx forces download and denies framing on
-  // purpose, and a bare <iframe src> would carry no credential in header mode.
+  // Fetched through the API client, never an <iframe src>: nginx denies framing on purpose and a bare frame carries no credential.
   useEffect(() => {
     if (!open || !previewUrl) return undefined;
     let live = true;
@@ -360,8 +347,7 @@ export default function DocumentViewer({
     return () => {
       live = false;
       viewing.current += 1;
-      // The PDF viewer inside the frame may still be reading the blob as the
-      // dialog unmounts; revoking a moment later avoids an aborted fetch.
+      // Revoked a moment late so a reader still using the blob URL is not cut off.
       if (url) {
         const stale = url;
         setTimeout(() => URL.revokeObjectURL(stale), 1500);
@@ -369,18 +355,17 @@ export default function DocumentViewer({
     };
   }, [open, previewUrl]);
 
-  // The digest is free when the bytes are already here (PDF, image).
   useEffect(() => {
     if (state.status !== "ready" || !state.bytes) return undefined;
     let live = true;
-    sha256Hex(state.bytes).then((hex) => { if (live) setDigest(hex || "unavailable"); }).catch(() => { if (live) setDigest("unavailable"); });
+    sha256Hex(state.bytes)
+      .then((hex) => { if (live) setDigest(hex || "unavailable"); })
+      .catch(() => { if (live) setDigest("unavailable"); });
     return () => { live = false; };
   }, [state]);
 
   useEffect(() => {
     if (!open) return undefined;
-    // Closing hands focus back to whatever opened the viewer, as Dialog does,
-    // rather than leaving it on the page body.
     const opener = document.activeElement;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -405,9 +390,6 @@ export default function DocumentViewer({
     }
   }
 
-  // A file deleted, moved or withdrawn while the viewer is open answers the
-  // download with a 403 or a 404. Say so here rather than let it fall through
-  // as an unhandled rejection with nothing on screen.
   async function download() {
     const shown = viewing.current;
     setDownloadError("");
@@ -427,7 +409,10 @@ export default function DocumentViewer({
   } else if (state.status === "unavailable" || state.status === "error") {
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className={cn("max-w-md text-sm", state.status === "error" ? "text-danger" : "text-muted")} role={state.status === "error" ? "alert" : "status"}>
+        <p
+          className={cn("max-w-md text-sm", state.status === "error" ? "text-danger" : "text-muted")}
+          role={state.status === "error" ? "alert" : "status"}
+        >
           {state.detail}
         </p>
         {downloadUrl ? (
@@ -443,8 +428,11 @@ export default function DocumentViewer({
   } else if (state.kind === "image") {
     body = (
       <div className={cn("min-h-full p-6", zoom === "fit" && "flex items-center justify-center")}>
-        <img src={state.blobUrl} alt={title}
-             className={cn("rounded-md shadow-md", zoom === "fit" ? "max-h-[calc(100vh-200px)] max-w-full object-contain" : "max-w-none")} />
+        <img
+          src={state.blobUrl}
+          alt={title}
+          className={cn("rounded-md shadow-md", zoom === "fit" ? "max-h-[calc(100vh-200px)] max-w-full object-contain" : "max-w-none")}
+        />
       </div>
     );
   } else if (state.kind === "docx") {
@@ -492,8 +480,19 @@ export default function DocumentViewer({
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {state.kind === "image" ? (
-                  <Button size="sm" variant="ghost" aria-pressed={zoom === "actual"} onClick={() => setZoom((z) => (z === "fit" ? "actual" : "fit"))}
-                          icon={zoom === "fit" ? <ZoomInIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" /> : <ZoomOutIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={zoom === "actual"}
+                    onClick={() => setZoom((z) => (z === "fit" ? "actual" : "fit"))}
+                    icon={
+                      zoom === "fit" ? (
+                        <ZoomInIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                      ) : (
+                        <ZoomOutIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                      )
+                    }
+                  >
                     {zoom === "fit" ? "Actual size" : "Fit"}
                   </Button>
                 ) : null}
@@ -519,12 +518,17 @@ export default function DocumentViewer({
             <div className="flex min-h-0 flex-1">
               <div className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-surface-2">{body}</div>
               {aside ? (
-                <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-line bg-surface px-4 py-4 md:block" aria-label="Document details">
+                <aside
+                  className="hidden w-72 shrink-0 overflow-y-auto border-l border-line bg-surface px-4 py-4 md:block"
+                  aria-label="Document details"
+                >
                   <dl className="space-y-3">
                     {facts.map((f) => (
                       <div key={f.label}>
                         <Label as="dt">{f.label}</Label>
-                        <dd className={cn("mt-0.5 break-words text-[13px] text-ink", f.mono && "break-all font-mono text-2xs")}>{f.value || "-"}</dd>
+                        <dd className={cn("mt-0.5 break-words text-[13px] text-ink", f.mono && "break-all font-mono text-2xs")}>
+                          {f.value || "-"}
+                        </dd>
                       </div>
                     ))}
                     {chips.length ? (

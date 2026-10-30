@@ -1,10 +1,7 @@
 import { cn } from "../../utils/cn.js";
 import { toneVar } from "../../utils/tone.js";
 
-/** How a control status is drawn. Never by colour alone: implemented is solid,
- * in progress half filled, not started an empty outline, not applicable
- * hatched, so the four read apart in greyscale and to anyone who cannot tell
- * green from amber. Shared by the atlas, its legend and the schedule's heads. */
+/** Status is never shown by colour alone: solid, half filled, empty outline and hatched read apart in greyscale. */
 export const STATUS_FILL = {
   implemented: {
     background: toneVar("success"),

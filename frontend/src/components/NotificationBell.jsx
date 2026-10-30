@@ -14,7 +14,6 @@ export default function NotificationBell() {
   const nav = useNavigate();
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
-  // The badge and the button's name say the same number, so what is on screen is what a person can speak.
   const shown = unread > 99 ? "99+" : String(unread);
   const [open, setOpen] = useState(false);
 
@@ -28,14 +27,12 @@ export default function NotificationBell() {
     }
   }
 
-  // Fetch on mount and poll gently so the badge stays roughly live.
   useEffect(() => {
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
   }, []);
 
-  // Opening the tray marks everything currently shown as read.
   async function onOpenChange(next) {
     setOpen(next);
     if (next && unread > 0) {
@@ -101,7 +98,11 @@ export default function NotificationBell() {
             >
               <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", TONE_FILL[SEV_TONE[i.severity] || "muted"])} aria-hidden="true" />
               <button type="button" onClick={() => go(i)} className="min-w-0 flex-1 text-left">
-                <span className={cn("block text-[13px] leading-snug", SEV_TONE[i.severity] === "danger" ? "text-danger" : "text-ink")}>{i.title}</span>
+                <span
+                  className={cn("block text-[13px] leading-snug", SEV_TONE[i.severity] === "danger" ? "text-danger" : "text-ink")}
+                >
+                  {i.title}
+                </span>
                 <Label className="mt-1 block truncate">{i.detail}</Label>
               </button>
               <button
