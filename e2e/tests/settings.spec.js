@@ -2,15 +2,12 @@ import { test, expect, open, expectBrowserError, appearanceButton, DEMO, signIn,
 
 const SECTIONS = ["Profile", "Appearance", "Security", "Notifications", "Role & access", "About"];
 
-/** The settings sidebar is a plain <nav> of buttons, not a tablist. */
 function section(page, name) {
   return page.getByRole("navigation", { name: "Settings sections" })
     .getByRole("button", { name, exact: true });
 }
 
-/** The heading an open section starts with. The nav listing every section,
- *  and the card above it naming the user's role, sit inside <main> too, so
- *  text found anywhere in main says nothing about which section rendered. */
+/** The open section's own <h2>: the nav and the role card inside <main> would match any looser text search. */
 function heading(page, name) {
   return page.getByRole("main").getByRole("heading", { name, exact: true, level: 2 });
 }
@@ -45,7 +42,6 @@ test.describe("account settings", () => {
   test("the About row says it is the core's licence", async ({ page }) => {
     await section(page, "About").click();
     await expect(heading(page, "About")).toBeVisible();
-    // An add-on can carry a licence of its own, so the row names what it covers.
     const row = page.getByRole("main").locator("dl > div").filter({ hasText: "Core licence" });
     await expect(row.getByRole("term")).toHaveText("Core licence");
     await expect(row.getByRole("definition")).toHaveText("AGPL-3.0");
@@ -56,12 +52,12 @@ test.describe("account settings", () => {
     await section(page, "About").click();
     const panel = page.getByRole("main").locator("section")
       .filter({ has: page.getByRole("heading", { name: "About", exact: true, level: 2 }) });
-    await expect(panel.getByRole("link", { name: /Documentation & source/ })).toHaveAttribute("href", /github\.com\/dboudreau00\/Conformiti$/);
+    await expect(panel.getByRole("link", { name: /Documentation & source/ }))
+      .toHaveAttribute("href", /github\.com\/dboudreau00\/Conformiti$/);
     const credit = panel.getByRole("link", { name: "dboudreau00.github.io", exact: true });
     await expect(credit).toHaveAttribute("href", "https://dboudreau00.github.io");
     await expect(credit).toHaveAttribute("target", "_blank");
     await expect(credit).toHaveAttribute("rel", /noreferrer/);
-    // Set small and last: there to be found, not to compete with the source link.
     expect(await credit.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeLessThanOrEqual(12);
     const last = await panel.evaluate((el) => [...el.querySelectorAll("a")].pop().textContent.trim());
     expect(last).toBe("dboudreau00.github.io");
@@ -69,8 +65,7 @@ test.describe("account settings", () => {
 
   test("the role section reports the signed-in user's capabilities", async ({ page }) => {
     await section(page, "Role & access").click();
-    // The section's own panel: the card above the nav names the role
-    // whichever section is open.
+    // The section's own panel: the card above the nav names the role whichever section is open.
     const panel = page.getByRole("main").locator("section")
       .filter({ has: page.getByRole("heading", { name: "Role & access", exact: true, level: 2 }) });
     await expect(panel).toContainText("Administrator");
@@ -101,10 +96,8 @@ test.describe("About for an external auditor", () => {
     await section(page, "About").click();
     await expect(heading(page, "About")).toBeVisible();
     const main = page.getByRole("main");
-    // The API refuses an auditor the library, so the panel neither asks for it nor reports it empty.
     await expect(main.getByText("No frameworks loaded")).toHaveCount(0);
     await expect(main.getByText("Frameworks", { exact: true })).toHaveCount(0);
-    // The rest of the panel stays.
     await expect(main.locator("dl > div").filter({ hasText: "Core licence" })).toHaveCount(1);
     await expect(main.getByRole("link", { name: /Documentation & source/ })).toBeVisible();
     await page.waitForLoadState("networkidle");
@@ -126,7 +119,6 @@ test.describe("appearance", () => {
       await button.first().click();
       await page.waitForTimeout(150);
       await expect(button.first()).toHaveAttribute("aria-pressed", "true");
-      // A theme that does not resolve its tokens paints nothing.
       const bg = await page.evaluate(() =>
         getComputedStyle(document.documentElement).getPropertyValue("--bg").trim()
       );
@@ -158,7 +150,6 @@ test.describe("appearance", () => {
   });
 
   test("the shield, the wordmark and the tab icon follow the accent, packs and a custom colour alike", async ({ page }) => {
-    // Colours are compared as the browser paints them: a probe element takes the token as its text colour.
     const painted = () => page.evaluate(() => {
       const probe = (value) => {
         const el = document.createElement("i");
@@ -195,14 +186,12 @@ test.describe("appearance", () => {
     }
     expect(faces.size, "four accents give four different shields").toBe(4);
 
-    // The theme pack matters too: a dark pack's accent is the lighter tint.
     await page.getByRole("group", { name: "Theme pack" }).getByRole("button", { name: /^Obsidian/ }).first().click();
     await page.waitForTimeout(150);
     const dark = await painted();
     expect(dark.right).toBe(dark.accent);
     expect(dark.left).toBe(dark.deep);
 
-    // The bar a phone draws around the page takes the pack's background, so a light pack is not framed in black.
     const barColour = () => page.evaluate(() => {
       const el = document.createElement("i");
       el.style.color = "rgb(var(--bg))";
@@ -229,7 +218,6 @@ test.describe("appearance", () => {
     expect(custom.word).toBe(custom.text);
     expect(custom.icon).toContain('fill="#e91e63"');
 
-    // It is restored before first paint on the next visit, the tab icon included.
     await page.reload();
     await page.waitForLoadState("networkidle");
     const again = await painted();
@@ -238,8 +226,6 @@ test.describe("appearance", () => {
   });
 
   test("accent text and a button's label hold 4.5:1 in every pack and a custom colour", async ({ page }) => {
-    // Accent text on a card, on its own wash and on that wash stacked on a selected row: the layers are painted by the real
-    // stylesheet (bg-surface, bg-accent/10, text-accent) and composited here.
     const readable = () => page.evaluate(() => {
       const parse = (s) => { const n = s.match(/[\d.]+/g).map(Number); return { c: n.slice(0, 3), a: n.length > 3 ? n[3] : 1 }; };
       const over = ({ c, a }, base) => base.map((v, i) => v * (1 - a) + c[i] * a);
@@ -261,8 +247,11 @@ test.describe("appearance", () => {
       const base = parse(getComputedStyle(card).backgroundColor).c;
       const wash = parse(getComputedStyle(badge).backgroundColor);
       const text = parse(getComputedStyle(badge).color).c;
-      const worst = Math.min(ratio(text, base), ratio(text, over(wash, base)), ratio(text, over(wash, over(parse(getComputedStyle(row).backgroundColor), base))));
-      // And the label a button carries on the accent fill.
+      const worst = Math.min(
+        ratio(text, base),
+        ratio(text, over(wash, base)),
+        ratio(text, over(wash, over(parse(getComputedStyle(row).backgroundColor), base)))
+      );
       const button = document.createElement("span");
       button.className = "bg-accent text-accent-ink";
       button.textContent = "button";
@@ -303,24 +292,20 @@ test.describe("multi-factor authentication", () => {
     await section(page, "Security").click();
     await page.waitForLoadState("networkidle");
 
-    // The block renders a loading placeholder first; without this wait the
-    // Enable button is absent and the test skips itself without saying why.
+    // The block renders a loading placeholder first: wait for it, or the Enable button is not there yet.
     await expect(page.getByText("Authenticator app").first()).toBeVisible();
     const enable = page.getByRole("button", { name: "Enable", exact: true });
     await expect(enable).toBeVisible();
 
-    // Enrolling a factor takes the same proof removing one does: a session
-    // somebody else is holding must not be able to make their authenticator
-    // the one this account needs.
+    // Enrolling a factor takes the same proof removing one does: a session someone else holds must not be
+    // able to make their authenticator the one this account needs.
     await expect(page.locator("#mfa-enable-password")).toBeVisible();
     await page.locator("#mfa-enable-password").fill(DEMO.admin.password);
     await enable.click();
     await page.waitForLoadState("networkidle");
 
-    // The enrolment URI must be shown before any code is accepted.
     await expect(page.locator("#mfa-uri")).toHaveValue(/^otpauth:\/\/totp\//);
 
-    // Chrome logs a console error for the 400 this deliberately provokes.
     expectBrowserError(page, /status of 400/);
     await page.locator("#mfa-code").fill("000000");
     await page.getByRole("button", { name: /verify & turn on/i }).click();
@@ -349,10 +334,8 @@ test.describe("multi-factor authentication", () => {
 });
 
 test.describe("workspace chat channels", () => {
-  /** Click Save and wait for the PATCH itself to come back.
-   *  `waitForLoadState("networkidle")` is not enough here: the page is
-   *  already idle when the click happens, so it can resolve before the
-   *  request is even sent, and the reload that follows cancels it. */
+  /** Click Save and wait for the PATCH itself: networkidle is not enough, the page is already idle at the click,
+   *  so it can resolve before the request is sent and the reload that follows would cancel it. */
   async function save(page) {
     const patched = page.waitForResponse((r) =>
       r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
@@ -360,10 +343,8 @@ test.describe("workspace chat channels", () => {
     return patched;
   }
 
-  /** The webhook URL is a credential and is never returned by the API, so the
-   *  box is always empty on load and says whether one is configured. That
-   *  makes "saved the form with an empty box" ambiguous, and getting it wrong
-   *  deletes a working channel (REVIEWS.md (0.9.5 review), S-1). */
+  /** The webhook URL is a credential the API never returns, so the box is always empty on load: saving it empty is
+   *  ambiguous, and getting it wrong deletes a working channel (REVIEWS.md (0.9.5 review), S-1). */
   test("a saved webhook is shown as configured, never echoed, and survives an unrelated save",
     async ({ page }) => {
       await open(page, "/settings", "Settings");
@@ -374,7 +355,6 @@ test.describe("workspace chat channels", () => {
       await slack.fill("https://hooks.slack.com/services/T000/B000/e2esecret");
       expect((await save(page)).status()).toBe(200);
 
-      // Configured, and the URL is not on the page anywhere.
       await page.reload();
       await page.waitForLoadState("networkidle");
       await section(page, "Role & access").click();
@@ -383,8 +363,6 @@ test.describe("workspace chat channels", () => {
       await expect(slack).toHaveValue("");
       expect(await page.content()).not.toContain("e2esecret");
 
-      // Saving the reminder address with the webhook box untouched must not
-      // clear the channel.
       await page.locator("#workspace-inbox").fill("grc@e2e.example");
       expect((await save(page)).status()).toBe(200);
       await page.reload();
@@ -393,7 +371,6 @@ test.describe("workspace chat channels", () => {
       await expect(page.getByText(/Configured\. Type a new URL to replace it\./).first())
         .toBeVisible();
 
-      // Remove is the one thing that clears it.
       const removed = page.waitForResponse((r) =>
         r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
       await page.getByRole("button", { name: "Remove", exact: true }).first().click();
@@ -402,9 +379,6 @@ test.describe("workspace chat channels", () => {
         .toHaveCount(0);
     });
 
-  /** The page asks for the workspace as the section opens, and the answer used
-   *  to empty the webhook box when it landed. A slow answer therefore ate what
-   *  a person had already typed, and Save then sent the form without it. */
   test("a webhook typed before the workspace has loaded is kept, and Save waits for the answer",
     async ({ page }) => {
       await open(page, "/settings", "Settings");
@@ -421,7 +395,6 @@ test.describe("workspace chat channels", () => {
       const saveButton = page.getByRole("button", { name: "Save", exact: true });
       await expect(saveButton).toBeDisabled();
 
-      // The held answer arrives; the box still holds what was typed.
       await expect(saveButton).toBeEnabled({ timeout: 10_000 });
       await page.unroute("**/api/workspaces/current/", hold);
       await expect(slack).toHaveValue("https://hooks.slack.com/services/T000/B000/e2eslow");

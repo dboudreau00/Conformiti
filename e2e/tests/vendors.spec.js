@@ -1,7 +1,5 @@
 import { test, expect, expectBrowserError, open, signIn, DEMO } from "../fixtures.js";
 
-// The seeded register: AWS (full matrix), Okta (report expiring), Stripe
-// (report expired, linked risk) and Brightline (just onboarded, no matrix).
 const tab = (page, name) => page.getByRole("tab", { name, exact: true });
 
 test.describe("vendor register", () => {
@@ -11,14 +9,11 @@ test.describe("vendor register", () => {
       await expect(page.getByRole("button", { name })).toBeVisible();
     }
     await expect(page.getByText("critical", { exact: true }).first()).toBeVisible();
-    // Only the vendor with nothing stated wears the badge.
     await expect(page.getByText("no matrix", { exact: true })).toHaveCount(1);
   });
 
   test.describe("the portfolio view link", () => {
-    // An add-on that scores the register sends the features it has switched on
-    // with the signed-in user. Answer the shell's own request for that user
-    // with the field added, as an installation carrying the add-on would.
+    // An add-on sends the features it has switched on with the signed-in user: answer /api/users/me/ with them added.
     async function withFeatures(page, features) {
       await page.route("**/api/users/me/", async (route) => {
         if (route.request().method() !== "GET") return route.fallback();
@@ -90,11 +85,8 @@ test.describe("vendor register", () => {
     await tab(page, "Responsibility matrix").click();
     await expect(page.getByText("Controls in scope", { exact: true })).toBeVisible();
     await expect(page.getByText("Stated", { exact: true })).toBeVisible();
-    // A seeded statement is in the grid, editable by a frameworks manager.
-    // The framework filter is a select: twenty-five chips wrapped.
     await page.locator("#matrix-framework").selectOption("pci_dss_v4");
     await expect(page.getByLabel("Amazon Web Services does for 1.3", { exact: true })).toHaveValue(/Edge network controls/);
-    // Typing marks the row unsaved until Save is pressed.
     await page.getByLabel("We do for 12.1", { exact: true }).fill("Our policy, our review cycle.");
     await expect(page.getByText("unsaved", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /Save 1 change/ }).click();
@@ -110,17 +102,12 @@ test.describe("vendor register", () => {
     await page.getByLabel("Matrix file").setInputFiles({
       name: "aws-matrix.csv",
       mimeType: "text/csv",
-      // The AWS layout: a column per party, X marks under each, and the
-      // vendor is registered under its full name, not "AWS".
       buffer: Buffer.from("Requirement,AWS,Customer\n1.3,X,X\n12.1,,X\nZZ9,X,\n"),
     });
-    // The header report says how each column was read...
     await expect(page.getByText(/AWS → provider mark/)).toBeVisible();
     await expect(page.getByText(/Customer → customer mark/)).toBeVisible();
-    // ...and the tally: one reference the register does not have.
     await expect(page.getByText("2 matched a control")).toBeVisible();
     await expect(page.getByText("1 unmatched")).toBeVisible();
-    // Nothing was written by parsing; confirming writes exactly the usable rows.
     await page.getByRole("button", { name: /Import 2 row/ }).click();
     await expect(page.getByText(/2 row\(s\) imported/)).toBeVisible();
     await expect(page.getByText("import", { exact: true }).first()).toBeVisible();
@@ -146,7 +133,6 @@ test.describe("vendor register", () => {
     await prompt.getByRole("button", { name: "Provider", exact: true }).click();
     await prompt.getByLabel(/What Brightline Security Ltd does/).fill("Runs the annual external test.");
     await prompt.getByRole("button", { name: "Save and next" }).click();
-    // The saved control leaves the queue; the prompt moves on without skipping one.
     await expect(prompt.getByText(/Control 1 of \d+ without a statement/)).toBeVisible();
     await expect(prompt.locator("h3")).not.toHaveText(first);
     await expect(page.getByText(/no responsibilities stated yet/)).toHaveCount(0);
@@ -174,17 +160,14 @@ test.describe("responsibility matrix (RACI)", () => {
     await expect(page.getByText("Shared with a vendor", { exact: true })).toBeVisible();
     await page.locator("#raci-framework").selectOption("soc2");
     await page.getByLabel("Search controls", { exact: true }).fill("CC6.1");
-    // Explicit rows from the seed, and the implied vendor from Okta's matrix.
     await expect(page.getByText("Mia Manager", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Okta", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("shared with vendor", { exact: true }).first()).toBeVisible();
   });
 
   test("a second Accountable party is refused", async ({ page }) => {
-    expectBrowserError(page, /status of 400/);   // the refusal is the point
+    expectBrowserError(page, /status of 400/);
     await open(page, "/responsibilities", "Responsibility matrix");
-    // The control is found by typing rather than scrolling a
-    // dropdown of every control in the workspace.
     await page.locator("#raci-control").fill("CC6.1");
     await page.getByRole("button", { name: /^CC6\.1/ }).click();
     await page.getByLabel("Person", { exact: true }).selectOption({ label: "Owen Owner" });

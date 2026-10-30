@@ -6,9 +6,6 @@ test.describe("audit trail", () => {
   });
 
   test("every filter option is listed exactly once", async ({ page }) => {
-    // Regression for the 0.2.0 defect where `facets` called .distinct() on a
-    // queryset still carrying Meta.ordering, so -timestamp joined the SELECT
-    // behind DISTINCT and every action appeared once per row.
     for (const name of ["Action", "Record type", "Actor", "Time range"]) {
       const options = await page
         .getByRole("combobox", { name, exact: true })
@@ -37,11 +34,9 @@ test.describe("audit trail", () => {
   });
 
   test("the trail is read-only through the API", async ({ page }) => {
-    // Chrome logs a console error for each 405 this deliberately provokes.
     expectBrowserError(page, /status of 405/);
-    // Driven from the page so it works under either transport: in cookie mode
-    // the credential is an HttpOnly cookie that no script, this one included,
-    // can read, so a request built outside the browser cannot carry it.
+    // Driven from the page so it works under either transport: in cookie mode the credential is an
+    // HttpOnly cookie, so a request built outside the browser cannot carry it.
     const statuses = await page.evaluate(async () => {
       const csrf = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
       const headers = { "Content-Type": "application/json" };
@@ -70,9 +65,6 @@ test.describe("access review", () => {
   });
 
   test("the seeded review lists every user with a decision control", async ({ page }) => {
-    // bootstrap_demo seeds one in-flight review; without it this screen is
-    // empty on a fresh install and the README screenshot promises a view the
-    // demo does not produce.
     await expect(page.getByRole("combobox", { name: /access review/i }))
       .toContainText(/access review, open \(4\/5\)/i);
     for (const name of ["Ada Admin", "Aria Auditor", "Mia Manager", "Owen Owner", "Val Viewer"]) {
@@ -82,7 +74,6 @@ test.describe("access review", () => {
   });
 
   test("recording the last decision completes the attestation", async ({ page }) => {
-    // Val Viewer is deliberately left pending by the seeder.
     const decision = page.getByRole("radiogroup", { name: "Decision for Val Viewer" });
     await expect(decision.getByRole("radio", { name: "Keep" })).not.toBeChecked();
     await decision.getByRole("radio", { name: "Keep" }).click();
@@ -141,13 +132,9 @@ test.describe("destructive confirmations", () => {
     const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
     const confirm = dialog.getByRole("button", { name: "Delete group", exact: true });
 
-    // An opaque danger fill with the theme's ink on it, not the pale wash an
-    // inline Delete button wears on the page behind.
     await expect(confirm).toHaveCSS("background-color", await rgb(page, "--danger"));
     await expect(confirm).toHaveCSS("color", await rgb(page, "--danger-ink"));
 
-    // It opens on the safe action, never on Close, and Tab still reaches Close:
-    // Close, Cancel, Delete group, and round again, in either direction.
     await expect(cancel).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect(close).toBeFocused();

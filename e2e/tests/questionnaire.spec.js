@@ -11,7 +11,6 @@ test.describe("questionnaire sent to the vendor", () => {
     await tab(page, "Questionnaire").click();
     await expect(page.getByText("Nothing sent yet.")).toBeVisible();
 
-    // Send the link.
     await page.getByRole("button", { name: "Send to the vendor" }).click();
     await page.locator("#qsend-email").fill("security@brightline.example");
     await page.locator("#qsend-message").fill("Please answer before the audit starts.");
@@ -37,7 +36,6 @@ test.describe("questionnaire sent to the vendor", () => {
       await vendor.getByRole("button", { name: "Save draft" }).click();
       await expect(vendor.getByText(/Draft saved/)).toBeVisible();
 
-      // The draft survives a reload of the link.
       await vendor.reload();
       await expect(vendor.getByRole("listitem").nth(0).getByRole("button", { name: "Yes", exact: true }))
         .toHaveAttribute("aria-pressed", "true");
@@ -46,24 +44,18 @@ test.describe("questionnaire sent to the vendor", () => {
       await vendor.locator("#q-name").fill("Nia Vendor");
       await vendor.locator("#q-title").fill("CISO");
       await vendor.getByRole("button", { name: "Submit questionnaire" }).click();
-      // Submitting closes the link for good, so it asks first and says how
-      // many questions are still blank: the two answered above, ten not.
       const confirm = vendor.getByRole("dialog", { name: "Submit your answers?" });
       await expect(confirm).toBeVisible();
       await expect(confirm).toHaveAccessibleDescription(/^2 of 12 questions answered, 10 left blank\./);
-      // Exact, or this also matches the "Submit questionnaire" button behind
-      // the dialog.
       await vendor.getByRole("button", { name: "Submit", exact: true }).click();
       await expect(vendor.getByRole("heading", { name: "Thank you" })).toBeVisible();
 
-      // Submits once: the link is now closed.
       await vendor.reload();
       await expect(vendor.getByRole("heading", { name: /Already submitted/ })).toBeVisible();
     } finally {
       await vendorContext.close();
     }
 
-    // Back home: the answers wait for review, then the outcome is recorded.
     await page.reload();
     await page.getByRole("button", { name: /Brightline Security/ }).click();
     await tab(page, "Questionnaire").click();

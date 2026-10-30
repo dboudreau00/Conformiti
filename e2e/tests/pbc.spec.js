@@ -46,21 +46,14 @@ test.describe("PBC request list", () => {
     await page.evaluate(() => localStorage.clear());
     await signIn(page, DEMO.owner);
     await open(page, "/packages", "Audit packages");
-    // The packages exist; this account reads none of them, and its requests
-    // name the one they belong to.
     await expect(page.getByText("No packages visible to you")).toBeVisible();
     const mine = page.getByRole("region", { name: "Auditor requests assigned to you", exact: true });
     await expect(mine).toBeVisible();
     const openLine = mine.locator('li[data-reference="PBC-03"]');
     await expect(openLine.getByText(/SOC 2 Type II fieldwork/)).toBeVisible();
-    // The note is asked for in a dialog of the page's own, not a
-    // browser prompt, so the whole answer stays visible and can be corrected.
     await openLine.getByRole("button", { name: "Mark provided" }).click();
     const ask = page.getByRole("dialog", { name: "Mark PBC-03 provided" });
     await expect(ask).toBeVisible();
-    // It opens on the field, not on Close, and Shift+Tab from the field
-    // reaches Close rather than skipping it for the last button.
-    // Nothing is attached, so the note is required and its label says why.
     const why = ask.getByLabel("Why it is answered without a document");
     await expect(why).toBeFocused();
     await page.keyboard.press("Shift+Tab");

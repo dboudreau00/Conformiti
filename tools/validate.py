@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-"""
-Project validation for alpha/beta readiness.
-
-Runs entirely on the stdlib (no Django import, no node) so it works on a bare
-checkout before any dependencies are installed. Checks are grouped; the script
-prints a section-by-section report and exits non-zero if any ERROR is found
-(WARNINGs don't fail the build).
+"""Static validation: stdlib only (no Django, no node), so it runs on a bare checkout. Prints a section-by-section
+report and exits non-zero on any ERROR (WARNINGs do not fail the build).
 
 Usage:  python3 tools/validate.py        (from the repo root)
 """
@@ -35,9 +30,7 @@ def read(path):
     return open(path, encoding="utf-8").read()
 
 
-# ===========================================================================
-# 1. Backend: every .py parses
-# ===========================================================================
+# --- 1. Backend: every .py parses ---
 def check_python_syntax():
     n = 0
     for path in glob.glob(os.path.join(BACKEND, "**", "*.py"), recursive=True):
@@ -49,9 +42,7 @@ def check_python_syntax():
     print(f"  1. python syntax: {n} files parsed")
 
 
-# ===========================================================================
-# 2. Backend wiring: apps, urls, migrations lists
-# ===========================================================================
+# --- 2. Backend wiring: apps, urls, migrations lists ---
 LOCAL_APPS = ["accounts", "compliance", "documents", "calendar_app",
               "notifications", "audit", "analytics", "governance", "integrations",
               "attestations", "vendors"]
@@ -61,9 +52,7 @@ def apps_with_models():
     out = []
     for app in LOCAL_APPS:
         p = os.path.join(BACKEND, app, "models.py")
-        # Model bases: plain models.Model, the tenant base and the swapped user
-        # model. Matching only "models.Model" would skip every app whose models
-        # use the tenant base.
+        # models.Model, the tenant base and the swapped user model: matching only "models.Model" skips tenant apps.
         if os.path.exists(p) and re.search(
                 r"class \w+\(.*(?:models\.Model|TenantModel|AbstractUser)", read(p)):
             out.append(app)
@@ -80,9 +69,7 @@ def check_backend_wiring():
         if has_urls and f"{app}.urls" not in config_urls:
             err("wiring", f"{app}/urls.py exists but is not included in config/urls.py")
 
-    # Migrations ship with the release: every app that declares models must
-    # carry an initial migration, and no install path may run makemigrations
-    # (that would generate un-reviewed schema changes on the target machine).
+    # Every app with models ships an initial migration, and no install path runs makemigrations (un-reviewed schema).
     model_apps = apps_with_models()
     for app in model_apps:
         if not os.path.exists(os.path.join(BACKEND, app, "migrations", "0001_initial.py")):
@@ -97,9 +84,7 @@ def check_backend_wiring():
     print(f"  2. app wiring: {len(LOCAL_APPS)} apps, {len(model_apps)} migration sets, install paths never makemigrations")
 
 
-# ===========================================================================
-# 3. Every ViewSet is registered in a router
-# ===========================================================================
+# --- 3. Every ViewSet is registered in a router ---
 def check_viewset_registration():
     n_sets = 0
     for app in LOCAL_APPS:
@@ -118,19 +103,13 @@ def check_viewset_registration():
     print(f"  3. viewset registration: {n_sets} viewsets verified")
 
 
-# ===========================================================================
-# 4. Frontend: JSX tag-tree validity
-# ===========================================================================
+# --- 4. Frontend: JSX tag-tree validity ---
 def _strip_js(s):
     out, i, n = [], 0, len(s)
     SP = set("([{,:;=?&|!+-*/%<~^\n") | {""}
 
-    # A quote opens a string when what precedes it is an operator, a bracket
-    # or one of these words. Without the words, `return "-";` would read as JSX
-    # text rather than a string: the opening quote is passed through and the
-    # closing one, preceded by `-` (an operator), opens a string that eats the
-    # rest of the file. The guard exists for apostrophes in JSX prose
-    # ("Couldn't"), so it has to stay, but it has to know a keyword too.
+    # A quote opens a string after an operator, a bracket or one of these words; without the words `return "-";` reads
+    # as JSX text and the closing quote opens a string that eats the rest of the file.
     KEYWORDS = {"return", "typeof", "case", "in", "of", "new", "delete",
                 "throw", "do", "else", "yield", "await", "instanceof", "void"}
 
@@ -239,16 +218,13 @@ def check_frontend_syntax():
     return files
 
 
-# ===========================================================================
-# 5. App.jsx consistency: pages imported+routed, nav <-> routes <-> titles
-# ===========================================================================
+# --- 5. App.jsx consistency: pages imported+routed, nav <-> routes <-> titles ---
 def check_app_wiring():
     app = read(os.path.join(FRONTEND, "App.jsx"))
     nav = read(os.path.join(FRONTEND, "nav.js"))
     pages = {os.path.basename(p)[:-4] for p in glob.glob(os.path.join(FRONTEND, "pages", "*.jsx"))}
     imported = set(re.findall(r'import (\w+) from "\./pages/(?:\w+)\.jsx"', app))
-    # Anything rendered inside <Routes> counts, not just `element={<Page/>}`:
-    # a route may pick its element (an auditor is sent past the dashboard).
+    # Anything rendered inside <Routes> counts, not just `element={<Page/>}`: a route may pick its element.
     routed = set()
     for block in re.findall(r"<Routes[^>]*>(.*?)</Routes>", app, re.S):
         routed |= set(re.findall(r"<(\w+)[\s/>]", block))
@@ -274,9 +250,7 @@ def check_app_wiring():
     print(f"  5. App.jsx wiring: {len(pages)} pages, {len(nav_paths)} nav links checked")
 
 
-# ===========================================================================
-# 6. Frontend API calls resolve to backend routes
-# ===========================================================================
+# --- 6. Frontend API calls resolve to backend routes ---
 def backend_prefixes():
     prefixes = set()
     for app in LOCAL_APPS:
@@ -303,9 +277,7 @@ def check_api_calls(files):
     print(f"  6. api surface: {n} frontend calls resolved against {len(prefixes)} backend prefixes")
 
 
-# ===========================================================================
-# 7. Frontend relative imports resolve
-# ===========================================================================
+# --- 7. Frontend relative imports resolve ---
 def check_frontend_imports(files):
     n = 0
     for f in files:
@@ -317,14 +289,9 @@ def check_frontend_imports(files):
     print(f"  7. frontend imports: {n} relative imports resolved")
 
 
-# ===========================================================================
-# 8. CSS classes used in JSX exist in app.css
-# ===========================================================================
+# --- 8. CSS classes used in JSX exist in app.css ---
 def check_css(files):
-    """The design system is token-driven (styles/index.css + Tailwind). Every
-    theme pack and accent pack must be defined, nothing may import the
-    retired app.css, and pages must not hard-code colours that would break
-    the light/dark packs."""
+    """Theme and accent packs are all defined, nothing imports the retired app.css, and pages hard-code no colours."""
     css_path = os.path.join(FRONTEND, "styles", "index.css")
     if not os.path.exists(css_path):
         err("css", "frontend/src/styles/index.css missing")
@@ -356,9 +323,7 @@ def check_css(files):
     print(f"  8. theme system: 4 theme packs + 4 accent packs defined, {len(hard)} file(s) with hard-coded colours (warnings)")
 
 
-# ===========================================================================
-# 9. requirements.txt covers third-party imports
-# ===========================================================================
+# --- 9. requirements.txt covers third-party imports ---
 PIP_NAME = {
     "jwt": "PyJWT",
     "signxml": "signxml",
@@ -404,9 +369,7 @@ def check_requirements():
     print(f"  9. dependencies: {len(seen)} third-party modules checked against requirements.txt")
 
 
-# ===========================================================================
-# 10. Deploy artifacts: docker-compose, dockerfiles, env example
-# ===========================================================================
+# --- 10. Deploy artifacts: docker-compose, dockerfiles, env example ---
 def check_deploy():
     dc_path = os.path.join(ROOT, "docker-compose.yml")
     if os.path.exists(dc_path):
@@ -427,27 +390,21 @@ def check_deploy():
     for key in sorted(used - documented):
         warn("deploy", f"settings reads env '{key}' but .env.example doesn't mention it")
 
-    # The image is published, so `docker run <image>` is a caller now. It is
-    # the only one that reaches the code's own DEBUG default, which is on.
+    # A plain `docker run <image>` reaches the code's own DEBUG default, which is on.
     dockerfile = read(os.path.join(BACKEND, "Dockerfile"))
     if not re.search(r"^ENV\s+DJANGO_DEBUG=(false|0|no|off)\s*$", dockerfile, re.M | re.I):
         err("deploy", "backend/Dockerfile must pin ENV DJANGO_DEBUG=false: the code "
                       "default is on, and a published image is a server")
 
-    # COPY . . bakes whatever the build context holds. On a laptop that has
-    # run the local installer, that includes the key ring and the signing key.
+    # COPY . . bakes in the build context, which on an installed laptop holds the key ring and the signing key.
     ignored = read(os.path.join(BACKEND, ".dockerignore"))
     for secret in (".field-encryption-key", ".package-signing-key", "*.pem"):
         if secret not in ignored:
             err("deploy", f"backend/.dockerignore must exclude {secret}: COPY . . would "
                           f"bake a local key into a published image")
 
-    # The backup holds the signing key, the encryption ring and the
-    # package-signing key. Its tars are written by a container running as
-    # root, so the mode has to be set in there: a chmod afterwards, from the
-    # operator who invoked the script, fails on every Linux host, and hiding
-    # that failure with `|| true` would print "mode 600" for a file that is not
-    # (0.9.5i).
+    # The backup tars are written by a root container, so mode 600 is set in there: a later chmod fails on Linux hosts
+    # and `|| true` would hide it.
     backup = read(os.path.join(ROOT, "scripts", "backup.sh"))
     if backup:
         if re.search(r"^\s*chmod[^\n]*\|\|\s*true", backup, re.M):
@@ -461,17 +418,10 @@ def check_deploy():
           f"image, {len(used)} env keys cross-checked")
 
 
-# ===========================================================================
-# 18. Nothing is fetched from a third party at page load
-# ===========================================================================
+# --- 18. Nothing is fetched from a third party at page load ---
 def check_no_offsite_assets():
-    """A self-hosted compliance product must not phone anywhere on page load.
-
-    The anonymous login screen and the public vendor questionnaire are the
-    ones that matter: a font, script or stylesheet from a CDN tells that CDN
-    the address of the installation, and who is visiting it and when. The
-    shipped CSP has to keep saying so too, or the next <link> goes unnoticed.
-    """
+    """A CDN font, script or stylesheet on the login screen or the public questionnaire tells that CDN who visits and
+    when; the shipped CSP must keep refusing them too."""
     checked = 0
     for rel in ("index.html", "nginx.conf"):
         path = os.path.join(ROOT, "frontend", rel)
@@ -491,9 +441,7 @@ def check_no_offsite_assets():
     print(f" 18. offsite assets: {checked} file(s) checked, nothing loaded from a third party")
 
 
-# ===========================================================================
-# 11. Demo-data integrity: seeded control ids exist in the framework JSON
-# ===========================================================================
+# --- 11. Demo-data integrity: seeded control ids exist in the framework JSON ---
 def check_demo_data():
     ids = {}
     for key in ["soc2", "iso27001", "pci_dss_v4"]:
@@ -507,9 +455,7 @@ def check_demo_data():
     print(f" 11. demo data: {len(refs)} seeded control references verified against framework JSON")
 
 
-# ===========================================================================
-# 12. Risk importer regression (pure-stdlib module, runs standalone)
-# ===========================================================================
+# --- 12. Risk importer regression (pure-stdlib module, runs standalone) ---
 def check_importer():
     sys.path.insert(0, BACKEND)
     from governance.risk_import import parse_upload, normalize
@@ -544,8 +490,7 @@ def check_mfa():
 
 
 def check_notifications_wiring():
-    """The review-reminder email chain has async/scheduled parts the other
-    checks don't reach: prove every link is connected end to end."""
+    """Each link of the review-reminder chain is connected end to end."""
     settings = read(os.path.join(BACKEND, "config", "settings.py"))
     tasks = read(os.path.join(BACKEND, "notifications", "tasks.py"))
     svc = read(os.path.join(BACKEND, "notifications", "email_service.py"))
@@ -568,9 +513,7 @@ def check_notifications_wiring():
     if not os.path.exists(cmd):
         err("notify", "send_review_reminders management command missing")
     elif not ("run_all_scans" in read(cmd) or "run_review_scan" in read(cmd)):
-        # run_all_scans is the morning pass the Celery task makes (every
-        # workspace, one failure isolated, the daily summary); the command
-        # calls it rather than carrying a loop of its own.
+        # The command calls run_all_scans (the Celery task's morning pass) rather than looping itself.
         err("notify", "send_review_reminders calls neither run_all_scans nor run_review_scan")
 
     # 4. both email templates exist
@@ -600,19 +543,14 @@ def check_notifications_wiring():
 
 
 def check_compose_debug_isolation():
-    """Compose reads ./.env both for ${...} substitution and into the
-    containers, and ./.env is what the *local* installer writes (DEBUG on, dev
-    signing key). The Docker stack must therefore never interpolate
-    DJANGO_DEBUG / DJANGO_SECRET_KEY, or a developer who ran ./install.sh and
-    then `docker compose up` gets a DEBUG container signing real tokens."""
+    """Compose reads ./.env, which the local installer fills with DEBUG on and a dev signing key: the Docker stack must
+    never interpolate DJANGO_DEBUG or DJANGO_SECRET_KEY, or `compose up` signs real tokens in DEBUG."""
     path = os.path.join(ROOT, "docker-compose.yml")
     if not os.path.exists(path):
         err("compose", "docker-compose.yml missing")
         return
     dc = read(path)
-    # Every secret the stack accepts must go through a CONFORMITI_* name that a
-    # development .env never contains. Adding a secret here without adding it to
-    # this list breaks that rule.
+    # Every secret goes through a CONFORMITI_* name that a development .env never contains; new secrets join this list.
     for leaky in ("${DJANGO_DEBUG", "${DJANGO_SECRET_KEY:", "${DJANGO_FIELD_ENCRYPTION_KEY:"):
         if leaky in dc:
             err("compose", f"docker-compose.yml interpolates {leaky}...}} from .env; "
@@ -630,15 +568,9 @@ def check_compose_debug_isolation():
 
 
 def check_malware_scanning():
-    """The scanning path, checked without a socket or a ClamAV install.
-
-    Three things can silently make "evidence is scanned" untrue: a clamd that
-    skips oversized content and answers OK, a compose file that reads the
-    enable flag from a shared .env, and a stream limit smaller than what nginx
-    will accept.
-    """
-    # documents.clamav ONLY: this script runs on a bare checkout before
-    # anything is pip-installed, and documents.scanning imports Django.
+    """The scanning path, without a socket or ClamAV: a clamd that skips oversized content, a shared .env enable flag,
+    or a stream limit below nginx's each make "evidence is scanned" untrue."""
+    # documents.clamav only: this runs on a bare checkout, and documents.scanning imports Django.
     sys.path.insert(0, BACKEND)
     try:
         from documents.clamav import (  # noqa: E402
@@ -695,8 +627,7 @@ def check_malware_scanning():
 
 
 def check_tests_and_ci():
-    """A shippable project carries its own proof: a test module per app and
-    a CI workflow that runs them."""
+    """A test module per app and a CI workflow that runs them."""
     missing = [app for app in LOCAL_APPS
                if not (os.path.exists(os.path.join(BACKEND, app, "tests.py"))
                        or os.path.isdir(os.path.join(BACKEND, app, "tests")))]
@@ -712,18 +643,10 @@ def check_tests_and_ci():
     print(f" 15. tests + ci: {n_tests} test functions across {len(LOCAL_APPS) - len(missing)}/{len(LOCAL_APPS)} apps, workflow + LICENSE present")
 
 
-# ===========================================================================
-# ===========================================================================
-# 19. One version, everywhere it is written down
-# ===========================================================================
+# --- 19. One version, everywhere it is written down ---
 def check_version_lock():
-    """The version is written in several places by hand. They drifted: the
-    README badge said 0.9.3 for a whole release, and package-lock.json still
-    said 0.4.1 at 0.9.5k, so every `npm install` rewrote a tracked file and
-    left a fresh clone dirty. A build whose badge, package manifest, lockfile,
-    changelog heading and `config/version.py` disagree is refused, so none of
-    them can lag the tag again.
-    """
+    """The version agrees everywhere it is written: config/version.py, both package manifests and lockfiles, the README
+    badge and the changelog heading."""
     sources = {}
     version_py = read(os.path.join(BACKEND, "config", "version.py"))
     m = re.search(r'^__version__\s*=\s*"([^"]+)"', version_py, re.M)
@@ -732,18 +655,14 @@ def check_version_lock():
     package = json.load(open(os.path.join(ROOT, "frontend", "package.json"), encoding="utf-8"))
     sources["frontend/package.json"] = package.get("version")
 
-    # npm writes the version twice: at the top and on the root package entry.
-    # Bump both with package.json, by hand or with `npm install
-    # --package-lock-only` in frontend/.
+    # npm writes the version at the top and on the root package entry; both move with package.json.
     lock_path = os.path.join(ROOT, "frontend", "package-lock.json")
     lock = json.load(open(lock_path, encoding="utf-8")) if os.path.exists(lock_path) else {}
     sources["frontend/package-lock.json"] = lock.get("version")
     sources["frontend/package-lock.json packages[\"\"]"] = (
         (lock.get("packages") or {}).get("", {}).get("version"))
 
-    # The browser-test harness in e2e/ is versioned with the release too, so a
-    # release carries one version. Same two lock fields; `npm install
-    # --package-lock-only` in e2e/ rewrites both.
+    # e2e/ carries the release version too, in the same two lock fields.
     e2e_path = os.path.join(ROOT, "e2e", "package.json")
     e2e = json.load(open(e2e_path, encoding="utf-8")) if os.path.exists(e2e_path) else {}
     sources["e2e/package.json"] = e2e.get("version")
@@ -771,32 +690,23 @@ def check_version_lock():
           f"{len(sources)} places, {'all agree' if agree else 'they disagree'}")
 
 
-# ===========================================================================
-# 20. No em or en dashes in text bodies: the Markdown docs and the templates
-# ===========================================================================
+# --- 20. No em or en dashes in text bodies: the Markdown docs and the templates ---
 DASHES = {"\u2013": "en dash (U+2013)", "\u2014": "em dash (U+2014)"}
-# Directories a walk never enters: they are not part of the repository, and
-# node_modules alone holds thousands of Markdown files of other projects.
+# Never walked: not part of the repository (node_modules alone holds thousands of Markdown files).
 WALK_SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist",
              "backups", ".claude", ".pytest_cache", "htmlcov", ".report", ".results"}
 WALK_SKIP_PATHS = {"backend/media", "backend/staticfiles", "backend/secrets"}
 
 
 def _dash_rule_covers(rel):
-    """True for a repository path (forward slashes) the dash rule covers:
-    text bodies only, which is every Markdown file and every file under a
-    backend templates directory (the emails). Code, scripts and configuration
-    are not covered, their comments included: the owner's rule is that a
-    dash there is fine."""
+    """True for a repository path (forward slashes) the dash rule covers: Markdown and backend templates, not code."""
     return (rel.endswith(".md")
             or re.fullmatch(r"backend/(?:.+/)?templates/.+", rel) is not None)
 
 
 def _repository_files():
-    """Every file in the repository, as paths relative to ROOT. `git ls-files`
-    in a checkout, so an untracked local note is never read; a walk that
-    skips what is never committed (installed packages, build output) in a
-    release archive, which holds nothing untracked to begin with."""
+    """Every repository file relative to ROOT: git ls-files in a checkout, a walk that skips installed packages and
+    build output in a release archive."""
     import subprocess
     try:
         run = subprocess.run(["git", "-C", ROOT, "ls-files", "-z"],
@@ -816,12 +726,8 @@ def _repository_files():
 
 
 def check_no_dashes():
-    """House style: no em or en dash in a text body, where each is replaced
-    by what it was doing (a full stop, a comma, a colon or parentheses).
-    Earlier passes swept the docs by hand and the dashes came back in the
-    next edit. Checked: every tracked Markdown file and every file under a
-    backend templates directory (the emails). Code, scripts and configuration
-    files are left alone, comments included."""
+    """No em or en dash in a text body: every tracked Markdown file and every backend template (the emails). Code,
+    scripts and configuration are left alone."""
     checked = 0
     for rel in sorted(_repository_files()):
         if not _dash_rule_covers(rel):
@@ -839,8 +745,7 @@ def check_no_dashes():
                 if any(d in line for d in DASHES)]
         for n, line in hits[:5]:
             kinds = " and ".join(name for d, name in DASHES.items() if d in line)
-            # ASCII only, the dash shown as \u2014: a Windows console that is
-            # not UTF-8 cannot print the line as it is.
+            # ASCII only (the dash shown as \u2014): a non-UTF-8 Windows console cannot print it.
             shown = line.strip()[:90].encode("ascii", "backslashreplace").decode("ascii")
             err("dashes", f"{rel}:{n}: {kinds}: {shown}")
         if len(hits) > 5:

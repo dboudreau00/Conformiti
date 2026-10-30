@@ -1,13 +1,3 @@
-/**
- * Regenerates the README screenshots from the running application.
- *
- *     cd e2e && npm run shots
- *
- * Opt-in (its own Playwright project) because it writes into the repository.
- * The captures are real screens driven through the real UI, never mock-ups,
- * and they inherit the suite's console-error fixture, so a run that produces a
- * screenshot also proves the screen was error-free when it was taken.
- */
 import { test as base, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -55,8 +45,7 @@ test("login", async ({ page, context }) => {
   await shot(page, "login");
 });
 
-// The dashboard draws its coverage atlas from a request of its own, so the
-// capture waits for the squares rather than for a fixed time alone.
+// The atlas comes from a request of its own: wait for the squares, not just a fixed time.
 test("dashboard", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("group", { name: /controls grouped by framework/ }).getByRole("button").first()).toBeVisible();
@@ -118,8 +107,7 @@ test("viewer", async ({ page }) => {
 test("controls", async ({ page }) => {
   await page.goto("/controls");
   await settle(page, 1600);
-  // Scoped to the register: the Governance, Appearance, notification and
-  // account buttons in the top bar are aria-expanded controls too, and an
+  // Scoped to the register: the top bar's menu buttons are aria-expanded controls too, and an
   // unscoped .first() opened one of those instead.
   const row = page.getByRole("main").locator("[aria-expanded]").first();
   if (await row.count()) {
@@ -167,9 +155,7 @@ test("settings", async ({ page }) => {
   await shot(page, "settings");
 });
 
-// The workspace switcher lives at the foot of Role & access, so this one is
-// captured where it sits rather than from the top of the page. The top bar is
-// sticky, so it stays in frame.
+// The switcher is at the foot of Role & access, so it is captured where it sits, not from the top of the page.
 test("workspaces", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/settings");
@@ -181,18 +167,14 @@ test("workspaces", async ({ page }) => {
   const block = page.getByTestId("workspaces");
   await expect(block).toBeVisible();
 
-  // A fresh install has only Default, and a switcher with nothing to switch
-  // to says nothing. Make the second organisation through the real form.
+  // A switcher with nothing to switch to says nothing: make a second organisation through the real form.
   if (!(await block.getByText("blackbox-company").count())) {
     await page.locator("#new-workspace").fill("Blackbox Company");
     await page.getByRole("button", { name: "Create", exact: true }).click();
-    // The create seeds the framework library into the new workspace, which
-    // takes appreciably longer than an ordinary request.
+    // Creating a workspace seeds the framework library into it, which takes far longer than an ordinary request.
     await expect(block.getByText("blackbox-company")).toBeVisible({ timeout: 90_000 });
   }
   await settle(page, 800);
-  // To the foot of the page rather than just far enough to reveal the block:
-  // the panel then ends at the bottom of the frame instead of being sliced.
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(OUT, "workspaces.png") });

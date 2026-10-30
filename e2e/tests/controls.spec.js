@@ -8,14 +8,9 @@ test.describe("control register", () => {
   });
 
   test("shows every seeded control, not just the first page", async ({ page }) => {
-    // 217 controls across three frameworks arrive over five paginated pages;
-    // reading only the first page is a defect this test guards against. The
-    // register renders a hundred rows at a time, so the second number is what
-    // arrived and the first is what is on screen: both matter.
     await expect(page.getByText(/SHOWING 100 OF 217/i)).toBeVisible();
     await expect(page.getByRole("tab", { name: /All frameworks/i })).toBeVisible();
 
-    // And every one of them is reachable.
     for (let i = 0; i < 2; i += 1) {
       await page.getByRole("button", { name: /Show \d+ more of/ }).click();
     }
@@ -59,14 +54,12 @@ test.describe("control register", () => {
 
   test("a control row expands to show its linked evidence", async ({ page }) => {
     const search = page.getByRole("searchbox", { name: /search controls/i });
-    // A.5.1 is seeded with two evidence documents.
     await search.fill("A.5.1");
     await page.getByText("Policies for information security").click();
     await expect(page.getByText(/evidence/i).first()).toBeVisible();
   });
 
   test("every control carries a readiness score and band", async ({ page }) => {
-    // The register shows a graded figure, not a tick box.
     await expect(page.getByText("Readiness", { exact: true })).toBeVisible();
     const search = page.getByRole("searchbox", { name: /search controls/i });
     await search.fill("A.5.1");
@@ -79,18 +72,14 @@ test.describe("control register", () => {
     await search.fill("A.5.1");
     await page.getByText("Policies for information security").click();
     await page.waitForLoadState("networkidle");
-    // Each of the five signals is named, with its own points and a reason.
-    // Not exact-matched: the label and its explanation share a text node.
     const breakdown = page.getByRole("listitem").filter({ hasText: /\d+\/\d+$/ });
     await expect(breakdown).toHaveCount(5);
-    // Every row explains itself rather than just showing a number.
     const text = (await breakdown.allInnerTexts()).join(" | ");
     for (const signal of ["Implementation", "Owner", "Evidence", "Freshness", "Testing"]) {
       expect(text, `${signal} row missing`).toContain(signal);
     }
     expect(text).toMatch(/Marked implemented|Not started|Implementation in progress/);
     expect(text).toMatch(/document\(s\) linked|No evidence linked/);
-    // And it says what to do next, not just what is wrong.
     await expect(page.getByText(/^Next: /)).toBeVisible();
   });
 

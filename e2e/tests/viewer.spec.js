@@ -17,7 +17,6 @@ test.describe("in-browser document viewer", () => {
     await expect(dialog.getByText("Text", { exact: true })).toBeVisible();
     await expect(dialog.getByText(/demo file/)).toBeVisible();
     await expect(dialog.getByText("Satisfies controls", { exact: true })).toBeVisible();
-    // The digest is computed from the bytes on screen, in the browser.
     await dialog.getByRole("button", { name: "Compute digest" }).click();
     await expect(dialog.getByText(/^[0-9a-f]{64}$/)).toBeVisible();
     await page.keyboard.press("Escape");
@@ -31,13 +30,11 @@ test.describe("in-browser document viewer", () => {
     const dialog = page.getByRole("dialog", { name: /Viewing Penetration Test Report/ });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("PDF", { exact: true })).toBeVisible();
-    // No frame, no plugin: pages are canvases drawn in our own page.
     await expect(dialog.locator("iframe")).toHaveCount(0);
     const canvas = dialog.locator("canvas[data-page='1']");
     await expect(canvas).toBeVisible();
     await expect(canvas).toHaveAttribute("data-zoom", "1");
     await expect(dialog.getByText(/1 page · 100%/)).toBeVisible();
-    // Something was painted: a rendered page is not a blank canvas.
     const painted = await canvas.evaluate((c) => {
       const ctx = c.getContext("2d");
       const px = ctx.getImageData(0, 0, c.width, c.height).data;

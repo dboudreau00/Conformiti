@@ -1,17 +1,8 @@
 import { test, expect, expectBrowserError, open } from "../fixtures.js";
 
-// Every button that saves a file from the API goes through downloadFile in
-// client.js, which rejects when the download failed. These tests make sure
-// each screen shows that failure instead of the button doing nothing or an
-// unhandled rejection in the console.
-
-// The words client.js uses when an X-Accel-Redirect reached the browser: the
-// server meant nginx to send the file and no nginx was in front of it.
+// The words client.js uses when an X-Accel-Redirect reaches the browser because no nginx is in front.
 const UNSERVED = /MEDIA_INTERNAL=false/;
 
-/** Answer a stored-file download the way Django does with MEDIA_INTERNAL on
- *  and no nginx in front: an empty body and the header nginx would have
- *  acted on. Returns a count of the requests it answered. */
 async function withoutNginx(page, url) {
   let answered = 0;
   await page.route(url, (route) => {
@@ -28,9 +19,8 @@ async function withoutNginx(page, url) {
   return () => answered;
 }
 
-/** Answer an export with a server error, as a crashed view would. */
 async function failing(page, url) {
-  expectBrowserError(page, /status of 500/);   // the failure is the point
+  expectBrowserError(page, /status of 500/);
   await page.route(url, (route) => route.fulfill({
     status: 500,
     contentType: "text/html",
@@ -38,7 +28,6 @@ async function failing(page, url) {
   }));
 }
 
-/** How many downloads the browser has started, so a test can say none was. */
 function downloads(page) {
   let started = 0;
   page.on("download", () => { started += 1; });
@@ -70,7 +59,6 @@ test.describe("a stored file that no nginx sends", () => {
     await results.getByRole("button", { name: "Download Access Control Policy", exact: true }).first().click();
     await expect.poll(answered).toBe(2);
     await expect(alertSaying(page, UNSERVED)).toBeVisible();
-    // The empty body was never saved as a 0-byte file.
     expect(saved()).toBe(0);
   });
 
@@ -78,7 +66,6 @@ test.describe("a stored file that no nginx sends", () => {
     const saved = downloads(page);
     const answered = await withoutNginx(page, /\/api\/meeting-minutes\/\d+\/download\/$/);
     await open(page, "/meetings", "Meetings");
-    // The seeded minutes carry no file, so record one that does.
     await page.locator("#mm-date").fill(new Date().toISOString().slice(0, 10));
     await page.locator("#mm-title").fill("E2E minutes with a file");
     await page.locator("#mm-file").setInputFiles({

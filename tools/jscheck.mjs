@@ -1,23 +1,12 @@
 /**
- * Parse every file, then report every identifier used but declared nowhere.
+ * Parse every file and report each identifier used but declared nowhere: Vite builds an undeclared name as a global.
  *
  *     cd frontend && node ../tools/jscheck.mjs src      (CI runs this)
  *     node tools/jscheck.mjs <file-or-dir> [...]
  *
- * Exits 1 on a parse error or an undefined name, 0 otherwise.
- *
- * Why this exists: Vite treats an undeclared identifier as a global and builds
- * cleanly, so a handler passing a setter that was renamed or never existed
- * builds, deploys, and throws on the first click. ESLint is not a dependency
- * here and adding it would bring a large tree into `npm audit`, so this uses
- * the oxc parser that rolldown (Vite's bundler) already ships and does its own
- * scope analysis.
- *
- * The analysis is deliberately simple. Every declaration anywhere in a scope
- * counts for that whole scope (hoisting and the temporal dead zone are not
- * modelled), `var` goes to its function, `let`/`const`/`class`/function
- * declarations to their block. That can only miss a use-before-declare; it
- * cannot invent an undefined name that is really declared.
+ * Exits 1 on a parse error or an undefined name. Uses the oxc parser rolldown already ships, so ESLint stays out of
+ * `npm audit`. A declaration counts for its whole scope (no hoisting or temporal dead zone), so a use-before-declare
+ * can be missed but a declared name is never reported.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -61,9 +50,7 @@ const GLOBALS = new Set(`
   isNaN isFinite parseInt parseFloat eval arguments process
 `.split(/\s+/).filter(Boolean));
 
-// "value" is NOT skipped: JSXAttribute.value and Property.value hold the arrow
-// functions whose parameters must be declared, and a Literal's primitive value
-// is dropped anyway because it has no `type`.
+// "value" is not skipped: JSXAttribute.value and Property.value hold arrow functions whose parameters need declaring.
 const SKIP_KEYS = new Set(["type", "start", "end", "range", "loc", "raw", "regex",
   "bigint", "directive", "kind", "operator", "prefix", "computed", "shorthand", "method",
   "static", "async", "generator", "optional", "sourceType", "hashbang", "comments", "tail",

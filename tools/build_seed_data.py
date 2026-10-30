@@ -1,20 +1,6 @@
-"""
-build_seed_data.py
-------------------
-Single source of truth for the compliance control libraries.
+"""Single source of truth for the control libraries: running it regenerates the JSON in backend/compliance/data.
 
-Running this script (re)generates the JSON files consumed by:
-  * the Django seeder            (compliance/management/commands/seed_frameworks.py)
-  * the folder-tree generator    (compliance/management/commands/generate_folder_tree.py)
-
-Control IDs and short titles are functional identifiers. The "objective"
-fields are brief, original-wording paraphrases of each control's intent --
-they are NOT the normative text of the standards. ISO/IEC 27001 and PCI DSS
-are copyrighted; paste the official control text into the app only if your
-organisation holds a licence for the source documents.
-
-Usage:
-    python tools/build_seed_data.py
+Objectives are original paraphrases, never the normative text: ISO/IEC 27001 and PCI DSS are copyrighted.
 """
 import json
 import os
@@ -28,9 +14,7 @@ def c(cid, title, objective):
     return {"control_id": cid, "title": title, "objective": objective}
 
 
-# ---------------------------------------------------------------------------
 # SOC 2: Trust Services Criteria (2017, incl. 2022 points-of-focus revision)
-# ---------------------------------------------------------------------------
 SOC2 = {
     "key": "soc2",
     "name": "SOC 2",
@@ -168,9 +152,7 @@ SOC2 = {
     ],
 }
 
-# ---------------------------------------------------------------------------
 # ISO/IEC 27001:2022, Annex A (93 controls, 4 themes)
-# ---------------------------------------------------------------------------
 ISO = {
     "key": "iso27001",
     "name": "ISO/IEC 27001",
@@ -294,9 +276,7 @@ ISO = {
     ],
 }
 
-# ---------------------------------------------------------------------------
 # PCI DSS v4.0.1: 12 requirements
-# ---------------------------------------------------------------------------
 PCI = {
     "key": "pci_dss_v4",
     "name": "PCI DSS",
@@ -430,11 +410,7 @@ PCI = {
     ],
 }
 
-# ---------------------------------------------------------------------------
-# Cross-framework crosswalk (representative starter set; extend freely)
-# Groups the "same" underlying control theme across the three frameworks so a
-# single piece of evidence can satisfy multiple standards (Vanta-style).
-# ---------------------------------------------------------------------------
+# Cross-framework crosswalk: the same control theme across the three frameworks (a starter set)
 CROSSWALK = [
     {"theme": "Access control policy & least privilege",
      "soc2": ["CC6.1", "CC6.3"], "iso27001": ["A.5.15", "A.8.3", "A.8.4"], "pci_dss_v4": ["7.1", "7.2", "7.3"]},

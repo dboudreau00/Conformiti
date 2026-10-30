@@ -1,8 +1,7 @@
 import { test, expect, DEMO, expectBrowserError, signOut } from "../fixtures.js";
 
-// WebAuthn refuses an IP address as a relying-party id, so this spec alone
-// drives the built SPA at localhost rather than 127.0.0.1 (the server is told
-// so in playwright.config.js). A fresh origin means a fresh sign-in.
+// WebAuthn refuses an IP address as a relying-party id, so this spec drives the SPA at localhost, not
+// 127.0.0.1 (WEBAUTHN_RP_ID in playwright.config.js).
 const PORT = Number(process.env.E2E_PORT || 4173);
 const BASE = `http://localhost:${PORT}`;
 
@@ -20,8 +19,6 @@ async function signInAt(page, { username, password }) {
 
 test.describe("passkeys", () => {
   test("a passkey is enrolled in settings and then completes the sign-in", async ({ page }) => {
-    // Chrome's virtual authenticator: a CTAP2 platform key that confirms
-    // presence and verification on its own.
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("WebAuthn.enable");
     const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
@@ -38,7 +35,6 @@ test.describe("passkeys", () => {
       await signInAt(page, DEMO.owner);
       await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
-      // Enrol.
       await page.goto(`${BASE}/settings`);
       await section(page, "Security").click();
       await expect(page.getByText("Passkeys and security keys")).toBeVisible();
@@ -52,7 +48,6 @@ test.describe("passkeys", () => {
       await expect(list.getByText("Active")).toBeVisible();
       await expect(page.getByText(/Passkey enrolled/)).toBeVisible();
 
-      // Sign out, sign in: the password alone is now a challenge.
       await signOut(page);
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
       await signInAt(page, DEMO.owner);

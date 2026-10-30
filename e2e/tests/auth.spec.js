@@ -8,7 +8,6 @@ test.describe("authentication", () => {
     await signIn(page, { username: "admin", password: "not-the-password" }, { expectFailure: true });
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     await expect(page).toHaveURL(/\/login/);
-    // The shell must not be reachable on a failed attempt.
     await expect(page.getByRole("navigation", { name: "Primary", exact: true })).toHaveCount(0);
   });
 
@@ -55,21 +54,18 @@ test.describe("authentication", () => {
 
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByText("Ada Admin").first()).toBeVisible();
-    // Sign out is in the account menu, whose button names the person and the role.
     await expect(accountButton(page)).toHaveAccessibleName(/Ada Admin/);
 
     await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
-    // The session must be gone, not merely navigated away from.
     const stored = await page.evaluate(() => ({
       access: localStorage.getItem("access"),
       refresh: localStorage.getItem("refresh"),
     }));
     expect(stored.access).toBeNull();
     expect(stored.refresh).toBeNull();
-    // In cookie mode the credential was never in localStorage in the first
-    // place; what matters is that the cookies are gone.
+    // In cookie mode nothing was ever in localStorage; what matters is that the cookies are gone.
     const named = (await page.context().cookies()).map((c) => c.name);
     expect(named.filter((n) => n.startsWith("conformiti_"))).toHaveLength(0);
   });
@@ -87,8 +83,7 @@ test.describe("authentication", () => {
     await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
-    // Sign-out revokes server-side: the refresh token must no longer mint
-    // access tokens, which is what refresh-token rotation is for.
+    // Sign-out revokes server-side: the refresh token must no longer mint access tokens.
     const refreshed = await request.post("/api/auth/token/refresh/", { data: { refresh } });
     expect(refreshed.status()).toBe(401);
   });
@@ -98,12 +93,9 @@ test.describe("authentication", () => {
       await page.goto("/login");
       await page.evaluate(() => localStorage.clear());
       await signIn(page, DEMO[persona]);
-      // The dashboard reads the whole programme, which an external auditor
-      // may not: they land on the packages issued to them instead.
       const landing = persona === "auditor" ? "Audit packages" : "Dashboard";
       await expect(page.getByRole("heading", { name: landing })).toBeVisible();
-      // A request still on its way when the person signs out is refused, and the
-      // browser logs the refusal as an error: let the page finish loading first.
+      // A request in flight at sign-out is refused and logged as a console error: let the page settle first.
       await page.waitForLoadState("networkidle");
       await signOut(page);
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
@@ -115,8 +107,6 @@ test.describe("authentication", () => {
     await page.evaluate(() => localStorage.clear());
     await signIn(page, DEMO.auditor);
     await expect(page.getByRole("heading", { name: "Audit packages" })).toBeVisible();
-    // The API refuses an auditor the register, so the page must not even ask:
-    // one plain answer in place of the refusal's two red notices.
     for (const path of ["/controls", "/risks"]) {
       await page.goto(path);
       await expect(page.getByText("Not available to an auditor account")).toBeVisible();
@@ -124,7 +114,6 @@ test.describe("authentication", () => {
     }
     await page.getByRole("button", { name: "Go to your packages" }).click();
     await expect(page.getByRole("heading", { name: "Audit packages" })).toBeVisible();
-    // The pages the menu does offer still open.
     await page.goto("/audit-log");
     await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
     await expect(page.getByText("Not available to an auditor account")).toHaveCount(0);

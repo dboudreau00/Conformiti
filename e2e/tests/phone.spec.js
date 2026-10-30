@@ -3,12 +3,7 @@ import {
   openMenu, GOVERNANCE_ROUTES,
 } from "../fixtures.js";
 
-/**
- * A phone, 390 by 844. Under 768px the Workspace tabs and the Governance menu
- * do not fit the bar, so they fold into one Menu button that opens a sheet
- * listing every page; search, appearance, notifications and the account menu
- * stay on the bar and open as full-width sheets of their own.
- */
+// 390 by 844: under 768px the tabs and the Governance menu fold into one Menu button that opens a sheet.
 const PHONE = { width: 390, height: 844 };
 
 test.use({ viewport: PHONE });
@@ -17,12 +12,10 @@ const ALL_PAGES = ["/", "/analytics", "/controls", "/documents", ...GOVERNANCE_R
 
 const menuButton = (page) => page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
 
-/** How far the page itself scrolls sideways. */
 function pageOverflow(page) {
   return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 }
 
-/** How far the top bar's own content runs past its box. */
 function barOverflow(page) {
   return page.evaluate(() => {
     const bar = document.querySelector("header");
@@ -36,7 +29,6 @@ test.describe("phone width", () => {
     const menu = menuButton(page);
     await expect(menu).toBeVisible();
     await expect(menu).toHaveAttribute("aria-expanded", "false");
-    // The tabs and the Governance button are not drawn at this width.
     await expect(governanceButton(page)).toHaveCount(0);
     await expect(primaryNav(page).getByRole("link", { name: "Analytics" })).toHaveCount(0);
 
@@ -44,14 +36,12 @@ test.describe("phone width", () => {
     await expect(menu).toHaveAttribute("aria-expanded", "true");
     const sheet = page.getByRole("group", { name: "Menu", exact: true });
     await expect(sheet).toBeVisible();
-    // Three sections: the core has no sections of its own beyond these.
     await expect(sheet.getByRole("heading")).toHaveText(["Workspace", "Governance", "Account"]);
     const links = sheet.getByRole("link");
     await expect(links).toHaveCount(ALL_PAGES.length);
     expect(await links.evaluateAll((els) => els.map((el) => el.getAttribute("href")))).toEqual(ALL_PAGES);
     await expect(sheet.locator('a[href="/"]')).toHaveAttribute("aria-current", "page");
 
-    // The sheet is whole on the screen.
     await expect.poll(async () => (await sheet.boundingBox()).width).toBeGreaterThan(PHONE.width - 20);
     const box = await sheet.boundingBox();
     expect(box.x).toBeGreaterThanOrEqual(0);
@@ -70,7 +60,6 @@ test.describe("phone width", () => {
     await expect(menu).toHaveAttribute("aria-expanded", "false");
     await expect(sheet).toHaveCount(0);
 
-    // Open again: the page you are on is the one marked, and focus is on it.
     await menu.click();
     await expect(sheet.locator('a[href="/risks"]')).toHaveAttribute("aria-current", "page");
     await expect(sheet.locator('a[href="/risks"]')).toBeFocused();
@@ -78,7 +67,6 @@ test.describe("phone width", () => {
     await expect(sheet).toHaveCount(0);
     await expect(menu).toBeFocused();
 
-    // Keyboard only: Enter on the button opens it and the arrows move down it.
     await page.keyboard.press("Enter");
     await expect(menu).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Home");
@@ -122,8 +110,7 @@ test.describe("phone width", () => {
 
   test("the bar and the dashboard do not scroll sideways", async ({ page }) => {
     await open(page, "/", "Dashboard");
-    // The atlas is requested beside the rest: it must have drawn before the
-    // page's width is read.
+    // The atlas is requested beside the rest: it must have drawn before the page's width is read.
     await expect(page.getByRole("group", { name: /controls grouped by framework/ }).getByRole("button").first()).toBeVisible();
     expect(await barOverflow(page)).toBeLessThanOrEqual(0);
     expect(await pageOverflow(page)).toBeLessThanOrEqual(1);
@@ -141,10 +128,8 @@ test.describe("phone width", () => {
     }
   });
 
-  // The bar's own width, on every page. The pages' own layouts are another
-  // matter: Users, Champion groups and the Risk register carry tables wider
-  // than a phone and scroll the page sideways, so the page-level check
-  // below leaves those three out.
+  // Users, Champion groups and the Risk register carry tables wider than a phone and scroll the page
+  // sideways, so only the bar is checked there.
   const OVERFLOWING = new Set(["/users", "/groups", "/risks"]);
   for (const path of ALL_PAGES) {
     test(`${path}: the bar fits${OVERFLOWING.has(path) ? "" : " and the page does not scroll sideways"}`, async ({ page }) => {

@@ -1,14 +1,5 @@
 import { test, expect, GOVERNANCE_ROUTES } from "../fixtures.js";
 
-/**
- * The layout defect the other specs cannot see. The page does not scroll
- * sideways and nothing overlaps; a button just shows half a word because its
- * label wrapped inside a box one line high, or sits half under the edge of the
- * card that clips it. Each test opens every page at one width and asks every
- * control two questions: does its label fit it, and is it whole inside the
- * parent that would clip it. A control inside a table or other region that
- * scrolls sideways is exempt from the second, because there the person scrolls.
- */
 const PAGES = ["/", "/analytics", "/controls", "/documents", ...GOVERNANCE_ROUTES, "/settings"];
 const WIDTHS = [390, 1024, 1440];
 
@@ -30,6 +21,7 @@ function misfits() {
       found.push(`"${name}" wraps inside a box one line high`);
     }
 
+    // Inside a region that scrolls sideways a control is exempt from the position checks below: the person scrolls.
     let scrolls = false;
     for (let p = el.parentElement; p; p = p.parentElement) {
       if (/(auto|scroll)/.test(getComputedStyle(p).overflowX)) { scrolls = true; break; }

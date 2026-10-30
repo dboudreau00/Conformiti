@@ -6,9 +6,6 @@ test.describe("audit packages", () => {
     await expect(page.getByRole("button", { name: /SOC 2 Type II fieldwork/ })).toBeVisible();
     await expect(page.getByText("Sealed").first()).toBeVisible();
 
-    // The digest is the whole point of sealing: it has to be on screen, with
-    // the signature made by the installation's key (the seed signs), or the
-    // note that there is none.
     const digest = page.getByText(/^[0-9a-f]{64}$/);
     await expect(digest).toBeVisible();
     await expect(page.getByText(/Ed25519, signing key|carries no signature/i)).toBeVisible();
@@ -49,11 +46,9 @@ test.describe("audit packages", () => {
     await open(page, "/packages", "Audit packages");
     await expect(page.getByRole("button", { name: /SOC 2 Type II fieldwork/ })).toBeVisible();
 
-    // The evidence is readable here...
     const evidence = page.getByRole("button", { name: /Policy|Procedure/ }).first();
     await expect(evidence).toBeVisible();
 
-    // ...but the folder tree it came from is not.
     await open(page, "/documents", "Documents");
     await expect(page.getByText("Select a folder", { exact: true })).toBeVisible();
   });

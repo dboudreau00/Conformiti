@@ -8,34 +8,21 @@ export const DEMO = {
   viewer: { username: "val", password: "DemoPass123!" },
 };
 
-// Noise that is not the application's fault and would otherwise make every
-// test flaky. Keep this list short and justified: it is the only way a real
-// console error can hide.
+// Keep short: this list is the only way a real console error can hide.
 const IGNORED = [
   /favicon\.ico/i,
   /ERR_INTERNET_DISCONNECTED/,
   /Download the React DevTools/i,
 ];
 
-/**
- * The project test object. Identical to Playwright's, plus: any console error
- * or uncaught page exception fails the test.
- *
- * It catches real defects: duplicate audit-log facets and four pages
- * reading only the first page of a paginated endpoint first showed up as
- * console noise during a screenshot run.
- */
 const ALLOWED = new WeakMap();
 
-/**
- * Let one test tolerate a specific browser error. Chrome logs a console error
- * for every non-2xx response, so a test that deliberately exercises a refusal
- * path must say so, by pattern, never by switching the check off.
- */
+/** Lets one test tolerate a browser error, by pattern: Chrome logs a console error for every non-2xx response. */
 export function expectBrowserError(page, pattern) {
   ALLOWED.set(page, [...(ALLOWED.get(page) || []), pattern]);
 }
 
+/** Playwright's test, plus: any console error, uncaught page exception or failed request fails the test. */
 export const test = base.extend({
   page: async ({ page }, use, testInfo) => {
     const problems = [];
@@ -67,8 +54,6 @@ export const test = base.extend({
   },
 });
 
-/** Sign in through the real form. Used by the setup project and by any test
- *  that needs a different persona than the stored admin session. */
 export async function signIn(page, { username, password }, { expectFailure = false } = {}) {
   await page.goto("/login");
   await page.locator("#login-username").fill(username);
@@ -78,49 +63,35 @@ export async function signIn(page, { username, password }, { expectFailure = fal
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20_000 });
 }
 
-/** Which transport the server under test is running. The CI job runs the suite
- *  once per transport, so specs that care must branch rather than assume. */
+/** The server's auth transport; CI runs the suite once per transport, so specs that care must branch. */
 export const TRANSPORT = process.env.E2E_TRANSPORT === "cookie" ? "cookie" : "header";
 export const COOKIE_MODE = TRANSPORT === "cookie";
 
-/** Forget the session completely, whichever transport is live. */
 export async function forgetSession(page) {
   await page.goto("/login");
   await page.evaluate(() => localStorage.clear());
   await page.context().clearCookies();
 }
 
-/** Wait until the shell has finished its initial data load. */
 export async function ready(page) {
   await page.waitForLoadState("networkidle");
 }
 
-/**
- * The page title: the <h1> a page opens with, which the shell draws as the
- * first thing inside <main> (the top bar carries no heading). Several screens
- * repeat their title as a panel heading further down, so an unscoped
- * getByRole("heading") is ambiguous.
- */
+/** The page's <h1>: screens repeat their title as a panel heading, so an unscoped getByRole("heading") is ambiguous. */
 export function topHeading(page, name) {
   return page.getByRole("main").getByRole("heading", { name, exact: true, level: 1 });
 }
 
-/** The pages the Governance menu holds, in the order it lists them. Mirrors
- *  the "governance" section of frontend/src/nav.js. */
+/** Mirrors the "governance" section of frontend/src/nav.js, in the order the menu lists them. */
 export const GOVERNANCE_ROUTES = [
   "/users", "/user-audit", "/packages", "/vendors", "/responsibilities",
   "/audit-log", "/meetings", "/groups", "/risks", "/jira",
 ];
 
-/** The primary navigation landmark: the logo, the Workspace tabs and the
- *  Governance menu live in it. */
 export function primaryNav(page) {
   return page.getByRole("navigation", { name: "Primary", exact: true });
 }
 
-// The three menu buttons in the top bar. Their accessible names carry state
-// (the page you are on, the pack and accent in use, the person's name), so
-// each is matched by what it starts with.
 export function governanceButton(page) {
   return page.getByRole("button", { name: /^Governance\b/ });
 }
@@ -131,27 +102,17 @@ export function appearanceButton(page) {
   // The colon matters: the Settings page has an "Appearance" section button too.
   return page.getByRole("button", { name: /^Appearance:/ });
 }
-/** The search button, which Ctrl K or Cmd K does the same as. */
 export function searchButton(page) {
   return page.getByRole("button", { name: "Jump to a control, document or person" });
 }
 
-/** Open a menu from its button and wait until it says it is open; a menu that
- *  is already open is left alone, so a helper can be called twice in a row. */
 export async function openMenu(button) {
   if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
   await expect(button).toHaveAttribute("aria-expanded", "true");
 }
 
-/**
- * A link in the top bar, addressed by route, opened to first if it lives in a
- * menu: the four Workspace tabs are always on the bar, the ten Governance pages
- * are in the Governance menu and /settings is in the account menu. Link text
- * carries a live badge count ("Controls 44"), so matching on the label alone
- * is brittle. "/" is the Dashboard tab, not the logo (which links to "/" too).
- *
- * Async because opening a menu is: `await (await navLink(page, p)).click()`.
- */
+/** A top-bar link by route, opening its menu first when it lives in one, hence async:
+ *  `await (await navLink(page, p)).click()`. "/" is the Dashboard tab, not the logo (which links to "/" too). */
 export async function navLink(page, path) {
   if (path === "/settings") {
     await openMenu(accountButton(page));
@@ -162,13 +123,11 @@ export async function navLink(page, path) {
   return path === "/" ? links.filter({ hasNotText: "Home" }) : links;
 }
 
-/** Sign out through the account menu. */
 export async function signOut(page) {
   await openMenu(accountButton(page));
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
 }
 
-/** Open a page and wait for it to settle. */
 export async function open(page, path, heading) {
   await page.goto(path);
   await expect(topHeading(page, heading)).toBeVisible();
