@@ -18,6 +18,8 @@ const PY = process.platform === "win32"
 const E2E_ENV = {
   ...process.env,
   DJANGO_DEBUG: "true",
+  // Empty, so a developer's Postgres settings can never make the seed run against their own database.
+  POSTGRES_DB: "",
   SQLITE_PATH: path.join(HERE, ".e2e-db.sqlite3"),
   MEDIA_ROOT: path.join(HERE, ".e2e-media"),
   // generate_folder_tree writes into this directory; without the override the seed rewrites the repository's own copy.

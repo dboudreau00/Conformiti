@@ -66,7 +66,10 @@ def _request(config, path, params=None):
             body = resp.read(MAX_RESPONSE_BYTES + 1)
         if len(body) > MAX_RESPONSE_BYTES:
             raise JiraError("Jira returned a response larger than this app will read.")
-        return json.loads(body)
+        data = json.loads(body)
+        if not isinstance(data, dict):
+            raise JiraError("Jira returned a response that wasn't a JSON object. Check the base URL.")
+        return data
     except outbound.OutboundError as exc:
         raise _translate(exc)
     except urllib.error.HTTPError as exc:
@@ -103,8 +106,12 @@ def board_issues(config, board_id, max_results=50):
     # The browser never sees base_url (manager-only configuration), so each row carries its own link.
     base = config.base_url.rstrip("/")
     rows = []
-    for issue in data.get("issues", []):
-        f = issue.get("fields", {}) or {}
+    issues = data.get("issues")
+    for issue in issues if isinstance(issues, list) else []:
+        if not isinstance(issue, dict):
+            continue
+        f = issue.get("fields")
+        f = f if isinstance(f, dict) else {}
         key = issue.get("key", "")
         rows.append({
             "key": key,

@@ -71,6 +71,7 @@ class PbcRequestSerializer(serializers.ModelSerializer):
             if is_external_auditor(user):
                 field.queryset = field.queryset.none()
         self.fields["package_control"] = ReadablePackageControlField(allow_null=True, required=False)
+        self.fields["package"] = ReadablePackageField()
 
     class Meta:
         model = PbcRequest
@@ -123,6 +124,18 @@ class PbcRequestSerializer(serializers.ModelSerializer):
                       and (grantee or (assembler and obj.requested_by_side == "organisation"))),
             "withdraw": (not closed and obj.status not in ("accepted", "withdrawn") and (assembler or own)),
         }
+
+
+class ReadablePackageField(serializers.PrimaryKeyRelatedField):
+    """A package the caller can read; an unreadable id answers "does not exist" like a missing one."""
+
+    def get_queryset(self):
+        from . import access
+
+        user = getattr(self.context.get("request"), "user", None)
+        if user is None or not user.is_authenticated:
+            return EvidencePackage.objects.none()
+        return access.readable_packages(user)
 
 
 class ReadablePackageControlField(serializers.PrimaryKeyRelatedField):
@@ -261,6 +274,7 @@ class PackageControlSerializer(serializers.ModelSerializer):
 
 
 class PackageGrantSerializer(serializers.ModelSerializer):
+    package = ReadablePackageField()
     is_live = serializers.BooleanField(read_only=True)
 
     class Meta:

@@ -86,6 +86,7 @@ class AuditApiTests(APITestBase):
         facets = a.get("/api/audit-log/facets/").data
         self.assertIn("update", facets["actions"])
         self.assertEqual(a.get("/api/audit-log/?days=notanumber").status_code, 200)
+        self.assertEqual(a.get("/api/audit-log/?days=1000000000").status_code, 200)
 
     def test_facets_are_deduplicated(self):
         for i in range(4):

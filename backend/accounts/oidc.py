@@ -144,6 +144,8 @@ def _http(url, data=None, headers=None):
             body = resp.read(MAX_BODY + 1)
     except OidcError:
         raise
+    except outbound.OutboundError as exc:
+        raise OidcError("provider", f"the identity provider's address is refused: {exc}")
     except urllib.error.HTTPError as exc:
         raise OidcError("provider", f"{url.split('?', 1)[0]} answered {exc.code}")
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -504,7 +506,7 @@ def _drop_ticket(request):
 def redeem_ticket(request, ticket, otp=None, passkey=None):
     data = request.session.get(TICKET_KEY)
     if not data:
-        raise OidcError("state", "no sign-in ticket in this browser session, or it was already used")
+        raise OidcError("state", "no sign-in ticket in this browser session, or it was already used", record=False)
     if int(time.time()) > int(data.get("exp", 0)):
         _drop_ticket(request)
         raise OidcError("state", "ticket expired")

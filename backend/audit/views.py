@@ -56,8 +56,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 from datetime import timedelta
                 from django.utils import timezone
                 qs = qs.filter(timestamp__gte=timezone.now() - timedelta(days=int(days)))
-            except (TypeError, ValueError):
-                pass  # ignore a malformed value rather than 500
+            except (TypeError, ValueError, OverflowError):
+                pass  # ignore a malformed or absurd value rather than 500
         return qs
 
     @action(detail=False)

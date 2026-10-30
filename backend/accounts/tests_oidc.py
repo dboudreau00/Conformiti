@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from django.core.cache import cache
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 
 from accounts.models import OidcIdentity, Role
 from audit.models import AuditLog
@@ -319,6 +319,18 @@ class OidcFlowTests(APITestBase):
         self.assertEqual(self.anon.post("/api/auth/oidc/redeem/", {"ticket": "guess"}, format="json").status_code, 400)
         self.assertEqual(self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").status_code, 400)
 
+    def test_a_redeem_with_no_ticket_in_the_session_writes_no_audit_row(self):
+        from audit.models import AuditLog
+        before = AuditLog.objects.count()
+        for _ in range(3):
+            r = self.client_class().post("/api/auth/oidc/redeem/", {"ticket": "x"}, format="json")
+            self.assertEqual((r.status_code, r.data["code"]), (400, "state"))
+        self.assertEqual(AuditLog.objects.count(), before)
+        ticket = self.sign_in()
+        self.anon.post("/api/auth/oidc/redeem/", {"ticket": "guess"}, format="json")
+        self.assertTrue(AuditLog.objects.filter(detail__startswith="sso ticket refused (state)").exists())
+        self.assertEqual(self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").status_code, 400)
+
     def test_a_trailing_slash_issuer_still_matches(self):
         self.idp.override = {"iss": ISSUER + "/"}
         with override_settings(OIDC_ISSUER=ISSUER + "/"):
@@ -407,3 +419,17 @@ class OidcConfigGuardTests(APITestBase):
         OidcIdentity.objects.create(user=self.viewer, issuer=ISSUER, subject="s")
         call_command("link_oidc_identity", "val", "--unlink", stdout=StringIO())
         self.assertFalse(OidcIdentity.objects.exists())
+
+
+class OidcHttpTests(SimpleTestCase):
+    def test_a_provider_endpoint_that_redirects_is_a_provider_error_not_a_500(self):
+        from accounts import oidc
+        from config import outbound
+
+        opener = mock.MagicMock()
+        opener.open.side_effect = outbound.OutboundError("redirect", "refused")
+        with mock.patch.object(outbound, "assert_safe_url", return_value="203.0.113.5"), \
+                mock.patch.object(outbound, "opener", return_value=opener):
+            with self.assertRaises(oidc.OidcError) as ctx:
+                oidc._http("https://idp.example/token")
+        self.assertEqual(ctx.exception.code, "provider")

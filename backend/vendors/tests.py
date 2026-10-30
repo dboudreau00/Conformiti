@@ -307,6 +307,13 @@ class MatrixTests(APITestBase):
         self.assertEqual((r.data["saved"], r.data["cleared"]), (0, 1))
         self.assertEqual(SharedResponsibility.objects.filter(vendor=self.v).count(), 1)
 
+    def test_a_responsibility_that_is_not_a_word_is_a_400_not_a_500(self):
+        for bad in (["provider"], {"a": 1}, 5, "everyone"):
+            with self.subTest(bad=bad):
+                r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
+                    {"control": self.tree.c1.pk, "responsibility": bad}]}, format="json")
+                self.assertEqual(r.status_code, 400)
+
     def test_a_statement_without_a_responsibility_is_refused_not_dropped(self):
         r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
             {"control": self.tree.c1.pk, "responsibility": None,

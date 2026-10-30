@@ -189,6 +189,17 @@ class JiraTransportTests(APITestBase):
             with self.assertRaisesRegex(JiraError, "larger"):
                 jira.verify(self.config())
 
+    def test_a_json_body_that_is_not_an_object_is_a_jira_error(self):
+        from integrations import jira
+        for body in (b"[]", b'"x"', b"7", b"null"):
+            with self.subTest(body=body):
+                with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"), \
+                        self.opener_returning(body=body):
+                    with self.assertRaisesRegex(JiraError, "JSON object"):
+                        jira.verify(self.config())
+                    with self.assertRaisesRegex(JiraError, "JSON object"):
+                        jira.board_issues(self.config(), 1)
+
     def test_a_normal_answer_still_parses(self):
         from integrations import jira
         with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"), \

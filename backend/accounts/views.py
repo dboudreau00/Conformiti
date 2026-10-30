@@ -58,7 +58,8 @@ class RoleViewSet(viewsets.ModelViewSet):
     def _administrator_remains_without(role):
         return (
             User.objects.filter(is_active=True)
-            .filter(Q(is_superuser=True) | (Q(role__can_manage_users=True) & ~Q(role=role)))
+            .filter(Q(is_superuser=True)
+                    | (Q(role__can_manage_users=True, role__is_auditor=False) & ~Q(role=role)))
             .exists()
         )
 
@@ -88,7 +89,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return (
             User.objects.filter(is_active=True)
             .exclude(pk=excluding.pk)
-            .filter(Q(is_superuser=True) | Q(role__can_manage_users=True))
+            .filter(Q(is_superuser=True) | Q(role__can_manage_users=True, role__is_auditor=False))
             .exists()
         )
 

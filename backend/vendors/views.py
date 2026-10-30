@@ -151,7 +151,7 @@ class VendorViewSet(viewsets.ModelViewSet):
                                                    "pick one or clear the statement"})
                 clear.append(control_id)
                 continue
-            if resp not in RESPONSIBILITY_VALUES:
+            if not isinstance(resp, str) or resp not in RESPONSIBILITY_VALUES:
                 raise ValidationError({"rows": f"row {i}: responsibility must be one of "
                                                 f"{sorted(RESPONSIBILITY_VALUES)}"})
             clean.append((control_id, resp,

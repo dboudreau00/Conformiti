@@ -100,6 +100,19 @@ class DemoRetirementTests(TestCase):
         self.assertEqual(AuditLog.objects.filter(object_type=RETIRED_OBJECT_TYPE).count(), 1)
         self.assertTrue(retired())
 
+    def test_a_real_audit_row_from_a_demo_address_is_kept(self):
+        from audit.models import AuditLog
+
+        real = AuditLog.objects.create(action="login", object_type="users", object_id="1",
+                                       detail="signed in: realadmin", ip_address="10.0.0.4")
+        seeded = AuditLog.objects.filter(ip_address="10.0.0.4", detail="created account tess (Viewer)")
+        self.assertTrue(seeded.exists())
+
+        self.remove()
+
+        self.assertTrue(AuditLog.objects.filter(pk=real.pk).exists())
+        self.assertFalse(seeded.exists())
+
     def test_a_dry_run_retires_nothing(self):
         from audit.models import AuditLog
 

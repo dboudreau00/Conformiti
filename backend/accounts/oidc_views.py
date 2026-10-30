@@ -79,7 +79,8 @@ class OidcRedeemView(APIView):
                 payload["passkey"] = passkeys.begin_login(pending.user, request)
             return Response(payload)
         except oidc.OidcError as exc:
-            oidc.audit(request, None, False, f"sso ticket refused ({exc.code}): {exc.detail}")
+            if exc.record:
+                oidc.audit(request, None, False, f"sso ticket refused ({exc.code}): {exc.detail}")
             return Response({"detail": exc.message, "code": exc.code}, status=400)
         if otp is not None or passkey is not None:
             how = "passkey verified" if passkey is not None else "second factor verified"

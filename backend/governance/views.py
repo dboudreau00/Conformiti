@@ -136,8 +136,9 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status"]
 
     def perform_create(self, serializer):
-        review = serializer.save(created_by=self.request.user)
-        _snapshot_items(review)
+        with transaction.atomic():
+            review = serializer.save(created_by=self.request.user)
+            _snapshot_items(review)
 
     def perform_update(self, serializer):
         # Under the row lock ``complete`` takes: the instance was read before it, so a completion that committed in

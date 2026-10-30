@@ -182,7 +182,6 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         with_evidence = bool(request.data.get("with_evidence", True))
 
         controls = Control.objects.filter(pk__in=ids).select_related("category__framework")
-        existing = set(package.controls.values_list("control_id", flat=True))
         added, skipped = [], []
 
         from documents.access import accessible_folder_ids
@@ -190,6 +189,8 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             package = lock_open(package)
+            # Read under the lock: a request that added the same control first is seen, not collided with.
+            existing = set(package.controls.values_list("control_id", flat=True))
             for control in controls:
                 if control.pk in existing:
                     continue

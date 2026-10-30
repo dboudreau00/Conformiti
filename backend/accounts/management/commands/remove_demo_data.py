@@ -1,5 +1,8 @@
 """Retire the demo dataset. Idempotent: a later run resets no status and deletes no readiness history, because what
 changed since the retirement is the operator's. The retirement record stops ``bootstrap_demo`` seeding it back."""
+from functools import reduce
+from operator import or_
+
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -29,6 +32,18 @@ DEMO_EVENTS = [
     "Quarterly access review",
 ]
 DEMO_AUDIT_IPS = ["10.0.0.4", "10.0.0.11", "10.0.0.23"]
+# The nine rows bootstrap_demo seeds, as (ip, object type, detail): a real row from the same address is not one of them.
+DEMO_AUDIT_ROWS = [
+    ("10.0.0.4", "users", "created account tess (Viewer)"),
+    ("10.0.0.11", "documents", "marked reviewed: Access Control Policy"),
+    ("10.0.0.23", "documents", "uploaded evidence: backup-restore-log.pdf"),
+    ("10.0.0.11", "risks", "opened risk: Laptop disk encryption gaps"),
+    ("10.0.0.11", "risks", "status open -> mitigating"),
+    ("10.0.0.4", "users", "role change: val -> Viewer"),
+    ("10.0.0.23", "control-evidence", "linked doc 3 to CC6.1"),
+    ("10.0.0.11", "calendar", "scheduled: Q3 access review kickoff"),
+    ("10.0.0.4", "folder-permissions", "revoked folder grant for val"),
+]
 
 PROGRAMME_READ = "read"              # these controls still hold the demo's status
 PROGRAMME_UNREADABLE = "unreadable"  # a live programme that cannot be read back
@@ -124,7 +139,8 @@ class Command(BaseCommand):
         series = MeetingSeries.objects.filter(name__in=DEMO_SERIES)
         groups = ChampionGroup.objects.filter(name__in=DEMO_GROUPS)
         events = CalendarEvent.objects.filter(title__in=DEMO_EVENTS)
-        audit_rows = AuditLog.objects.filter(ip_address__in=DEMO_AUDIT_IPS, detail__regex=r"^[a-z]")
+        audit_rows = AuditLog.objects.filter(
+            reduce(or_, (Q(ip_address=ip, object_type=otype, detail=detail) for ip, otype, detail in DEMO_AUDIT_ROWS)))
         # Only while a demo account owns it: a real review started in the same quarter must survive.
         reviews = AccessReview.objects.filter(
             name__regex=ACCESS_REVIEW_PATTERN, created_by__username__in=DEMO_USERNAMES

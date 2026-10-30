@@ -127,8 +127,10 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
 
     EDITABLE = {"title", "description", "package_control", "priority", "due_date", "assignee"}
 
+    @_atomic
     def perform_update(self, serializer):
-        req = self.get_object()
+        # Saved from the locked row, so a concurrent accept, return or withdraw is not written back over.
+        req = serializer.instance = self._locked()
         user = self.request.user
         data = serializer.validated_data
         touched = set(data) & self.EDITABLE

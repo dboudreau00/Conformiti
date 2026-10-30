@@ -46,12 +46,19 @@ class RaiseAndEditTests(PbcBase):
 
     def test_nobody_else_can_raise_or_see_a_line(self):
         for client in (self.owner_client, self.client_for(self.viewer)):
-            self.assertEqual(self.raise_line(client).status_code, 403)
+            self.assertEqual(self.raise_line(client).status_code, 400)
         self.raise_line(self.auditor_client)
         self.assertEqual(self.owner_client.get("/api/pbc-requests/").data["count"], 0)
         self.package.grants.update(revoked_at=timezone.now())
         self.assertEqual(self.auditor_client.get("/api/pbc-requests/").data["count"], 0)
-        self.assertEqual(self.raise_line(self.auditor_client).status_code, 403)
+        self.assertEqual(self.raise_line(self.auditor_client).status_code, 400)
+
+    def test_a_package_the_caller_cannot_read_answers_like_one_that_does_not_exist(self):
+        hidden = self.raise_line(self.client_for(self.viewer))
+        missing = self.raise_line(self.client_for(self.viewer), package=self.package.pk + 9999)
+        self.assertEqual((hidden.status_code, hidden.data["package"][0].split('"')[0]),
+                         (missing.status_code, missing.data["package"][0].split('"')[0]))
+        self.assertEqual(hidden.status_code, 400)
 
     def test_the_auditor_edits_only_their_own_open_lines_and_the_organisation_edits_any(self):
         mine = self.raise_line(self.auditor_client).data

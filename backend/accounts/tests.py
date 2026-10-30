@@ -192,6 +192,18 @@ class UserAdminGuardTests(APITestBase):
         self.assertEqual(c.patch(f"/api/users/{self.admin.pk}/", {"is_active": False}, format="json").status_code, 403)
         self.assertEqual(c.delete(f"/api/users/{self.admin.pk}/").status_code, 403)
 
+    def test_an_auditor_role_never_counts_as_the_administrator_who_remains(self):
+        from accounts.models import Role
+        # Only the Django admin can store this mix; the API refuses it. It must still not satisfy the guard.
+        mixed = Role.objects.create(name="Mixed", can_manage_users=True, is_auditor=True)
+        boss = make_user("boss", self.roles["Administrator"])
+        make_user("aud", mixed)
+        self.admin.is_active = False
+        self.admin.save()
+        c = self.client_for(boss)
+        r = c.patch(f"/api/users/{boss.pk}/", {"role": self.roles["Viewer"].pk}, format="json")
+        self.assertEqual(r.status_code, 403)
+
     def test_last_administrator_is_protected(self):
         # boss is the last administrator once ada (superuser) is inactive
         boss = make_user("boss", self.roles["Administrator"])
@@ -434,6 +446,13 @@ class CookieAuthTests(APITestBase):
         self.assertEqual(
             APIClient().post("/api/auth/token/refresh/",
                              {"refresh": first}, format="json").status_code, 401)
+
+    def test_refresh_reads_the_cookie_for_a_form_body_too(self):
+        client, _ = self.login()
+        token = client.cookies["csrftoken"].value
+        r = client.post("/api/auth/token/refresh/", {"x": "y"}, format="multipart", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data, {"renewed": True})
 
     def test_refresh_without_a_cookie_is_refused(self):
         self.assertEqual(

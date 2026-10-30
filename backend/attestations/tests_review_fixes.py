@@ -62,6 +62,10 @@ class SealedManifestTests(PackageTestBase):
         self.assertIn(viewer.patch(f"/api/package-samples/{sample}/",
                                    {"package_control": self.row.pk}, format="json").status_code,
                       (403, 404))
+        # The auditor can see the row, so only the check itself stands in the way.
+        r = self.auditor_client.patch(f"/api/package-samples/{sample}/",
+                                      {"package_control": self.row.pk}, format="json")
+        self.assertEqual(r.status_code, 403, r.data)
 
 
 def make_secret_doc(case):

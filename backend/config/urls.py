@@ -77,7 +77,10 @@ class ThrottledTokenRefreshView(TokenRefreshView):
         if cookie_auth.cookie_mode() and not request.data.get("refresh"):
             cookie = request.COOKIES.get(cookie_auth.refresh_cookie_name())
             if cookie:
-                request.data["refresh"] = cookie
+                # A form body is an immutable QueryDict: work on a copy.
+                data = request.data.copy()
+                data["refresh"] = cookie
+                request._full_data = data
         response = super().post(request, *args, **kwargs)
         if cookie_auth.cookie_mode() and response.status_code == 200:
             cookie_auth.set_auth_cookies(
