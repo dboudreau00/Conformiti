@@ -1,4 +1,3 @@
-"""Access reviews, risk register, meetings: permissions and export safety."""
 import csv
 import io
 
@@ -23,14 +22,12 @@ class AccessReviewTests(APITestBase):
         self.assertEqual(len(items), 5)  # unpaginated, one row per account
         self.assertEqual(r.data["item_count"], 5)
 
-        # auditors read, never write; viewers see nothing
         aud = self.client_for(self.auditor)
         self.assertEqual(aud.get("/api/access-reviews/").status_code, 200)
         self.assertEqual(aud.patch(f"/api/access-review-items/{items[0]['id']}/", {"decision": "keep"}, format="json").status_code, 403)
         self.assertEqual(aud.post(f"/api/access-reviews/{rid}/complete/").status_code, 403)
         self.assertEqual(self.client_for(self.viewer).get("/api/access-reviews/").status_code, 403)
 
-        # completing with pending rows is refused
         r = admin.post(f"/api/access-reviews/{rid}/complete/")
         self.assertEqual(r.status_code, 400)
         for it in items:
@@ -40,11 +37,9 @@ class AccessReviewTests(APITestBase):
         r = admin.post(f"/api/access-reviews/{rid}/complete/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["status"], "completed")
-        # read-only afterwards
         self.assertEqual(admin.patch(f"/api/access-review-items/{items[0]['id']}/", {"decision": "revoke"}, format="json").status_code, 400)
         self.assertEqual(admin.post(f"/api/access-reviews/{rid}/complete/").status_code, 400)
 
-        # CSV export neutralises formula injection
         export = admin.get(f"/api/access-reviews/{rid}/export/")
         self.assertEqual(export["Content-Type"], "text/csv")
         rows = list(csv.reader(io.StringIO(export.content.decode())))
@@ -71,21 +66,15 @@ class RiskRegisterTests(APITestBase):
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.data["rating"], "critical")
         rid = r.data["id"]
-        # everyone can read
         self.assertEqual(v.get(f"/api/risks/{rid}/").status_code, 200)
-        # owner may update their own risk; viewer may not
         self.assertEqual(self.client_for(self.owner).patch(f"/api/risks/{rid}/", {"status": "mitigating"}, format="json").status_code, 200)
         self.assertEqual(v.patch(f"/api/risks/{rid}/", {"status": "closed"}, format="json").status_code, 403)
-        # only managers delete
         self.assertEqual(self.client_for(self.owner).delete(f"/api/risks/{rid}/").status_code, 403)
-        # bounds
         self.assertEqual(m.patch(f"/api/risks/{rid}/", {"likelihood": 9}, format="json").status_code, 400)
-        # closing stamps closed_at, reopening clears it
         r = m.patch(f"/api/risks/{rid}/", {"status": "closed"}, format="json")
         self.assertIsNotNone(r.data["closed_at"])
         r = m.patch(f"/api/risks/{rid}/", {"status": "open"}, format="json")
         self.assertIsNone(r.data["closed_at"])
-        # notes: anyone may add, only author or manager may delete
         n = v.post("/api/risk-notes/", {"risk": rid, "text": "seen it"}, format="json")
         self.assertEqual(n.status_code, 201)
         self.assertEqual(self.client_for(self.owner).delete(f"/api/risk-notes/{n.data['id']}/").status_code, 403)
@@ -111,7 +100,6 @@ class RiskRegisterTests(APITestBase):
         r = o.patch(f"/api/risks/{rid}/", {"title": "Shared admin account", "owner": self.owner.pk,
                                            "status": "open"}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
-        # A manager keeps the lot.
         self.assertEqual(m.patch(f"/api/risks/{rid}/", {"owner": self.viewer.pk, "likelihood": 1},
                                  format="json").status_code, 200)
 
@@ -138,8 +126,6 @@ class RiskRegisterTests(APITestBase):
         self.assertEqual((review.name, review.status), ("R", "completed"))
 
     def test_a_failure_half_way_through_completing_leaves_nothing_revoked(self):
-        """The completion is one transaction: when applying the second revocation
-        fails, the first account is active again and the review is still open."""
         from unittest import mock
 
         admin = self.client_for(self.admin)
@@ -179,9 +165,6 @@ class RiskRegisterTests(APITestBase):
         self.assertEqual(parse_upload("register.xlsx", good)[1], ["Backups"])
 
     def test_a_sheet_with_more_elements_than_a_register_needs_is_refused_before_it_is_parsed(self):
-        """The preview bounded the number of tags and the importer did not: a
-        29 KB workbook whose sheet was megabytes of empty rows peaked at hundreds
-        of megabytes before the row limit applied."""
         from unittest import mock
 
         from documents import ooxml
@@ -214,26 +197,22 @@ class RiskRegisterTests(APITestBase):
         self.assertEqual(first.likelihood, 4)
         self.assertEqual(first.notes.count(), 1)
         self.assertEqual(Risk.objects.get(title="Mystery").status, "closed")
-        # second import: everything skipped as duplicate
         r = m.post("/api/risks/import/", {"file": SimpleUploadedFile("reg.csv", csv_bytes)}, format="multipart")
         self.assertEqual(r.data["created"], 0)
         self.assertEqual(len(r.data["skipped"]), 2)
-        # viewers cannot import; bad files give 400s not 500s
         self.assertEqual(self.client_for(self.viewer).post("/api/risks/import/", {"file": SimpleUploadedFile("r.csv", b"Title\nx")}, format="multipart").status_code, 403)
         self.assertEqual(m.post("/api/risks/import/", {"file": SimpleUploadedFile("r.xlsx", b"not a zip")}, format="multipart").status_code, 400)
         self.assertEqual(m.post("/api/risks/import/", {"file": SimpleUploadedFile("r.docx", b"x")}, format="multipart").status_code, 400)
-        # a sheet with no recognisable Title column is rejected cleanly
         self.assertEqual(m.post("/api/risks/import/", {"file": SimpleUploadedFile("r.csv", b"Widget\nrow")}, format="multipart").status_code, 400)
-        # ...while "Name" is accepted as a title alias
         r = m.post("/api/risks/import/", {"file": SimpleUploadedFile("r.csv", b"Name\nUntitled register row")}, format="multipart")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["created"], 1)
 
     def test_importer_is_pure(self):
-        recs, issues, fatal = normalize(parse_upload("t.csv", b"Title,Impact\nA,Critical\n"))
+        recs, _, fatal = normalize(parse_upload("t.csv", b"Title,Impact\nA,Critical\n"))
         self.assertIsNone(fatal)
         self.assertEqual(recs[0]["impact"], 5)
-        recs, issues, fatal = normalize(parse_upload("t.csv", b"Nope\n1\n"))
+        _, _, fatal = normalize(parse_upload("t.csv", b"Nope\n1\n"))
         self.assertIsNotNone(fatal)
 
     def test_export_and_summary(self):
@@ -251,10 +230,7 @@ class RiskRegisterTests(APITestBase):
 
 
 class SpreadsheetEscapeTests(APITestBase):
-    """Excel writes a character XML cannot carry as _xHHHH_ (a carriage return
-    in a cell is "_x000D_") and the underscore of a literal one as _x005F_.
-    The reader decodes them in shared strings, inline strings and cached
-    formula text, and leaves alone what only looks like an escape."""
+    """Excel writes characters XML cannot carry as _xHHHH_ (a carriage return is _x000D_, an underscore _x005F_)."""
 
     STORAGES = ("inline", "shared", "formula")
 
@@ -306,8 +282,7 @@ class SpreadsheetEscapeTests(APITestBase):
         self.assertEqual(risk.notes.get().text, "Seen \U0001F600")
 
     def test_an_escape_that_cannot_be_stored_does_not_break_the_import(self):
-        """A NUL is refused by PostgreSQL and a lone surrogate cannot be encoded
-        as UTF-8, so neither is decoded: each stays as written."""
+        """A NUL (refused by PostgreSQL) and a lone surrogate (not encodable as UTF-8) stay as written."""
         rows = [["Title", "Description"], ["Nul_x0000_", "x"], ["Half_xD83D_", "y"]]
         r = self.client_for(self.manager).post(
             "/api/risks/import/", {"file": SimpleUploadedFile("reg.xlsx", make_xlsx(rows))}, format="multipart")
@@ -317,9 +292,8 @@ class SpreadsheetEscapeTests(APITestBase):
 
 
 class NamelessAccountExportTests(APITestBase):
-    """createsuperuser asks for no first or last name, so both CSV exports
-    must carry the username in such a person's column. A full name still
-    wins, and an empty value stays blank."""
+    """createsuperuser sets no name, so both CSV exports carry the username; a full name wins and an empty value stays
+    blank."""
 
     def setUp(self):
         super().setUp()
@@ -363,26 +337,21 @@ class MeetingAndGroupTests(APITestBase):
         self.assertEqual(r.status_code, 201)
         sid = r.data["id"]
         self.assertIn(r.data["cadence_status"], ("behind", "on_track", "complete"))
-        # minutes: attachment obeys the upload rules
         with override_settings(MAX_UPLOAD_BYTES=4, MAX_UPLOAD_MB=1):
             r = m.post("/api/meeting-minutes/", {"series": sid, "date": "2026-01-15", "file": SimpleUploadedFile("m.pdf", b"12345")}, format="multipart")
             self.assertEqual(r.status_code, 400)
         r = m.post("/api/meeting-minutes/", {"series": sid, "date": "2026-01-15", "title": "Q1"}, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.data["created_by"], self.manager.pk)
-        # groups are admin-managed
         self.assertEqual(m.post("/api/champion-groups/", {"name": "Champs"}, format="json").status_code, 403)
         g = self.client_for(self.admin).post("/api/champion-groups/", {"name": "Champs", "owner": self.manager.pk}, format="json")
         self.assertEqual(g.status_code, 201)
         r = self.client_for(self.admin).post("/api/group-members/", {"group": g.data["id"], "user": self.owner.pk, "department": "Eng"}, format="json")
         self.assertEqual(r.status_code, 201)
-        # duplicate membership is a 400, not a 500
         r = self.client_for(self.admin).post("/api/group-members/", {"group": g.data["id"], "user": self.owner.pk, "department": "Eng"}, format="json")
         self.assertEqual(r.status_code, 400)
 
     def test_required_per_year_is_held_to_once_a_year_up_to_weekly(self):
-        """0 would read as "complete" at once and the model field takes up to
-        32767, so the API refuses both ends rather than storing them."""
         m = self.client_for(self.manager)
         for bad in (0, 53):
             r = m.post("/api/meeting-series/", {"name": f"Bad {bad}", "required_per_year": bad}, format="json")
@@ -391,7 +360,6 @@ class MeetingAndGroupTests(APITestBase):
         r = m.post("/api/meeting-series/", {"name": "Weekly", "required_per_year": 52}, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.data["required_per_year"], 52)
-        # an edit is held to the same range
         r = m.patch(f"/api/meeting-series/{r.data['id']}/", {"required_per_year": 100}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertIn("required_per_year", r.data)

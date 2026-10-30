@@ -1,13 +1,3 @@
-"""
-Gaps in a vendor's assurance that somebody has to chase.
-
-A SOC 2 report covers a period. When that period ends and the next report is
-still being written, the provider issues a **bridge letter** stating that
-nothing material changed in between, and an auditor will ask to see it.
-This module finds the vendors whose latest SOC report has lapsed with neither
-a newer report nor a bridge letter on file, for the in-app feed and for the
-emailed reminder.
-"""
 from django.db.models import Q
 from django.utils import timezone
 

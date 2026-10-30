@@ -1,16 +1,3 @@
-"""Run the document review scan and send reminders (SES/SMTP).
-
-Intended for cron when not running Celery beat, e.g. a daily crontab:
-    0 8 * * *  cd /app && python manage.py send_review_reminders
-
-It is the same morning pass the Celery task makes (``run_all_scans``): every
-workspace in turn, one workspace's failure never stopping the others, and the
-daily summary posted to the team's channel afterwards. A workspace that failed
-is named and the command exits with an error once the rest have run, so cron's
-mail says so.
-
-Use --dry-run to see how many reminders would go out without sending them.
-"""
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import Workspace

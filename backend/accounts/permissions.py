@@ -1,26 +1,13 @@
-"""Reusable DRF permission classes backed by Role capability flags."""
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 def is_external_auditor(user):
-    """The read-only outside party, as opposed to anyone employed here."""
     return bool(user and user.is_authenticated and user.is_auditor)
 
 
 class NotExternalAuditor(BasePermission):
-    """Refuse the external-auditor role outright.
-
-    Pair it with any permission that grants read to *any* authenticated
-    account. An external auditor holds an account on the client's
-    installation, but their remit is the package issued to them, its request
-    list, and the folders granted with it. The rest of the programme (the
-    risk register, the vendor file, the user directory, the control library)
-    belongs to the organisation.
-
-    Deny by default: ``tests_auditor_surface.py`` walks the router and fails
-    if a new collection appears that an auditor can read and nobody decided
-    they should.
-    """
+    """Refuse the external-auditor role; pair it with any permission that grants read to every authenticated account.
+    ``tests_auditor_surface.py`` fails on a new collection an auditor can read that nobody decided they should."""
     message = "That is outside an external auditor's access."
 
     def has_permission(self, request, view):
@@ -28,12 +15,8 @@ class NotExternalAuditor(BasePermission):
 
 
 class _CapabilityPermission(BasePermission):
-    """Grant read to any authenticated user; require a capability to write.
-
-    "Any authenticated user" excludes the external auditor (see
-    ``NotExternalAuditor``). A subclass that is part of an audit sets
-    ``allow_auditor``.
-    """
+    """Read for any authenticated user but an external auditor (unless ``allow_auditor``); writing needs the named
+    ``capability``."""
     capability = None  # set in subclass
     allow_auditor = False
 

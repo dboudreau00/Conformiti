@@ -1,22 +1,8 @@
-"""Efficient folder-access resolution shared by the document API views."""
 from .models import ACCESS_RANK, MANAGE, VIEW, Folder, FolderPermission
 
 
 def bulk_effective_access(user, folders):
-    """``{folder_id: level}`` for every folder in ``folders``, in three queries.
-
-    ``Folder.effective_access`` answers for one folder by walking its parent
-    chain and querying the grants on it. Called once per node, a tree of two
-    hundred folders costs two hundred round trips, plus the same again for
-    document counts. This resolves the same answer for every folder at once:
-    the parent map in one query, the grants that could apply in one more, and
-    the walk in Python.
-
-    The rules are the ones ``effective_access`` states, applied identically:
-    superuser or the folders capability is manage everywhere; view-all is at
-    least view; owning a folder is manage; a grant on a folder or any
-    ancestor applies at its level; an external auditor is capped at view.
-    """
+    """``{folder_id: level}`` in three queries; must always agree with ``Folder.effective_access``."""
     folders = list(folders)
     if not folders or not (user and user.is_authenticated):
         return {f.id: None for f in folders}
@@ -51,13 +37,7 @@ def bulk_effective_access(user, folders):
 
 
 def accessible_folder_ids(user):
-    """
-    Return the set of folder ids the user may at least view.
-
-    A permission granted on a folder is inherited by all descendants, so we
-    seed from directly granted / owned folders and expand downward with a
-    small number of queries (rather than evaluating every folder in Python).
-    """
+    """Ids of the folders the user may at least view: grants and owned folders, expanded to all descendants."""
     if not (user and user.is_authenticated):
         return set()
     if user.is_superuser or user.can_view_all or user.can_manage_folders:

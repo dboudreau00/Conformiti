@@ -1,11 +1,5 @@
-"""Workspaces: the organisations an installation serves.
-
-Everyone may read their own; a superuser sees them all, creates new ones
-and switches between them by sending ``X-Workspace: <slug>`` (the SPA
-remembers the choice). There is no delete: a workspace is archived, which
-refuses its people at sign-in and drops it out of every scheduled job, and
-its rows stay where an operator can find them.
-"""
+"""Everyone reads their own workspace; a superuser sees all, creates them and switches with ``X-Workspace: <slug>``.
+There is no delete: a workspace is archived, which refuses its people at sign-in and drops it out of every job."""
 from django.core.management import call_command
 from django.db import transaction
 from django.utils.text import slugify
@@ -18,22 +12,15 @@ from rest_framework.response import Response
 from . import tenancy
 from .models import MAX_WEBHOOK_URL_LENGTH, Workspace, validate_webhook_url
 
-# What everyone signed in may read about the organisation they belong to:
-# enough to name it on screen. Its mailbox, its chat channels and its
-# headcount are the operator's business: sending the whole record to every
-# member, external auditors included, would expose the chat webhooks
-# (REVIEWS.md (0.9.5 review), S-1).
+# What any member may read of their organisation: enough to name it. The mailbox, chat channels and headcount stay the
+# operator's, external auditors included (REVIEWS.md (0.9.5 review), S-1).
 PUBLIC_FIELDS = ("id", "name", "slug", "is_active", "created_at", "can_switch")
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
     users = serializers.SerializerMethodField()
-    # Seed the built-in roles and the shipped frameworks into a new workspace
-    # (the same `seed_frameworks --with-folders` a fresh install runs).
     with_frameworks = serializers.BooleanField(write_only=True, required=False, default=True)
-    # An incoming-webhook URL is a credential: whoever holds it can post into
-    # the channel as the app. It goes in and is never read back out, by
-    # anyone. The booleans below are what the settings screen needs.
+    # A webhook URL is a credential: write-only, never read back by anyone; *_configured says whether one is set.
     slack_webhook_url = serializers.CharField(
         write_only=True, required=False, allow_blank=True, max_length=MAX_WEBHOOK_URL_LENGTH,
         trim_whitespace=True)
@@ -129,12 +116,10 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def current(self, request):
-        """The workspace this request is working in."""
         workspace = tenancy.request_workspace(request)
         if workspace is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
-        # With the context, so the serializer knows who is asking and trims
-        # the operator-only fields for everyone else.
+        # With the context, so the serializer trims the operator-only fields for everyone but a superuser.
         data = WorkspaceSerializer(workspace, context=self.get_serializer_context()).data
         data["can_switch"] = bool(request.user.is_superuser)
         return Response(data)

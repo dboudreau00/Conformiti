@@ -1,5 +1,3 @@
-"""Roll-forward: next year's draft from last year's sealed package, and the
-year-over-year diff computed from the two packages' own snapshots."""
 import json
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -15,7 +13,6 @@ class RollForwardTests(PackageTestBase):
         super().setUp()
         self.add_control()
         self.add_control(self.tree.c2)
-        # An exception noted last year on the first control.
         row = PackageControl.objects.get(package=self.package, control=self.tree.c1)
         row.design_conclusion = PackageControl.Conclusion.EXCEPTIONS
         row.auditor_note = "Two leavers kept access for a week."
@@ -27,8 +24,6 @@ class RollForwardTests(PackageTestBase):
                                         body, format="json")
 
     def test_rolling_forward_opens_a_draft_with_todays_evidence_and_the_link_back(self):
-        # Since sealing, the policy got a new version and a second document
-        # was linked to the first control.
         self.doc.file.save("v2.txt", SimpleUploadedFile("v2.txt", b"policy v2"), save=True)
         self.doc.version = 2
         self.doc.save()
@@ -46,19 +41,16 @@ class RollForwardTests(PackageTestBase):
         self.assertEqual((new.engagement, new.audit_firm, new.assurance_type),
                          (self.package.engagement, self.package.audit_firm, self.package.assurance_type))
         first = new.controls.get(control=self.tree.c1)
-        # Conclusions belong to last year; the new row starts clean.
         self.assertEqual(first.design_conclusion, "pending")
         self.assertEqual(sorted(e.document_name for e in first.evidence.all()),
                          ["Access Control Policy", "Access review Q4"])
         self.assertEqual(first.evidence.get(document=self.doc).pinned_version, 2)
-        # The predecessor lists its successor.
         me = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/").data
         self.assertEqual(me["successors"][0]["id"], new.pk)
 
     def test_the_diff_reads_from_snapshots(self):
         self.doc.file.save("v2.txt", SimpleUploadedFile("v2.txt", b"policy v2"), save=True)
         new_id = self.roll().data["id"]
-        # Drop the second control this year; add nothing.
         PackageControl.objects.get(package_id=new_id, control=self.tree.c2).delete()
         d = self.manager_client.get(f"/api/evidence-packages/{new_id}/diff/").data
         self.assertEqual(d["prior"]["id"], self.package.pk)
@@ -69,9 +61,8 @@ class RollForwardTests(PackageTestBase):
         self.assertEqual(kept["control_ref"], "TC1.1")
         self.assertTrue(kept["prior_exception"])
         self.assertEqual(kept["prior_auditor_note"], "Two leavers kept access for a week.")
-        self.assertEqual(len(kept["evidence"]["changed"]), 1)     # the policy's bytes changed
+        self.assertEqual(len(kept["evidence"]["changed"]), 1)
         self.assertEqual(d["totals"]["prior_exceptions_open"], 1)
-        # A package with no predecessor says so.
         r = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/diff/")
         self.assertEqual(r.status_code, 400)
 
@@ -83,14 +74,14 @@ class RollForwardTests(PackageTestBase):
             d = self.manager_client.get(f"/api/evidence-packages/{new_id}/diff/").data
             return d["totals"]["prior_exceptions_open"]
 
-        self.assertEqual(open_count(), 1)                      # not concluded yet
+        self.assertEqual(open_count(), 1)
         row.design_conclusion = "no_exceptions"
         row.operating_conclusion = "exceptions"
         row.save()
-        self.assertEqual(open_count(), 1)                      # one half still excepts
+        self.assertEqual(open_count(), 1)
         row.operating_conclusion = "no_exceptions"
         row.save()
-        self.assertEqual(open_count(), 0)                      # cleared
+        self.assertEqual(open_count(), 0)
 
     def test_the_sealed_manifest_names_its_predecessor(self):
         new_id = self.roll().data["id"]
@@ -101,7 +92,6 @@ class RollForwardTests(PackageTestBase):
         self.assertEqual(manifest["manifest_version"], 4)
         self.assertEqual(manifest["package"]["prior"]["id"], self.package.pk)
         self.assertEqual(manifest["package"]["prior"]["manifest_sha256"], self.package.manifest_sha256)
-        # Last year's manifest has no such key and is untouched.
         self.assertNotIn("prior", json.loads(self.package.manifest_json)["package"])
 
     def test_predecessor_rules(self):

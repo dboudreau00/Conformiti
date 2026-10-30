@@ -1,24 +1,12 @@
-"""The sixth independent review, fixed in 0.9.5i.
-
-L-1: the assignee filter on a collection must not reveal whether an id belongs
-to anybody. django-filter's generated ModelChoiceFilter answers 400 for an id
-that is nobody and 200 for an id that is somebody. The audit trail and the
-document register take a person's id the same way, and the trail is readable
-by an issued auditor with no live grant.
-
-L-2 lives in ``tools/validate.py``: it is a property of a shell script.
-
-L-3: a questionnaire link that is not open returns its state and nothing else.
-"""
+"""Findings L-1 and L-3 of the sixth independent review. L-2 is a property of a shell script, held by
+``tools/validate.py``."""
 from accounts.models import Role
 from testutils import APITestBase, make_user
 
 
 class FilterOracleTests(APITestBase):
-    """L-1. These are the three collections an external auditor may GET that
-    take a person's id. None of them returns a name, so the exposure is
-    narrower than the directory walk covered by M-2 of the 0.9.5h review: it
-    answers whether an id belongs to anybody, one sequential id at a time."""
+    """L-1. The three collections an external auditor may GET that take a person's id. django-filter's generated
+    ModelChoiceFilter answers 400 for an id that is nobody's and 200 for one that is somebody's."""
 
     def setUp(self):
         super().setUp()
@@ -44,8 +32,7 @@ class FilterOracleTests(APITestBase):
         self.assertEqual(absent.status_code, real.status_code)
 
     def test_filtering_by_a_person_still_works(self):
-        """The control: an id that exists still narrows the result, so only
-        the oracle is closed."""
+        """The control: an id that exists still narrows the result, so only the oracle is closed."""
         from audit.models import AuditLog
 
         AuditLog.objects.create(user=self.owner, action="login", object_type="session",
@@ -57,13 +44,8 @@ class FilterOracleTests(APITestBase):
 
 
 class EveryAuditorReadableFilterTests(APITestBase):
-    """The walk, so the next collection added to the auditor's allowed list
-    cannot bring an oracle with it.
-
-    It resolves the filterset DRF would build for each readable collection and
-    refuses any filter on a person that validates membership, as the walk over
-    ``@action`` routes in ``tests_auditor_surface`` does for permissions.
-    """
+    """The walk: no collection an auditor may read gets a filter on a person that validates membership, so the next one
+    added to ALLOWED cannot bring an oracle with it."""
 
     def filters_for(self, viewset):
         """The filterset DRF would build, whether declared or generated."""
@@ -102,9 +84,8 @@ class EveryAuditorReadableFilterTests(APITestBase):
 
 
 class DeadQuestionnaireStateTests(APITestBase):
-    """L-3. A link that is no longer open must not reveal the names or the
-    timestamps: ``submitted_at`` on a stolen URL is when the vendor filed. It
-    says only which state the link is in."""
+    """L-3. A link that is no longer open says only which state it is in: no names and no timestamps (``submitted_at``
+    on a stolen URL is when the vendor filed)."""
 
     def test_the_payload_is_the_state_and_nothing_else(self):
         import datetime as dt
@@ -132,9 +113,8 @@ class DeadQuestionnaireStateTests(APITestBase):
 
 
 class RoleCapabilityCapTests(APITestBase):
-    """Not a finding. The Django admin registers Role without a clean(), so it
-    can still store the auditor-plus-capability combination, and _cap means
-    storing it grants nothing. This test records why that is acceptable."""
+    """Not a finding: the admin registers Role without a clean(), so it can store an auditor with capabilities, and
+    ``_cap`` means storing it grants nothing."""
 
     def test_a_role_saved_outside_the_api_still_grants_nothing(self):
         mixed = Role.objects.create(name="Saved in the admin", is_auditor=True,

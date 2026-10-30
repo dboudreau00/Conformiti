@@ -1,17 +1,5 @@
-"""
-CSV / XLSX ingestion for the risk register.
-
-Parsing is deliberately dependency-free (stdlib ``csv``, ``zipfile`` and
-``xml.etree``) so the importer works everywhere the app runs. An .xlsx file is
-a zip of XML; we read the first worksheet plus the shared-strings table, which
-covers files produced by Excel, Google Sheets and LibreOffice. The text Excel
-wrote as ``_x000D_`` and its kin is decoded by documents/ooxml.py, which is
-stdlib-only too.
-
-This module is Django-free on purpose: it turns bytes into normalized row
-dicts plus per-row issues. Resolving owners/controls and creating rows happens
-in the view, so the parsing layer can be tested standalone.
-"""
+"""CSV and XLSX parsing for the risk register: standard library only, and Django-free on purpose so it tests
+standalone. Bytes in; normalized row dicts and per-row issues out. The view resolves owners and controls."""
 import csv
 import io
 import re
@@ -92,9 +80,6 @@ TREATMENT_ALIASES = {
 _XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 
-# --------------------------------------------------------------------------
-# Low-level readers: bytes -> list of rows (each row a list of strings)
-# --------------------------------------------------------------------------
 def _read_csv(data):
     text = data.decode("utf-8-sig", errors="replace")
     sample = text[:4096]
@@ -102,9 +87,7 @@ def _read_csv(data):
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
-    # A single oversized cell makes csv raise csv.Error ("field larger than
-    # field limit"), which is not a ValueError. Surface it as one so the view
-    # returns a clean 400 instead of a 500.
+    # csv.Error (an oversized cell, say) is not a ValueError: it is converted below so the view answers 400, not 500.
     rows = []
     try:
         for row in csv.reader(io.StringIO(text), dialect):
@@ -116,18 +99,14 @@ def _read_csv(data):
     return rows
 
 
-# Excel's own maximum is XFD (16384). A register wider than this is a
-# malformed or hostile file, and the row builder allocates one slot per
-# column, so an unbounded index is an allocation primitive.
+# The row builder allocates one slot per column, so an unbounded column index is an allocation primitive. No register
+# has this many columns (Excel's own limit is 16384).
 MAX_COLS = 512
 
 
 def _bounded_read(zf, name):
-    """Read one archive member with a hard ceiling on the decompressed size.
-
-    ZipExtFile.read(n) passes n to the decompressor as max_length, so nothing
-    larger than the ceiling is ever allocated, unlike zf.read(name), which
-    trusts the header and expands whatever is inside."""
+    """Read one archive member with a hard ceiling on decompressed size: ``read(n)`` passes n to the decompressor as
+    max_length, so nothing larger is allocated, unlike ``zf.read(name)``, which expands whatever the archive holds."""
     with zf.open(name) as fh:
         raw = fh.read(MAX_UNZIPPED_BYTES + 1)
     if len(raw) > MAX_UNZIPPED_BYTES:
@@ -145,7 +124,6 @@ def _col_index(ref):
 
 
 def _cell_text(cell, shared):
-    """Extract a cell's value as a string, whatever its storage type."""
     t = cell.get("t", "")
     if t == "s":  # shared string
         v = cell.find(f"{_XLSX_NS}v")
@@ -169,8 +147,7 @@ def _read_xlsx(data):
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         raise ValueError("Not a valid .xlsx file.")
-    # A cheap early-out only: file_size is what the archive claims, so it is
-    # not a bound. The real ceiling is enforced per member by _bounded_read.
+    # A cheap early-out only: file_size is what the archive claims. The real ceiling is _bounded_read's, per member.
     if sum(i.file_size for i in zf.infolist()) > MAX_UNZIPPED_BYTES:
         raise ValueError("Spreadsheet is too large to import.")
 
@@ -180,9 +157,7 @@ def _read_xlsx(data):
     if not sheet_names:
         raise ValueError("No worksheet found in the .xlsx file.")
 
-    # Malformed XML inside an otherwise valid zip raises ET.ParseError (a
-    # SyntaxError subclass, not ValueError). Convert it so the view returns a
-    # clean 400 rather than a 500.
+    # ET.ParseError is a SyntaxError, not a ValueError: it is converted below so the view answers 400, not 500.
     try:
         shared = []
         if "xl/sharedStrings.xml" in zf.namelist():
@@ -192,8 +167,7 @@ def _read_xlsx(data):
 
         root = safe_fromstring(_bounded_read(zf, sheet_names[0]))
     except (ET.ParseError, XmlRefused):
-        # XmlRefused: a DOCTYPE, which a spreadsheet never needs and an
-        # entity-expansion attack depends on.
+        # XmlRefused: a DOCTYPE, which a spreadsheet never needs and an entity-expansion attack depends on.
         raise ValueError("The .xlsx file is corrupt or unreadable.")
     except zipfile.BadZipFile:
         raise ValueError("The .xlsx file is corrupt or unreadable.")
@@ -219,8 +193,7 @@ def _read_xlsx(data):
 
 
 def parse_upload(filename, data):
-    """Dispatch on extension. Returns rows or raises ValueError with a
-    user-safe message."""
+    """Rows by file extension; raises ValueError with a message that is safe to show the user."""
     name = (filename or "").lower()
     if len(data) > MAX_FILE_BYTES:
         raise ValueError("File is larger than the 2 MB import limit.")
@@ -231,16 +204,12 @@ def parse_upload(filename, data):
     raise ValueError("Unsupported file type: upload a .csv or .xlsx file.")
 
 
-# --------------------------------------------------------------------------
-# Normalization: raw rows -> canonical record dicts + issues
-# --------------------------------------------------------------------------
 def _norm_header(h):
     return re.sub(r"\s+", " ", (h or "").strip().strip("*").lower())
 
 
 def map_headers(header_row):
-    """Map each column to a canonical field (or None). Unknown columns are
-    ignored so people can import their existing registers unchanged."""
+    """A canonical field (or None) per column; unknown columns are ignored so existing registers import unchanged."""
     return [HEADER_ALIASES.get(_norm_header(h)) for h in header_row]
 
 
@@ -274,8 +243,7 @@ def _norm_choice(value, aliases, field, row_n, issues, default=None):
 
 
 def _excel_serial_to_date(n):
-    # Excel's day 1 is 1900-01-01 with the fictitious 1900 leap day, so the
-    # standard epoch trick is 1899-12-30. Plausible range only (1955-2079).
+    # Excel counts a fictitious 1900-02-29, so the epoch is 1899-12-30. Plausible range only (1955-2079).
     if not (20000 <= n <= 65700):
         return None
     return date(1899, 12, 30) + timedelta(days=int(n))
@@ -285,8 +253,7 @@ def _norm_date(value, field, row_n, issues):
     v = (value or "").strip()
     if not v:
         return None
-    # Excel date-time cells carry a fractional serial (e.g. 45658.5 = midday);
-    # truncating to the integer day yields the correct date.
+    # A date-time cell carries a fractional serial (45658.5 is midday): the integer day is the date.
     if re.fullmatch(r"\d+(\.\d+)?", v):
         d = _excel_serial_to_date(int(float(v)))
         if d:
@@ -305,13 +272,8 @@ def _norm_date(value, field, row_n, issues):
 
 
 def normalize(rows):
-    """
-    rows: raw string rows including the header row.
-    Returns (records, issues, error).
-      records: list of canonical dicts with a "row" key (1-based file row).
-      issues:  non-fatal warnings, row-tagged.
-      error:   fatal, e.g. no header / no Title column.
-    """
+    """``rows`` are raw string rows, header first. Returns ``(records, issues, error)``: canonical dicts tagged with
+    their 1-based file row, non-fatal row-tagged warnings, and a fatal message (no header, no Title column) or None."""
     issues = []
     if not rows:
         return [], [], "The file is empty."
@@ -346,7 +308,8 @@ def normalize(rows):
             "description": rec["description"][:MAX_TEXT],
             "status": _norm_choice(rec["status"], STATUS_ALIASES, "status", offset, issues, default="open"),
             "risk_type": _norm_choice(rec["risk_type"], TYPE_ALIASES, "type", offset, issues, default="other"),
-            "treatment": _norm_choice(rec["treatment"], TREATMENT_ALIASES, "treatment", offset, issues, default="mitigate"),
+            "treatment": _norm_choice(
+                rec["treatment"], TREATMENT_ALIASES, "treatment", offset, issues, default="mitigate"),
             "likelihood": _norm_scale(rec["likelihood"], "likelihood", offset, issues),
             "impact": _norm_scale(rec["impact"], "impact", offset, issues),
             "owner": rec["owner"].strip(),

@@ -1,10 +1,4 @@
-"""
-Taking the point-in-time copies a package is made of.
-
-Nothing here reads a live row at display time. Controls are renamed, documents
-get new versions and people leave, and none of that may change what a sealed
-package says was handed over.
-"""
+"""Point-in-time copies a package is made of; nothing here reads a live row at display time."""
 import hashlib
 
 from django.utils import timezone
@@ -19,12 +13,8 @@ def _full_name(user):
 
 
 def digest_and_size(file_field):
-    """SHA-256 and byte count of a stored file, read in chunks.
-
-    Returns ``(None, 0)`` when the file is missing rather than raising: a
-    package whose evidence has vanished must still be inspectable, and the seal
-    guard is where that becomes an error.
-    """
+    """SHA-256 and byte count of a stored file; ``(None, 0)`` when it is missing, so a package whose evidence has
+    vanished stays inspectable (the seal guard is where that becomes an error)."""
     if not file_field:
         return None, 0
     try:
@@ -42,7 +32,6 @@ def digest_and_size(file_field):
 
 
 def snapshot_control(package, control, user, note="", ordinal=0):
-    """Copy a control into the package as it stands right now."""
     category = control.category
     framework = category.framework
     return PackageControl.objects.create(
@@ -60,13 +49,8 @@ def snapshot_control(package, control, user, note="", ordinal=0):
 
 
 def pin_document(package_control, document, user, link=None, ordinal=0, **extra):
-    """Pin one document into a control row, hashing it as it stands.
-
-    ``link`` is the ``ControlEvidence`` row, if the document is being pinned
-    because it is already linked to the control. Its ``linked_by`` and
-    ``created_at`` are carried forward, because who asserted that this artefact
-    evidences this control, and when, is itself audit evidence.
-    """
+    """Pin one document into a control row, hashing it as it stands. ``link`` is the ``ControlEvidence`` row when the
+    document is already linked; its ``linked_by`` and ``created_at`` carry forward, being audit evidence themselves."""
     sha, size = digest_and_size(document.file)
     return PackageEvidence.objects.create(
         package_control=package_control, document=document, ordinal=ordinal,
@@ -91,19 +75,12 @@ def pin_document(package_control, document, user, link=None, ordinal=0, **extra)
 
 
 def pinned_file(row):
-    """The file a pinned row stands for, as ``(file, archived_version)``.
-
-    The document's own file while it is still the one pinned; after a new
-    version, the archived version that kept it. Reading the document's current
-    file instead would serve bytes the package never sealed while the package
-    still showed the sealed digest. ``(None, None)`` when neither holds it: a
-    file the package did not seal is not served in its place.
-    """
+    """``(file, archived_version)`` of the bytes this row sealed: the document's own file while it is the pinned one,
+    else the archived version, else ``(None, None)``. Never a newer version's file: the package did not seal it."""
     document = row.document
     if document is None or not document.file:
         return None, None
-    # A row with no storage_path names no file, so the document's own is all
-    # there is to go on.
+    # A row with no storage_path names no file: the document's own is all there is to go on.
     if not row.storage_path or document.file.name == row.storage_path:
         return document.file, None
     archived = document.versions.filter(file=row.storage_path).first()
@@ -113,17 +90,8 @@ def pinned_file(row):
 
 
 def verify_pins(package):
-    """Re-hash every pinned artefact. Returns the rows that no longer match.
-
-    While the package is a draft the question is whether each document still
-    holds what was pinned, so a new version means refresh or unpin before
-    sealing. Once it is sealed the question is whether the package can still
-    produce what it sealed (pinned_file), which a later version of the
-    document does not change.
-
-    Each entry is ``{"item", "control_ref", "document", "expected", "actual"}``
-    where ``actual`` is ``None`` if the file has gone.
-    """
+    """Re-hash every pinned artefact; return the drifted ones as ``{"item", "control_ref", "document", "expected",
+    "actual"}`` (None when the file is gone). A draft compares the live document, a sealed package ``pinned_file``."""
     drifted = []
     sealed = not package.is_open
     rows = PackageEvidence.objects.filter(

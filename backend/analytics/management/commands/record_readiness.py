@@ -1,10 +1,3 @@
-"""Record today's readiness snapshot (for cron deployments without Celery).
-
-    0 6 * * *  cd /app/backend && ../.venv/bin/python manage.py record_readiness
-
-Every workspace in turn. A workspace that fails is named and does not stop the
-others; the command exits with an error once they have run, so cron's mail says so.
-"""
 import logging
 
 from django.core.management.base import BaseCommand, CommandError

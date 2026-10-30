@@ -1,8 +1,4 @@
-"""
-OIDC sign-in, fully offline: a local RSA key stands in for the provider and
-``accounts.oidc._http`` is replaced with a fake that answers discovery, JWKS,
-the token endpoint and userinfo.
-"""
+"""OIDC sign-in offline: a local RSA key stands in for the provider and ``accounts.oidc._http`` is a fake."""
 import time
 from io import StringIO
 from unittest import mock
@@ -21,8 +17,7 @@ from testutils import APITestBase
 
 ISSUER = "https://idp.example"
 CLIENT = "conformiti-web"
-# 32 bytes or more: the symmetric-algorithm test signs with it, and PyJWT
-# warns (in the middle of the test gate's output) about a shorter HMAC key.
+# 32 bytes or more, or PyJWT warns about a short HMAC key in the symmetric-algorithm test.
 SECRET = "s3cret-" * 6
 SETTINGS = dict(OIDC_ISSUER=ISSUER, OIDC_CLIENT_ID=CLIENT, OIDC_CLIENT_SECRET=SECRET,
                 OIDC_LABEL="Sign in with Example", OIDC_ALLOWED_DOMAINS=[],
@@ -40,8 +35,7 @@ def _jwk(key, kid):
 
 
 class FakeProvider:
-    """Answers the four provider URLs. ``claims`` is what the next ID token
-    carries; the fake fills iss/aud/iat/exp/nonce unless told not to."""
+    """Answers the four provider URLs; ``claims`` is what the next ID token carries, ``override`` amends it."""
 
     def __init__(self):
         self.claims = {"sub": "sub-val", "email": "val@example.com", "email_verified": True,
@@ -93,8 +87,7 @@ class OidcFlowTests(APITestBase):
         self.anon = self.client_class()
 
     def start(self):
-        # Each flow is a fresh visitor as far as the per-IP login budget goes;
-        # a single test walks the flow more times than the rate allows.
+        # Clearing the cache resets the per-IP login budget: one test walks the flow more often than the rate allows.
         cache.clear()
         r = self.anon.get("/api/auth/oidc/start/")
         self.assertEqual(r.status_code, 302, getattr(r, "url", ""))
@@ -115,7 +108,6 @@ class OidcFlowTests(APITestBase):
         self.assertNotIn("sso_error", params, params)
         return params["sso"][0]
 
-    # ---------------------------------------------------------------- start
     def test_start_sends_pkce_state_and_nonce_and_parks_them_in_the_session(self):
         q = self.start()
         self.assertEqual(q["response_type"], ["code"])
@@ -136,7 +128,6 @@ class OidcFlowTests(APITestBase):
             r = self.anon.get("/api/auth/oidc/start/")
             self.assertEqual(r["Location"], "/login?sso_error=disabled")
 
-    # ------------------------------------------------------------ happy path
     def test_a_verified_email_links_an_existing_account_and_signs_it_in(self):
         ticket = self.sign_in()
         self.assertEqual(self.idp.last_token_request["grant_type"], ["authorization_code"])
@@ -161,9 +152,6 @@ class OidcFlowTests(APITestBase):
         self.assertEqual(OidcIdentity.objects.get(subject="sub-val").email, "val@example.com")
 
     def test_an_account_linked_at_this_provider_is_not_linked_again_by_email(self):
-        """A second subject at the same provider asserting the same verified
-        address (a recycled mailbox, a second provider account) does not get
-        into an account already bound to the first. An operator re-links."""
         OidcIdentity.objects.create(user=self.viewer, issuer=ISSUER + "/", subject="sub-first", email="val@example.com")
         q = self.start()
         r = self.callback(q["state"][0])        # the provider says sub-val
@@ -171,13 +159,11 @@ class OidcFlowTests(APITestBase):
         self.assertFalse(OidcIdentity.objects.filter(subject="sub-val").exists())
         row = AuditLog.objects.filter(action="login_failed").latest("timestamp")
         self.assertIn("(already_linked)", row.detail)
-        # The first subject still signs in.
         self.idp.claims["sub"] = "sub-first"
         self.sign_in()
 
     def test_refusals_nobody_attempted_write_no_audit_row(self):
-        """SSO turned off, or a callback with no sign-in in progress: anyone can
-        produce these by opening the URL, and the trail cannot be pruned."""
+        """SSO off or no sign-in in progress: anyone can produce these, and the audit trail cannot be pruned."""
         before = AuditLog.objects.count()
         r = self.anon.get("/api/auth/oidc/callback/", {"code": "c", "state": "s"})
         self.assertIn("sso_error=state", r["Location"])
@@ -185,7 +171,6 @@ class OidcFlowTests(APITestBase):
             r = self.anon.get("/api/auth/oidc/start/")
             self.assertIn("sso_error=disabled", r["Location"])
         self.assertEqual(AuditLog.objects.count(), before)
-        # A sign-in that was attempted and failed is still recorded.
         self.start()
         self.callback("not-the-state")
         self.assertTrue(AuditLog.objects.filter(action="login_failed", detail__contains="(state)").exists())
@@ -196,14 +181,12 @@ class OidcFlowTests(APITestBase):
         self.idp.userinfo = {"sub": "sub-val", "email": "val@example.com", "email_verified": True}
         self.sign_in()
         self.assertTrue(OidcIdentity.objects.filter(user=self.viewer).exists())
-        # A userinfo answer about someone else is ignored.
         OidcIdentity.objects.all().delete()
         self.idp.userinfo = {"sub": "somebody-else", "email": "val@example.com", "email_verified": True}
         q = self.start()
         r = self.callback(q["state"][0])
         self.assertIn("sso_error=no_email", r["Location"])
 
-    # ------------------------------------------------------------ refusals
     def _refused(self, code):
         q = self.start()
         r = self.callback(q["state"][0])
@@ -217,15 +200,12 @@ class OidcFlowTests(APITestBase):
         self.idp.claims.update({"sub": "sub-ada", "email": "ada@example.com"})
         self._refused("privileged")
         self.assertFalse(OidcIdentity.objects.exists())
-        # ...but a deliberate CLI link is honoured.
         with self.assertRaises(CommandError):
             call_command("link_oidc_identity", "ada", "sub-ada", stdout=StringIO())
         call_command("link_oidc_identity", "ada", "sub-ada", "--allow-privileged",
                      stdout=StringIO())
         self.assertEqual(OidcIdentity.objects.get(subject="sub-ada").user, self.admin)
-        # The audit row belongs to the account's workspace, or its own
-        # administrators could never see who linked a sign-in to it.
-        from audit.models import AuditLog
+        # The row is stamped with the account's workspace, or its own administrators could never see it.
         row = AuditLog.objects.get(detail__startswith="sso identity linked for ada")
         self.assertEqual(row.workspace_id, self.admin.workspace_id)
         self.assertIsNotNone(row.workspace_id)
@@ -264,7 +244,6 @@ class OidcFlowTests(APITestBase):
             self.sign_in()
 
     def test_email_verified_may_be_the_string_true(self):
-        """Some providers (Cognito) send "true" for the boolean claim."""
         self.idp.claims["email_verified"] = "true"
         self.sign_in()
         for bad in ("false", "yes", 1, "", None):
@@ -274,12 +253,9 @@ class OidcFlowTests(APITestBase):
                 self._refused("unverified_email")
 
     def test_provisioning_never_makes_a_second_account_on_an_address(self):
-        """With email linking off, an existing account on the address was not
-        matched; provisioning must refuse rather than duplicate it."""
         with override_settings(OIDC_LINK_BY_EMAIL=False, OIDC_AUTO_PROVISION=True):
             self._refused("email_taken")
         self.assertFalse(OidcIdentity.objects.filter(subject="sub-val").exists())
-        # A new address still provisions.
         self.idp.claims.update({"sub": "sub-new", "email": "brand.new@example.com"})
         with override_settings(OIDC_LINK_BY_EMAIL=False, OIDC_AUTO_PROVISION=True):
             self.sign_in()
@@ -300,12 +276,10 @@ class OidcFlowTests(APITestBase):
         r = self.callback(q["state"][0], error="access_denied", error_description="User cancelled")
         self.assertIn("sso_error=denied", r["Location"])
 
-    # -------------------------------------------------------- token checks
     def test_state_mismatch_and_replay(self):
         self.start()
         r = self.callback("not-the-state")
         self.assertIn("sso_error=state", r["Location"])
-        # The flow was consumed: the real state no longer works either.
         q = self.start()
         self.callback(q["state"][0])
         r = self.callback(q["state"][0])
@@ -331,11 +305,9 @@ class OidcFlowTests(APITestBase):
             oidc.verify_id_token(oidc.config(), self.idp.discovery(), raw, "n")
         self.assertEqual(ctx.exception.code, "token")
 
-    # ---------------------------------------------------------- tickets
     def test_tickets_are_single_use_and_bound_to_the_browser_session(self):
         ticket = self.sign_in()
-        # Lifted out of the redirect URL into another browser: useless there,
-        # and the attempt does not spend it for the browser that earned it.
+        # Lifted into another browser it is useless, and the attempt does not spend it for the browser that earned it.
         other = self.client_class()
         r = other.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json")
         self.assertEqual(r.status_code, 400)
@@ -348,7 +320,6 @@ class OidcFlowTests(APITestBase):
         self.assertEqual(self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").status_code, 400)
 
     def test_a_trailing_slash_issuer_still_matches(self):
-        """Auth0 and Entra v1 publish the issuer with a trailing slash."""
         self.idp.override = {"iss": ISSUER + "/"}
         with override_settings(OIDC_ISSUER=ISSUER + "/"):
             self.assertTrue(self.sign_in())
@@ -374,7 +345,6 @@ class OidcFlowTests(APITestBase):
 
         secret = mfa_lib.generate_secret()
         MfaDevice.objects.create(user=self.viewer, secret=secret, enabled=True)
-        # No second factor asserted: the local authenticator is asked for.
         self.idp.claims["amr"] = ["pwd"]
         ticket = self.sign_in()
         pending = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data
@@ -382,7 +352,6 @@ class OidcFlowTests(APITestBase):
                          (True, True, False))
         r = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket, "otp": mfa_lib.totp(secret)}, format="json")
         self.assertIn("access", r.data)
-        # The provider asserted MFA: straight in.
         self.idp.claims["amr"] = ["pwd", "mfa"]
         ticket = self.sign_in()
         self.assertIn("access", self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket}, format="json").data)

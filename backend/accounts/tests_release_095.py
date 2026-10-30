@@ -1,5 +1,3 @@
-"""0.9.5: an administrator setting a password ends the person's sessions, and
-the boot-time seed reaches every workspace."""
 from io import StringIO
 
 from django.core.management import call_command
@@ -17,7 +15,6 @@ class AdminPasswordResetTests(APITestBase):
                                  format="json")
         self.assertEqual(login.status_code, 200)
         refresh = login.data["refresh"]
-        # The token is live.
         self.assertEqual(APIClient().post("/api/auth/token/refresh/", {"refresh": refresh},
                                           format="json").status_code, 200)
 
@@ -25,8 +22,6 @@ class AdminPasswordResetTests(APITestBase):
             f"/api/users/{self.owner.pk}/", {"password": "Brand-New-Passw0rd!"}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
 
-        # And now it is not: the reset ends the session, as the person's own
-        # password change does.
         again = APIClient().post("/api/auth/token/refresh/", {"refresh": refresh}, format="json")
         self.assertEqual(again.status_code, 401)
         self.assertEqual(APIClient().post("/api/auth/token/",

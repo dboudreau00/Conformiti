@@ -1,10 +1,3 @@
-"""The one place that decides whether the server may make a request.
-
-Several callers depend on this: the Jira client, the chat webhooks and the
-identity-provider requests (REVIEWS.md (0.9.5 review), S-2). It is tested here
-on its own so a change to it cannot be judged only by whether their suites
-still pass.
-"""
 import urllib.request
 from unittest import mock
 
@@ -86,10 +79,6 @@ class ShapeTests(TestCase):
         self.refused("https://redis.internal/x", "host")
 
     def test_the_host_is_read_after_the_at_sign_not_before_it(self):
-        """``https://hooks.slack.com@attacker.example/`` addresses
-        attacker.example. Credentials in a URL are refused outright rather
-        than parsed around, so this never reaches the allow-list at all, but
-        the allow-list would reject it too."""
         with self.assertRaises(outbound.OutboundError):
             outbound.check_shape("https://hooks.slack.com@attacker.example/", allowed_hosts=SLACK)
         host, _ = outbound.check_shape("https://attacker.example/",
@@ -116,7 +105,6 @@ class ResolutionTests(TestCase):
                              "93.184.216.34")
 
     def test_an_allowed_host_pointing_inside_the_network_is_refused(self):
-        """The check a name-only allow-list cannot make."""
         for address in ("127.0.0.1", "169.254.169.254", "10.1.2.3"):
             with resolving_to(address):
                 with self.assertRaises(outbound.OutboundError) as caught:
@@ -129,9 +117,6 @@ class ResolutionTests(TestCase):
                 outbound.assert_safe_url(self.URL, allowed_hosts=SLACK)
 
     def test_a_private_address_is_allowed_only_when_the_caller_asks(self):
-        """For the operator who deliberately runs the far end on their own
-        network. The connection is still pinned to the address checked here,
-        and the opener still refuses redirects."""
         url = "https://models.internal/v1/chat"
         with resolving_to("10.1.2.3"):
             with self.assertRaises(outbound.OutboundError):
@@ -151,12 +136,6 @@ class ResolutionTests(TestCase):
 
 
 class ProxyTests(TestCase):
-    """An operator who routes egress through one proxy has made that proxy
-    the boundary. Pinning and proxying cannot both happen: the pinning
-    handler replaces the connection, so together they send the request to the
-    target's address on the proxy's port, which both breaks the call and
-    steps around the control the operator chose."""
-
     URL = "https://api.example.com/v1"
     PROXY = "http://egress.internal:3128"
 
@@ -186,8 +165,6 @@ class ProxyTests(TestCase):
                 outbound.assert_safe_url("http://api.example.com/v1", allowed_hosts=None)
 
     def test_an_address_written_the_old_way_is_judged_as_the_address_it_means(self):
-        """A proxy resolves 2852039166 and 0x7f.1 as the numbers they are; the
-        canonical-form parser read them as names and let them through."""
         proxied = [mock.patch("config.outbound.urllib.request.getproxies",
                               return_value={"https": self.PROXY}),
                    mock.patch("config.outbound.urllib.request.proxy_bypass", return_value=False)]
@@ -198,22 +175,20 @@ class ProxyTests(TestCase):
                     with self.assertRaises(outbound.OutboundError) as caught:
                         outbound.assert_safe_url(f"https://{host}/", allowed_hosts=None)
                     self.assertEqual(caught.exception.code, "private")
-            # A public address written the old way, and ordinary names, still pass.
             self.assertIsNone(outbound.assert_safe_url("https://1561097786/", allowed_hosts=None))
             self.assertIsNone(outbound.assert_safe_url("https://example.com/", allowed_hosts=None))
             self.assertIsNone(outbound.assert_safe_url("https://deadbeef.example/", allowed_hosts=None))
 
     def test_an_authenticated_proxy_is_accepted_and_an_authenticated_target_is_not(self):
         with mock.patch("config.outbound.urllib.request.getproxies",
-                        return_value={"https": "http://user:secret@egress.internal:3128"}),                 mock.patch("config.outbound.urllib.request.proxy_bypass", return_value=False):
+                        return_value={"https": "http://user:secret@egress.internal:3128"}), \
+                mock.patch("config.outbound.urllib.request.proxy_bypass", return_value=False):
             self.assertIsNone(outbound.assert_safe_url(self.URL, allowed_hosts=None))
             with self.assertRaises(outbound.OutboundError) as caught:
                 outbound.assert_safe_url("https://user:secret@api.example.com/v1", allowed_hosts=None)
             self.assertEqual(caught.exception.code, "userinfo")
 
     def test_a_bypassed_host_is_resolved_and_pinned_as_usual(self):
-        """`no_proxy` names what the operator excluded, a model server on the
-        LAN being the obvious case."""
         with mock.patch("config.outbound.urllib.request.getproxies",
                         return_value={"https": self.PROXY}), \
                 mock.patch("config.outbound.urllib.request.proxy_bypass", return_value=True), \
@@ -227,8 +202,6 @@ class ProxyTests(TestCase):
                              for h in proxied.handlers))
         self.assertTrue(any(isinstance(h, urllib.request.ProxyHandler)
                             for h in proxied.handlers))
-        # And no pinned address, no proxy argument: urllib's own proxy
-        # handling stays in charge rather than being bypassed.
         from_env = outbound.opener(None)
         self.assertFalse(any(isinstance(h, outbound.PinnedHTTPSHandler)
                              for h in from_env.handlers))

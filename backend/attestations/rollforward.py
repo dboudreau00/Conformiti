@@ -1,15 +1,5 @@
-"""
-Roll-forward: this year's package from last year's, and the diff between them.
-
-On a repeat engagement an auditor asks what changed since last time: which
-controls entered or left scope, which evidence was replaced, which of last
-year's exceptions are still open. ``diff`` answers that from the two packages'
-own snapshots, so it works years later against sealed rows and never reads a
-live control. ``roll_forward`` starts the new draft from the sealed one: same
-engagement shape, the same controls re-snapshotted as they stand today, with
-today's linked evidence pinned, and ``prior_package`` set so the diff is
-available straight away.
-"""
+"""Roll-forward and the year-over-year diff. ``diff`` reads only the two packages' own snapshots, never a live control,
+so it works years later against sealed rows."""
 from django.db import transaction
 
 from documents.access import accessible_folder_ids
@@ -19,8 +9,7 @@ from .snapshot import pin_document, snapshot_control
 
 
 def chain(package):
-    """Every predecessor, nearest first. Bounded, so a cycle written by hand
-    into the database cannot hang a request."""
+    """Every predecessor, nearest first; bounded so a cycle written into the database cannot hang a request."""
     out, seen, current = [], {package.pk}, package.prior_package
     while current is not None and current.pk not in seen and len(out) < 50:
         out.append(current)
@@ -30,7 +19,6 @@ def chain(package):
 
 
 def would_cycle(package, prior):
-    """True if making ``prior`` the predecessor of ``package`` closes a loop."""
     if prior is None:
         return False
     if prior.pk == package.pk:
@@ -39,8 +27,7 @@ def would_cycle(package, prior):
 
 
 def _evidence_key(row):
-    """How two pinned artefacts are matched across years: the live document
-    when both still point at one, else the name."""
+    """How artefacts match across years: by live document when both still point at one, else by name."""
     return ("doc", row.document_id) if row.document_id else ("name", row.document_name)
 
 
@@ -49,15 +36,8 @@ def _control_key(row):
 
 
 def _evidence_diff(current, prior):
-    """Pair this year's pinned artefacts with last year's.
-
-    More than one row can share a key (a document no longer on file that was
-    pinned twice, two files with one name), so each key holds a list and the
-    rows are paired off: identical content first, then what is left in order,
-    which is a change. Keyed by name alone, the second row overwrote the first
-    and every count came out low. Keyed by name and hash, a changed document
-    would stop being a change and read as one removed and one added.
-    """
+    """Pair this year's artefacts with last year's. Rows can share a key, so each key holds a list: identical content
+    pairs first, the rest pair in order as changes (keying by name alone loses rows, by name and hash hides changes)."""
     def grouped(rows):
         groups = {}
         for e in rows:
@@ -89,8 +69,7 @@ def _evidence_diff(current, prior):
 
 
 def _exception_still_open(row):
-    """True unless this year's conclusions clear it: at least one is "no
-    exceptions" and neither one notes exceptions."""
+    """Open unless a conclusion is "no exceptions" and neither one notes exceptions."""
     conclusions = (row.design_conclusion, row.operating_conclusion)
     return "exceptions" in conclusions or "no_exceptions" not in conclusions
 
@@ -101,11 +80,7 @@ def _ev(row):
 
 
 def diff(package):
-    """The year-over-year comparison against ``package.prior_package``.
-
-    Returns None when there is no prior. Everything comes from snapshot
-    columns on the two packages' rows.
-    """
+    """The comparison against ``package.prior_package`` (None without one), from snapshot columns only."""
     prior = package.prior_package
     if prior is None:
         return None
@@ -129,9 +104,6 @@ def diff(package):
         prior_exception = "exceptions" in (old.design_conclusion, old.operating_conclusion)
         if prior_exception:
             totals["prior_exceptions"] += 1
-            # Open until this year's auditor concludes otherwise. One
-            # "no exceptions" does not close it while the other conclusion
-            # still notes exceptions.
             if _exception_still_open(row):
                 totals["prior_exceptions_open"] += 1
         kept.append({
@@ -183,13 +155,8 @@ def diff(package):
 
 
 def roll_forward(prior, user, name=None, engagement=None):
-    """Open next year's draft from a sealed (or withdrawn) package.
-
-    Controls are re-snapshotted as they stand today, with today's linked
-    evidence pinned where the person can see it; the auditor's conclusions,
-    samples and the request list are NOT copied: they belong to the
-    engagement they were made in.
-    """
+    """Open next year's draft from a sealed or withdrawn package: controls re-snapshotted, linked evidence pinned where
+    the person can see it. Conclusions, samples and the request list are NOT copied: they belong to their engagement."""
     if prior.status == EvidencePackage.Status.DRAFT:
         raise ValueError("Roll forward from a sealed package; a draft has nothing fixed to roll from.")
     full = (user.get_full_name() or user.get_username())[:200]
@@ -207,7 +174,6 @@ def roll_forward(prior, user, name=None, engagement=None):
         for old in prior.controls.select_related("control__category__framework").order_by("ordinal", "control_ref"):
             control = old.control
             if control is None:
-                # The control has been deleted, so there is nothing to snapshot.
                 continue
             row = snapshot_control(package, control, user, note=old.note)
             for link in control.evidence_links.select_related("document", "linked_by"):

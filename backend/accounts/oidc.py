@@ -1,38 +1,5 @@
-"""
-Single sign-on over OpenID Connect (authorization code + PKCE).
-
-The provider is configured from the environment only, never from a database
-row an administrator could create. A settable "trusted issuer" would let
-anyone with the users capability point the app at an identity provider they
-control and mint themselves any account. Keeping it in the environment keeps
-it with the person who deploys the software.
-
-The flow, in order:
-
-1. ``begin``     discovers the provider, generates ``state``, ``nonce`` and a
-                 PKCE verifier, parks them in the Django session and redirects.
-2. ``complete``  checks ``state``, exchanges the code (https, no redirects,
-                 bounded body), verifies the ID token's signature against the
-                 provider's JWKS, its issuer, audience, expiry and ``nonce``,
-                 then maps the identity to a local user.
-3. ``redeem``    the SPA turns a one-time ticket into the same tokens a
-                 password login produces, in whichever transport is live.
-
-Mapping rules, in order of trust:
-
-* an identity already linked (issuer + subject) signs in as that user;
-* otherwise a verified email that matches exactly one local account links
-  it, unless that account is a superuser or staff, which must always use
-  their password (an IdP admin must not be able to become the app admin);
-* otherwise, if ``OIDC_AUTO_PROVISION`` is on and the domain is allowed, a
-  new account is created with ``OIDC_DEFAULT_ROLE``, which is refused if
-  that role can manage users;
-* otherwise the sign-in is declined, and the reason is in the audit trail.
-
-Local MFA is not asked for on an SSO login: the provider authenticated the
-person, and that is where step-up policy belongs. Password logins are
-unaffected.
-"""
+"""OpenID Connect sign-in (authorization code + PKCE). The provider is configured from the environment only:
+a settable issuer would let anyone with the users capability mint any account through a provider of their own."""
 import base64
 import hashlib
 import json
@@ -59,13 +26,12 @@ from .models import OidcIdentity, Role
 log = logging.getLogger(__name__)
 
 SESSION_KEY = "oidc_flow"
-FLOW_TTL = 600          # seconds a started sign-in stays valid
-TICKET_TTL = 90         # seconds the SPA has to redeem a finished sign-in
+FLOW_TTL = 600
+TICKET_TTL = 90
 DISCOVERY_TTL = 3600
 MAX_BODY = 1 << 20
 ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "PS384", "ES256", "ES384"]
 
-# Reasons the login screen can show. Anything not listed reads as "denied".
 MESSAGES = {
     "disabled": "Single sign-on is not configured on this server.",
     "state": "That sign-in link expired or was already used. Start again.",
@@ -79,7 +45,8 @@ MESSAGES = {
     "ambiguous_email": "More than one account uses that email address. Ask an administrator to link your identity.",
     "email_taken": "An account already uses that email address. Ask an administrator to link your identity.",
     "unknown_user": "No account is linked to that identity. Ask an administrator to link it.",
-    "already_linked": "That account is linked to a different identity at your provider. Ask an administrator to link this one.",
+    "already_linked": "That account is linked to a different identity at your provider. "
+                      "Ask an administrator to link this one.",
     "inactive": "That account is deactivated.",
     "role": "The server's default single sign-on role is misconfigured.",
     "mfa_required": "This server requires a second factor for single sign-on. Sign in with your "
@@ -89,8 +56,7 @@ MESSAGES = {
 
 
 class StepUpRequired(Exception):
-    """The ticket is good, but the local second factor has not been given yet.
-    Carries the user so the view can say which factors are on offer."""
+    """The ticket is good but the local second factor is missing; ``user`` tells the view which factors to offer."""
 
     def __init__(self, user=None):
         super().__init__("step-up required")
@@ -98,10 +64,8 @@ class StepUpRequired(Exception):
 
 
 class OidcError(Exception):
-    """``record=False`` marks a refusal that says nothing about anyone: single
-    sign-on is not configured, or a browser arrives with no sign-in in progress.
-    Anyone can produce those at will, and the audit trail cannot be pruned, so
-    the views do not write a row for them."""
+    """``record=False`` marks refusals anyone can produce at will (SSO off, no flow in progress): the audit trail
+    cannot be pruned, so the views write no row for them."""
 
     def __init__(self, code, detail="", record=True):
         self.code = code
@@ -134,7 +98,6 @@ class Config:
 
 
 def config():
-    """Read at call time so tests and reloads see the live settings."""
     domains = getattr(settings, "OIDC_ALLOWED_DOMAINS", []) or []
     return Config(
         issuer=str(getattr(settings, "OIDC_ISSUER", "") or "").strip().rstrip("/"),
@@ -151,13 +114,7 @@ def config():
     )
 
 
-# --------------------------------------------------------------------------- #
-# Talking to the provider
-# --------------------------------------------------------------------------- #
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
-    """A provider endpoint that redirects is either misconfigured or hostile;
-    following it would let discovery walk the request somewhere else."""
-
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise OidcError("provider", "the identity provider redirected an API call")
 
@@ -166,19 +123,8 @@ _opener = urllib.request.build_opener(_NoRedirects)
 
 
 def _http(url, data=None, headers=None):
-    """GET (or POST form ``data``) a JSON document over https, no redirects,
-    body capped, and addressed to somewhere on the public internet.
-
-    The issuer is the operator's own setting. The token and userinfo endpoints
-    are not: they come out of the discovery document, which is the provider's
-    answer, so a provider that is hostile or has been interfered with chooses
-    where this process connects next. Every request this product makes to a
-    URL it did not write goes through ``config.outbound``: the host must
-    resolve to a public address, the connection is pinned to the address that
-    was checked, and a redirect is refused rather than followed.
-
-    Patched wholesale in tests.
-    """
+    """GET, or POST form ``data``, a JSON document. The token and userinfo URLs come from the provider's discovery
+    answer, so every request goes through ``config.outbound`` (public address only, pinned, no redirects)."""
     from config import outbound
 
     if not str(url).startswith("https://") and not settings.DEBUG:
@@ -188,8 +134,7 @@ def _http(url, data=None, headers=None):
         pinned = outbound.assert_safe_url(
             url, allowed_hosts=None, allowed_ports=None,
             allowed_schemes=schemes,
-            # A self-hosted provider on the deployment network is a real
-            # deployment, and DEBUG is where it is exercised.
+            # A self-hosted provider on the deployment network is exercised under DEBUG.
             require_public=not settings.DEBUG)
     except outbound.OutboundError as exc:
         raise OidcError("provider", f"the identity provider's address is refused: {exc}")
@@ -253,15 +198,12 @@ def _signing_key(cfg, doc, kid):
 
 
 def _same(a, b):
-    """Constant-time equality that tolerates any text (compare_digest wants
-    ASCII str or bytes; a state parameter is whatever the URL carried)."""
+    """Constant-time equality for any text: ``compare_digest`` rejects non-ASCII ``str``."""
     return secrets.compare_digest(str(a or "").encode("utf-8"), str(b or "").encode("utf-8"))
 
 
 def _privileged(user):
-    """Accounts the email match must never bind: the platform's own
-    administrators by any route (superuser, staff, or a role that manages
-    users, which can create a superuser-equivalent in one request)."""
+    """Accounts an email match must never bind: every route to platform administrator, a user-managing role included."""
     return bool(user.is_superuser or user.is_staff or user.can_manage_users)
 
 
@@ -275,9 +217,7 @@ def verify_id_token(cfg, doc, raw, nonce):
         raise OidcError("token", f"unsupported signing algorithm {alg!r}")
     key = _signing_key(cfg, doc, header.get("kid"))
     try:
-        # The issuer is checked below rather than by PyJWT: Auth0 and Entra
-        # v1 publish "https://x/" with the slash, and the configured value
-        # is normalised without it, so the comparison must normalise too.
+        # Issuer is compared below, not by PyJWT: Auth0 and Entra v1 publish a trailing slash the setting lacks.
         claims = jwt.decode(
             raw, key, algorithms=[alg], audience=cfg.client_id, leeway=60,
             options={"require": ["exp", "iat", "iss", "aud", "sub"], "verify_iss": False},
@@ -291,9 +231,6 @@ def verify_id_token(cfg, doc, raw, nonce):
     return claims
 
 
-# --------------------------------------------------------------------------- #
-# The flow
-# --------------------------------------------------------------------------- #
 def _safe_next(path):
     path = str(path or "/")
     if not path.startswith("/") or path.startswith("//") or "\\" in path:
@@ -332,9 +269,7 @@ def begin(request, next_path="/"):
 
 
 def mfa_asserted(claims):
-    """True if the provider says a second factor was used. OIDC puts it in
-    ``amr`` (and sometimes ``acr``); the accepted values are
-    SSO_MFA_ASSERTIONS."""
+    """True when the provider's ``amr`` or ``acr`` claim carries a value in SSO_MFA_ASSERTIONS."""
     accepted = set(getattr(settings, "SSO_MFA_ASSERTIONS", []) or [])
     amr = claims.get("amr") or []
     if isinstance(amr, str):
@@ -345,12 +280,11 @@ def mfa_asserted(claims):
 
 
 def step_up_needed(user, asserted):
-    """Apply SSO_STEP_UP. Returns True when the local authenticator must be
-    asked for before tokens are issued; raises when the sign-in is refused."""
+    """Apply SSO_STEP_UP: True when the local authenticator must be asked for; raises when the sign-in is refused."""
     policy = str(getattr(settings, "SSO_STEP_UP", "if_enrolled") or "if_enrolled")
     if policy == "off" or asserted:
         return False
-    if user.mfa_enabled:   # an authenticator app or a passkey
+    if user.mfa_enabled:
         return True
     if policy == "required":
         raise OidcError("mfa_required", f"{user.get_username()} has no authenticator and the "
@@ -387,8 +321,7 @@ def complete(request):
         raise OidcError("token", "no id_token in the token response")
     claims = verify_id_token(cfg, doc, raw, flow.get("nonce"))
 
-    # Some providers keep email out of the ID token; ask userinfo, and only
-    # trust an answer that is about the same subject.
+    # Email missing from the ID token: ask userinfo, trusting only an answer about the same subject.
     if not claims.get("email") and tokens.get("access_token") and doc.get("userinfo_endpoint"):
         try:
             info = _http(doc["userinfo_endpoint"],
@@ -404,9 +337,6 @@ def complete(request):
     return user, how, flow.get("next") or "/", mfa_asserted(claims)
 
 
-# --------------------------------------------------------------------------- #
-# Identity -> account
-# --------------------------------------------------------------------------- #
 def _names(claims):
     given = str(claims.get("given_name") or "").strip()
     family = str(claims.get("family_name") or "").strip()
@@ -417,10 +347,7 @@ def _names(claims):
 
 
 def _unique_username(base):
-    """`username` is unique across the whole installation (AbstractUser), so
-    the probe has to be too. Run inside a workspace it could return a name
-    already taken in another one, and create_user would fail on the
-    constraint."""
+    """``username`` is unique installation-wide, so the probe runs unscoped: a scoped one could return a taken name."""
     from . import tenancy
 
     User = get_user_model()
@@ -435,13 +362,8 @@ def _unique_username(base):
 
 
 def sso_workspace():
-    """The one workspace this installation's identity provider serves.
-
-    One IdP per installation is the design (see SSO_WORKSPACE), so every SSO
-    decision (linking, matching and provisioning) has to happen inside this
-    workspace. Otherwise a single provider would sign people into whichever
-    tenant holds a matching row.
-    """
+    """The one workspace the identity provider serves; every SSO decision happens inside it, or one provider
+    would sign people into whichever tenant holds a matching row."""
     from .models import Workspace
 
     workspace = Workspace.objects.filter(slug=settings.SSO_WORKSPACE, is_active=True).first()
@@ -451,10 +373,7 @@ def sso_workspace():
 
 
 def _email_verified(claims):
-    """The provider's own say-so that it checked the address. The claim is a
-    JSON boolean by the spec, but some providers (AWS Cognito among them) send
-    the string "true". Anything else, including "false", 1 and a missing
-    claim, is not verified."""
+    """True for the boolean ``true`` or, as AWS Cognito sends it, the string "true"; anything else is unverified."""
     value = claims.get("email_verified")
     if value is True:
         return True
@@ -470,10 +389,7 @@ def resolve_user(claims, cfg):
         raise OidcError("token", "ID token has no subject")
     email = str(claims.get("email") or "").strip().lower()[:254]
 
-    # A provider may spell its issuer with a trailing "/" (Entra ID's SAML
-    # entity id and Auth0's issuer do) while link_oidc_identity stores it
-    # without one. Both spellings are one identity, and two accounts holding
-    # it is refused.
+    # An issuer with and without a trailing "/" (Auth0, Entra) is one identity; two accounts holding it is refused.
     spellings = {issuer, issuer.rstrip("/"), issuer.rstrip("/") + "/"}
     matches = list(OidcIdentity.objects.select_related("user__role")
                    .filter(issuer__in=spellings, subject=subject))
@@ -483,18 +399,14 @@ def resolve_user(claims, cfg):
     if identity is not None:
         if not identity.user.is_active:
             raise OidcError("inactive")
-        # Re-checked on every sign-in: a user promoted to administrator
-        # since the link was made must go back to their password until an
-        # operator re-affirms the link.
+        # Re-checked on every sign-in: a user promoted since the link was made goes back to their password.
         if _privileged(identity.user) and not identity.privileged_ok:
             raise OidcError("privileged", f"{identity.user.get_username()} is privileged and the "
                                           "link was not made with --allow-privileged")
         identity.last_login_at = timezone.now()
         if email and identity.email != email:
             identity.email = email
-        # OidcIdentity is installation-wide, so a link made before the
-        # workspace existed, or against another tenant, would otherwise
-        # still sign this person in here.
+        # OidcIdentity is installation-wide: a link made against another tenant must not sign this person in here.
         if identity.user.workspace_id and identity.user.workspace_id != sso_workspace().pk:
             raise OidcError("workspace",
                             f"{identity.user.get_username()} belongs to another workspace")
@@ -523,12 +435,8 @@ def resolve_user(claims, cfg):
                 raise OidcError("privileged", f"refused to link {user.get_username()} by email")
             if not user.is_active:
                 raise OidcError("inactive")
-            # An account already bound to a different subject at this provider
-            # is not bound to a second one by its address: a recycled mailbox,
-            # or a second provider account asserting the same verified address,
-            # would otherwise walk into the first person's account. A provider
-            # that genuinely changed someone's subject is re-linked by hand
-            # (manage.py link_oidc_identity).
+            # An account bound to another subject at this provider is not bound to a second one by address (recycled
+            # mailbox, second provider account); a changed subject is re-linked by hand with link_oidc_identity.
             if OidcIdentity.objects.filter(user=user, issuer__in=spellings).exclude(subject=subject).exists():
                 raise OidcError("already_linked",
                                 f"{user.get_username()} is linked to another identity at {issuer}")
@@ -537,19 +445,15 @@ def resolve_user(claims, cfg):
             return user, "linked by verified email"
 
     if cfg.auto_provision:
-        # A provisioned account joins the workspace named by SSO_WORKSPACE,
-        # and its role is looked up there, not across the installation.
         from . import tenancy
 
         workspace = sso_workspace()
-        # With linking by email off, an existing account on this address was
-        # not matched above. Creating a second one would leave two people
-        # sharing an address, and the next email-linked sign-in "ambiguous".
+        # With email linking off nothing matched above: a second account on this address would make the next
+        # email-linked sign-in ambiguous.
         with tenancy.scoped(workspace):
             if User.objects.filter(email__iexact=email).exists():
                 raise OidcError("email_taken", f"an account already uses {email}")
         given, family = _names(claims)
-        # Computed outside the tenant scope: usernames are installation-wide.
         username = _unique_username(email)
         with tenancy.scoped(workspace):
             role = Role.objects.filter(name__iexact=cfg.default_role).first()
@@ -563,8 +467,7 @@ def resolve_user(claims, cfg):
                     role=role, is_staff=False, is_superuser=False,
                 )
             except IntegrityError:
-                # Lost a race for the name: refuse cleanly with an audit row
-                # rather than return a 500 from the sign-in path.
+                # Lost a race for the username: refuse with an audit row, not a 500.
                 raise OidcError("denied", "could not allocate a username")
         user.set_unusable_password()
         user.save(update_fields=["password"])
@@ -575,20 +478,14 @@ def resolve_user(claims, cfg):
     raise OidcError("unknown_user", f"no account for {email}")
 
 
-# --------------------------------------------------------------------------- #
-# Tickets: the callback is a browser navigation; the SPA needs the tokens
-# --------------------------------------------------------------------------- #
 TICKET_KEY = "oidc_ticket"
-STEP_UP_TTL = 300       # long enough to find the phone
+STEP_UP_TTL = 300
 STEP_UP_TRIES = 5
 
 
 def issue_ticket(request, user, mfa_pending=False):
-    """A one-time ticket, kept (hashed) in the browser session that ran the
-    flow. The session store is shared by every worker, which the default
-    per-process cache is not, and a ticket lifted out of the redirect URL is
-    useless in any other browser. With ``mfa_pending`` the ticket is only
-    redeemable together with a valid local authenticator code."""
+    """A one-time ticket, hashed into the session that ran the flow (shared by every worker, useless in another
+    browser). With ``mfa_pending`` it is redeemable only together with a valid local authenticator code."""
     ticket = secrets.token_urlsafe(32)
     request.session[TICKET_KEY] = {
         "hash": hashlib.sha256(ticket.encode("ascii")).hexdigest(),
@@ -647,16 +544,9 @@ def redeem_ticket(request, ticket, otp=None, passkey=None):
     return user
 
 
-# --------------------------------------------------------------------------- #
-# Audit
-# --------------------------------------------------------------------------- #
 def audit(request, user, ok, detail):
     try:
-        # Sign-in runs with no workspace active, so the row is stamped here.
-        # An entry with an account behind it is filed under that account's
-        # workspace; a refusal with no account (unknown subject, garbage
-        # response) goes to the workspace the IdP serves, whose
-        # administrators are the people who need to see it.
+        # No workspace is active during sign-in, so stamp the row: the account's workspace, else the one the IdP serves.
         from .models import Workspace
 
         workspace_id = user.workspace_id if user is not None else None

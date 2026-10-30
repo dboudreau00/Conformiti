@@ -1,19 +1,5 @@
-"""Replace the package-signing key.
-
-    python manage.py rotate_signing_key            # new key into SIGNING_KEY_FILE
-    python manage.py rotate_signing_key --show     # print the current keys
-
-The file holds the installation key. A package is signed with a key derived
-from it for the package's own workspace, so one rotation gives every workspace a
-new key, and the fingerprints to publish are the workspaces', not the file's.
-
-The old key file is kept beside the new one as <file>.retired-<key id>, each
-workspace's old public key stays in the SigningKey table marked retired, and
-every package already sealed keeps the public key that signed it, so nothing in
-circulation stops verifying. Packages sealed from now on use the new keys.
-With SIGNING_KEY set in the environment there is no file to rotate: change
-the variable and restart.
-"""
+"""Replace the package-signing key. The file holds the installation key; each workspace signs with a key derived
+from it, so one rotation renews every workspace's key. SIGNING_KEY in the environment leaves no file to rotate."""
 import os
 import shutil
 from pathlib import Path
@@ -34,8 +20,7 @@ class Command(BaseCommand):
         parser.add_argument("--label", default="", help="A label for the new keys (e.g. 'FY27').")
 
     def _workspace_keys(self):
-        """(workspace, key info) for every workspace, each read with that
-        workspace active, because that is the key its packages are signed with."""
+        """(workspace, key info) for every workspace, read with that workspace active: it selects the derived key."""
         out = []
         for workspace in Workspace.objects.order_by("pk"):
             with tenancy.scoped(workspace):
@@ -43,8 +28,7 @@ class Command(BaseCommand):
         return out
 
     def handle(self, *args, **options):
-        # A command line has no workspace active, which is how the installation
-        # key is read; the workspaces are visited one at a time below.
+        # No workspace is active on a command line, which is how the installation key is read.
         with tenancy.unscoped():
             root = signing.current_key_info(create=True)
             if root.get("error"):
@@ -81,9 +65,7 @@ class Command(BaseCommand):
                 raise CommandError("A new key could not be generated.")
             self.stdout.write(f"New installation : {fresh['key_id']}")
 
-            # Each workspace's derived key is new now. Registering it retires that
-            # workspace's previous current key and leaves every other workspace's
-            # alone, so the published list stays right per organisation.
+            # Registering retires only that workspace's previous key, so the published list stays right per tenant.
             for workspace in Workspace.objects.order_by("pk"):
                 with tenancy.scoped(workspace):
                     info = signing.current_key_info(create=False)

@@ -1,4 +1,3 @@
-"""In-app notification feed: list (with read/dismissed state), mark-read, dismiss."""
 from django.conf import settings
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
@@ -10,9 +9,8 @@ from .notifications import build
 
 
 class ChannelsView(APIView):
-    """Which chat channels this deployment posts to (configured by an
-    operator, never from here) and, for administrators, the last few delivery
-    attempts and a test post."""
+    """Which chat channels the deployment posts to (never configured from here); administrators also get the delivery
+    log and a test post."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -27,9 +25,6 @@ class ChannelsView(APIView):
         installation = [name for name, _ in webhooks.installation_channels()]
         body = {
             "slack": "slack" in names, "teams": "teams" in names,
-            # Where the configured channels come from, so the settings screen
-            # can say "this workspace's" rather than "the server's", and can
-            # warn a multi-tenant installation that relies on the shared one.
             "source": "workspace" if own else ("installation" if names else "none"),
             "workspace_channels": own,
             "installation_channels": installation,
@@ -40,9 +35,8 @@ class ChannelsView(APIView):
             "digest": request.user.digest,
             "digest_choices": [{"id": c, "label": label} for c, label in request.user.Digest.choices],
         }
-        # The delivery log is installation-wide (WebhookDelivery is not a
-        # tenant model, and the webhook itself is configured by an operator),
-        # so a workspace administrator must not see other organisations' rows.
+        # WebhookDelivery is installation-wide (not a tenant model), so only a superuser may see it: a workspace
+        # administrator would see other organisations' rows.
         if request.user.is_superuser:
             body["deliveries"] = [{
                 "event": d.event, "channel": d.channel, "ok": d.ok, "response_code": d.response_code,
@@ -51,8 +45,6 @@ class ChannelsView(APIView):
         return Response(body)
 
     def post(self, request):
-        """Send a test message to every configured channel, synchronously, so
-        the administrator sees the outcome at once."""
         from . import webhooks
 
         if not (request.user.is_superuser or request.user.can_manage_users):
@@ -69,9 +61,6 @@ class ChannelsView(APIView):
 
 
 class NotificationListView(APIView):
-    """The signed-in user's personalized feed. Dismissed items are hidden;
-    each remaining item is annotated read/unread, and `unread` drives the bell
-    badge."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -94,8 +83,7 @@ class NotificationListView(APIView):
 
 
 class NotificationMarkReadView(APIView):
-    """Mark every currently-live notification as read (recomputed server-side,
-    so the client can't mark keys that are not present)."""
+    """Mark every live notification read; the keys are recomputed server-side, never taken from the client."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -108,9 +96,8 @@ class NotificationMarkReadView(APIView):
 
 
 class NotificationDismissView(APIView):
-    """Dismiss a single notification by key so it stops appearing. The key
-    must belong to the caller's *current* feed, otherwise a client could
-    grow the receipt table without bound with made-up keys."""
+    """Dismiss one notification. The key must be in the caller's current feed, or a client could grow the receipt
+    table without bound with made-up keys."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):

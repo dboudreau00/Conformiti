@@ -1,24 +1,5 @@
-"""
-A clamd client, on the standard library.
-
-Speaks INSTREAM to a ClamAV daemon over TCP: send ``zINSTREAM\\0``, then
-length-prefixed chunks, then a zero-length chunk; the daemon answers
-``stream: OK`` or ``stream: <signature> FOUND``.
-
-No dependency: the protocol is a dozen lines, and a client library would add
-supply-chain surface for no gain. The file is streamed in 64 KiB chunks, so a
-32 MB upload never lands in memory.
-
-Three outcomes:
-
-* clean;
-* infected: ``InfectedError``, the upload is refused and audited;
-* not fully inspected: ``LimitsExceededError``. ClamAV skips content that
-  trips ``MaxFileSize`` / ``MaxScanSize`` / ``MaxRecursion`` and, with
-  ``AlertExceedsMax yes``, says so. Without that it answers ``OK`` for a file
-  it did not scan, and the application would store it carrying the claim that
-  it was clean.
-"""
+"""A clamd INSTREAM client on the standard library alone (tools/validate.py imports it on a bare checkout).
+clamd needs ``AlertExceedsMax yes``, or content past its limits is skipped and answered ``OK``."""
 import socket
 import struct
 
@@ -26,22 +7,17 @@ CHUNK = 64 * 1024
 INSTREAM = b"zINSTREAM\0"
 
 
-# The EICAR test string, split so no contiguous copy of it exists in the
-# repository for an on-access scanner to quarantine. It lives in this module
-# rather than in scanning.py because tools/validate.py imports it on a bare
-# checkout, before anything is pip-installed, and scanning.py needs Django.
+# The EICAR test string is split so no contiguous copy exists in the repository for an on-access scanner to quarantine.
 _EICAR_HEAD = rb"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-"
 _EICAR_TAIL = rb"ANTIVIRUS-TEST-FILE!$H+H*"
 
 
 def eicar_bytes():
-    """The 68-byte EICAR test file, assembled at call time."""
     return _EICAR_HEAD + _EICAR_TAIL
 
 
 class ScanError(Exception):
-    """The scanner could not be reached, timed out, or said something we do
-    not understand. Always fail closed on this."""
+    """Scanner unreachable, timed out or unintelligible: callers must fail closed."""
 
 
 class InfectedError(Exception):
@@ -51,8 +27,7 @@ class InfectedError(Exception):
 
 
 class LimitsExceededError(Exception):
-    """ClamAV declined to inspect the whole file. This is neither clean nor
-    malware."""
+    """clamd declined to inspect the whole file: neither clean nor malware."""
 
     def __init__(self, reason):
         self.reason = reason
@@ -68,9 +43,7 @@ def parse_response(text):
         raise ScanError(f"scanner error: {text}")
     if text.endswith("FOUND"):
         signature = text.split(":", 1)[-1].rsplit(" FOUND", 1)[0].strip()
-        # Heuristics.Limits.Exceeded is reported as FOUND but is not a
-        # detection: the file was too big or too deeply nested to inspect.
-        # It is refused, but not reported as malware.
+        # Heuristics.Limits.Exceeded arrives as FOUND but is not a detection: the file was too big or deep to inspect.
         if signature.startswith("Heuristics.Limits.Exceeded"):
             raise LimitsExceededError(signature)
         raise InfectedError(signature)
@@ -80,11 +53,7 @@ def parse_response(text):
 
 
 def scan_stream(fileobj, host, port, timeout=10.0, connect_timeout=3.0, max_bytes=None):
-    """Scan an open file. Returns None if clean, raises otherwise.
-
-    The file position is restored on the way out, so callers can hand the same
-    handle to storage afterwards.
-    """
+    """Scan an open file: None if clean, raises otherwise. The file is rewound afterwards so the caller can store it."""
     try:
         fileobj.seek(0)
     except (AttributeError, OSError):
@@ -126,7 +95,6 @@ def scan_stream(fileobj, host, port, timeout=10.0, connect_timeout=3.0, max_byte
 
 
 def ping(host, port, timeout=3.0):
-    """True if a clamd answers PING. Used by the boot probe, never per upload."""
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
             sock.settimeout(timeout)

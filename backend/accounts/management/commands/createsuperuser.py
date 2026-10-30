@@ -1,20 +1,5 @@
-"""
-``manage.py createsuperuser`` without Django's "Bypass password validation"
-question.
-
-Stock Django offers, when a typed password fails AUTH_PASSWORD_VALIDATORS,
-to create the account anyway. This installation's policy has no bypass
-(TenantUserManager.create_superuser refuses such a password whatever the
-answer), so a yes would end the command with an error and discard the
-username and email already typed. Here the question is never put: the
-command says the policy has no bypass and asks for another password, the way
-Django's own loop does after a no.
-
-Everything else is Django's command, unchanged: ``--noinput`` with
-DJANGO_SUPERUSER_* works as before, and the policy is still applied by the
-manager. accounts comes before django.contrib.auth in INSTALLED_APPS so that
-Django finds this command rather than its own.
-"""
+"""``createsuperuser`` without Django's bypass-password-validation question: the policy has no bypass.
+Found instead of Django's command because accounts precedes django.contrib.auth in INSTALLED_APPS."""
 import builtins
 
 from django.contrib.auth.management.commands import createsuperuser as stock

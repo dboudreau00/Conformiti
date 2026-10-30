@@ -1,4 +1,3 @@
-"""Calendar write gates and the merged feed's visibility scoping."""
 from documents.models import VIEW
 from testutils import APITestBase, grant, make_doc
 
@@ -57,12 +56,9 @@ class CalendarTests(APITestBase):
                          {"Hidden audit": None, "Shown audit": shown.pk})
         self.assertIsNone(v.get(f"/api/calendar/{ids['Hidden audit']}/").data["document"])
         self.assertEqual(v.get(f"/api/calendar/{ids['Shown audit']}/").data["document"], shown.pk)
-        # The event itself still holds the link: only the reader's view changes.
         self.assertEqual(m.get(f"/api/calendar/{ids['Hidden audit']}/").data["document"], hidden.pk)
 
     def test_a_nameless_assignee_is_named_by_username(self):
-        """createsuperuser asks for no first or last name, so such an assignee
-        must show by username, on the event and in the merged feed."""
         from testutils import make_user
 
         root = make_user("rootadmin", self.roles["Administrator"], first_name="", last_name="")

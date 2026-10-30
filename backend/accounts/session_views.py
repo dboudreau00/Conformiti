@@ -1,18 +1,5 @@
-"""
-The endpoints that cookie mode needs and header mode does not.
-
-* ``GET  /api/auth/session/``       reports who is signed in and whether the
-                                    session can renew.
-* ``POST /api/auth/session/clear/`` signs out, from any state.
-
-``LogoutView`` requires authentication, which suits a client holding a token
-it wants revoked but not cookie mode: once the access cookie has expired, the
-SPA cannot read or clear the HttpOnly refresh cookie, and a sign-out that 401s
-would leave a live 7-day credential in the browser while the interface said
-"signed out", so the next person at that workstation would be signed back in
-silently. The clear endpoint therefore takes anyone, is CSRF-protected, and
-revokes opportunistically.
-"""
+"""Endpoints cookie mode needs. LogoutView requires authentication, but once the access cookie expires the SPA cannot
+clear the HttpOnly refresh cookie, so sign-out takes anyone (CSRF-protected) and revokes opportunistically."""
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -26,8 +13,7 @@ from . import cookie_auth
 
 
 class SessionView(APIView):
-    """Tolerant probe. Never 401s, so the SPA can ask "am I signed in?" without
-    the console error a 401 would log on every cold load."""
+    """Tolerant probe: an anonymous visitor gets 200, not a 401 that would log a console error on every cold load."""
     authentication_classes = [cookie_auth.CookieJWTAuthentication]
     permission_classes = [AllowAny]
     throttle_classes = []
@@ -35,8 +21,7 @@ class SessionView(APIView):
     def get(self, request):
         user = request.user
         authenticated = bool(user and user.is_authenticated)
-        # A dead access cookie plus a live refresh cookie is renewable: the SPA
-        # should try /auth/token/refresh/ before bouncing to the login screen.
+        # Dead access cookie plus live refresh cookie: the SPA should refresh before showing the login screen.
         renewable = bool(
             cookie_auth.cookie_mode()
             and not authenticated
@@ -48,8 +33,7 @@ class SessionView(APIView):
             "renewable": renewable,
             "username": user.get_username() if authenticated else None,
         })
-        # Seed the readable CSRF cookie so the first write after a cold load
-        # has a token to echo.
+        # Seeds the readable CSRF cookie, so the first write after a cold load has a token to echo.
         if cookie_auth.cookie_mode():
             from django.middleware.csrf import get_token
             get_token(request)
@@ -57,9 +41,7 @@ class SessionView(APIView):
 
 
 class SessionClearView(APIView):
-    """Sign out from any state: expired access cookie, no cookie at all, or a
-    perfectly good session. Always 200, so a client can always finish clearing
-    its own state."""
+    """Sign out from any state (expired, absent or live session); 200 whenever the CSRF check passes."""
     authentication_classes = [cookie_auth.CookieJWTAuthentication]
     permission_classes = [AllowAny]
     throttle_classes = []
@@ -67,12 +49,8 @@ class SessionClearView(APIView):
     def post(self, request):
         from audit.events import record_logout
 
-        # Like the endpoints that set the auth cookies, this one needs its own
-        # CSRF check. The check inside cookie authentication only runs once an
-        # access cookie has authenticated, and this endpoint exists for the
-        # case where that cookie is gone and the refresh cookie is not.
-        # SameSite=Lax covers most of it, but not Chrome's two-minute
-        # Lax+POST window.
+        # Needs its own CSRF check: the one in cookie authentication only runs after an access cookie authenticates,
+        # and this endpoint exists for when that cookie is gone. SameSite=Lax misses Chrome's 2-minute Lax+POST window.
         refused = cookie_auth.csrf_required(request)
         if refused:
             return Response({"detail": f"CSRF failed: {refused}"}, status=403)
@@ -85,9 +63,8 @@ class SessionClearView(APIView):
                 RefreshToken(raw).blacklist()
                 revoked = 1
             except TokenError:
-                revoked = 0
-        # Also revoke every outstanding token for a user we can still
-        # identify, so an expired access cookie does not leave siblings alive.
+                pass
+        # Also revoke the user's other outstanding tokens, so siblings do not outlive an expired access cookie.
         if request.user and request.user.is_authenticated:
             revoked += _blacklist_all(request.user)
             record_logout(request)
@@ -99,32 +76,19 @@ class SessionClearView(APIView):
 
 
 def end_all_sessions(user):
-    """End every session this account has, both halves of each one.
-
-    For the recovery paths only: a password change, an administrator setting a
-    password, an MFA reset. Those say the account may be in the wrong hands,
-    and revoking refresh tokens does not end the session already running: the
-    access token in the hijacked tab keeps working until it expires, an hour
-    by default (M-4).
-
-    Signing out calls ``_blacklist_all`` instead. It revokes every refresh
-    token, which covers an expired access cookie, but it does not end the
-    person's other browser sessions that are still running.
-    """
+    """End every session of the account, refresh and access halves: for the recovery paths (password change or reset,
+    MFA reset), where a hijacked tab's access token must stop too (M-4). Sign-out uses ``_blacklist_all`` instead."""
     from django.utils import timezone
 
-    # Floored to the second: the ``iat`` claim is whole seconds, so a stamp
-    # carrying microseconds would refuse a token minted in the same second,
-    # which is the token the person signing in again has just been handed.
+    # Floored to the second: ``iat`` is whole seconds, so a stamp with microseconds would refuse the token minted in
+    # the same second, which is the one the person signing in again has just been handed.
     user.sessions_valid_from = timezone.now().replace(microsecond=0)
     user.save(update_fields=["sessions_valid_from"])
     return _blacklist_all(user)
 
 
 def _blacklist_all(user):
-    """Revoke every refresh token this account holds, so no session of it can
-    renew itself. The access tokens already issued are unaffected; see
-    :func:`end_all_sessions` for the paths where that is not enough."""
+    """Revoke every refresh token the account holds. Access tokens already issued keep working until they expire."""
     try:
         from rest_framework_simplejwt.token_blacklist.models import (
             BlacklistedToken, OutstandingToken,
@@ -139,13 +103,8 @@ def _blacklist_all(user):
 
 
 class AuthConfigView(APIView):
-    """What the SPA needs to know before it can sign anyone in.
-
-    Also where the CSRF cookie comes from. In cookie mode the login endpoint
-    checks CSRF, and a visitor arriving at /login with no session has no token
-    to send. This is the request the SPA makes before that one, so this is
-    where Django is asked to set the cookie.
-    """
+    """What the SPA needs before anyone can sign in. Also where the CSRF cookie comes from: the login endpoint checks
+    CSRF in cookie mode, and a visitor with no session has no token until this request sets one."""
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = []

@@ -1,4 +1,3 @@
-"""The three HTTP faces of the OIDC flow: start, callback, redeem."""
 from urllib.parse import quote
 
 from django.contrib.auth.models import update_last_login
@@ -21,10 +20,7 @@ class _LoginThrottle(SimpleRateThrottle):
 
 
 def _fail(request, exc):
-    # A refusal about a sign-in that was actually attempted is recorded. One
-    # anyone can produce by opening the URL (SSO not configured, no sign-in in
-    # progress in this browser) is not: at the login throttle that was
-    # thousands of permanent rows a day from one address.
+    # A refusal anyone can produce by opening the URL (record=False) is not audited: the trail cannot be pruned.
     if exc.record:
         oidc.audit(request, None, False, f"sso sign-in failed ({exc.code}): {exc.detail or exc.message}")
     return HttpResponseRedirect("/login?sso_error=" + quote(exc.code, safe=""))
@@ -62,8 +58,6 @@ class OidcCallbackView(APIView):
 
 
 class OidcRedeemView(APIView):
-    """Turn a one-time ticket into tokens, exactly as a password login would
-    hand them out: JSON in header mode, HttpOnly cookies in cookie mode."""
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [_LoginThrottle]
@@ -71,9 +65,7 @@ class OidcRedeemView(APIView):
     def post(self, request):
         from . import passkeys
 
-        # Same reason as the password login: this endpoint sets the auth
-        # cookies and authenticates nobody, so the check that lives inside
-        # CookieJWTAuthentication never runs for it.
+        # Sets auth cookies yet authenticates nobody, so CookieJWTAuthentication's CSRF check never runs: do it here.
         refused = cookie_auth.csrf_required(request)
         if refused:
             return Response({"detail": f"CSRF failed: {refused}"}, status=403)

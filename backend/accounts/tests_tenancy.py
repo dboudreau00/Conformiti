@@ -1,7 +1,5 @@
-"""Workspaces: one installation, several organisations, each seeing only its
-own. The suite's fixtures live in the Default workspace (the test runner
-activates it); these tests add a second organisation, Beta, and check that
-nothing crosses the line in either direction."""
+"""Tenant isolation. The fixtures live in the Default workspace (the test runner activates it); these tests add a
+second organisation, Beta, and check that nothing crosses the line in either direction."""
 from contextlib import redirect_stdout
 from io import StringIO
 
@@ -51,9 +49,6 @@ class TwoWorkspaces(APITestBase):
         return {r["id"] for r in rows}
 
 
-# --------------------------------------------------------------------------- #
-# The manager
-# --------------------------------------------------------------------------- #
 class ManagerScopingTests(TwoWorkspaces):
     def test_active_workspace_filters_every_query(self):
         self.assertEqual(set(Framework.objects.values_list("workspace_id", flat=True)), {self.alpha.pk})
@@ -66,8 +61,7 @@ class ManagerScopingTests(TwoWorkspaces):
             self.assertEqual(Framework.objects.count(), 2)
 
     def test_import_time_queryset_is_pinned_when_chained(self):
-        """A `queryset = Model.objects.all()` built with nothing active (a
-        viewset's class attribute) is scoped as soon as DRF calls .all()."""
+        """A queryset built with nothing active (a viewset's class attribute) is scoped as soon as DRF calls .all()."""
         with tenancy.unscoped():
             stale = Document.objects.all()
         self.assertEqual(stale.all().count(), 1)
@@ -87,12 +81,10 @@ class ManagerScopingTests(TwoWorkspaces):
         self.assertEqual(self.tree.framework.categories.count(), 1)
         with tenancy.scoped(self.beta):
             self.assertEqual(self.b_tree.framework.categories.count(), 1)
-            # Forward FK access works regardless of the active workspace.
+        # Forward FK access works regardless of the active workspace.
         self.assertEqual(self.b_doc.folder.workspace_id, self.beta.pk)
 
     def test_save_takes_workspace_from_the_parent(self):
-        """Filing into a Beta folder while Default is active lands in Beta:
-        the parent decides, the active workspace only fills the gap."""
         doc = Document(folder=self.b_tree.ctrl2, name="Filed under beta", owner=self.admin)
         doc.file.save("x.txt", ContentFile(b"x"), save=False)
         doc.save()
@@ -107,10 +99,8 @@ class ManagerScopingTests(TwoWorkspaces):
             entry = AuditLog.objects.create(action="probe", object_type="test")
             about_bea = AuditLog.objects.create(action="probe", object_type="test", user=self.b_admin)
         self.assertIsNone(entry.workspace_id)  # nullable models may have none
-        # An entry belongs to the workspace the action happened in, not to
-        # the actor: a superuser switched into another tenant is acting on
-        # that tenant, and its administrators have to see it. With nothing
-        # active and nothing passed, there is no workspace to record.
+        # An entry belongs to the workspace the action happened in, not to the actor: a superuser switched into another
+        # tenant acts on it, and its administrators have to see that. With nothing active, there is none to record.
         self.assertIsNone(about_bea.workspace_id)
         with tenancy.scoped(self.beta):
             in_beta = AuditLog.objects.create(action="probe", object_type="test", user=self.admin)
@@ -135,9 +125,6 @@ class ManagerScopingTests(TwoWorkspaces):
         self.assertEqual(self.admin.workspace_id, self.alpha.pk)
 
 
-# --------------------------------------------------------------------------- #
-# The API
-# --------------------------------------------------------------------------- #
 LIST_ROUTES = [
     "/api/frameworks/", "/api/controls/", "/api/folders/", "/api/documents/",
     "/api/risks/", "/api/vendors/", "/api/meeting-series/", "/api/users/", "/api/roles/",
@@ -174,12 +161,12 @@ class ApiIsolationTests(TwoWorkspaces):
 
     def test_foreign_row_by_id_is_404(self):
         client = self.client_for(self.admin)
-        for route, obj in [
-            (f"/api/frameworks/{self.b_tree.framework.pk}/", self.b_tree.framework),
-            (f"/api/documents/{self.b_doc.pk}/", self.b_doc),
-            (f"/api/risks/{self.b_risk.pk}/", self.b_risk),
-            (f"/api/vendors/{self.b_vendor.pk}/", self.b_vendor),
-            (f"/api/users/{self.b_admin.pk}/", self.b_admin),
+        for route in [
+            f"/api/frameworks/{self.b_tree.framework.pk}/",
+            f"/api/documents/{self.b_doc.pk}/",
+            f"/api/risks/{self.b_risk.pk}/",
+            f"/api/vendors/{self.b_vendor.pk}/",
+            f"/api/users/{self.b_admin.pk}/",
         ]:
             with self.subTest(route=route):
                 self.assertEqual(client.get(route).status_code, 404)
@@ -210,7 +197,6 @@ class ApiIsolationTests(TwoWorkspaces):
         self.assertEqual((r.data["slug"], r.data["can_switch"]), ("beta", True))
         r = client.get("/api/workspaces/current/")
         self.assertEqual(r.data["slug"], "default")
-        # What the superuser creates while switched lands in Beta.
         r = client.post("/api/risks/", {"title": "Raised in Beta"}, format="json", HTTP_X_WORKSPACE="beta")
         self.assertEqual(r.status_code, 201, r.data)
         with tenancy.unscoped():
@@ -223,8 +209,7 @@ class ApiIsolationTests(TwoWorkspaces):
 
     def test_account_without_a_workspace_is_refused(self):
         lost = make_user("lost", self.roles["Viewer"])
-        # save() would put it straight back into the active workspace; that
-        # is the point of save(), so detach at the database.
+        # save() would put it straight back into the active workspace, so detach at the database.
         User.objects.filter(pk=lost.pk).update(workspace=None)
         lost.refresh_from_db()
         r = self.client_for(lost).get("/api/frameworks/")
@@ -245,7 +230,6 @@ class ApiIsolationTests(TwoWorkspaces):
         r = APIClient().post("/api/auth/token/", {"username": "bea", "password": PASSWORD}, format="json")
         self.assertEqual(r.status_code, 401, r.data)
         self.assertIn("archived", str(r.data["detail"]))
-        # The superuser may still look, by name.
         r = self.client_for(self.admin).get("/api/frameworks/", HTTP_X_WORKSPACE="beta")
         self.assertEqual(r.status_code, 403)
         self.assertIn("archived", str(r.data["detail"]))
@@ -270,16 +254,12 @@ class ApiIsolationTests(TwoWorkspaces):
         with tenancy.unscoped():
             entry = AuditLog.objects.filter(user=self.b_admin, action="login").latest("timestamp")
         self.assertEqual(entry.workspace_id, self.beta.pk)
-        # ... and Beta's administrator can see it, Default's cannot.
         r = self.client_for(self.b_admin).get("/api/audit-log/", {"action": "login"})
         self.assertIn(entry.pk, self.ids(r))
         r = self.client_for(self.admin).get("/api/audit-log/", {"action": "login"})
         self.assertNotIn(entry.pk, self.ids(r))
 
 
-# --------------------------------------------------------------------------- #
-# The workspace API
-# --------------------------------------------------------------------------- #
 class WorkspaceApiTests(TwoWorkspaces):
     def test_people_see_their_own_workspace_only(self):
         r = self.client_for(self.b_manager).get("/api/workspaces/")
@@ -302,7 +282,6 @@ class WorkspaceApiTests(TwoWorkspaces):
             self.assertEqual(Role.objects.count(), len(BUILTIN_ROLES))
             self.assertEqual(Framework.objects.count(), 0)
             self.assertEqual(User.objects.count(), 0)
-        # A person created while switched there joins it.
         r = client.post("/api/users/", {"username": "gail", "email": "gail@gamma.example", "password": PASSWORD},
                         format="json", HTTP_X_WORKSPACE="gamma-inc")
         self.assertEqual(r.status_code, 201, r.data)
@@ -319,7 +298,6 @@ class WorkspaceApiTests(TwoWorkspaces):
             self.assertGreater(Framework.objects.count(), 0)
             self.assertGreater(Control.objects.count(), 100)
             self.assertTrue(Folder.objects.filter(is_framework_root=True).exists())
-        # Default's library is untouched.
         self.assertEqual(Framework.objects.count(), 1)
 
     def test_archiving_rules(self):
@@ -334,9 +312,6 @@ class WorkspaceApiTests(TwoWorkspaces):
         self.assertEqual(r.status_code, 400)
 
 
-# --------------------------------------------------------------------------- #
-# Jobs and commands
-# --------------------------------------------------------------------------- #
 class JobsTests(TwoWorkspaces):
     def test_morning_scans_run_in_every_workspace(self):
         from notifications.tasks import run_all_scans
@@ -404,11 +379,9 @@ class JobsTests(TwoWorkspaces):
         self.assertEqual(sum(v is None for v in out.values()), 1)
 
     def test_the_cron_scan_command_isolates_a_failing_workspace_like_the_task(self):
-        """INSTALL.md sends installations without Celery to this command, and it
-        walked the workspaces with no isolation: one failure ended the pass."""
+        """Installations without Celery are sent to this command (INSTALL.md), so one failure must not end the pass."""
         from unittest import mock
 
-        from django.core.management.base import CommandError
         from notifications import tasks as notify_tasks
 
         real = notify_tasks.run_review_scan
@@ -447,8 +420,6 @@ class JobsTests(TwoWorkspaces):
 
     def test_the_cron_snapshot_command_isolates_a_failing_workspace_too(self):
         from unittest import mock
-
-        from django.core.management.base import CommandError
 
         from analytics.management.commands import record_readiness as command
 

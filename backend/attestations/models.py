@@ -1,17 +1,5 @@
-"""
-Evidence packages: what was disclosed to an auditor, when, and by whom.
-
-A package replaces the usual folder grant, where an external auditor is given
-VIEW on a framework root, reads whatever lands there for months, and someone
-has to remember to remove the access. A named person instead gets a fixed,
-sealed, time-boxed list of artefacts, every read is recorded, and withdrawal
-is a single action.
-
-Everything an auditor is shown is a SNAPSHOT taken when the item was pinned.
-Controls are renamed, documents get new versions and people leave, and none of
-that may change what a sealed package says was handed over. Each row therefore
-carries its own copy of the values, as ``governance.AccessReviewItem`` does.
-"""
+"""Evidence packages. Every row holds a SNAPSHOT of what an auditor is shown, taken when the item was pinned: a rename,
+a new document version or a departure must not change what a sealed package says was handed over."""
 from django.conf import settings
 from django.db import models
 
@@ -19,8 +7,6 @@ from accounts.tenancy import TenantModel
 
 
 class EvidencePackage(TenantModel):
-    """One disclosure: a scope, an assertion, a seal and a set of recipients."""
-
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         SEALED = "sealed", "Sealed"
@@ -43,8 +29,6 @@ class EvidencePackage(TenantModel):
         "compliance.Framework", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="evidence_packages",
     )
-    # The scope statement an auditor reads first. Reuses the categories the
-    # frameworks already model (CC1..CC9, A.5..A.8, Req 1..12).
     scope = models.ManyToManyField(
         "compliance.ControlCategory", blank=True, related_name="evidence_packages",
     )
@@ -57,7 +41,6 @@ class EvidencePackage(TenantModel):
     scope_note = models.TextField(blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
 
-    # --- management assertion (required to seal) ---
     assertion = models.TextField(blank=True)
     asserted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -66,7 +49,6 @@ class EvidencePackage(TenantModel):
     asserted_by_name = models.CharField(max_length=200, blank=True)
     asserted_at = models.DateTimeField(null=True, blank=True)
 
-    # --- seal ---
     sealed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="packages_sealed",
@@ -79,15 +61,11 @@ class EvidencePackage(TenantModel):
     # Stored verbatim so an archived package stays verifiable without this code.
     manifest_json = models.TextField(blank=True)
     generator = models.CharField(max_length=60, blank=True)
-    # --- detached signature over manifest_json (attestations/signing.py).
-    # The public key travels with the package so a signature made under a
-    # rotated-out key still verifies; the private key is never in this
-    # database. Blank when the installation had no signing key at seal.
+    # Detached signature over manifest_json; its public key travels along, so a rotated-out key still verifies.
     manifest_signature = models.CharField(max_length=128, blank=True)
     signing_key_id = models.CharField(max_length=16, blank=True, db_index=True)
     signing_public_key = models.CharField(max_length=64, blank=True)
 
-    # --- withdrawal ---
     withdrawn_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="packages_withdrawn",
@@ -95,7 +73,6 @@ class EvidencePackage(TenantModel):
     withdrawn_at = models.DateTimeField(null=True, blank=True)
     withdrawn_reason = models.CharField(max_length=255, blank=True)
 
-    # The package this one was rolled forward from (see rollforward.py).
     prior_package = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="successors",
     )
@@ -125,12 +102,6 @@ class EvidencePackage(TenantModel):
 
 
 class PackageControl(TenantModel):
-    """One control's workpaper row.
-
-    A control with no evidence still gets a row, because the gap is often the
-    most audit-relevant fact in the package.
-    """
-
     class Conclusion(models.TextChoices):
         PENDING = "pending", "Not concluded"
         NO_EXCEPTIONS = "no_exceptions", "No exceptions noted"
@@ -144,7 +115,6 @@ class PackageControl(TenantModel):
     )
     ordinal = models.PositiveIntegerField(default=0)
 
-    # --- snapshot, taken when the control was added ---
     framework_key = models.CharField(max_length=40, blank=True)
     framework_name = models.CharField(max_length=120, blank=True)
     framework_version = models.CharField(max_length=60, blank=True)
@@ -160,9 +130,7 @@ class PackageControl(TenantModel):
     included_by_name = models.CharField(max_length=200, blank=True)
     snapshot_at = models.DateTimeField(auto_now_add=True)
 
-    # --- the auditor's conclusions. Two axes, because a Type I is design only
-    # and "designed effectively, operated with exceptions" is the commonest
-    # Type II outcome. Writable ONLY by a live grantee.
+    # The auditor's conclusions: writable ONLY by a live grantee.
     design_conclusion = models.CharField(
         max_length=16, choices=Conclusion.choices, default=Conclusion.PENDING)
     operating_conclusion = models.CharField(
@@ -176,7 +144,6 @@ class PackageControl(TenantModel):
     concluded_by_name = models.CharField(max_length=200, blank=True)
     concluded_at = models.DateTimeField(null=True, blank=True)
 
-    # --- the client's answer, so a disagreement is recorded with the package.
     management_response = models.TextField(blank=True)
     responded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -185,21 +152,18 @@ class PackageControl(TenantModel):
     responded_by_name = models.CharField(max_length=200, blank=True)
     responded_at = models.DateTimeField(null=True, blank=True)
 
-    # Set when an exception is promoted into the risk register.
     risk = models.ForeignKey(
         "governance.Risk", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="package_findings",
     )
 
-    # --- the population, stated by the organisation while the package is a
-    # draft and sealed with it: what the auditor samples FROM. The sampling
-    # note is the auditor's, written after sealing like a conclusion.
     class Sampling(models.TextChoices):
         RANDOM = "random", "Random"
         HAPHAZARD = "haphazard", "Haphazard"
         JUDGMENTAL = "judgmental", "Judgmental"
         COMPLETE = "complete", "Complete population"
 
+    # The population is stated by the organisation in draft and sealed with it; sampling_note is the auditor's, later.
     population_size = models.PositiveIntegerField(null=True, blank=True)
     population_source = models.CharField(
         max_length=255, blank=True,
@@ -216,16 +180,8 @@ class PackageControl(TenantModel):
 
 
 class PackageSample(TenantModel):
-    """One sampled item on a control's workpaper row: the unit a Type II
-    operating-effectiveness test is performed on.
-
-    Items listed while the package is a draft are sealed into the manifest
-    (identifier, what it is, where in the population it came from, which
-    pinned artefact supports it). After sealing only the issued auditor adds
-    items (their own selections) and records the result per item. The result
-    is workpaper data, mutable by the auditor alone like a conclusion; the
-    organisation never touches it.
-    """
+    """One sampled item on a control. Items listed in draft are sealed into the manifest; afterwards only the issued
+    auditor adds items and records results."""
 
     class Result(models.TextChoices):
         PENDING = "pending", "Not yet tested"
@@ -247,8 +203,7 @@ class PackageSample(TenantModel):
         on_delete=models.SET_NULL, related_name="samples",
     )
     evidence_name = models.CharField(max_length=255, blank=True)
-    # True for items that were part of the sealed manifest; an auditor's own
-    # selections after sealing are not, and the bundle says which is which.
+    # True for items in the sealed manifest; an auditor's later selections are not.
     sealed_in = models.BooleanField(default=False)
     selected_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -276,10 +231,6 @@ class PackageSample(TenantModel):
 
 
 class PackageEvidence(TenantModel):
-    """The chain of custody for one artefact: what it was, which version, how
-    big, its digest, and who asserted on what date that it evidences this
-    control."""
-
     package_control = models.ForeignKey(
         PackageControl, on_delete=models.CASCADE, related_name="evidence")
     document = models.ForeignKey(
@@ -288,12 +239,10 @@ class PackageEvidence(TenantModel):
     )
     ordinal = models.PositiveIntegerField(default=0)
 
-    # --- snapshot, taken when the document was pinned ---
     document_name = models.CharField(max_length=255)
     pinned_version = models.PositiveIntegerField(default=1)
-    # Forensic only: superuser-visible, never serialized to anyone else, never
-    # in a manifest, a CSV or a bundle. Publishing it would expose the storage
-    # path that the authenticated media route keeps private.
+    # Forensic only: shown to superusers alone and kept out of every manifest, CSV and bundle, which would expose the
+    # storage path the authenticated media route keeps private.
     storage_name = models.CharField(max_length=255, blank=True)
     storage_path = models.CharField(max_length=500, blank=True)
     size_bytes = models.BigIntegerField(default=0)
@@ -303,7 +252,6 @@ class PackageEvidence(TenantModel):
     doc_status_display = models.CharField(max_length=40, blank=True)
     last_reviewed = models.DateField(null=True, blank=True)
     next_review_date = models.DateField(null=True, blank=True)
-    # Period of coverage: what span of time this artefact evidences.
     covers_from = models.DateField(null=True, blank=True)
     covers_to = models.DateField(null=True, blank=True)
     is_population = models.BooleanField(
@@ -317,7 +265,6 @@ class PackageEvidence(TenantModel):
     )
     pinned_by_name = models.CharField(max_length=200, blank=True)
     snapshot_at = models.DateTimeField(auto_now_add=True)
-    # Assigned at seal, so the manifest can name the file before the bundle exists.
     member_path = models.CharField(max_length=500, blank=True)
 
     class Meta:
@@ -330,14 +277,8 @@ class PackageEvidence(TenantModel):
 
 
 class PackageGrant(TenantModel):
-    """The entire folder-permission bypass is scoped by this row.
-
-    Per user, never per role: the Auditor role must not pick up every package
-    that is ever sealed. ``SET_NULL`` plus the name snapshots keep the record
-    of who was given access, by whom, and when after the auditor's account is
-    deleted, as ``AccessReviewItem`` does. Withdrawal sets ``revoked_at``
-    rather than deleting, so the grant stays on record.
-    """
+    """The whole folder-permission bypass is scoped by this row: per user, never per role. Withdrawal sets
+    ``revoked_at`` rather than deleting, and the name snapshots outlive the auditor's account."""
 
     package = models.ForeignKey(EvidencePackage, on_delete=models.CASCADE, related_name="grants")
     user = models.ForeignKey(
@@ -377,15 +318,8 @@ class PackageGrant(TenantModel):
 
 
 class SigningKey(models.Model):
-    """A public key packages have been signed with: the current one and every
-    retired one, so the published list matches what any bundle in circulation
-    carries. Public material only.
-
-    Not a TenantModel: an auditor fetches this list unauthenticated, with no
-    workspace active, and rows predating per-workspace keys have none. The
-    column records which organisation a key belongs to and the API filters
-    on it explicitly.
-    """
+    """Public keys packages were signed with, current and retired: public material only. Not a TenantModel (the list
+    is fetched unauthenticated with no workspace active), so the API filters on ``workspace`` explicitly."""
     workspace = models.ForeignKey(
         "accounts.Workspace", null=True, blank=True, on_delete=models.CASCADE,
         related_name="signing_keys",
@@ -404,18 +338,8 @@ class SigningKey(models.Model):
 
 
 class PbcRequest(TenantModel):
-    """One line of the auditor's request list ("prepared by client").
-
-    The package is what the organisation hands over; the request list is what
-    the auditor asks for, before and during fieldwork, and the other half of
-    the same workflow. Either side may raise a line: the issued auditor from
-    inside the package, or the organisation transcribing the list the auditor
-    emailed. The organisation assigns it, chases it (reminders go to the
-    assignee), and answers it by attaching documents; the auditor accepts the
-    answer or returns it with a note. Nothing here changes the sealed
-    manifest: a request answered after sealing is a supplementary
-    disclosure, read under the same grant and recorded the same way.
-    """
+    """One line of the auditor's request list ("prepared by client"). Nothing here changes the sealed manifest: an
+    answer given after sealing is a supplementary disclosure under the same grant."""
 
     class Status(models.TextChoices):
         OPEN = "open", "Open"
@@ -432,7 +356,6 @@ class PbcRequest(TenantModel):
         AUDITOR = "auditor", "Auditor"
         ORGANISATION = "organisation", "Organisation"
 
-    # The statuses that are still the organisation's to act on.
     ACTIONABLE = ("open", "returned")
 
     package = models.ForeignKey(EvidencePackage, on_delete=models.CASCADE, related_name="pbc_requests")
@@ -473,7 +396,6 @@ class PbcRequest(TenantModel):
     returned_note = models.TextField(blank=True)
     returned_at = models.DateTimeField(null=True, blank=True)
     withdrawn_at = models.DateTimeField(null=True, blank=True)
-    # Lead-time windows already emailed, like Document.reminders_sent.
     reminders_sent = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -496,9 +418,7 @@ class PbcRequest(TenantModel):
 
 
 class PbcItem(TenantModel):
-    """A document attached in answer to a request, snapshotted as it stood
-    (name, version, digest) exactly like pinned package evidence, so the
-    answer stays a record even if the document moves on."""
+    """A document attached to answer a request, snapshotted (name, version, digest) like pinned package evidence."""
 
     request = models.ForeignKey(PbcRequest, on_delete=models.CASCADE, related_name="items")
     document = models.ForeignKey(

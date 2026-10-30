@@ -1,16 +1,5 @@
-"""
-The only place in Conformiti where folder permissions are bypassed.
-
-The rule, in one sentence:
-
-    An external auditor may read exactly the rows and bytes pinned into a
-    sealed package that has been issued to them, for as long as the grant is
-    live, and nothing else. Packaging cannot disclose anything the packager
-    could not already read.
-
-Keeping every verb in one small module is the point. A bypass scattered across
-viewsets is a bypass nobody can audit.
-"""
+"""The only place folder permissions are bypassed: an external auditor reads exactly the rows and bytes pinned into
+a sealed package issued to them, while the grant is live, and nothing else."""
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
@@ -28,16 +17,8 @@ def can_assemble(user):
 
 
 def readable_packages(user):
-    """Every package this user may read the metadata, rows AND bytes of.
-
-    Read-of-metadata and read-of-bytes are deliberately the same set: the
-    evidence index already names every document, so an index the caller cannot
-    open is itself a disclosure.
-
-    Deliberately NOT keyed on ``can_manage_documents``. The shipped "Control
-    Owner" role is exactly that flag and confers no cross-folder document read
-    today; it must not gain one here.
-    """
+    """Packages this user may read metadata, rows AND bytes of: one set, as an index the caller cannot open is itself a
+    disclosure. Never keyed on ``can_manage_documents``: Control Owner holds it and has no cross-folder read."""
     from .models import EvidencePackage, PackageGrant
 
     if not (user and user.is_authenticated):
@@ -45,13 +26,10 @@ def readable_packages(user):
     if user.is_superuser or (user.can_manage_frameworks and user.can_view_all):
         return EvidencePackage.objects.all()
     if user.can_manage_frameworks:
-        # A frameworks role without view-all reads only what it assembled,
-        # which by construction holds only folders it could already see.
+        # Without view-all, only what it assembled: by construction folders it could already see.
         return EvidencePackage.objects.filter(created_by=user)
     if not (user.is_active and user.is_auditor):
-        # A grant is issued to an active account holding the Auditor role,
-        # and reading under it ends with either. This matches live_grant(),
-        # so demoting the account cuts off reads at once, not at expiry.
+        # Matches live_grant(): a grant needs an active Auditor account, so demotion cuts reads off at once.
         return EvidencePackage.objects.none()
     return EvidencePackage.objects.filter(
         pk__in=PackageGrant.objects.filter(
@@ -64,18 +42,13 @@ def readable_packages(user):
 
 
 def can_read(user, package):
-    """Object-level twin of readable_packages(). Expressed in terms of it so
-    the two can never drift apart."""
+    """Object-level twin of readable_packages(), defined through it so the two cannot drift."""
     return readable_packages(user).filter(pk=package.pk).exists()
 
 
 def live_grant(user, package):
-    """The grant authorising this user to write conclusions, or None.
-
-    Re-checks ``is_active`` and the LIVE role flag on every call, so demoting
-    an account out of the Auditor role or deactivating it takes effect on the
-    next request rather than at the next expiry.
-    """
+    """The grant authorising this user to write conclusions, or None. Re-checks ``is_active`` and the live Auditor
+    role on every call, so demotion or deactivation bites on the next request, not at expiry."""
     from .models import EvidencePackage, PackageGrant
 
     if not (user and user.is_authenticated and user.is_active and user.is_auditor):
@@ -89,13 +62,8 @@ def live_grant(user, package):
 
 
 def assert_pinnable(user, document):
-    """You cannot disclose what you cannot see.
-
-    Mirrors ``compliance.views.ControlEvidenceViewSet.perform_create``: a
-    packager must hold the frameworks capability *and* be able to see the
-    document's folder. Without this check the packaging step becomes a way to
-    launder access to folders the packager was never granted.
-    """
+    """You cannot disclose what you cannot see: without this, packaging launders access to folders the packager was
+    never granted. Mirrors ``compliance.views.ControlEvidenceViewSet.perform_create``."""
     if not can_assemble(user):
         raise PermissionDenied(_PIN_DENIED)
     if document.folder_id not in accessible_folder_ids(user):
@@ -104,17 +72,8 @@ def assert_pinnable(user, document):
 
 
 def readable_pbc_requests(user):
-    """The auditor's request list, as far as this user may see it.
-
-    There are two routes in, and this is the second folder-permission bypass
-    in the product. Whoever can read a package reads its request list and every
-    document attached in answer (for the issued auditor, under the same live
-    grant as the pinned evidence). The person a line is ASSIGNED to sees that
-    line, its attachments and the package's name, even with no package access,
-    because a control owner has to be able to answer what they were asked for.
-    An assignee is chosen by the organisation, so naming someone on a line is
-    itself a disclosure decision.
-    """
+    """The request list this user may see: the second folder-permission bypass. Whoever reads a package reads its
+    requests; the person a line is ASSIGNED to sees that line and its attachments with no package access."""
     from django.db.models import Q
 
     from .models import PbcRequest
@@ -122,10 +81,8 @@ def readable_pbc_requests(user):
     if not (user and user.is_authenticated):
         return PbcRequest.objects.none()
     if user.is_auditor:
-        # An external auditor reads the request list through their GRANT only.
-        # The assignee arm is for the organisation's own people; for an
-        # auditor it would outlive revocation and expiry, and they could put
-        # themselves on a line to keep access.
+        # Auditors read through their GRANT only: the assignee arm would outlive revocation and expiry, and they could
+        # put themselves on a line to keep access.
         return PbcRequest.objects.filter(package__in=readable_packages(user)).distinct()
     return PbcRequest.objects.filter(
         Q(package__in=readable_packages(user)) | Q(assignee=user)

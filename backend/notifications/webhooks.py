@@ -1,25 +1,5 @@
-"""
-Slack and Microsoft Teams, by incoming webhook.
-
-The tray only helps people who open the app. For the events that need prompt
-attention (a package sealed or issued, the auditor returning an answer, a
-vendor's questionnaire coming back, the scanner going quiet, a file
-quarantined) the same fact is posted to a channel, when one is configured.
-
-Deliberately small: two operator-configured https URLs (``SLACK_WEBHOOK_URL``,
-``TEAMS_WEBHOOK_URL``), an allow-list of events (``NOTIFY_EVENTS``), one
-POST per event per channel with a short timeout, built on ``urllib`` so no
-dependency is added. Posts leave the request path on a thread, never block a
-seal on a chat outage, and every attempt is recorded in ``WebhookDelivery``
-so "did Slack get it?" has an answer. Nothing is ever *read* from these URLs.
-
-Every POST goes through ``config.outbound``: the host must be one Slack or
-Teams issues webhooks on, it must resolve to a public address, the connection
-is pinned to that address, and a redirect is refused rather than followed. A
-check that the URL merely begins with ``https://`` would let a stored URL
-point the server at anything on its own network (REVIEWS.md (0.9.5 review),
-S-2).
-"""
+"""Slack and Teams incoming webhooks. Every POST goes through ``config.outbound``: a bare ``https://`` check would let
+a stored URL point the server at its own network (REVIEWS.md (0.9.5 review), S-2)."""
 import json
 import logging
 import threading
@@ -52,29 +32,22 @@ SEVERITY_EMOJI = {"info": "", "medium": "", "high": ":warning: ", "critical": ":
 
 
 def allowed_hosts(channel):
-    """The hosts this channel's webhook may address (see settings)."""
     key = "WEBHOOK_ALLOWED_HOSTS_SLACK" if channel == "slack" else "WEBHOOK_ALLOWED_HOSTS_TEAMS"
     return [h for h in (getattr(settings, key, None) or []) if h]
 
 
 def check_url(channel, url):
-    """Return the IP to post to, or raise ``outbound.OutboundError``.
-
-    Called twice on purpose: when someone types a URL, so they are told, and
-    again before every POST, because a value can reach the column another way
-    (the Django admin, a fixture, a restored backup) or predate this rule.
-    """
+    """Return the IP to post to, or raise ``outbound.OutboundError``. Checked again before every POST: a stored URL
+    can bypass entry validation (the admin, a fixture, a restored backup)."""
     return outbound.assert_safe_url(url, allowed_hosts=allowed_hosts(channel))
 
 
 def _open(request, timeout, pinned_ip):
-    """The one place a webhook POST leaves the process. A seam: the test
-    suite replaces this, so nothing in a test run reaches the network."""
+    """The one place a webhook POST leaves the process; tests replace it so no run reaches the network."""
     return outbound.opener(pinned_ip).open(request, timeout=timeout)
 
 
 def installation_channels():
-    """``[(name, url)]`` from the operator's environment: the installation's own."""
     out = []
     for name, key in (("slack", "SLACK_WEBHOOK_URL"), ("teams", "TEAMS_WEBHOOK_URL")):
         url = (getattr(settings, key, "") or "").strip()
@@ -84,7 +57,6 @@ def installation_channels():
 
 
 def workspace_channels(workspace):
-    """``[(name, url)]`` the organisation configured for itself."""
     if workspace is None:
         return []
     out = []
@@ -96,19 +68,8 @@ def workspace_channels(workspace):
 
 
 def channels():
-    """``[(name, url)]`` for every channel an event should go to right now.
-
-    An event raised inside a workspace goes to that workspace's own channels.
-    On an installation with several organisations it goes *nowhere else*:
-    one channel for the installation would receive every tenant's sealed
-    packages, auditor requests and returned questionnaires with the tenant's
-    name prefixed, which discloses them to every other tenant reading it. Set
-    ``WEBHOOKS_SHARED_ACROSS_WORKSPACES=true`` to share one on purpose.
-
-    With one workspace, or with no workspace active (an installation-level
-    event such as the scanner going down), the operator's channels apply, so
-    a single-organisation deployment needs no per-workspace setup.
-    """
+    """``[(name, url)]`` an event raised now goes to. With several workspaces a tenant's event goes only to its own
+    channels: the installation's would disclose it to every other tenant unless WEBHOOKS_SHARED_ACROSS_WORKSPACES."""
     from accounts import tenancy
 
     workspace = tenancy.current()
@@ -134,14 +95,9 @@ def link(path):
     return f"{base}{path}" if base else ""
 
 
-# --------------------------------------------------------------------------- #
-# Payloads
-# --------------------------------------------------------------------------- #
 def mrkdwn_text(value):
-    """Text as Slack mrkdwn shows it literally. The three characters Slack
-    reserves are escaped the way its formatting guide says; without this a
-    name typed into the public questionnaire (`<!channel>`, `<url|label>`)
-    would mention the whole channel or plant a link in the message."""
+    """Escape the three characters Slack reserves: otherwise a name typed into the public questionnaire (``<!channel>``,
+    ``<url|label>``) would mention the whole channel or plant a link."""
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
@@ -153,7 +109,7 @@ def slack_payload(title, text, facts=None, url="", severity="info"):
             {"type": "mrkdwn", "text": f"*{mrkdwn_text(k)}*\n{mrkdwn_text(v)}"[:200]} for k, v in list(facts)[:10]]})
     if url:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{url}|Open in Conformiti>"}]})
-    # The notification fallback is mrkdwn as well, so it is escaped with the blocks.
+    # The fallback text is mrkdwn too, so it is escaped as well.
     return {"text": f"{mrkdwn_text(title)}: {mrkdwn_text(text)}"[:3000], "blocks": blocks}
 
 
@@ -175,9 +131,6 @@ def teams_payload(title, text, facts=None, url="", severity="info"):
 BUILDERS = {"slack": slack_payload, "teams": teams_payload}
 
 
-# --------------------------------------------------------------------------- #
-# Delivery
-# --------------------------------------------------------------------------- #
 def _record(event, channel, ok, code=None, error=""):
     from .models import WebhookDelivery
 
@@ -188,11 +141,8 @@ def _record(event, channel, ok, code=None, error=""):
         logger.exception("Failed to record a webhook delivery")
 
 
-#: How long the delivery thread waits before its one retry. A constant, not a
-#: setting: it is a courtesy to a service that just hiccuped, nothing to tune.
 RETRY_DELAY_SECONDS = 2.0
-#: Answers worth a second try: the service was busy or in the middle of
-#: something. Anything else in the 4xx range will answer the same way again.
+#: Worth a second try; any other 4xx answers the same way again.
 _RETRYABLE_HTTP = {408, 429}
 
 
@@ -207,25 +157,18 @@ def _attempt(request, timeout, pinned):
     except urllib.error.HTTPError as exc:
         return False, exc.code, f"HTTP {exc.code}", exc.code >= 500 or exc.code in _RETRYABLE_HTTP
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        # Could not connect, or timed out: the service may simply be briefly away.
+        # A connection failure or timeout may pass, so it is retryable; a ValueError (a bad request) is not.
         return False, None, str(exc), not isinstance(exc, ValueError)
 
 
 def _post(channel, url, payload, event, retry=False):
-    """Post one payload and record the outcome once.
-
-    ``retry`` allows one more attempt, after a short pause, when the first
-    failed in a way that may be passing (a connection error, a timeout, a 5xx,
-    a 429). Only the delivery thread asks for it: a caller that posts
-    synchronously wants its answer now.
-    """
+    """Post one payload and record the outcome once. ``retry`` allows one more attempt after a short pause when the
+    first failure may be transient; only the delivery thread sets it, as a synchronous caller wants its answer now."""
     timeout = float(getattr(settings, "WEBHOOK_TIMEOUT", 5))
     if not url.lower().startswith("https://"):
         _record(event, channel, False, None, "refused: webhook URL is not https")
         return False
-    # Check the host, refuse anything that resolves inside the deployment
-    # network, and keep the address we validated so the connection cannot be
-    # re-pointed between here and the socket.
+    # Keep the validated address: the connection is pinned to it, so DNS cannot re-point it before the socket.
     try:
         pinned = check_url(channel, url)
     except outbound.OutboundError as exc:
@@ -253,20 +196,14 @@ def _deliver(jobs):
 
 
 def post_event(event, title, text, *, facts=None, path="", severity="info", sync=None):
-    """Post one event to every configured channel. Returns the channels
-    attempted (an empty list when nothing is configured or the event is not
-    in the allow-list). Asynchronous unless ``sync`` (or WEBHOOK_SYNC).
-
-    Asynchronously, delivery starts when the surrounding transaction commits,
-    so an event raised inside a request that later rolls back is never
-    announced, and each delivery gets one retry. Synchronously it is posted at
-    once, one attempt, whatever the transaction does."""
+    """Post one event to every configured channel; returns the channels attempted ([] when none is configured or the
+    event is not allowed). Asynchronous unless ``sync`` or WEBHOOK_SYNC: it starts when the surrounding transaction
+    commits (a rolled-back event is never announced) and gets one retry; synchronously it is one attempt, at once."""
     if not allowed(event):
         return []
     targets = channels()
     if not targets:
         return []
-    # One channel may serve several organisations; say which this is about.
     from accounts import tenancy
     from accounts.models import Workspace
 
@@ -283,7 +220,6 @@ def post_event(event, title, text, *, facts=None, path="", severity="info", sync
         def start():
             threading.Thread(target=_deliver, args=(jobs,), daemon=True, name="conformiti-webhook").start()
 
-        # Runs at once outside a transaction; robust, so a failure to start
-        # the thread is logged and never breaks the request that raised it.
+        # robust=True: a failure to start the thread is logged, never raised into the request.
         transaction.on_commit(start, robust=True)
     return [name for name, _ in targets]

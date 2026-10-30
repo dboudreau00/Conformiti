@@ -1,38 +1,10 @@
-"""
-Reading a vendor's responsibility matrix, whatever shape they sent it in.
-
-No two vendors lay this out the same way. AWS ships a spreadsheet with one row
-per PCI requirement and X marks under "AWS" and "Customer"; a SaaS provider
-sends a table with a "Responsibility" column saying "Shared" in prose; a
-consultancy exports "Req #", "Provider Statement", "Merchant Statement". The
-recogniser's job is to turn any of those into rows of
-
-    control reference, responsibility, provider statement, customer statement
-
-with a report of what it could not place, so the person importing can fix the
-mapping rather than discover the gap at audit time.
-
-Two passes:
-
-1. **Header recognition**: each column is scored against phrase lists for
-   the four roles. A vendor's own name in a header ("AWS", "Stripe") is
-   treated as the provider side.
-2. **Value recognition**: a single "responsibility" column is read as prose;
-   two mark columns (provider / customer, with X, ✓, Yes) are combined into
-   provider / customer / shared; anything unrecognised is reported, never
-   guessed.
-
-Control references are matched to the register by normalising both sides:
-``Req 8.3.6``, ``8.3.6``, ``PCI-8.3.6`` and ``8.3.6.`` all meet
-``Control.control_id = "8.3.6"``. Unmatched references are returned so the UI
-can show them, not silently dropped.
-"""
+"""Reads a vendor's responsibility matrix whatever its layout: headers are scored into column roles, then cells are
+read. Anything unrecognised or unmatched is reported, never guessed and never silently dropped."""
 import re
 
 from governance.risk_import import parse_upload  # stdlib CSV/XLSX, zip-bomb guarded
 
-# Header phrases, lower-cased. Order within a list does not matter; longer,
-# more specific phrases score higher because they are less ambiguous.
+# Lower-cased; the longest matching phrase wins, so list order does not matter.
 HEADER_HINTS = {
     "control": ["control id", "control ref", "control reference", "requirement id",
                 "requirement number", "requirement #", "req #", "req id", "req no",
@@ -68,9 +40,7 @@ def _norm(text):
 
 
 def _looks_like_marks(values):
-    """True when every non-blank cell in a column is a tick, a no, or an n/a,
-    and at least one is an actual tick or no. A column that says only "N/A"
-    is a statement column with nothing to say, not a mark column."""
+    """Every non-blank cell is a tick, no or n/a, with at least one tick or no: an all-"N/A" column is not marks."""
     vals = [v for v in (_norm(v) for v in values) if v]
     return (bool(vals)
             and all(v in MARK_YES or v in MARK_NO or v in NA_WORDS for v in vals)
@@ -90,10 +60,8 @@ def _set_role(report, index, role, confidence=None):
 
 
 def _promote_mark_columns(assigned, report, body):
-    """A header that is just the vendor's name ("AWS") or "Customer" reads as
-    a statement column on paper; if every cell under it is an X it is a mark
-    column, and storing "X" as a statement would be wrong. Decide from the
-    values. A prose responsibility column, when present, stays authoritative."""
+    """Re-read a statement column as a mark column when its cells are all ticks (storing "X" as a statement would be
+    wrong). A prose responsibility column, when present, stays authoritative."""
     if "responsibility" in assigned:
         return
     pairs = (("provider_statement", "provider_mark"), ("customer_statement", "customer_mark"))
@@ -102,11 +70,8 @@ def _promote_mark_columns(assigned, report, body):
         if i is not None and mark not in assigned and _looks_like_marks(_column(body, i)):
             assigned[mark] = assigned.pop(stmt)
             _set_role(report, i, mark)
-    # A column nobody could name, full of ticks, is one party's marks: a
-    # vendor whose header is a name we did not know ("Northwind") lands here.
-    # It pairs with the other side's mark column, or with the other side's
-    # statement column when that turns out to be empty (nothing but the ticks
-    # in the unnamed column say who does the control).
+    # An unnamed column full of ticks (a vendor header we did not know) is one party's marks: it pairs with the other
+    # side's mark column, or with its statement column when that is empty.
     taken = set(assigned.values())
     unnamed = [c for c in report
                if c["role"] is None and c["index"] not in taken and _looks_like_marks(_column(body, c["index"]))]
@@ -128,11 +93,7 @@ def _promote_mark_columns(assigned, report, body):
 
 
 def normalise_ref(text):
-    """Reduce a control reference to the form the register uses.
-
-    ``Req 8.3.6`` -> ``8.3.6``;  ``PCI DSS 8.3.6.`` -> ``8.3.6``;
-    ``CC 6.1`` -> ``CC6.1``;  ``A 5.15`` / ``A5.15`` -> ``A.5.15``.
-    """
+    """Reduce a control reference to the form the register uses (``Req 8.3.6`` -> ``8.3.6``)."""
     t = str(text or "").strip()
     t = re.sub(r"(?i)^(pci(\s*dss)?|req(uirement)?|requirement|control|ctrl|clause)[\s.:#-]*", "", t)
     t = t.strip().rstrip(".").strip()
@@ -145,7 +106,6 @@ def normalise_ref(text):
 
 
 def _score_header(name, hints):
-    """How strongly a header matches a role: longest matching hint wins."""
     h = _norm(name)
     best = 0
     for phrase in hints:
@@ -157,8 +117,7 @@ def _score_header(name, hints):
 
 
 def _is_vendor_header(h, vendor):
-    """Does a header name the vendor? "Amazon Web Services" is written "AWS"
-    or "Amazon" at the top of a column far more often than in full."""
+    """Does a header name the vendor, in full, by its initials ("AWS") or by its first word ("Amazon")?"""
     if not vendor:
         return False
     if vendor in h:
@@ -171,8 +130,7 @@ def _is_vendor_header(h, vendor):
 
 
 def recognise_headers(header_row, vendor_name=""):
-    """Assign each column a role. Returns ``{role: column_index}`` plus a
-    per-column explanation the UI can show."""
+    """Returns ``({role: column_index}, report)``; the per-column report is what the UI shows."""
     vendor = _norm(vendor_name)
     columns = [str(h or "").strip() for h in header_row]
     assigned, report = {}, []
@@ -182,13 +140,11 @@ def recognise_headers(header_row, vendor_name=""):
         if not h:
             continue
         row_scores = {role: _score_header(name, hints) for role, hints in HEADER_HINTS.items()}
-        # The vendor's own name in a header is the provider side of the matrix.
         if _is_vendor_header(h, vendor):
             row_scores["provider_statement"] = max(row_scores["provider_statement"], 120)
             row_scores["provider_mark"] = max(row_scores["provider_mark"], 110)
         scores.append((i, name, row_scores))
 
-    # Greedy: highest score first, one column per role, one role per column.
     candidates = sorted(
         ((s, role, i, name) for i, name, rs in scores for role, s in rs.items() if s),
         key=lambda x: -x[0],
@@ -201,23 +157,20 @@ def recognise_headers(header_row, vendor_name=""):
         taken_cols.add(i)
         report.append({"column": name, "index": i, "role": role, "confidence": min(100, s) })
 
-    # A statement column can double as a mark column ("X" under "Customer").
-    # Keep marks only if no prose responsibility column was found; otherwise
-    # the prose column is authoritative.
+    # Marks only count when no prose responsibility column was found; the prose column is authoritative.
     if "responsibility" in assigned:
         assigned.pop("provider_mark", None)
         assigned.pop("customer_mark", None)
     for i, name in enumerate(columns):
         if i not in taken_cols and name:
             report.append({"column": name, "index": i, "role": None, "confidence": 0})
-    # In the file's own column order: the report is shown as-is and, once
-    # confirmed, remembered as the vendor's layout.
+    # Once confirmed the report is stored as the vendor's layout, so it keeps the file's own column order.
     report.sort(key=lambda c: c["index"])
     return assigned, report
 
 
 def recognise_responsibility(value, provider_mark=None, customer_mark=None):
-    """Turn a prose value or a pair of marks into one of the four outcomes."""
+    """A prose value or a pair of marks -> provider, customer, shared or not_applicable; None when unrecognised."""
     v = _norm(value)
     if v:
         if v in NA_WORDS:
@@ -247,12 +200,8 @@ def recognise_responsibility(value, provider_mark=None, customer_mark=None):
 
 
 def recognise(filename, data, vendor_name="", control_refs=None):
-    """Parse an uploaded matrix into rows the grid can show.
-
-    ``control_refs`` is ``{normalised_ref: control_id}`` for the framework the
-    user picked. Returns a dict with ``columns`` (the header report), ``rows``
-    (one per input line) and ``summary``. Nothing is written.
-    """
+    """Parse an uploaded matrix into ``{"columns", "rows", "summary"}``; writes nothing.
+    ``control_refs`` is ``{normalised_ref: control_id}`` for the framework the user picked."""
     header, body = _split(parse_upload(filename, data))
     assigned, report = recognise_headers(header, vendor_name)
     _promote_mark_columns(assigned, report, body)
@@ -265,8 +214,7 @@ def recognise(filename, data, vendor_name="", control_refs=None):
     control_refs = control_refs or {}
     rows, matched, unmatched, unrecognised = [], 0, 0, 0
     vendor = _norm(vendor_name)
-    # parse_upload stops one row past its cap rather than raising, so a
-    # longer file arrives cut; the summary reports that it was truncated.
+    # parse_upload stops one row past its cap instead of raising, so truncation is detected by length.
     from governance.risk_import import MAX_ROWS
     truncated = len(body) > MAX_ROWS
     body = body[:MAX_ROWS]
@@ -285,12 +233,10 @@ def recognise(filename, data, vendor_name="", control_refs=None):
         responsibility = recognise_responsibility(
             prose, cell(line, "provider_mark"), cell(line, "customer_mark"),
         )
-        # "AWS" or "Amazon" in the responsibility column is the provider.
         if responsibility is None and prose and _is_vendor_header(prose, vendor):
             responsibility = "provider"
         provider_statement = str(cell(line, "provider_statement") or "").strip()
         customer_statement = str(cell(line, "customer_statement") or "").strip()
-        # "N/A" in a statement column is the absence of a statement.
         if _norm(provider_statement) in NA_WORDS:
             provider_statement = ""
         if _norm(customer_statement) in NA_WORDS:
@@ -298,8 +244,7 @@ def recognise(filename, data, vendor_name="", control_refs=None):
         # Marks that say N/A lose to a statement that says who does the work.
         if responsibility == "not_applicable" and not prose and (provider_statement or customer_statement):
             responsibility = None
-        # Statements alone imply a split when no column says so. A prose
-        # value nobody recognised is reported, not guessed around.
+        # Statements alone imply the split; an unrecognised prose value is reported, not guessed around.
         if responsibility is None and not prose and (provider_statement or customer_statement):
             if provider_statement and customer_statement:
                 responsibility = "shared"
@@ -341,8 +286,7 @@ RESPONSIBILITY_LABEL = {"provider": "Provider", "customer": "Customer", "shared"
 
 
 def clean_layout(columns, file_name="", framework=""):
-    """Validate a column layout the client sends back from a parse report.
-    Returns the stored form or None when there is nothing usable."""
+    """Validate a column layout the client sends back; the stored form, or None when nothing is usable."""
     from django.utils import timezone
 
     out = []
@@ -367,14 +311,14 @@ def clean_layout(columns, file_name="", framework=""):
             "saved_at": timezone.now().isoformat()}
 
 
-def render_layout(layout, rows):
-    """Lay the stated rows out under the vendor's own headers.
+def _mark(resp, sides):
+    if resp in sides:
+        return "X"
+    return "N/A" if resp == "not_applicable" else ""
 
-    A mark column gets an X where that side is responsible (both for
-    'shared'); a prose column gets the label; a statement column gets the
-    statement; a column we never understood stays blank rather than being
-    guessed at.
-    """
+
+def render_layout(layout, rows):
+    """Rows under the vendor's own headers: marks get an X (both sides when shared); unknown columns stay blank."""
     columns = layout.get("columns") or []
     header = [c["name"] for c in columns]
     lines = []
@@ -392,9 +336,9 @@ def render_layout(layout, rows):
             elif role == "customer_statement":
                 line.append(r.get("customer_statement", ""))
             elif role == "provider_mark":
-                line.append("X" if resp in ("provider", "shared") else ("N/A" if resp == "not_applicable" else ""))
+                line.append(_mark(resp, ("provider", "shared")))
             elif role == "customer_mark":
-                line.append("X" if resp in ("customer", "shared") else ("N/A" if resp == "not_applicable" else ""))
+                line.append(_mark(resp, ("customer", "shared")))
             else:
                 line.append("")
         lines.append(line)

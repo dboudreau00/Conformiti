@@ -1,11 +1,3 @@
-"""
-Write the physical compliance folder tree to disk, segregated by control.
-
-    python manage.py generate_folder_tree
-    python manage.py generate_folder_tree --root /path/to/output
-
-The destination defaults to settings.COMPLIANCE_TREE_ROOT.
-"""
 import os
 
 from django.conf import settings

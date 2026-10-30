@@ -1,5 +1,3 @@
-"""Per-user notification feed, the review-reminder scan, the email copy and
-the test_mailbox command."""
 import html
 import io
 import re
@@ -27,9 +25,7 @@ class FeedTests(APITestBase):
         self.assertIn("Review overdue: Late", titles)
         self.assertIn("Review due soon: Soon", titles)
         self.assertEqual(owner_feed["unread"], 2)
-        # the viewer owns nothing and has no digests
         self.assertEqual(self.client_for(self.viewer).get("/api/notifications/").data["results"], [])
-        # the manager gets the org-wide digest, not owen's per-item notices
         mgr = [i["key"] for i in self.client_for(self.manager).get("/api/notifications/").data["results"]]
         self.assertIn("digest-docs-overdue", mgr)
         self.assertIn("digest-evidence-gap", mgr)
@@ -40,7 +36,6 @@ class FeedTests(APITestBase):
         c = self.client_for(self.owner)
         self.assertEqual(c.post("/api/notifications/mark-read/").data["unread"], 0)
         self.assertEqual(c.get("/api/notifications/").data["unread"], 0)
-        # dismissing a key that isn't in the feed is refused (no unbounded receipts)
         self.assertEqual(c.post("/api/notifications/dismiss/", {"key": "made-up"}, format="json").status_code, 404)
         self.assertEqual(c.post("/api/notifications/dismiss/", {}, format="json").status_code, 400)
         r = c.post("/api/notifications/dismiss/", {"key": f"doc-overdue:{doc.pk}"}, format="json")
@@ -57,7 +52,7 @@ class ReviewScanTests(APITestBase):
         self.assertEqual(run_review_scan(dry_run=True), 2)
         self.assertEqual(len(mail.outbox), 0)
         late.refresh_from_db()
-        self.assertEqual(late.reminders_sent, [])   # dry run persisted nothing
+        self.assertEqual(late.reminders_sent, [])
 
         self.assertEqual(run_review_scan(), 2)
         self.assertEqual(len(mail.outbox), 2)
@@ -70,18 +65,15 @@ class ReviewScanTests(APITestBase):
         self.assertEqual(soon.reminders_sent, [7, 14, 30])  # every window already passed is marked
         self.assertIn("[Overdue]", mail.outbox[0].subject + mail.outbox[1].subject)
 
-        # second run: nothing new
         self.assertEqual(run_review_scan(), 0)
         self.assertEqual(len(mail.outbox), 2)
 
-        # marking reviewed resets the dedupe state
         self.client_for(self.manager).post(f"/api/documents/{late.pk}/mark_reviewed/")
         late.refresh_from_db()
         self.assertEqual(late.reminders_sent, [])
         self.assertEqual(late.status, Document.Status.APPROVED)
 
     def test_one_failing_send_does_not_abort_the_run(self):
-        from unittest import mock
         make_doc(self.tree.ctrl1, self.owner, name="A", days=-1)
         make_doc(self.tree.ctrl1, self.owner, name="B", days=-1)
         calls = {"n": 0}
@@ -92,8 +84,6 @@ class ReviewScanTests(APITestBase):
                 raise RuntimeError("smtp down")
             return True
 
-        # The failure is logged with its traceback on purpose; captured here so
-        # the test output does not read as a crash.
         with mock.patch("notifications.tasks.send_templated_email", side_effect=flaky), \
                 self.assertLogs("notifications.tasks", level="ERROR") as logs:
             self.assertEqual(run_review_scan(), 1)
@@ -105,9 +95,7 @@ class ReviewScanTests(APITestBase):
 
 @override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local", REVIEW_ALERT_LEAD_DAYS=[30, 14, 7, 1])
 class GreetingNameTests(APITestBase):
-    """createsuperuser asks for no first or last name, so the reminders must
-    not greet such an owner with "Hi ,". They use the username, a full name
-    still wins, and "team" is used only when there is no owner."""
+    """createsuperuser sets no name, so reminders greet the username; a full name wins and "team" is for no owner."""
 
     def setUp(self):
         super().setUp()
@@ -121,7 +109,6 @@ class GreetingNameTests(APITestBase):
                 (None, f"{greeting} team,"))
 
     def _assert_greets(self, greeting):
-        """The one email sent opens with ``greeting``, in both parts."""
         self.assertEqual(len(mail.outbox), 1)
         msg = mail.outbox.pop()
         self.assertTrue(msg.body.startswith(greeting), msg.body[:40])
@@ -164,8 +151,7 @@ class GreetingNameTests(APITestBase):
 
 
 def _email_context(on):
-    """Every variable the emails read, each optional part present (on) or
-    absent (off), so both sides of every {% if %} get rendered."""
+    """Every variable the emails read, with optional parts on or off, so both sides of each {% if %} render."""
     ns = SimpleNamespace
 
     def opt(value):
@@ -195,9 +181,7 @@ def _email_context(on):
 
 
 class EmailCopyTests(SimpleTestCase):
-    """What a recipient reads, in both parts of every email. Rendering every
-    template catches stray punctuation such as ", Conformiti" or "request ,
-    please" that editing the source alone would miss."""
+    """Renders every email in both parts to catch stray punctuation such as ", Conformiti" or "request , please"."""
 
     EMAILS = Path(__file__).resolve().parent / "templates" / "emails"
     # Block tags break a line where the mail client would; inline ones do not.
@@ -219,15 +203,11 @@ class EmailCopyTests(SimpleTestCase):
                         self.assertFalse(line.strip().startswith(","), line)
                         self.assertNotIn(" ,", line)
                         self.assertNotRegex(line, "[\u2013\u2014]")
-                        # "--" standing in for a dash, as the old plain-text sign-offs had it
+                        # "--" standing in for a dash
                         self.assertNotRegex(line, r"(?:^|\s)--(?:\s|$)")
 
 
 class TestMailboxCommandTests(SimpleTestCase):
-    """test_mailbox sends a sample review reminder through the email service
-    for every provider, and signs in over IMAP/POP3 only for mailbox. Every
-    provider can send a test through the path reminders take."""
-
     TO = "you@example.com"
 
     def _run(self, **options):
@@ -261,7 +241,7 @@ class TestMailboxCommandTests(SimpleTestCase):
     def test_ses_sends_through_the_ses_client(self):
         with mock.patch("notifications.ses.send_ses_email") as ses:
             out = self._run(to=self.TO)
-        subject, html_body, text_body, recipients = ses.call_args.args
+        _, html_body, text_body, recipients = ses.call_args.args
         self.assertEqual(recipients, [self.TO])
         self.assertIn("Sample document", text_body)
         self.assertIn("Sample document", html_body)
@@ -313,10 +293,6 @@ class TestMailboxCommandTests(SimpleTestCase):
 
 
 class CountWordingTests(SimpleTestCase):
-    """A count and its noun agree. The plain-text reminder must say "30 days"
-    like its HTML part, not "30 day(s)", and the reminder subjects must say
-    "due in 1 day", not "1 day(s)"."""
-
     def test_the_plain_text_review_reminder_says_day_or_days(self):
         document = SimpleNamespace(name="Access policy", get_review_cadence_display="Annual",
                                    next_review_date="1 Oct 2026")
@@ -356,9 +332,6 @@ class CountWordingTests(SimpleTestCase):
 
 class SesClientTests(SimpleTestCase):
     def test_the_ses_client_gives_up_in_seconds_and_tries_once(self):
-        """A message is sent while somebody waits for the page. boto3's defaults
-        (a minute to connect, a minute to read, five attempts) would hold that
-        request for minutes when the service does not answer."""
         import boto3
 
         from notifications import ses

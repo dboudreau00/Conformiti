@@ -1,5 +1,3 @@
-"""Audit trail: what the middleware records, what it must never record, and
-who can read it."""
 from audit.models import AuditLog
 from testutils import APITestBase
 
@@ -41,9 +39,6 @@ class AuditMiddlewareTests(APITestBase):
         self.assertNotIn("evidence", entry.detail.replace("fields=", ""))
 
     def test_a_refused_form_or_upload_is_not_parsed_for_the_trail(self):
-        """Reading a form or an upload before the view parsed it for every
-        caller, refused and anonymous ones included, and only an entry that is
-        written needs the names."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         from django.http import HttpResponse
         from django.test import RequestFactory
@@ -93,8 +88,6 @@ class AuditApiTests(APITestBase):
         self.assertEqual(a.get("/api/audit-log/?days=notanumber").status_code, 200)
 
     def test_facets_are_deduplicated(self):
-        """The model's Meta ordering must not leak into the DISTINCT: many
-        entries sharing an action have to collapse to one option."""
         for i in range(4):
             AuditLog.objects.create(user=self.manager, action="create", object_type="risks", object_id=str(i))
             AuditLog.objects.create(user=self.admin, action="update", object_type="documents", object_id=str(i))

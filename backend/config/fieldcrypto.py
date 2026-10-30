@@ -1,40 +1,5 @@
-"""
-Application-level encryption for the two columns that hold secrets the
-application must be able to read back.
-
-Most secrets in Conformiti are hashed: passwords, MFA backup codes. Two cannot
-be, because the server needs the original value to do its job: the TOTP shared
-secret (to compute the expected code) and the Jira API token (to authenticate
-outbound calls). Those are encrypted here instead, so a database dump, a stolen
-backup or a read-only SQL injection does not hand over working secrets.
-
-Design
-------
-* **AES-256-GCM.** Authenticated, so tampering is detected rather than silently
-  decrypting to garbage. Nonces are random per write.
-* **A key ring, newest first.** ``settings.FIELD_ENCRYPTION_KEYS[0]`` encrypts;
-  every key can decrypt. That is what makes rotation possible without downtime:
-  add a new key at the front, run ``manage.py rotate_field_keys``, then drop the
-  old one. The ring is read on every call so tests can override it.
-* **Associated data binds the ciphertext to its row.** The AAD is
-  ``table:column:row-id``, so a ciphertext lifted from one user's row and
-  written into another's fails to decrypt. It does not defend against an
-  attacker who can write to the database, who can write plaintext, which the
-  read path still accepts (see ``from_db_value``). It defends against
-  transplanting, which is the realistic case for a leaked dump.
-* **A wrong or missing key degrades to read-only, never to data loss.** An
-  envelope that will not decrypt reads as empty, and ``pre_save`` writes the
-  original envelope back rather than an empty string, so a key restored later
-  still recovers the value.
-
-Envelope format::
-
-    fc1$<key-id>$<nonce-b64url>$<ciphertext-b64url>
-
-``key-id`` is a fingerprint *of the derived key*, never key material. It lets a
-row say which key wrote it, so rotation can report progress and decryption does
-not have to try every key in turn.
-"""
+"""AES-256-GCM field encryption. ``settings.FIELD_ENCRYPTION_KEYS`` is a ring, newest first: the first key encrypts and
+every key decrypts. The AAD (``table:column:row-id``) binds a ciphertext to its row, so a transplant fails."""
 import base64
 import hashlib
 import hmac
@@ -50,13 +15,10 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 PREFIX = "fc1$"
 _NONCE_BYTES = 12
-# Domain separation: a key must never produce the same bytes here as anywhere
-# else it is used (SECRET_KEY also signs JWTs).
+# Domain separation, so a key never yields the same bytes as elsewhere it is used (SECRET_KEY also signs JWTs).
 _HKDF_SALT = b"conformiti.fieldcrypto.v1"
 _HKDF_INFO = b"aes-256-gcm"
 
-# Deriving a key costs a few hashes; doing it per row on a 217-row page is
-# wasteful. Keyed by the ring entry, which is already a secret in memory.
 _derived_cache = {}
 
 
@@ -80,14 +42,12 @@ def _derive(entry: str) -> bytes:
 
 
 def _key_id(key: bytes) -> str:
-    """A short public fingerprint of a derived key. Not key material: it is a
-    hash of the derived key under a different label, truncated."""
+    """A short public fingerprint of a derived key; never key material."""
     return _b64(hashlib.sha256(b"key-id" + key).digest())[:8]
 
 
 def ring():
-    """The active key ring, newest first. Read at call time, not import time,
-    so ``@override_settings`` works in tests."""
+    """The key ring, newest first, read per call so ``@override_settings`` works in tests."""
     keys = getattr(settings, "FIELD_ENCRYPTION_KEYS", None) or []
     if not keys:
         raise ImproperlyConfigured(
@@ -98,7 +58,6 @@ def ring():
 
 
 def key_ids():
-    """Fingerprints of the ring, newest first, for `rotate_field_keys --status`."""
     return [_key_id(k) for k in ring()]
 
 
@@ -107,17 +66,11 @@ def is_encrypted(value) -> bool:
 
 
 def aad_for(table: str, column: str, row_id) -> bytes:
-    """The associated data that binds a ciphertext to one row and column.
-
-    Single definition on purpose: the migration path and the live field must
-    agree byte for byte, and a one-character divergence would make every
-    migrated row permanently unreadable.
-    """
+    """Single definition of the AAD: the migration path and the live field must agree byte for byte."""
     return f"{table}:{column}:{row_id}".encode("utf-8")
 
 
 def encrypt(plaintext: str, aad: bytes) -> str:
-    """Encrypt under the newest key. Returns the envelope."""
     if plaintext is None:
         return plaintext
     key = ring()[0]
@@ -127,11 +80,8 @@ def encrypt(plaintext: str, aad: bytes) -> str:
 
 
 def decrypt(envelope: str, aad: bytes):
-    """Decrypt an envelope, or return None if no key in the ring can.
-
-    None means "unreadable", not "empty": callers must not persist it over the
-    stored ciphertext.
-    """
+    """Plaintext, or None when no key in the ring can read it. None means unreadable, not empty:
+    callers must not persist it over the stored ciphertext."""
     if not is_encrypted(envelope):
         return envelope
     try:
@@ -140,8 +90,6 @@ def decrypt(envelope: str, aad: bytes):
     except (ValueError, base64.binascii.Error):
         return None
     keys = ring()
-    # Try the key the row names first, then the rest: a ring that has rotated
-    # holds rows written under several keys at once.
     ordered = sorted(keys, key=lambda k: _key_id(k) != kid)
     for key in ordered:
         try:
@@ -152,7 +100,6 @@ def decrypt(envelope: str, aad: bytes):
 
 
 def envelope_key_id(envelope: str):
-    """Which key wrote this row, or None if it is not an envelope."""
     if not is_encrypted(envelope):
         return None
     parts = envelope.split("$", 3)
@@ -160,26 +107,13 @@ def envelope_key_id(envelope: str):
 
 
 def ciphertext_length(plaintext_bytes: int) -> int:
-    """Envelope length for a plaintext of this many bytes, used to size columns."""
     body = _NONCE_BYTES + plaintext_bytes + 16  # + GCM tag
     return len(PREFIX) + 8 + 1 + ((_NONCE_BYTES * 4 + 2) // 3) + 1 + ((body * 4 + 2) // 3) + 2
 
 
-# --------------------------------------------------------------------------- #
-# Model field
-# --------------------------------------------------------------------------- #
 class _EncryptedAttribute(DeferredAttribute):
-    """Decrypts on attribute access.
-
-    It has to be here rather than in ``from_db_value``: the AAD needs another
-    column from the same row, and ``from_db_value`` is handed only the value.
-
-    ``__set__`` is what makes this a data descriptor. Without it Python's
-    lookup rules hand back ``instance.__dict__[attname]``, which
-    ``Model.__init__`` fills with the raw column, and the decryption below
-    never runs. ``FileField``'s descriptor is a data descriptor for the same
-    reason.
-    """
+    """Decrypts on attribute access, not in ``from_db_value``: the AAD needs another column of the same row.
+    ``__set__`` makes it a data descriptor; without it the raw column in ``__dict__`` wins and nothing is decrypted."""
 
     def __set__(self, instance, value):
         instance.__dict__[self.field.attname] = value
@@ -195,8 +129,7 @@ class _EncryptedAttribute(DeferredAttribute):
             return value
         plaintext = decrypt(value, self.field.aad_for_instance(instance))
         if plaintext is None:
-            # Keep the ciphertext so pre_save can write it back untouched. A
-            # mistyped key must not shred the column.
+            # Keep the ciphertext so pre_save can write it back: a mistyped key must not shred the column.
             store = instance.__dict__.setdefault("_fieldcrypto_unreadable", {})
             store[self.field.attname] = value
             instance.__dict__[self.field.attname] = ""
@@ -206,17 +139,8 @@ class _EncryptedAttribute(DeferredAttribute):
 
 
 class EncryptedCharField(models.CharField):
-    """A CharField whose value is AES-256-GCM encrypted in the database.
-
-    ``aad_from`` names the attribute that identifies the row for the associated
-    data. It must be populated before the row is written, because ``pre_save``
-    runs ahead of the INSERT: ``user_id`` on a OneToOne, or an explicitly set
-    ``id`` on a singleton row. A field whose id is only assigned by the database
-    cannot be bound this way.
-
-    ``max_length`` is the width of the stored envelope, which is wider than the
-    plaintext; size it with ``ciphertext_length()``.
-    """
+    """A CharField stored encrypted. ``aad_from`` must be set before the INSERT (a database-assigned id cannot bind);
+    ``max_length`` is the envelope width, so size it with ``ciphertext_length()``."""
 
     descriptor_class = _EncryptedAttribute
 
@@ -247,8 +171,7 @@ class EncryptedCharField(models.CharField):
         if self.attname in unreadable and not value:
             return unreadable[self.attname]
 
-        # Already an envelope: a caller assigned raw ciphertext (rotation does
-        # this). Never wrap twice.
+        # Already an envelope (rotation assigns raw ciphertext): never wrap twice.
         if is_encrypted(value):
             return value
         if value in (None, ""):
@@ -256,21 +179,12 @@ class EncryptedCharField(models.CharField):
         return encrypt(value, self.aad_for_instance(model_instance))
 
 
-# --------------------------------------------------------------------------- #
-# Migration helpers
-# --------------------------------------------------------------------------- #
 def encrypt_existing_rows(connection, table, column, aad_column):
-    """Encrypt plaintext values already in a table. Idempotent: rows that are
-    already envelopes, empty or NULL are skipped, so a re-run after a partial
-    failure is safe.
-
-    Takes the connection from ``schema_editor`` rather than the global one so a
-    migration on a non-default database still writes to the right place.
-    """
+    """Encrypt the plaintext rows of a column; idempotent, so a re-run after a partial failure is safe.
+    Use the connection from ``schema_editor``, not the global one, or a non-default database is missed."""
     quote = connection.ops.quote_name
     with connection.cursor() as cursor:
-        # S608: identifiers come from the migration's own constants and pass
-        # through quote_name(); every value is a bound %s parameter.
+        # S608: identifiers are the migration's own constants, quoted; every value is a bound %s parameter.
         cursor.execute(  # noqa: S608
             f"SELECT {quote(aad_column)}, {quote(column)} FROM {quote(table)} "
             f"WHERE {quote(column)} IS NOT NULL AND {quote(column)} <> ''"
@@ -290,16 +204,10 @@ def encrypt_existing_rows(connection, table, column, aad_column):
 
 
 def decrypt_existing_rows(connection, table, column, aad_column):
-    """The reverse migration: write plaintext back.
-
-    This puts readable secrets in the database on purpose, which is what
-    "reverse this migration" means. Rows that cannot be decrypted are left as
-    they are rather than blanked.
-    """
+    """The reverse migration: writes plaintext back on purpose; rows no key can read are left as they are."""
     quote = connection.ops.quote_name
     with connection.cursor() as cursor:
-        # S608: identifiers come from the migration's own constants and pass
-        # through quote_name(); every value is a bound %s parameter.
+        # S608: identifiers are the migration's own constants, quoted; every value is a bound %s parameter.
         cursor.execute(  # noqa: S608
             f"SELECT {quote(aad_column)}, {quote(column)} FROM {quote(table)} "
             f"WHERE {quote(column)} IS NOT NULL AND {quote(column)} <> ''"

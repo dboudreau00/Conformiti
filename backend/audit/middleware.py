@@ -7,28 +7,22 @@ logger = logging.getLogger(__name__)
 
 METHOD_ACTION = {"POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}
 
-# Paths whose writes are per-user UI state, not compliance events, or which
-# carry credentials. They are never written to the trail by this middleware
-# (authentication events are recorded explicitly, see audit/events.py).
+# UI-state and credential-bearing paths are never recorded here; auth events are written explicitly by events.py.
 SKIP_PREFIXES = ("/api/auth/", "/api/notifications/", "/api/health/")
 
-# Request-body keys that must never appear in the trail, even as field names
-# with no values. (Values are never recorded regardless.)
+# Field names that must never appear in the trail, even without their values.
 SENSITIVE_KEYS = {"password", "current_password", "new_password", "api_token", "otp", "code", "secret"}
 
 MAX_BODY_CAPTURE = 64 * 1024   # bytes: bigger bodies (uploads) are not inspected
 MAX_DETAIL = 255               # AuditLog.detail column width
 
-# The Django admin writes to the same tables the API does, so its saves are
-# recorded too. Sign-in is recorded by the admin's own form, and a password
-# set on the admin's password page as its own event.
+# Admin saves are recorded like API writes; sign-in and the password page have their own events.
 ADMIN_PREFIX = "/admin/"
 ADMIN_FORM_NOISE = {"csrfmiddlewaretoken", "password1", "password2"}
 
 
 def _admin_target(request):
-    """(action, object_type, object_id) for a Django admin save, or None for
-    a page that is not one: add, change, delete, or a bulk action on a list."""
+    """(action, object_type, object_id) for an admin save (add, change, delete, bulk action), else None."""
     parts = request.path[len(ADMIN_PREFIX):].strip("/").split("/")
     if len(parts) < 2 or not all(parts[:2]):
         return None
@@ -45,17 +39,8 @@ def _admin_target(request):
 
 
 def _client_ip(request):
-    """Best-effort client IP as a validated address, or None.
-
-    The address NUM_PROXIES hops back along X-Forwarded-For, chosen exactly as
-    the rate limits choose it (DRF's get_ident): each proxy in front appends
-    the address it received from, so the client is that many entries from the
-    right, and entries further left are whatever the client sent. Taking the
-    rightmost entry regardless of NUM_PROXIES would record the terminator for
-    every client behind one in front of the shipped nginx. The value is
-    validated because a header-controlled, malformed IP would otherwise make
-    the AuditLog insert fail on databases with a real inet type (e.g.
-    Postgres), dropping the entry."""
+    """Best-effort client IP or None, chosen as DRF's get_ident chooses it: NUM_PROXIES hops back in X-Forwarded-For.
+    Validated, because a malformed header value would make the insert fail on databases with an inet type."""
     from rest_framework.settings import api_settings
 
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
@@ -76,15 +61,8 @@ def _client_ip(request):
 
 
 def _summarise_body(request, form=False):
-    """Return the *names* of the top-level fields in a JSON or form body, so
-    an entry reads 'PATCH /api/users/3/ fields=role,is_active' rather than
-    just the path. Values are deliberately not recorded: the trail must be
-    safe to hand to an auditor without leaking document text or secrets.
-
-    A JSON body is read before the view, capped. A form or an upload is read
-    only once the view has answered and the entry is being written (``form``):
-    the view has parsed it by then, and parsing it before the view did that
-    work for every caller, refused and anonymous ones included."""
+    """Names, never values, of the top-level fields of a JSON or form body: the trail is handed to auditors.
+    JSON is read before the view (capped); a form or upload after it (``form``), so refused callers cost no parsing."""
     if request.method not in ("POST", "PUT", "PATCH"):
         return ""
     ctype = (request.META.get("CONTENT_TYPE") or "").split(";")[0].strip().lower()
@@ -93,8 +71,7 @@ def _summarise_body(request, form=False):
         if ctype == "application/json" and not form:
             length = int(request.META.get("CONTENT_LENGTH") or 0)
             if 0 < length <= MAX_BODY_CAPTURE:
-                # Reading .body here caches it on the request, so DRF's parser
-                # still sees the full stream afterwards.
+                # Reading .body caches it on the request, so DRF's parser still sees the full stream.
                 payload = json.loads(request.body.decode("utf-8") or "null")
                 if isinstance(payload, dict):
                     keys = list(payload.keys())
@@ -130,8 +107,7 @@ class AuditLogMiddleware:
         return response
 
     def _maybe_log_admin(self, request, response, fields):
-        """A Django admin save: a POST the admin answered with a redirect,
-        which it does only once a form is saved (a refused one re-renders)."""
+        """An admin save: a POST the admin answers with a redirect, which it does only once a form is saved."""
         user = getattr(request, "user", None)
         if response.status_code != 302 or not (user and user.is_authenticated):
             return
@@ -142,8 +118,7 @@ class AuditLogMiddleware:
         fields = fields or _summarise_body(request, form=True)
 
         from .models import AuditLog
-        names = [f for f in fields.split(",") if f and f not in ADMIN_FORM_NOISE
-                 and not f.startswith("_")] if fields else []
+        names = [f for f in fields.split(",") if f and f not in ADMIN_FORM_NOISE and not f.startswith("_")]
         detail = f"admin {request.method} {request.path}"
         selected = request.POST.getlist("_selected_action")
         if selected:
@@ -168,7 +143,6 @@ class AuditLogMiddleware:
 
         from .models import AuditLog
         ip = _client_ip(request)
-        # object_type = the collection segment, e.g. /api/documents/5/ -> documents
         segment = request.path.strip("/").split("/")
         object_type = segment[1] if len(segment) > 1 else ""
         object_id = segment[2] if len(segment) > 2 and segment[2].isdigit() else ""

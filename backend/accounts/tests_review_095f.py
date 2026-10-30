@@ -1,17 +1,5 @@
-"""The fourth independent review, fixed in 0.9.5f.
-
-H-1 a hijacked session could enrol its own authenticator · H-2 a self-edited
-email decided who an identity provider linked to · M-3 the cross-tenant
-username check never left the tenant · M-4 a password reset left the access
-token alive · M-5 the two endpoints that set the auth cookies were the two
-that never checked CSRF · M-6 an account with no password could not remove a
-factor.
-
-H-3 (the published image booted with DEBUG on) is a property of the image
-rather than of the code, so it is held by the workflow that builds it and by
-``tools/validate.py``. M-1 lives in ``tests_auditor_surface`` beside the walk
-it extends, and M-2 in ``documents.tests_uploads``.
-"""
+"""Findings H-1, H-2 and M-3 to M-6 of the fourth independent review. H-3 is held by the image workflow and
+``tools/validate.py``, M-1 by ``tests_auditor_surface`` and M-2 by ``documents.tests_uploads``."""
 from datetime import timedelta
 from unittest import mock
 
@@ -24,10 +12,8 @@ from testutils import PASSWORD, APITestBase, make_user
 
 
 class ReauthOnEveryFactorChangeTests(APITestBase):
-    """H-1 and M-6. Adding a passkey or an authenticator app asks the caller
-    to prove the account is theirs. Without that, a stolen session could
-    enrol its own app, take the backup codes, and leave the owner locked out
-    of an account the attacker can still reach."""
+    """H-1 and M-6. Adding a passkey or an authenticator app asks the caller to prove the account is theirs: a stolen
+    session could otherwise enrol its own app and lock the owner out."""
 
     def test_setup_without_proof_is_refused(self):
         r = self.client_for(self.owner).post("/api/auth/mfa/setup/", {}, format="json")
@@ -65,8 +51,7 @@ class ReauthOnEveryFactorChangeTests(APITestBase):
         self.assertTrue(self.owner.mfa_enabled)
 
     def test_an_account_with_nothing_to_prove_with_may_enrol_its_first_factor(self):
-        """The same exception passkeys have: an account provisioned through
-        an identity provider has no password and no factor yet."""
+        """As for passkeys: an account provisioned through an identity provider has no password and no factor yet."""
         sso = make_user("sven", self.roles["Viewer"])
         sso.set_unusable_password()
         sso.save()
@@ -74,9 +59,8 @@ class ReauthOnEveryFactorChangeTests(APITestBase):
         self.assertEqual(r.status_code, 200, r.data)
 
     def test_an_sso_account_disables_with_a_backup_code(self):
-        """M-6. Disabling must not depend on ``check_password``, which is
-        False for every account that signs in through an identity provider;
-        otherwise the factor could be added and never removed."""
+        """M-6. Disabling must not depend on ``check_password``, which is False for every SSO account: the factor could
+        otherwise be added and never removed."""
         sso = make_user("sonia", self.roles["Viewer"])
         sso.set_unusable_password()
         sso.save()
@@ -111,12 +95,8 @@ class ReauthOnEveryFactorChangeTests(APITestBase):
 
 
 class SelfServiceEmailTests(APITestBase):
-    """H-2. ``OIDC_LINK_BY_EMAIL`` (on by default) binds an identity
-    provider's subject to whichever local account holds the address it
-    asserts, so ``/users/me/`` must not accept an ``email`` edit. Otherwise
-    any signed-in account, the issued external auditor included, could claim
-    an address whose owner had not signed in through SSO yet and take their
-    first sign-in."""
+    """H-2. ``OIDC_LINK_BY_EMAIL`` binds an identity provider's subject to the account holding the asserted address,
+    so ``/users/me/`` must refuse an ``email`` edit: it would let anyone claim a colleague's first SSO sign-in."""
 
     def test_a_user_cannot_set_their_own_email(self):
         before = self.viewer.email
@@ -142,8 +122,7 @@ class SelfServiceEmailTests(APITestBase):
         self.assertEqual(self.viewer.job_title, "Analyst")
 
     def test_an_operator_cannot_duplicate_an_address(self):
-        """Two accounts on one address make an identity provider give up with
-        ``ambiguous_email``, which locks that person out of single sign-on."""
+        """Two accounts on one address make an identity provider give up (``ambiguous_email``) and lock one out."""
         r = self.client_for(self.admin).post(
             "/api/users/", {"username": "newcomer", "email": self.owner.email,
                             "role": self.roles["Viewer"].pk}, format="json")
@@ -152,12 +131,8 @@ class SelfServiceEmailTests(APITestBase):
 
 
 class CrossTenantUniquenessTests(APITestBase):
-    """M-3. The unscoped username check must build its queryset inside the
-    unscoped block: a queryset built earlier carries
-    ``workspace_id = ActiveWorkspace()``, which resolves at compile time, so
-    running it unscoped compares the column to NULL and matches nothing. The
-    name would then reach the database's global unique constraint and come
-    back as a 500, which discloses that the account exists."""
+    """M-3. The unscoped username check must build its queryset inside the unscoped block, or ``ActiveWorkspace()``
+    compares to NULL, nothing matches and the unique constraint answers 500, which discloses the account."""
 
     def setUp(self):
         super().setUp()
@@ -179,11 +154,8 @@ class CrossTenantUniquenessTests(APITestBase):
         self.assertNotIn("beta", str(r.data).lower())
 
     def test_an_address_taken_in_another_workspace_is_allowed(self):
-        """Deliberately unlike the username, which the database makes global.
-        A consultant holds an account in two organisations on one
-        installation under one address, and the only thing that breaks on a
-        duplicate is an identity provider's lookup, which runs inside a
-        single workspace."""
+        """Unlike the username, which the database makes global: a consultant may hold an account in two organisations
+        under one address; a duplicate only breaks an identity provider's lookup, which runs inside one workspace."""
         r = self.client_for(self.admin).post(
             "/api/users/", {"username": "fresh", "email": self.stranger.email,
                             "role": self.roles["Viewer"].pk}, format="json")
@@ -198,18 +170,12 @@ class CrossTenantUniquenessTests(APITestBase):
 
 @override_settings(AUTH_TRANSPORT="cookie")
 class LoginCsrfTests(APITestBase):
-    """M-5. ``_enforce_csrf`` runs inside ``CookieJWTAuthentication``, so it
-    only sees a request that already carries a session. The two endpoints
-    that set the cookies authenticate nobody, so they must check CSRF
-    themselves: otherwise a cross-site form post could sign the visitor's
-    browser into the attacker's account, and the evidence they upload next
-    would go to it."""
+    """M-5. The two endpoints that set the cookies authenticate nobody, so ``_enforce_csrf`` never sees them and they
+    must check CSRF themselves, or a cross-site form post could sign the visitor into the attacker's account."""
 
     def setUp(self):
         super().setUp()
-        # The test client sets ``_dont_enforce_csrf_checks``, which is what
-        # Django's own check honours, so a client that does not opt in proves
-        # nothing about CSRF either way.
+        # The test client sets ``_dont_enforce_csrf_checks``, so only a client that opts in proves anything about CSRF.
         self.browser = APIClient(enforce_csrf_checks=True)
 
     def test_the_config_endpoint_seeds_the_token(self):
@@ -250,18 +216,8 @@ class LoginCsrfTests(APITestBase):
 
 
 class AccessTokenEpochTests(APITestBase):
-    """M-4. Revoking ``OutstandingToken`` rows only reaches refresh tokens, so
-    the access token in a hijacked tab keeps working for up to an hour after
-    a reset unless it is refused on its issue time.
-
-    Each revocation here happens through ``later()``. The stamp is floored to
-    the second because the ``iat`` claim is whole seconds, and a stamp
-    carrying microseconds would refuse the token the person signing in again
-    has just been handed. That floor means a revocation in the same second as
-    the token it revokes is a tie the token wins, which is a one-second window
-    in production and nondeterministic in a test that does both back to back.
-    Moving the revocation on by a minute tests the rule rather than the clock.
-    """
+    """M-4. Revoking ``OutstandingToken`` rows reaches refresh tokens only, so an access token is also refused on its
+    issue time. ``later()`` moves the revocation a minute on, because the stamp is floored to the second."""
 
     @staticmethod
     def later(seconds=60):
@@ -318,12 +274,8 @@ class AccessTokenEpochTests(APITestBase):
         self.assertEqual(client.get("/api/users/me/").status_code, 401)
 
     def test_signing_out_of_one_browser_leaves_the_others_alone(self):
-        """Ending every session is for the recovery paths, not for sign-out.
-
-        Signing out revokes every refresh token the account holds, so no other
-        session can renew itself. Also refusing the access token another
-        browser is holding would close the person's other device
-        mid-session, which is not what a sign-out should do."""
+        """Ending every session is for the recovery paths, not for sign-out: refusing the access token another browser
+        holds would close the person's other device mid-session."""
         phone = self.client_for(None)
         signed_in = phone.post("/api/auth/token/",
                                {"username": self.owner.username, "password": PASSWORD},

@@ -1,6 +1,5 @@
-"""Regression tests for the defects the 0.9.5ma documentation audit found.
-Each class names the documented promise the code must keep; tests marked
-"Guard" cover behaviour that must not change."""
+"""Regression tests for defects a documentation audit found. Each class names the documented promise the code must
+keep; tests marked "Guard" cover behaviour that must not change."""
 import os
 import tempfile
 from io import StringIO
@@ -44,9 +43,8 @@ def _admin_client(user):
 
 
 class DemoPasswordPolicyTests(TestCase):
-    """install-1-06: DEMO_PASSWORD is set on all five demo accounts, the
-    superuser `admin` among them, so it must meet the password policy that
-    every other password meets."""
+    """install-1-06: DEMO_PASSWORD is set on all five demo accounts, the superuser among them, so it must meet the
+    password policy every other password meets."""
 
     def setUp(self):
         media = tempfile.TemporaryDirectory()
@@ -78,8 +76,7 @@ class DemoPasswordPolicyTests(TestCase):
         self.assertIn("too similar", str(caught.exception))
 
     def test_a_refresh_sets_no_password_and_checks_none(self):
-        """Guard: a container that boots with the old, weak value keeps
-        booting once the accounts exist, because nothing is set."""
+        """Guard: a container booting with the old weak value keeps booting once the accounts exist: nothing is set."""
         self.boot("Correct-Horse-Battery-9")
         out = self.boot("admin")
         self.assertIn("existing accounts kept their password", out)
@@ -87,10 +84,8 @@ class DemoPasswordPolicyTests(TestCase):
 
 
 class RoleEditLastAdministratorTests(APITestBase):
-    """G10: the API "will never leave the organisation without an active
-    administrator", so role edits are guarded as well as user edits. Taking
-    can_manage_users off a custom role must not leave the workspace with
-    none."""
+    """G10: the API "will never leave the organisation without an active administrator", so role edits are guarded as
+    well as user edits: taking can_manage_users off a custom role must not leave the workspace with none."""
 
     def setUp(self):
         super().setUp()
@@ -119,9 +114,8 @@ class RoleEditLastAdministratorTests(APITestBase):
 
 
 class AdminTakesNoFileTests(APITestBase):
-    """XD-16: every upload is said to be size-capped, type-checked and
-    scanned, so the Django admin must not store whatever it is sent or clear
-    the scanner's quarantine."""
+    """XD-16: every upload is said to be size-capped, type-checked and scanned, so the Django admin must not store
+    whatever it is sent or clear the scanner's quarantine."""
 
     FILE_MODELS = {"Document", "DocumentVersion", "FormTemplate", "MeetingMinute"}
 
@@ -162,9 +156,8 @@ class AdminTakesNoFileTests(APITestBase):
 
 
 class CompletedAccessReviewTests(APITestBase):
-    """R1-04: "A completed review is read-only evidence from that moment."
-    The review itself, not only its rows, must refuse renaming, re-noting and
-    deletion with every row."""
+    """R1-04: "A completed review is read-only evidence from that moment." The review itself, not only its rows, must
+    refuse renaming, re-noting and deletion."""
 
     def setUp(self):
         super().setUp()
@@ -198,9 +191,8 @@ class CompletedAccessReviewTests(APITestBase):
 
 
 class DemotedAuditorTests(PackageTestBase):
-    """SEC-05: grants are "re-evaluated on every request, so deactivating or
-    demoting the account closes it immediately". Demotion must close reads
-    as well as conclusions."""
+    """SEC-05: grants are "re-evaluated on every request, so deactivating or demoting the account closes it
+    immediately". Demotion must close reads as well as conclusions."""
 
     def setUp(self):
         super().setUp()
@@ -220,9 +212,8 @@ class DemotedAuditorTests(PackageTestBase):
 
 
 class SealedBytesTests(PackageTestBase):
-    """R2-03: "The package freezes: the assessed organisation can no longer
-    change what the auditor is looking at." A new version after the seal must
-    not reach the auditor through the package."""
+    """R2-03: "The package freezes: the assessed organisation can no longer change what the auditor is looking at."
+    A new version after the seal must not reach the auditor through the package."""
 
     def setUp(self):
         super().setUp()
@@ -270,7 +261,7 @@ class SealedBytesTests(PackageTestBase):
             400)
 
     def test_a_draft_still_asks_for_a_refresh(self):
-        """Guard: before the seal a new version is drift, as it always was."""
+        """Guard: before the seal a new version is drift."""
         draft = EvidencePackage.objects.create(name="Next year", created_by=self.manager)
         self.package = draft
         self.add_control()
@@ -282,9 +273,8 @@ class SealedBytesTests(PackageTestBase):
 
 
 class PackagesReadOnlyInAdminTests(PackageTestBase):
-    """R2-04: conclusions "nobody at the assessed organisation can edit", the
-    digests the manifest is signed over and the grants must not be editable
-    in the Django admin."""
+    """R2-04: conclusions "nobody at the assessed organisation can edit", the digests the manifest is signed over and
+    the grants must not be editable in the Django admin."""
 
     def test_the_admin_changes_no_part_of_a_package(self):
         self.add_control()
@@ -308,10 +298,8 @@ class PackagesReadOnlyInAdminTests(PackageTestBase):
 
 
 class SsoIssuerSpellingTests(APITestBase):
-    """install-1-13: link_oidc_identity stores the issuer without a trailing
-    "/", so sign-in must treat both spellings as one issuer. Otherwise the
-    documented pre-link never matches a provider whose issuer ends in one
-    (Entra ID's SAML entity id is https://sts.windows.net/<tenant>/)."""
+    """install-1-13: link_oidc_identity stores the issuer without a trailing "/", so sign-in must treat both spellings
+    as one, or the documented pre-link never matches an issuer that ends in one (Entra ID's does)."""
 
     ISSUER = "https://sts.windows.net/tenant-id/"
 
@@ -343,9 +331,8 @@ class SsoIssuerSpellingTests(APITestBase):
 
 
 class EntrypointDemoPasswordTests(TestCase):
-    """A refused DEMO_PASSWORD leaves the Docker boot running without the
-    demo, as a refused DJANGO_SUPERUSER_PASSWORD does, rather than stopping
-    it. The entrypoint knows the refusal by the command's own words."""
+    """A refused DEMO_PASSWORD leaves the Docker boot running without the demo, as a refused DJANGO_SUPERUSER_PASSWORD
+    does. The entrypoint knows the refusal by the command's own words."""
 
     def test_the_entrypoint_matches_the_refusal_the_command_raises(self):
         from pathlib import Path
@@ -362,10 +349,8 @@ class EntrypointDemoPasswordTests(TestCase):
 
 
 class ViewerRoleDescriptionTests(TestCase):
-    """The built-in Viewer description must not say "Read-only access to
-    granted folders". The role reads the programme-wide records as well and
-    writes risk notes, so that wording would understate it in an access
-    review."""
+    """The built-in Viewer description must not say "Read-only access to granted folders": the role also reads the
+    programme-wide records and writes risk notes, so that wording would understate it in an access review."""
 
     def test_the_description_says_what_the_role_does(self):
         viewer = make_roles()["Viewer"]

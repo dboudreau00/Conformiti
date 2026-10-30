@@ -1,14 +1,3 @@
-"""
-Link (or unlink) a single sign-on identity to a local account by hand.
-
-    python manage.py link_oidc_identity mia 00u1abcd --email mia@example.com
-    python manage.py link_oidc_identity mia 00u1abcd --issuer https://login.example.com
-    python manage.py link_oidc_identity mia --unlink
-
-This is how an administrator pre-links accounts before turning SSO on, and
-how a superuser gets an SSO identity at all: the automatic email match never
-links privileged accounts, so linking one is an explicit, audited act here.
-"""
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
@@ -53,8 +42,7 @@ class Command(BaseCommand):
                 "provider's administrators sign in as your administrator; pass --allow-privileged "
                 "if that is what you intend."
             )
-        # Sign-in takes an issuer with and without a trailing "/" as one
-        # (accounts/oidc.py), so a clash is looked for under both spellings.
+        # Sign-in treats an issuer with and without a trailing "/" as one, so look for a clash under both.
         clash = (OidcIdentity.objects.filter(issuer__in={issuer, issuer + "/"}, subject=subject)
                  .exclude(user=user).first())
         if clash:

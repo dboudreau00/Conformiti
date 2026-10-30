@@ -1,11 +1,5 @@
-"""The demo seed's advice on a first boot that also creates DJANGO_SUPERUSER_*.
-
-backend/entrypoint.sh seeds the demo before it creates the DJANGO_SUPERUSER_*
-account, so the seed must not tell the operator to run createsuperuser a few
-log lines before the container makes that account itself. The entrypoint
-passes --superuser-follows in that case, and the seed leaves the advice to the
-boot banner.
-"""
+"""entrypoint.sh seeds the demo before it creates DJANGO_SUPERUSER_* and passes --superuser-follows, so the seed must
+not name createsuperuser a few log lines before the container makes that account: the boot banner has the advice."""
 import os
 import shutil
 import subprocess
@@ -47,8 +41,7 @@ class SeedAdviceTests(TestCase):
         self.assertNotIn("createsuperuser", out)
         self.assertIn("boot banner", out)
 
-        # What the entrypoint does next. After it, the banner's question (the
-        # same function) has the answer that makes it say remove_demo_data only.
+        # What the entrypoint does next: after it, the banner (same function) says remove_demo_data only.
         with tenancy.unscoped(), mock.patch.dict(os.environ, {"DJANGO_SUPERUSER_PASSWORD": PASSWORD}):
             call_command("createsuperuser", interactive=False, username="operator",
                          email="operator@test.local", verbosity=0)
@@ -61,8 +54,7 @@ class SeedAdviceTests(TestCase):
         self.assertNotIn("boot banner", out)
 
     def test_without_the_flag_createsuperuser_still_comes_first(self):
-        """By hand, or on a boot with no DJANGO_SUPERUSER_*: nothing else will
-        make the account, so the advice names it."""
+        """By hand, or on a boot with no DJANGO_SUPERUSER_*, nothing else makes the account, so the advice names it."""
         out = self.seed()
         self.assertLess(out.index("manage.py createsuperuser"), out.index("manage.py remove_demo_data"))
 
@@ -78,14 +70,12 @@ def _posix_bash():
 
 class EntrypointSeedFlagTests(SimpleTestCase):
     def test_the_seed_runs_before_the_superuser_step(self):
-        """The order that makes the flag necessary."""
         self.assertLess(ENTRYPOINT.index("python manage.py bootstrap_demo"),
                         ENTRYPOINT.index("python manage.py createsuperuser --noinput"))
 
     @skipUnless(_posix_bash(), "needs bash")
     def test_the_flag_is_passed_exactly_when_the_superuser_step_will_run(self):
-        """The SEED_DEMO_DATA branch run in bash, with ``python`` replaced by a
-        stub that prints its arguments."""
+        """Runs the SEED_DEMO_DATA branch in bash with ``python`` stubbed to print its arguments."""
         block = ENTRYPOINT[ENTRYPOINT.index('case "${SEED_DEMO_DATA'):]
         block = block[:block.index("\nesac\n") + len("\nesac\n")]
         script = ("set -euo pipefail\n"

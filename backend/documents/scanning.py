@@ -1,18 +1,4 @@
-"""
-Where an upload gets scanned, and what happens when it cannot be.
-
-**Scanning happens after authorisation, never during validation.** DRF runs
-``serializer.is_valid()`` before ``perform_create``, so a hook in
-``validate_upload`` would scan a file for a caller who has not yet been shown
-to have edit rights on the folder. That would hand anyone with an account an
-oracle ("which of my payloads does their signature set catch?") and a way to
-saturate the scanner with 32 MB uploads that fail closed into org-wide 503s.
-
-**Enabled means fail-closed.** There is deliberately no fail-open switch: an
-"is evidence scanned?" answer that depends on whether the scanner happened to
-be reachable is not an answer an auditor can use. If scanning is on and the
-scanner is unreachable, the upload is refused.
-"""
+"""Malware scanning of uploads. Enabled means fail-closed: there is deliberately no fail-open switch."""
 import logging
 
 from django.conf import settings
@@ -22,13 +8,10 @@ from . import clamav
 
 logger = logging.getLogger(__name__)
 
-# Re-exported from the stdlib-only module, where the validator can reach it
-# without Django installed.
 eicar_bytes = clamav.eicar_bytes
 
 
 class ScannerUnavailable(APIException):
-    """503, not 400: nothing is wrong with the caller's request."""
     status_code = 503
     default_detail = (
         "Evidence cannot be accepted right now: the malware scanner is unavailable. "
@@ -38,8 +21,6 @@ class ScannerUnavailable(APIException):
 
 
 class InfectedUpload(ValidationError):
-    """400 with the signature name, and an audit row written beside it."""
-
     def __init__(self, signature, filename=""):
         self.signature = signature
         self.filename = filename
@@ -54,11 +35,8 @@ def enabled():
 
 
 def scan_or_raise(uploaded, request=None):
-    """Scan an uploaded file before it is stored. Returns it unchanged.
-
-    Call from ``perform_create`` / ``perform_update``, after the folder
-    permission check.
-    """
+    """Scan an upload before it is stored and return it unchanged. Call it after the permission check, never from
+    validation: an unauthorised caller must not reach the scanner (signature oracle, saturation)."""
     if not enabled() or uploaded is None:
         return uploaded
 
@@ -75,8 +53,7 @@ def scan_or_raise(uploaded, request=None):
         _record(request, uploaded, exc.signature)
         raise InfectedUpload(exc.signature, getattr(uploaded, "name", ""))
     except clamav.LimitsExceededError as exc:
-        # Refused, but not recorded as malware: the scanner declined to inspect
-        # the whole file, which is a different fact.
+        # Refused but not recorded as malware: the scanner declined to inspect the whole file.
         raise ValidationError({"file": [
             "This file could not be fully inspected by the malware scanner "
             f"({exc.reason}), so it has not been stored. Split it or upload a "
@@ -89,11 +66,6 @@ def scan_or_raise(uploaded, request=None):
 
 
 def _record(request, uploaded, signature):
-    """Write the detection to the audit trail.
-
-    A row of its own rather than a log line, so that "which malicious upload
-    was refused, from whom, and when" can be answered from the audit trail.
-    """
     from audit.middleware import _client_ip
     from audit.models import AuditLog
 

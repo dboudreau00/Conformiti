@@ -1,4 +1,3 @@
-"""Serializers for frameworks and controls."""
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -33,7 +32,6 @@ class ControlSerializer(serializers.ModelSerializer):
                             "last_tested_by_name", "last_tested_recorded_at"]
 
     def _readiness(self, obj):
-        """Memoised: three fields would otherwise score the same row three times."""
         cached = getattr(obj, "_readiness_cache", None)
         if cached is None:
             request = self.context.get("request")
@@ -61,10 +59,7 @@ class ControlSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data):
-        """Stamp who recorded a test and when, and audit it explicitly.
-
-        audit.middleware records field NAMES only, so without this a backdated
-        test date is indistinguishable from any other edit."""
+        """Stamp who recorded a test and when, and audit it: the middleware logs field names only."""
         recording = ("last_tested_on" in validated_data
                      and validated_data["last_tested_on"] != instance.last_tested_on)
         previous = instance.last_tested_on
@@ -96,9 +91,7 @@ class ControlSerializer(serializers.ModelSerializer):
             pass
 
     def get_evidence_count(self, obj):
-        """Prefer the view's visibility-filtered annotation; otherwise compute a
-        count restricted to folders the requester can see, so the number never
-        reveals evidence hidden behind folder permissions."""
+        """Prefer the view's visibility-filtered annotation; the fallback counts only folders the requester can see."""
         annotated = getattr(obj, "evidence_count", None)
         if annotated is not None:
             return annotated
@@ -111,12 +104,7 @@ class ControlSerializer(serializers.ModelSerializer):
 
 
 class ControlRefSerializer(serializers.ModelSerializer):
-    """A control reference without the scored fields.
-
-    The crosswalk nests controls many-deep over every mapping; scoring there
-    would run three unannotated signal queries per row for a screen that does
-    not show a score.
-    """
+    """A control without scored fields: the crosswalk nests controls over every mapping, and scoring costs queries."""
     framework_key = serializers.CharField(source="category.framework.key", read_only=True)
     framework = serializers.CharField(source="category.framework.name", read_only=True)
 
@@ -126,18 +114,14 @@ class ControlRefSerializer(serializers.ModelSerializer):
 
 
 class ControlEvidenceSerializer(serializers.ModelSerializer):
-    # Document side (for the control detail panel)
     document_name = serializers.CharField(source="document.name", read_only=True)
     document_status = serializers.CharField(source="document.status", read_only=True)
     folder_path = serializers.CharField(source="document.folder.path", read_only=True)
-    # Control side (for the document "satisfies" panel)
     control_label = serializers.CharField(source="control.control_id", read_only=True)
     control_title = serializers.CharField(source="control.title", read_only=True)
     framework_key = serializers.CharField(source="control.category.framework.key", read_only=True)
     framework_name = serializers.CharField(source="control.category.framework.name", read_only=True)
     linked_by_name = PersonNameField("linked_by")
-    # Whether the *requesting* user may remove this link. The UI uses it to
-    # show the Unlink control only where the API would accept the call.
     can_unlink = serializers.SerializerMethodField()
 
     class Meta:
@@ -189,9 +173,6 @@ class FrameworkSerializer(serializers.ModelSerializer):
 
 
 class ControlMappingSerializer(serializers.ModelSerializer):
-    # ControlRefSerializer, not ControlSerializer: the crosswalk nests controls
-    # across every mapping and does not show a readiness score, so scoring here
-    # would cost three unannotated queries per row for nothing.
     controls = ControlRefSerializer(many=True, read_only=True)
 
     class Meta:

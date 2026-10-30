@@ -1,28 +1,10 @@
-"""Proving an account is yours, again, in the middle of a session.
-
-Enrolling or removing a factor is the moment a hijacked session becomes a
-permanent one: the attacker adds their own authenticator, or takes yours away,
-and the account is theirs after the stolen cookie expires. Every one of those
-four operations asks for proof here.
-"""
+"""Re-proving an account mid-session. Enrolling or removing a factor is how a hijacked session becomes permanent,
+so each of those operations asks for proof here."""
 
 
 def reauthenticated(request):
-    """True if the caller has just proved the account is theirs.
-
-    Without this, a hijacked session could quietly enrol the attacker's own
-    passkey or authenticator app and keep the account for good (an enrolled
-    attacker app would even become the second factor the real owner has to
-    produce). All four operations ask for the same proof: the password, or a
-    code from a factor already enrolled, which is what an account signed in
-    through an identity provider has instead of a password. A backup code
-    counts, so the owner of a passkey reported as cloned can remove it even
-    when the account has no password.
-
-    An account with neither (no usable password, no second factor) has
-    nothing to prove with and nothing yet to protect: that is the first
-    enrolment, and it is allowed.
-    """
+    """True if the caller just proved the account is theirs: the password, or a code from an enrolled factor (a backup
+    code counts). An account with neither has nothing to prove with and nothing yet to protect: first enrolment."""
     user = request.user
     password = request.data.get("password") or ""
     otp = str(request.data.get("otp") or "").strip()

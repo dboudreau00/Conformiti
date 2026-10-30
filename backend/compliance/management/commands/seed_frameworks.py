@@ -1,10 +1,3 @@
-"""
-Seed frameworks, controls, the cross-framework crosswalk, and built-in roles.
-
-    python manage.py seed_frameworks                # idempotent import
-    python manage.py seed_frameworks --with-folders # also mirror the control
-                                                    # tree into app folders
-"""
 import json
 import os
 
@@ -21,11 +14,10 @@ DATA_DIR = os.path.join(settings.BASE_DIR, "compliance", "data")
 
 DATA_FILES = ["soc2.json", "iso27001.json", "pci_dss_v4.json"]
 
-# The libraries those files seed, by framework key: the keys crosswalk.json
-# names its lists by, and the only controls this command places in a theme.
+# The keys crosswalk.json names its lists by; the only controls this command places in a theme.
 CORE_FRAMEWORK_KEYS = ("soc2", "iso27001", "pci_dss_v4")
 
-# Built-in roles and their capability flags.
+# The Auditor and Viewer descriptions state what accounts/permissions.py allows (USER_GUIDE.md, Roles).
 BUILTIN_ROLES = [
     ("Administrator", "Full platform administration.",
      dict(can_manage_users=True, can_manage_frameworks=True, can_manage_documents=True,
@@ -35,12 +27,8 @@ BUILTIN_ROLES = [
           can_manage_folders=True, can_view_all=True)),
     ("Control Owner", "Owns controls and maintains their evidence.",
      dict(can_manage_documents=True)),
-    # The description states what accounts/permissions.py allows.
     ("Auditor", "Read-only outside party: packages issued to them, the folders granted with them, and the trail.",
      dict(is_auditor=True)),
-    # Every account but the Auditor reads the programme-wide records, and a
-    # viewer adds notes to risks and edits the ones they own (USER_GUIDE.md,
-    # Roles).
     ("Viewer", "Reads the programme-wide records and the folders granted to them; adds "
                "notes to risks and edits the risks they own.", dict()),
 ]
@@ -65,8 +53,7 @@ class Command(BaseCommand):
         if opts.get("all_workspaces"):
             count = 0
             for workspace in tenancy.for_each_workspace():
-                # One transaction per workspace: a failure in one organisation
-                # rolls back that organisation alone and is reported by name.
+                # One transaction per workspace: a failure rolls back that organisation alone.
                 with transaction.atomic():
                     self._seed_one(workspace, opts)
                 count += 1
@@ -78,7 +65,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Seeding complete."))
 
     def _seed_one(self, workspace, opts):
-        """Seed the active workspace. Idempotent, like everything it calls."""
+        """Seed the active workspace; idempotent, because the container entrypoint runs it on every boot."""
         self.stdout.write(f"Workspace: {workspace.name} ({workspace.slug})")
         self._seed_roles()
         if opts["roles_only"]:
@@ -89,7 +76,6 @@ class Command(BaseCommand):
         if opts["with_folders"]:
             self._seed_folders()
 
-    # ------------------------------------------------------------------ roles
     def _seed_roles(self):
         for name, desc, flags in BUILTIN_ROLES:
             Role.objects.update_or_create(
@@ -97,7 +83,6 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  Roles: {Role.objects.count()}")
 
-    # ------------------------------------------------------------- frameworks
     def _seed_frameworks(self):
         for fname in DATA_FILES:
             path = os.path.join(DATA_DIR, fname)
@@ -119,13 +104,9 @@ class Command(BaseCommand):
                     defaults=dict(name=cat["name"], order=order),
                 )
                 ncat += 1
-                # The file's order is the standard's order, and the register
-                # follows it (Control.order), so every run puts it back.
+                # The file's order is the standard's order (Control.order); every run puts it back.
                 for place, control in enumerate(cat["controls"], start=1):
-                    # Identify the control by (framework, control_id), not by
-                    # (category, control_id): a control that moves to another
-                    # category must be *updated*, not duplicated as a second row
-                    # that keeps the old owner, status and evidence links.
+                    # Keyed by (framework, control_id), not category: a moved control is updated, not duplicated.
                     existing = Control.objects.filter(
                         category__framework=fw, control_id=control["control_id"]
                     ).first()
@@ -142,8 +123,7 @@ class Command(BaseCommand):
                             objective=control.get("objective", ""),
                         )
                     nctrl += 1
-                # A control the file does not list (added by hand) stays after
-                # the listed ones, so a file that grows cannot tie with it.
+                # A hand-added control the file does not list stays after the listed ones.
                 listed = [control["control_id"] for control in cat["controls"]]
                 rest = (Control.objects.filter(category=category)
                         .exclude(control_id__in=listed).order_by("order", "pk"))
@@ -153,7 +133,6 @@ class Command(BaseCommand):
                         control.save(update_fields=["order"])
             self.stdout.write(f"  {fw.name} {fw.version}: {ncat} categories, {nctrl} controls")
 
-    # -------------------------------------------------------------- crosswalk
     def _seed_crosswalk(self):
         path = os.path.join(DATA_DIR, "crosswalk.json")
         if not os.path.exists(path):
@@ -163,36 +142,26 @@ class Command(BaseCommand):
 
         for m in mappings:
             mapping, _ = ControlMapping.objects.get_or_create(theme=m["theme"])
-            # Each list belongs to the library it is named for. A clause number
-            # is not an identity: "6.2" is a PCI DSS requirement and a clause of
-            # every other standard that numbers its clauses, so matching the id
-            # alone pins a theme to whatever else is installed.
+            # Match per library: a clause number such as "6.2" is not an identity across standards.
             wanted = Q()
             for key in CORE_FRAMEWORK_KEYS:
                 ids = m.get(key, [])
                 if ids:
                     wanted |= Q(category__framework__key=key, control_id__in=ids)
             controls = list(Control.objects.filter(wanted)) if wanted else []
-            # The file decides which of the shipped libraries' controls sit in a
-            # theme, and nothing else. A control of any other library that joined
-            # the theme by another route is not this command's to drop, which
-            # set() did on every boot.
+            # Only the shipped libraries' controls are this command's to add or drop; other libraries' links stay.
             stale = mapping.controls.filter(category__framework__key__in=CORE_FRAMEWORK_KEYS).exclude(
                 pk__in=[c.pk for c in controls])
             mapping.controls.remove(*stale)
             mapping.controls.add(*controls)
         self.stdout.write(f"  Crosswalk: {ControlMapping.objects.count()} themes")
 
-    # ---------------------------------------------------------------- folders
-    # Windows' default MAX_PATH is 260 characters and uploads are stored under
-    # media/documents/<framework>/<category>/<control>/<filename>, so the control
-    # segment is capped to leave room for a real filename.
+    # Windows MAX_PATH is 260 and uploads live under media/documents/<framework>/<category>/<control>/<filename>,
+    # so the control segment is capped to leave room for a filename.
     CONTROL_FOLDER_MAX = 70
 
     @staticmethod
     def _safe_segment(name, limit):
-        """A folder name that is safe as a single path segment: no separators or
-        other characters Windows rejects, no trailing dot/space, length-capped."""
         cleaned = "".join("-" if ch in '/\\:*?"<>|' else ch for ch in name)
         cleaned = cleaned.strip().rstrip(". ")
         if len(cleaned) > limit:
@@ -200,7 +169,6 @@ class Command(BaseCommand):
         return cleaned or "unnamed"
 
     def _sync_folder(self, folder, name, parent, **fields):
-        """Rename/re-parent an existing folder instead of creating a duplicate."""
         changed = []
         if folder.name != name:
             folder.name = name
@@ -217,15 +185,12 @@ class Command(BaseCommand):
         return folder
 
     def _seed_folders(self):
-        # Imported lazily so the command still loads if documents app changes.
         from documents.models import Folder
 
         created = 0
         for fw in Framework.objects.all():
             fw_name = self._safe_segment(str(fw), 80)
-            # Look the root up by its Framework FK. Fall back to the legacy
-            # name match once, so installs seeded before the FK existed adopt
-            # their existing tree instead of growing a second one.
+            # FK first; the name match adopts a tree seeded before the FK existed, instead of growing a second one.
             fw_folder = Folder.objects.filter(framework=fw).first()
             if fw_folder is None:
                 fw_folder = Folder.objects.filter(

@@ -1,4 +1,3 @@
-"""Serializers for the document-management API."""
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
@@ -15,18 +14,13 @@ from .uploads import validate_upload
 
 
 def person_name(user):
-    """Full name, or the username for an account that has none (every account
-    createsuperuser makes). The same rule as User.__str__; "" for nobody."""
+    """Full name, else the username (createsuperuser sets no name); "" for nobody."""
     return (user.get_full_name() or user.get_username()) if user else ""
 
 
 class PersonNameField(serializers.ReadOnlyField):
-    """A related person's name by the ``person_name`` rule, "" for nobody:
-    ``owner_name = PersonNameField("owner")``.
-
-    It reads the whole row (source "*") and follows the relation itself.
-    With the relation as its source, DRF would answer null for an empty one
-    without asking the field, whereas these names are ""."""
+    """``owner_name = PersonNameField("owner")``: the person's name by the ``person_name`` rule, "" for nobody.
+    Source is "*" because with the relation as its source DRF answers null for an empty one without asking the field."""
 
     def __init__(self, relation, **kwargs):
         self.relation = relation
@@ -49,9 +43,7 @@ class FolderPermissionSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        # Fall back to the existing instance for fields absent from a partial
-        # update, so a PATCH that touches only access_level (or moves the grant
-        # to another folder) still passes the "exactly one of role/user" rule.
+        # A partial update falls back to the instance, so a PATCH of access_level alone passes the role/user rule.
         role = attrs.get("role", getattr(self.instance, "role", None))
         user = attrs.get("user", getattr(self.instance, "user", None))
         if bool(role) == bool(user):
@@ -92,8 +84,7 @@ class FolderSerializer(serializers.ModelSerializer):
         return value
 
     def validate_parent(self, parent):
-        # A folder can't be moved under itself or any of its descendants:
-        # that would corrupt the tree and hang every access check on it.
+        # Moving a folder under itself or a descendant would corrupt the tree and hang every access check.
         if self.instance is not None and parent is not None:
             if parent.pk == self.instance.pk or self.instance.would_cycle(parent):
                 raise serializers.ValidationError(
@@ -125,15 +116,9 @@ class DocumentSerializer(serializers.ModelSerializer):
     is_overdue = serializers.BooleanField(read_only=True)
     days_until_review = serializers.IntegerField(read_only=True)
     satisfies = serializers.SerializerMethodField()
-    # Uploadable, never readable. Serializing the storage URL would publish a
-    # second route to the bytes that no permission check stands in front of,
-    # and upload paths are derived predictably from the folder tree, so the
-    # value is a working locator for anyone who sees it. Read through
-    # `download_url`, which the API authorises and records.
+    # Write-only: a storage URL would be a second route to the bytes with no permission check in front of it.
     file = serializers.FileField(write_only=True)
     download_url = serializers.SerializerMethodField()
-    # The name the download is saved under, as the server sends it (display
-    # name plus the stored file's extension). Carries no part of the path.
     download_name = serializers.SerializerMethodField()
     quarantined = serializers.BooleanField(source="is_quarantined", read_only=True)
 
@@ -170,8 +155,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         return value
 
     def get_satisfies(self, obj):
-        """Controls this document is linked to as evidence (reverse mapping).
-        Relies on the view prefetching control_links to stay one query."""
+        """Controls linked to this document as evidence; the view must prefetch ``control_links`` to stay one query."""
         return [
             {
                 "link_id": link.id,
@@ -185,7 +169,7 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
 class FormTemplateSerializer(serializers.ModelSerializer):
-    # Same reasoning as DocumentSerializer.file.
+    # Write-only, for the same reason as DocumentSerializer.file.
     file = serializers.FileField(write_only=True)
     download_url = serializers.SerializerMethodField()
 

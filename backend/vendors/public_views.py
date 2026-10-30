@@ -1,10 +1,3 @@
-"""The vendor's side of the questionnaire: three endpoints keyed by the token
-in the emailed link, no account needed.
-
-Throttled per client on their own scope (THROTTLE_QUESTIONNAIRE): a token is
-32 random bytes, so guessing is not a realistic threat, but a public endpoint
-that writes deserves its own budget regardless.
-"""
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
@@ -16,6 +9,7 @@ from . import questionnaire as q
 
 
 class _QuestionnaireThrottle(SimpleRateThrottle):
+    # Its own budget (THROTTLE_QUESTIONNAIRE): a public endpoint that writes needs one, token guessing aside.
     scope = "questionnaire"
 
     def get_cache_key(self, request, view):
@@ -34,9 +28,6 @@ class _Public(APIView):
 
 
 class QuestionnaireView(_Public):
-    """GET: the questions, the vendor's draft and the link's state.
-    PUT: save a draft."""
-
     def get(self, request, token):
         invite = q.find(token)
         if invite is None:
@@ -46,8 +37,7 @@ class QuestionnaireView(_Public):
 
     def put(self, request, token):
         invite = q.find(token)
-        # The link carries no account: the vendor's rows are filed under the
-        # workspace that sent the questionnaire.
+        # No account on the link: rows are filed under the workspace that sent the questionnaire.
         with tenancy.scoped(invite.workspace_id if invite else None):
             try:
                 q.save_draft(invite, request.data.get("answers"), request)

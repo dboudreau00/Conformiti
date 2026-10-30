@@ -1,21 +1,5 @@
-"""
-The PBC request list: what the auditor asked for, who owes it, and what came back.
-
-Who may do what, in one place:
-
-* raise a request: the organisation (frameworks capability) on any package
-  that is not withdrawn; the issued auditor (live grant) on a sealed one;
-* edit the line (title, due date, assignee, control): the organisation, or
-  the auditor for lines they raised while still open;
-* answer it (attach documents, mark provided): the organisation, or the
-  assignee, who may be a control owner with no package access at all and
-  therefore sees exactly their own lines and nothing else of the package;
-* accept or return an answer: the issued auditor, or the organisation when it
-  is closing a line it transcribed from the auditor's email;
-* read an attached document: anyone who can read the package, plus the
-  assignee. For the auditor this is the second folder-permission bypass in
-  the product, and ``access.py`` holds it beside the first.
-"""
+"""The PBC request list. Reading an attached document is the second folder-permission bypass (``access.py`` holds it
+beside the first): the issued auditor under a live grant, the assignee for their own lines."""
 import csv
 import functools
 
@@ -59,24 +43,19 @@ def _side(user, package):
 
 
 class PbcRequestFilter(filters.FilterSet):
-    """``assignee`` as a number, so the filter cannot be asked who exists.
-
-    The write path narrows ``assignee`` the same way (M-2). An auditor may
-    GET this collection, and a ModelChoiceFilter would answer 400 for an id
-    that is nobody and 200 for an id that is somebody (0.9.5i, L-1)."""
+    """``assignee`` as a number, not a ModelChoiceFilter, which answers 400 for an id that is nobody and 200 for one
+    that is somebody: an auditor may GET this collection and would learn who exists."""
 
     assignee = person("assignee_id")
 
     class Meta:
-        from .models import PbcRequest
-
         model = PbcRequest
         fields = ["package", "status", "assignee", "priority"]
 
 
 def _atomic(method):
-    """Run a status-changing action in one transaction, so the row lock taken
-    by ``_locked`` is held until the new status is saved."""
+    """Run a status-changing action in one transaction, so the row lock taken by ``_locked`` holds until the new
+    status is saved."""
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         with transaction.atomic():
@@ -98,19 +77,14 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         return qs.select_related("package", "assignee", "package_control").prefetch_related("items")
 
     def _locked(self):
-        """The request, re-read under a row lock. ``get_object`` has already
-        applied the permission and workspace rules; this makes the status
-        check and the save one step, so an accept racing a withdraw (or two
-        accepts) cannot both pass the check."""
+        """The request re-read under a row lock (``get_object`` has applied permissions), so the status check and
+        the save are one step: an accept racing a withdraw, or two accepts, cannot both pass."""
         req = self.get_object()
-        # Of the request row only: a plain FOR UPDATE would lock the package
-        # row the select_related joins in, queueing every request action behind
-        # a seal that is hashing files and inviting a deadlock with a control
-        # being removed from a draft.
+        # The request row only: a plain FOR UPDATE would lock the joined package row, queueing every action behind a
+        # seal that is hashing files and inviting a deadlock with a control removed from a draft.
         return (PbcRequest.objects.select_for_update(of=("self",))
                 .select_related("package").get(pk=req.pk))
 
-    # ------------------------------------------------------------- create
     def perform_create(self, serializer):
         user = self.request.user
         data = serializer.validated_data
@@ -151,7 +125,6 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
                 facts=[("Assigned to", req.assignee_name or "nobody yet"), ("Control", req.control_ref or "-")],
                 path="/packages", severity="medium")
 
-    # ------------------------------------------------------------- update
     EDITABLE = {"title", "description", "package_control", "priority", "due_date", "assignee"}
 
     def perform_update(self, serializer):
@@ -159,8 +132,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         user = self.request.user
         data = serializer.validated_data
         touched = set(data) & self.EDITABLE
-        # Read-only fields would be dropped silently by the serializer; say so
-        # instead, so a client that PATCHes `status` learns to use the actions.
+        # The serializer drops read-only fields silently: say so, so a client PATCHing status learns to use the actions.
         stray = set(getattr(self.request.data, "keys", lambda: [])()) - self.EDITABLE
         if stray:
             raise ValidationError({"detail": "Only the line itself can be edited here "
@@ -196,12 +168,10 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         raise ValidationError({"detail": "Requests are withdrawn, not deleted; the list is a record."})
 
-    # ------------------------------------------------------------- actions
     @action(detail=True, methods=["post"])
     @_atomic
     def provide(self, request, pk=None):
-        """Mark the answer given. Needs at least one attached document or a
-        note saying why there is none."""
+        """Mark the answer given: needs an attached document or a note saying why there is none."""
         req = self._locked()
         user = request.user
         if not (access.can_assemble(user) or req.assignee_id == user.pk):
@@ -281,16 +251,14 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _may_judge(user, req):
-        # The issued auditor judges any line. The organisation judges only a
-        # line it raised itself (one it transcribed from the auditor's email);
-        # a line the auditor raised is theirs to accept or return.
+        # The issued auditor judges any line; the organisation only a line it raised itself (one it transcribed from the
+        # auditor's email).
         if access.live_grant(user, req.package) is not None:
             return True
         return access.can_assemble(user) and req.requested_by_side == PbcRequest.Side.ORGANISATION
 
     @action(detail=False, methods=["get"])
     def export(self, request):
-        """The list as CSV, for the auditor's own tracker."""
         from config.csvsafe import csv_safe
 
         rows = self.filter_queryset(self.get_queryset())
@@ -312,7 +280,6 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
 
 
 class PbcItemViewSet(viewsets.ModelViewSet):
-    """Documents attached in answer to a request."""
     serializer_class = PbcItemSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ["request"]
@@ -356,10 +323,8 @@ class PbcItemViewSet(viewsets.ModelViewSet):
                              f"{req.reference}: attached '{item.document_name}' v{item.version}")
 
     def perform_destroy(self, instance):
-        # One step under the request's row lock, the one accept, return and
-        # withdraw take: an accept that lands between the check and the
-        # reopening must not be overwritten with "open", nor an accepted
-        # request lose its attachment.
+        # One step under the request's row lock (the one accept, return and withdraw take): an accept landing between
+        # the check and the reopening must not be overwritten with "open", nor an accepted request lose its attachment.
         with transaction.atomic():
             req = (PbcRequest.objects.select_for_update(of=("self",))
                    .select_related("package").get(pk=instance.request_id))
@@ -370,9 +335,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
             record_package_event(self.request, req.package, "update",
                                  f"{req.reference}: detached '{instance.document_name}'")
             instance.delete()
-            # An answer with nothing attached and no note saying why is no
-            # answer: `provide` would have refused it, so the request goes back
-            # to open.
+            # An answer with nothing attached and no note is no answer (provide would refuse it): back to open.
             if (req.status == PbcRequest.Status.PROVIDED and not req.response_note
                     and not req.items.exists()):
                 req.status = PbcRequest.Status.OPEN
@@ -389,15 +352,8 @@ class PbcItemViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _attached_file(item):
-        """The file as it stood when it was attached, or None.
-
-        The item records the document's version and digest at attachment, the
-        way pinned package evidence does, and these two routes are the
-        folder-ACL bypass a grant buys. Serving ``document.file`` would hand the
-        auditor whatever the document holds now, after any later version, while
-        the item still names the version and digest somebody attached. The
-        archived version is what the attachment stands for; without it, the
-        attachment is gone rather than silently replaced."""
+        """The file as it stood when attached, or None: ``document.file`` would hand the auditor whatever a later
+        version holds while the item still names the attached version and digest. No archived version means gone."""
         document = item.document
         if document is None or not document.file:
             return None
@@ -406,17 +362,21 @@ class PbcItemViewSet(viewsets.ModelViewSet):
         archived = document.versions.filter(version=item.version).first()
         return archived.file if archived is not None and archived.file else None
 
-    @action(detail=True, methods=["get"])
-    def preview(self, request, pk=None):
-        from documents.views import preview_response
-
-        item = self.get_object()
+    def _stored_for_read(self, request, item):
         stored = self._attached_file(item)
         if stored is None:
             raise ValidationError({"detail": "This file is no longer available."})
         monitor.refuse_if_quarantined(item.document)
         package = item.request.package
         self._touch_grant(request, package)
+        return stored, package
+
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        from documents.views import preview_response
+
+        item = self.get_object()
+        stored, package = self._stored_for_read(request, item)
         record_package_event(request, package, "read",
                              f"previewed '{item.document_name}' from {item.request.reference} in package {package.pk}")
         return preview_response(request, stored, item.document_name, item.document)
@@ -424,12 +384,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         item = self.get_object()
-        stored = self._attached_file(item)
-        if stored is None:
-            raise ValidationError({"detail": "This file is no longer available."})
-        monitor.refuse_if_quarantined(item.document)
-        package = item.request.package
-        self._touch_grant(request, package)
+        stored, package = self._stored_for_read(request, item)
         record_package_event(request, package, "read",
                              f"read '{item.document_name}' from {item.request.reference} in package {package.pk}")
         return serve_stored_file(stored, item.document_name)

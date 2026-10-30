@@ -1,4 +1,3 @@
-"""Migration 0006 (backup codes move from the device to the account) runs both ways."""
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase

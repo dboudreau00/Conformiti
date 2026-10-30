@@ -1,6 +1,4 @@
-"""Vendor register API. Readable by every signed-in user (owner and control
-pickers need the names); written by the frameworks capability, which is the
-one that already governs control ownership."""
+"""Readable by every signed-in user (owner and control pickers need the names); written by the frameworks capability."""
 import csv
 
 from django.http import HttpResponse
@@ -42,13 +40,8 @@ class VendorViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "tier", "next_review_date", "updated_at"]
 
     def get_queryset(self):
-        """The counts the register shows come from annotations, so a page of
-        vendors is a handful of queries rather than three per row.
-
-        Those counts make it a GROUP BY query, which Django runs without
-        Meta.ordering, so the order is explicit: Meta.ordering, then the id as
-        a unique tie-break, or pages may repeat or skip a vendor. A valid
-        ?ordering= still replaces it."""
+        """Counts come from annotations, not three queries per row. GROUP BY drops Meta.ordering, so the order is
+        explicit (name, then the id as a unique tie-break); a valid ?ordering= still replaces it."""
         from django.db.models import Count, Prefetch, Q
 
         return (
@@ -69,8 +62,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         from documents.access import accessible_folder_ids
 
         context = super().get_serializer_context()
-        # Computed once per request: the nested assessments blank out any
-        # document the reader cannot see, and must not recompute this per row.
+        # Once per request: nested assessments blank out documents the reader cannot see, without recomputing per row.
         context["visible_folders"] = accessible_folder_ids(self.request.user)
         return context
 
@@ -85,22 +77,19 @@ class VendorViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         before = (serializer.instance.review_cadence, serializer.instance.last_reviewed)
         vendor = serializer.save()
-        # Only a change to the clock's inputs moves the clock; editing the
-        # notes must not push a due review into next year.
+        # Only a change to the clock's inputs moves the clock: editing notes must not push a due review out.
         if (vendor.review_cadence, vendor.last_reviewed) != before or not vendor.next_review_date:
             vendor.compute_next_review()
             vendor.save(update_fields=["next_review_date"])
 
     @action(detail=True, methods=["post"])
     def mark_reviewed(self, request, pk=None):
-        """Record a completed periodic review and reset the clock."""
         vendor = self.get_object()
         vendor.last_reviewed = timezone.localdate()
         vendor.compute_next_review()
         vendor.save(update_fields=["last_reviewed", "next_review_date", "updated_at"])
         return Response(VendorSerializer(vendor, context={"request": request}).data)
 
-    # ------------------------------------------------ shared responsibility
     def _controls_for(self, request):
         controls = Control.objects.select_related("category__framework").exclude(
             status="not_applicable")
@@ -111,9 +100,7 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="matrix")
     def matrix(self, request, pk=None):
-        """The in-browser grid: every control in scope with this vendor's
-        stated responsibility and statements, blank where nothing has been
-        said yet, so the prompt-through-the-controls flow has somewhere to go."""
+        """Every control in scope with this vendor's stated responsibility, blank where nothing has been said yet."""
         vendor = self.get_object()
         stated = {r.control_id: r for r in SharedResponsibility.objects.filter(vendor=vendor)}
         rows, done = [], 0
@@ -123,8 +110,6 @@ class VendorViewSet(viewsets.ModelViewSet):
                 done += 1
             rows.append({
                 "control": c.pk, "control_id": c.control_id, "title": c.title,
-                # The name as well as the key: this matrix is shared with the
-                # vendor, and a screen of slugs is not.
                 "framework": c.category.framework.key,
                 "framework_name": c.category.framework.name,
                 "category": c.category.name,
@@ -140,13 +125,8 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     @matrix.mapping.put
     def matrix_save(self, request, pk=None):
-        """Bulk upsert from the grid or from a confirmed import.
-
-        Body: {"rows": [{"control": id, "responsibility": ..., "provider_statement": ...,
-        "customer_statement": ...}], "source": "manual"|"import"}. A row whose
-        responsibility is null clears that control. Everything is validated
-        before anything is written.
-        """
+        """Bulk upsert; a row with a null responsibility clears that control. Everything is validated before anything
+        is written."""
         vendor = self.get_object()
         rows = request.data.get("rows")
         source = "import" if request.data.get("source") == "import" else "manual"
@@ -193,7 +173,6 @@ class VendorViewSet(viewsets.ModelViewSet):
                               "updated_by": request.user},
                 )
             if layout:
-                # Remember how they laid it out, so it can go back the same way.
                 vendor.matrix_layout = layout
                 vendor.save(update_fields=["matrix_layout", "updated_at"])
         return Response({"saved": len(clean), "cleared": len(clear), "layout_saved": bool(layout)})
@@ -201,20 +180,14 @@ class VendorViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="matrix/parse",
             parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
     def matrix_parse(self, request, pk=None):
-        """Read the vendor's own matrix file and report what was recognised.
-
-        Writes nothing. The client shows the result, lets the person fix any
-        unmatched references or unrecognised responsibilities, then PUTs the
-        confirmed rows to ``matrix`` with source "import".
-        """
+        """Report what was recognised in the vendor's own matrix file; writes nothing."""
         from governance.risk_import import MAX_FILE_BYTES
 
         vendor = self.get_object()
         upload = request.FILES.get("file")
         if upload is None:
             raise ValidationError({"file": "Attach a .csv or .xlsx file."})
-        # A bare "6.1" is a PCI requirement, an ISO clause and a SOC 2 point
-        # of focus; the file is about one of them, and only the person knows.
+        # A bare "6.1" exists in PCI, ISO and SOC 2: only the person knows which one the file is about.
         if not (request.data.get("framework") or request.query_params.get("framework")):
             raise ValidationError({"framework": "Say which framework the file refers to."})
         if upload.size > MAX_FILE_BYTES:
@@ -232,9 +205,7 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="matrix/export")
     def matrix_export(self, request, pk=None):
-        """The matrix as CSV, in our layout or, with ``?layout=vendor``, in the
-        column layout of the file the vendor last sent, so it can go back to
-        them looking like their own document with our side filled in."""
+        """The matrix as CSV, in our layout or, with ``?layout=vendor``, in the layout of the file they last sent."""
         from config.csvsafe import csv_safe
 
         vendor = self.get_object()
@@ -264,13 +235,11 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def questionnaire(self, request):
-        """The shipped question set, so the UI never hard-codes it."""
         return Response(DEFAULT_QUESTIONNAIRE)
 
     @action(detail=True, methods=["post"], url_path="questionnaire/send")
     def questionnaire_send(self, request, pk=None):
-        """Email the vendor a time-boxed link to answer the questionnaire
-        themselves. The link is in the response exactly once."""
+        """Email the vendor a time-boxed link; the link appears in this response exactly once."""
         vendor = self.get_object()
         try:
             invite, link = questionnaire_lib.create_invite(
@@ -354,8 +323,7 @@ class VendorAssessmentViewSet(viewsets.ModelViewSet):
 
 
 class QuestionnaireInviteViewSet(viewsets.ReadOnlyModelViewSet):
-    """The links sent out, and the one thing to do to one: withdraw it. New
-    links are issued from the vendor (``/vendors/{id}/questionnaire/send/``)."""
+    """Read-only apart from revoke; links are issued from ``/vendors/{id}/questionnaire/send/``."""
     serializer_class = QuestionnaireInviteSerializer
     permission_classes = [CanManageFrameworks]
     filterset_fields = ["vendor"]

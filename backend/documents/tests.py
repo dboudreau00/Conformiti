@@ -1,4 +1,3 @@
-"""Folder RBAC, tree integrity, document lifecycle and upload validation."""
 import xml.etree.ElementTree as ET
 
 from django.core.exceptions import ValidationError
@@ -56,7 +55,6 @@ class FolderVisibilityTests(APITestBase):
         grant(self.tree.cat, role=self.roles["Viewer"], level=VIEW)
         grant(self.tree.ctrl2, user=self.owner, level=MANAGE)
         self.assertEqual(self.client_for(self.viewer).get("/api/folder-permissions/").data["count"], 0)
-        # owen manages ctrl2 only -> sees only grants on it
         self.assertEqual(
             {p["folder"] for p in self.client_for(self.owner).get("/api/folder-permissions/").data["results"]},
             {self.tree.ctrl2.pk},
@@ -71,7 +69,6 @@ class FolderVisibilityTests(APITestBase):
         grant(self.tree.ctrl2, user=self.owner, level=MANAGE)
         r = c.post("/api/folder-permissions/", {"folder": self.tree.ctrl2.pk, "role": self.roles["Viewer"].pk, "access_level": "view"}, format="json")
         self.assertEqual(r.status_code, 201)
-        # cannot repoint the grant to a folder they don't manage
         r = c.patch(f"/api/folder-permissions/{r.data['id']}/", {"folder": self.tree.ctrl1.pk}, format="json")
         self.assertEqual(r.status_code, 403)
 
@@ -87,13 +84,6 @@ class FolderVisibilityTests(APITestBase):
 
 
 class HeavilyLinkedDocumentTests(APITestBase):
-    """A policy pre-mapped into every shipped library carries thousands of
-    control links. Django expands a forward-key prefetch on SQLite into one
-    OR clause per related row, and SQLite refuses an expression deeper than
-    1000, so the document list would answer 500 for the organisations with
-    the most content. The links are prefetched with their control joined in,
-    which is one query on every backend."""
-
     def test_the_list_answers_with_more_than_a_thousand_links(self):
         from compliance.models import Control, ControlEvidence
 
@@ -149,7 +139,6 @@ class FolderIntegrityTests(APITestBase):
         self.assertEqual(c.delete(f"/api/folders/{self.tree.ctrl1.pk}/").status_code, 403)
         self.assertEqual(c.patch(f"/api/folders/{self.tree.ctrl1.pk}/", {"name": "renamed"}, format="json").status_code, 403)
         self.assertEqual(c.patch(f"/api/folders/{self.tree.ctrl1.pk}/", {"parent": self.tree.root.pk}, format="json").status_code, 403)
-        # but their owner and description-ish fields are editable
         self.assertEqual(c.patch(f"/api/folders/{self.tree.ctrl1.pk}/", {"owner": self.owner.pk}, format="json").status_code, 200)
         self.assertTrue(Folder.objects.filter(pk=self.tree.ctrl1.pk).exists())
 
@@ -160,11 +149,8 @@ class FolderIntegrityTests(APITestBase):
         r = c.post("/api/folders/", {"name": "Scans", "parent": self.tree.ctrl1.pk}, format="json")
         self.assertEqual(r.status_code, 201)
         fid = r.data["id"]
-        # moving under a folder with only view access is refused
         self.assertEqual(c.patch(f"/api/folders/{fid}/", {"parent": self.tree.ctrl2.pk}, format="json").status_code, 403)
-        # making it top-level is reserved for folder managers
         self.assertEqual(c.patch(f"/api/folders/{fid}/", {"parent": None}, format="json").status_code, 403)
-        # viewer without manage cannot delete it
         grant(self.tree.ctrl1, user=self.viewer, level=EDIT)
         self.assertEqual(self.client_for(self.viewer).delete(f"/api/folders/{fid}/").status_code, 403)
         self.assertEqual(c.delete(f"/api/folders/{fid}/").status_code, 204)
@@ -213,8 +199,6 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(c.post(f"/api/documents/{doc.pk}/move/", {"folder": 999999}, format="json").status_code, 400)
 
     def test_a_hidden_folder_is_answered_like_a_missing_one(self):
-        """A folder the caller cannot see gets the reply a folder that does not
-        exist gets, on upload, PATCH and move alike: a 403 would confirm it."""
         grant(self.tree.ctrl1, user=self.owner, level=EDIT)
         doc = make_doc(self.tree.ctrl1, self.owner)
         c = self.client_for(self.owner)
@@ -232,9 +216,6 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(doc.folder_id, self.tree.ctrl1.pk)
 
     def test_the_owner_cannot_move_a_document_out_of_a_folder_they_only_view(self):
-        """PATCH `folder` takes what the move action takes: edit on the source
-        as well as on the destination. Owning the document lets them edit its
-        description with view access, not take it out of the folder."""
         grant(self.tree.ctrl1, user=self.owner, level=VIEW)
         grant(self.tree.ctrl2, user=self.owner, level=EDIT)
         doc = make_doc(self.tree.ctrl1, self.owner)
@@ -287,8 +268,6 @@ class DocumentLifecycleTests(APITestBase):
     def test_active_content_extensions_are_refused(self):
         c = self.client_for(self.manager)
         for bad in ("evil.html", "evil.svg", "run.exe", "s.ps1",
-                    # Macro-enabled Office: an analyst opens these without
-                    # thinking, which makes them a common delivery route.
                     "policy.docm", "figures.xlsm", "deck.pptm", "book.xlsb",
                     "saved.mhtml"):
             self.assertEqual(self._upload(c, self.tree.ctrl1, filename=bad).status_code, 400, bad)
@@ -299,12 +278,6 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(r.status_code, 400)
 
     def test_a_macro_document_renamed_to_docx_is_still_refused(self):
-        """The extension is the uploader's word for it. An OOXML file is a
-        zip, so the macro part is visible from here, and Office runs it
-        whatever the name says."""
-        import io
-        import zipfile
-
         def ooxml(*parts):
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, "w") as archive:
@@ -321,36 +294,22 @@ class DocumentLifecycleTests(APITestBase):
                                       content=ooxml("word/vbaProject.bin")).status_code, 400)
 
     def test_legacy_office_is_refused_by_name_and_by_shape(self):
-        """M-2, 0.9.5f. The macro-enabled OOXML names and the VBA project
-        inside a zip do not cover legacy Office: a .doc is an OLE2 compound
-        file, its macros live in a stream rather than in a zip member, and it
-        is still what arrives in a compliance inbox. The signature decides,
-        because the extension is the uploader's word and renaming it to .dat
-        would otherwise bypass the check."""
         ole2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64
         c = self.client_for(self.manager)
         for bad in ("policy.doc", "figures.xls", "deck.ppt", "memo.rtf"):
             with self.subTest(name=bad):
                 self.assertEqual(
                     self._upload(c, self.tree.ctrl1, filename=bad).status_code, 400, bad)
-        # The same file under a name nothing blocks.
         self.assertEqual(
             self._upload(c, self.tree.ctrl1, filename="attachment.dat",
                          content=ole2).status_code, 400)
-        # And a file that merely starts with something else is unaffected.
         self.assertEqual(
             self._upload(c, self.tree.ctrl1, filename="scan.pdf",
                          content=b"%PDF-1.4 still fine").status_code, 201)
 
     def test_a_packaged_object_inside_a_docx_is_refused(self):
-        """The other half of the same trick: no VBA project of its own, an
-        embedded OLE package instead. An embedded worksheet is a real thing
-        people do, so only the packaged-object streams are refused."""
-        import io as _io
-        import zipfile
-
         def ooxml(*parts):
-            buffer = _io.BytesIO()
+            buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, "w") as archive:
                 archive.writestr("[Content_Types].xml", "<Types/>")
                 archive.writestr("word/document.xml", "<w:document/>")
@@ -368,11 +327,8 @@ class DocumentLifecycleTests(APITestBase):
                          ).status_code, 201)
 
     def test_macros_are_found_in_opendocument_and_renamed_zips(self):
-        import io as _io
-        import zipfile
-
         def package(*parts, odf=False):
-            buffer = _io.BytesIO()
+            buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, "w") as archive:
                 if odf:
                     archive.writestr("mimetype", "application/vnd.oasis.opendocument.text")
@@ -390,7 +346,6 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(up("clean.odt", package(odf=True)), 201)
         self.assertEqual(up("macro.odt", package("Basic/Standard/Module1.xml", odf=True)), 400)
         self.assertEqual(up("macro.ods", package("Scripts/python/x.py", odf=True)), 400)
-        # Renamed: the shape decides, not the name.
         self.assertEqual(up("macro.dat", package("Basic/Standard/Module1.xml", odf=True)), 400)
         self.assertEqual(up("report.zip", package("xl/vbaProject.bin")), 400)
         self.assertEqual(up("report.bin", package("word/vbaProject.bin")), 400)
@@ -398,16 +353,8 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(up("backup.zip", package("scripts/run.sh", "embeddings/model.bin")), 201)
 
     def test_the_macro_rules_by_shape_hold_where_they_used_to_have_gaps(self):
-        """SECURITY.md promises "any zip, under any name" and ODF packages with
-        Basic/ or Scripts/. Three ways round that: bytes in front of the zip
-        (Office still opens it), an .odt with no mimetype or manifest entry,
-        and, the other way, an ordinary archive refused for a folder or a file
-        whose name merely mentions macros."""
-        import io as _io
-        import zipfile
-
         def package(members, prefix=b""):
-            buffer = _io.BytesIO(prefix)
+            buffer = io.BytesIO(prefix)
             buffer.seek(0, 2)
             with zipfile.ZipFile(buffer, "w") as archive:
                 for name in members:
@@ -433,13 +380,7 @@ class DocumentLifecycleTests(APITestBase):
         self.assertEqual(up("evidence.zip", package(["export/xl/vbaProject.bin"])), 400)
 
     def test_a_macro_part_past_the_old_scan_limit_is_found(self):
-        """The scan reads every name, not the first two thousand, so entry
-        2001 is not a place to hide. Reading the central directory is what
-        costs, and namelist() has already done it."""
-        import io as _io
-        import zipfile
-
-        buffer = _io.BytesIO()
+        buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("[Content_Types].xml", "<Types/>")
             for n in range(2100):
@@ -455,12 +396,6 @@ class DocumentLifecycleTests(APITestBase):
 
 
 class AuditorWriteTests(APITestBase):
-    """L-5, 0.9.5h. Folder writes go through effective_access, which caps an
-    external auditor at view. Document writes must not go round it: if the
-    owner short-circuit returned True before anything asked what the caller
-    was, an auditor made the owner of a document in a folder they had been
-    granted could edit its name, status and description."""
-
     def setUp(self):
         super().setUp()
         self.doc = make_doc(self.tree.ctrl1, owner=self.auditor, name="Owned by the auditor")
@@ -478,9 +413,7 @@ class AuditorWriteTests(APITestBase):
         self.assertEqual(r.status_code, 200, getattr(r, "data", r))
 
     def test_an_ordinary_owner_still_edits_their_own(self):
-        """The control is the owner short-circuit itself: it still works for
-        anyone who is not an external auditor. Owen needs sight of the folder
-        to reach the row at all, which is a different rule."""
+        """Owning a document still lets a non-auditor edit it; the view grant only lets them reach the row."""
         grant(self.tree.ctrl1, user=self.owner, level=VIEW)
         mine = make_doc(self.tree.ctrl1, owner=self.owner, name="Owned by Owen")
         r = self.client_for(self.owner).patch(
@@ -489,13 +422,6 @@ class AuditorWriteTests(APITestBase):
 
 
 class EvidenceDownloadTests(APITestBase):
-    """Reading a stored file is an authorised, audited act.
-
-    Upload paths are derived from the folder tree and the file name, so if
-    nginx served the media volume as a plain alias, anyone who could reach the
-    site and guess a path could read any document, with nothing recorded.
-    """
-
     def setUp(self):
         super().setUp()
         self.doc = make_doc(self.tree.ctrl1, name="Access Control Policy",
@@ -524,8 +450,6 @@ class EvidenceDownloadTests(APITestBase):
         self.assertIn("Access Control Policy", entry.detail)
 
     def test_the_response_is_always_an_attachment_and_never_inline(self):
-        """An uploaded .html or .svg served inline would be stored XSS in the
-        application's own origin."""
         grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
         r = self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/download/")
         self.assertTrue(r["Content-Disposition"].startswith("attachment"))
@@ -534,7 +458,6 @@ class EvidenceDownloadTests(APITestBase):
         self.assertIn("no-store", r["Cache-Control"])
 
     def test_the_api_never_hands_out_a_storage_url(self):
-        """The serializer must not publish a path that bypasses this view."""
         grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
         r = self.client_for(self.viewer).get(f"/api/documents/{self.doc.pk}/")
         self.assertEqual(r.status_code, 200)
@@ -559,24 +482,17 @@ class EvidenceDownloadTests(APITestBase):
         r = c.get(f"/api/documents/{self.doc.pk}/versions/{version_id}/download/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(b"".join(r.streaming_content), b"policy bytes")
-        # ...and someone with no access to the folder still gets nothing.
         self.assertEqual(
             self.client_for(self.viewer).get(
                 f"/api/documents/{self.doc.pk}/versions/{version_id}/download/").status_code,
             404)
-        # A version id that is not a number is refused, not a crash (a dotted
-        # one never reaches the view: the route takes no dot).
+        # Non-numeric ids are refused, not a crash; a dotted one never reaches the view (the route takes no dot).
         for bad in ("abc", str(2 ** 63), "-1"):
             with self.subTest(bad=bad):
                 self.assertEqual(c.get(f"/api/documents/{self.doc.pk}/versions/{bad}/download/").status_code, 400)
 
 
 class DownloadNameTests(APITestBase):
-    """A download is named after the document and keeps the stored file's
-    extension and type. 'Access Control Policy' uploaded from policy.pdf must
-    not download as 'Access Control Policy' with no extension and as
-    application/octet-stream, which no OS would open by double-click."""
-
     def setUp(self):
         super().setUp()
         grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
@@ -615,8 +531,7 @@ class DownloadNameTests(APITestBase):
         self.assertIn('filename="Policy v1.2.pdf"', r["Content-Disposition"])
 
     def test_the_type_comes_from_the_stored_file_and_is_octet_stream_only_when_unknown(self):
-        # Types every platform's mimetypes agrees on: the Windows registry
-        # can remap .csv, .js and the Office formats.
+        # Types every platform's mimetypes agrees on: the Windows registry can remap .csv, .js and the Office formats.
         r = self._get(self._doc("Network diagram", "diagram.png", b"\x89PNG\r\n\x1a\n"))
         self.assertEqual(r["Content-Type"], "image/png")
         r = self._get(self._doc("Notes", "NOTES", b"no extension at all"))
@@ -647,7 +562,6 @@ class DownloadNameTests(APITestBase):
         r = self._get(doc, f"versions/{version.pk}/download/")
         self.assertIn('filename="Network diagram (v1).png"', r["Content-Disposition"])
         self.assertEqual(r["Content-Type"], "image/png")
-        # The current file is the PDF, and says so.
         r = self._get(doc)
         self.assertIn('filename="Network diagram.pdf"', r["Content-Disposition"])
         self.assertEqual(r["Content-Type"], "application/pdf")
@@ -671,8 +585,6 @@ class DownloadNameTests(APITestBase):
                          "the bytes are a PDF whatever the title says")
 
     def test_a_compressed_tarball_keeps_both_suffixes(self):
-        """'Backup logs' from logs.tar.gz must not download as 'Backup logs.gz',
-        which decompresses to an extensionless tar."""
         from documents.downloads import download_filename
 
         r = self._get(self._doc("Backup logs", "logs.tar.gz", b"\x1f\x8b\x08\x00"))
@@ -688,8 +600,7 @@ class DownloadNameTests(APITestBase):
         self.assertEqual(download_filename("Backup.TAR.XZ", "a/b.tar.xz"), "Backup.tar.xz")
         self.assertEqual(download_filename("Backup.tar", "a/b.tar.gz"), "Backup.tar.gz")
         self.assertEqual(download_filename(None, "a/logs.tar.gz"), "logs.tar.gz")
-        # A name that already ends in the compression suffix gets one suffix,
-        # not "Report.gz.tar.gz".
+        # A name already ending in a compression suffix gets one suffix, not "Report.gz.tar.gz".
         self.assertEqual(download_filename("Report.gz", "a/x.tar.gz"), "Report.tar.gz")
         self.assertEqual(download_filename("Report.BZ2", "a/x.tar.bz2", " (v2)"), "Report (v2).tar.bz2")
         self.assertEqual(download_filename("Report.xz", "a/x.tar.xz"), "Report.tar.xz")
@@ -700,10 +611,6 @@ class DownloadNameTests(APITestBase):
 
 
 class OwnerNameTests(APITestBase):
-    """createsuperuser asks for no first or last name, so the first
-    administrator's documents must not show no owner while the upload form
-    offers '<username> (me)'."""
-
     def test_an_account_with_no_name_is_shown_by_its_username(self):
         from testutils import make_user
 
@@ -728,8 +635,6 @@ class OwnerNameTests(APITestBase):
         self.assertEqual(c.get(f"/api/documents/{doc.pk}/").data["owner_name"], "")
 
     def test_the_other_pages_name_a_nameless_account_the_same_way(self):
-        """Controls, risks and vendors must not show such an owner as
-        'Unassigned', nor the dashboard's overdue list as nobody."""
         from governance.models import Risk
         from testutils import make_user
         from vendors.models import Vendor
@@ -783,8 +688,6 @@ class OwnerNameTests(APITestBase):
 
 
 class FolderOrderTests(APITestBase):
-    """Framework folders come in clause order: A.5.2 before A.5.10."""
-
     def test_the_tree_sorts_numbers_as_numbers(self):
         for name in ["A.5.10 - Acceptable use", "A.5.2 - Roles", "A.5.1 - Policies",
                      "Req 10 - Log", "Req 2 - Config", "req 3 - lower case", "Req 1 - Network"]:
@@ -804,39 +707,28 @@ class FolderOrderTests(APITestBase):
         rows = c.get(f"/api/folders/?parent={self.tree.ctrl2.pk}").data["results"]
         self.assertEqual([f["name"] for f in rows],
                          ["A.5.1 - Policies", "A.5.2 - Roles", "A.5.10 - Acceptable use"])
-        # Unfiltered: the top level first, then each parent's children.
         rows = c.get("/api/folders/").data["results"]
         self.assertIsNone(rows[0]["parent"])
         mine = [f["name"] for f in rows if f["parent"] == self.tree.ctrl2.pk]
         self.assertEqual(mine, ["A.5.1 - Policies", "A.5.2 - Roles", "A.5.10 - Acceptable use"])
-        # A caller's own ordering still wins.
         rows = c.get(f"/api/folders/?parent={self.tree.ctrl2.pk}&ordering=-name").data["results"]
         self.assertEqual([f["name"] for f in rows],
                          ["A.5.2 - Roles", "A.5.10 - Acceptable use", "A.5.1 - Policies"])
 
 
 class UnorderedPageGuardTests(APITestBase):
-    """APITestBase turns Django's UnorderedObjectListWarning into an error, so
-    a paginated list with no stable order fails its test instead of printing
-    a warning. FolderPermission has no Meta.ordering, so its bare queryset is
-    the unordered case."""
+    """APITestBase turns UnorderedObjectListWarning into an error; FolderPermission has no Meta.ordering."""
 
     def test_paging_an_unordered_queryset_fails(self):
         from django.core.paginator import Paginator, UnorderedObjectListWarning
 
         with self.assertRaises(UnorderedObjectListWarning):
             Paginator(FolderPermission.objects.all(), 2)
-        # Ordered, as the viewsets order it, it pages normally.
         grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
         self.assertEqual(Paginator(FolderPermission.objects.order_by("pk"), 2).count, 1)
 
 
-# --------------------------------------------------------------------------- #
-# Malware scanning
-# --------------------------------------------------------------------------- #
 class FakeClamdHandler(socketserver.BaseRequestHandler):
-    """Speaks just enough of the clamd protocol to exercise the client."""
-
     def handle(self):
         buf = b""
         while b"\0" not in buf:
@@ -894,8 +786,6 @@ class FakeClamd(socketserver.ThreadingTCPServer):
 
 
 class VirusScanTests(APITestBase):
-    """Scanning is off by default; when it is on it fails closed."""
-
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -930,16 +820,12 @@ class VirusScanTests(APITestBase):
             "file": SimpleUploadedFile(name, content),
         })
 
-    # ---------------------------------------------------------------- default
     def test_scanning_is_off_by_default(self):
-        """Benign bytes and a mock: writing a real EICAR file into MEDIA_ROOT
-        would be quarantined by on-access AV on a developer machine."""
         with mock.patch("documents.clamav.scan_stream") as scan:
             r = self.upload(b"an ordinary policy")
             self.assertEqual(r.status_code, 201, r.data)
             scan.assert_not_called()
 
-    # ------------------------------------------------------------------- clean
     def test_a_clean_upload_is_stored_byte_for_byte(self):
         with self.scanning():
             r = self.upload(b"an ordinary policy")
@@ -950,7 +836,6 @@ class VirusScanTests(APITestBase):
             self.assertEqual(fh.read(), b"an ordinary policy",
                              "the scan must not consume the upload")
 
-    # ---------------------------------------------------------------- infected
     def test_an_infected_upload_is_refused_audited_and_not_stored(self):
         before = Document.objects.count()
         with self.scanning():
@@ -969,29 +854,21 @@ class VirusScanTests(APITestBase):
             AuditLog.objects.filter(detail__contains="refused infected upload").exists(),
             "DRF's handler calls set_rollback(); the row must still be there")
 
-    # ------------------------------------------------------------ authorization
     def test_scanning_runs_after_the_folder_permission_check(self):
-        """A caller who may not write to the folder must never reach the
-        scanner: that would be a signature-set oracle and a DoS lever."""
         def upload():
             with self.scanning():
                 return self.client_for(self.viewer).post("/api/documents/", {
                     "name": "Not allowed", "folder": self.tree.ctrl1.pk,
                     "file": SimpleUploadedFile("x.txt", eicar_bytes()),
                 })
-        # A folder hidden from them is answered as one that does not exist...
         self.assertEqual(upload().status_code, 400)
         self.assertEqual(self.clamd.received, b"", "the scanner must not have been called")
-        # ...and one they can see but not write to is a 403; neither scans.
         grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
         self.assertEqual(upload().status_code, 403)
         self.assertEqual(self.clamd.received, b"", "the scanner must not have been called")
 
-    # ------------------------------------------------------------- fail closed
     def refused_upload(self):
-        """Upload while the scanner cannot answer. The scan failure and the
-        503 it becomes are both logged as ERRORs on purpose; captured here and
-        checked, so the test output does not read as a crash."""
+        """Upload while the scanner cannot answer; both ERROR logs it produces are captured and checked."""
         with self.assertLogs("documents.scanning", level="ERROR") as scan_log, \
                 self.assertLogs("django.request", level="ERROR") as request_log:
             r = self.upload(b"harmless")
@@ -1013,11 +890,7 @@ class VirusScanTests(APITestBase):
             r = self.refused_upload()
         self.assertEqual(r.status_code, 503)
 
-    # --------------------------------------------------------- limits exceeded
     def test_content_the_scanner_could_not_inspect_is_refused_not_called_malware(self):
-        """ClamAV reports Heuristics.Limits.Exceeded as FOUND. Storing it would
-        mean keeping a file that carries the claim it was scanned; calling it
-        malware would be wrong in the other direction."""
         self.clamd.forced = b"stream: Heuristics.Limits.Exceeded.MaxFileSize FOUND\0"
         with self.scanning():
             r = self.upload(b"a big archive")
@@ -1033,7 +906,6 @@ class VirusScanTests(APITestBase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("could not be fully inspected", str(r.data))
 
-    # -------------------------------------------------------------- every path
     def test_a_new_version_is_scanned(self):
         doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Versioned")
         with self.scanning():
@@ -1063,7 +935,6 @@ class VirusScanTests(APITestBase):
             })
         self.assertEqual(r.status_code, 400)
 
-    # ---------------------------------------------------------------- protocol
     def test_the_protocol_vectors(self):
         self.assertIsNone(clamav.parse_response("stream: OK"))
         with self.assertRaises(clamav.InfectedError) as cm:
@@ -1084,11 +955,8 @@ class VirusScanTests(APITestBase):
         self.assertTrue(eicar_bytes().startswith(b"X5O!P%@AP[4"))
 
 
-# --------------------------------------------------------------------------- #
-# In-browser preview
-# --------------------------------------------------------------------------- #
 def _docx(paragraphs):
-    """A minimal .docx: (style, text) pairs. style in {"Heading1", "ListParagraph", ""}."""
+    """A minimal .docx from (style, text) pairs; style is "Heading1", "list" or ""."""
     W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     body = ""
     for style, text in paragraphs:
@@ -1130,8 +998,7 @@ def _xlsx_simple(rows):
 
 
 class OoxmlEscapeTests(SimpleTestCase):
-    """What a workbook's _xHHHH_ escapes mean (ECMA-376 22.4.2.4), shared by
-    the spreadsheet importers and the preview."""
+    """What a workbook's _xHHHH_ escapes mean (ECMA-376 22.4.2.4)."""
 
     CASES = [
         ("a carriage return", "line one_x000D_", "line one\r"),
@@ -1197,11 +1064,6 @@ class SafeXmlTests(SimpleTestCase):
         self.assertEqual(root.text, "the <!DOCTYPE a> line")
 
     def test_a_part_with_more_elements_than_a_document_needs_is_refused_before_a_tree_is_built(self):
-        """A few megabytes of empty rows expand to a tree many times their size.
-        Every caller gets the bound, so the importers are held to it as the
-        preview is."""
-        from unittest import mock
-
         from documents import ooxml
 
         with mock.patch.object(ooxml, "MAX_ELEMENTS", 50):
@@ -1246,7 +1108,6 @@ class PreviewTests(APITestBase):
         self.assertEqual(self._preview(jpg)["Content-Type"], "image/jpeg")
 
     def test_the_extension_never_overrides_the_bytes(self):
-        """A file called report.pdf that is really HTML must not be shown inline."""
         doc = self._doc("report.pdf", b"<html><script>alert(1)</script></html>")
         r = self._preview(doc)
         self.assertEqual(r.status_code, 415)
@@ -1277,9 +1138,6 @@ class PreviewTests(APITestBase):
         self.assertEqual(r.data["sheets"][0]["rows"], [["Control", "Owner"], ["TC1.1", "Owen"]])
 
     def test_excel_text_comes_back_with_its_character_escapes_decoded(self):
-        """Excel writes a carriage return as _x000D_ and the underscore of a
-        literal _xHHHH_ as _x005F_: the preview shows the text, not the escape,
-        whichever way the cell holds it."""
         written = ["Line one_x000D__x000A_Line two", "_x005F_x0041_", "_xD83D__xDE00_", "_x12_", "a_x0000_b"]
         meant = ["Line one\r\nLine two", "_x0041_", "\U0001F600", "_x12_", "a_x0000_b"]
         for storage in ("inline", "shared", "formula"):
@@ -1297,8 +1155,6 @@ class PreviewTests(APITestBase):
         self.assertEqual(r.data["sheets"][0]["rows"], [["a", "b"], ["1", "2"]])
 
     def test_the_stored_filename_decides_the_kind_when_the_title_has_none(self):
-        """Titles are typed without extensions ("Access Control Policy"); the
-        file on disk keeps the real one, and that is what the preview reads."""
         doc = self._doc("Access Control Policy", b"plain words")
         self.assertTrue(doc.file.name.endswith(".txt"))
         r = self._preview(doc)
@@ -1320,9 +1176,6 @@ class PreviewTests(APITestBase):
         self.assertEqual(r.status_code, 415)
 
     def test_a_docx_with_a_doctype_is_not_parsed(self):
-        """The preview parses through safe_fromstring: a part that declares a
-        DOCTYPE (the start of an entity-expansion attack) is a read failure,
-        and the entity is never expanded."""
         W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         doc_xml = ('<?xml version="1.0"?><!DOCTYPE w [<!ENTITY a "expanded">]>'
                    f'<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:t>&a;</w:t></w:r></w:p>'
@@ -1336,8 +1189,6 @@ class PreviewTests(APITestBase):
         self.assertNotIn("expanded", str(r.data))
 
     def test_a_small_docx_that_expands_into_a_forest_of_tags_is_refused(self):
-        """The zip header's declared sizes can be accurate and the part still
-        be a bomb: 3 MB of empty paragraphs is a tree many times that size."""
         W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         body = b"<w:p/>" * 500_000
         doc_xml = (f'<?xml version="1.0"?><w:document xmlns:w="{W}"><w:body>'.encode() + body

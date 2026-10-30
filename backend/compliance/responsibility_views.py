@@ -1,17 +1,3 @@
-"""
-Responsibility matrices: who is Responsible, Accountable, Consulted and
-Informed for each control, including when "who" is a vendor.
-
-Two things this settles that a control's single ``owner`` field cannot:
-
-* **Shared responsibility.** Under SOC 2 or PCI DSS a control like physical
-  security is *Responsible*: the cloud provider, *Accountable*: us. An auditor
-  asks for exactly that split, and the answer has to name the vendor and point
-  at the assurance we hold over them.
-* **One Accountable.** RACI's only hard rule. The API refuses a second
-  Accountable party on a control rather than letting the matrix drift into
-  "everyone and no one".
-"""
 import csv
 
 from django.db.models import Prefetch
@@ -52,13 +38,15 @@ class ResponsibilitySerializer(serializers.ModelSerializer):
             return obj.vendor.name
         return obj.user.get_full_name() or obj.user.get_username() if obj.user_id else ""
 
+    def _merged(self, attrs, field):
+        if field in attrs:
+            return attrs[field]
+        return getattr(self.instance, field) if self.instance is not None else None
+
     def validate(self, attrs):
-        # On a PATCH the party is usually not re-sent; judge the merged row,
-        # so a note-only edit passes and a switch of party kind that would
-        # leave both set is refused here rather than by the database.
-        inst = self.instance
-        user = attrs["user"] if "user" in attrs else (inst.user if inst is not None else None)
-        vendor = attrs["vendor"] if "vendor" in attrs else (inst.vendor if inst is not None else None)
+        # Judge the merged row: a PATCH rarely re-sends the party.
+        user = self._merged(attrs, "user")
+        vendor = self._merged(attrs, "vendor")
         if bool(user) == bool(vendor):
             raise ValidationError({"party": "Name exactly one of user or vendor "
                                             "(clear the other when switching)."})
@@ -89,12 +77,6 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def matrix(self, request):
-        """The grid: one row per control, one cell per RACI role.
-
-        The control's ``owner`` is shown as Accountable when no explicit
-        Accountable row exists, so a register that predates matrices is not
-        suddenly empty in the A column.
-        """
         controls = Control.objects.select_related("category__framework", "owner")
         framework = request.query_params.get("framework")
         if framework:
@@ -124,8 +106,7 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
                     "name": r.vendor.name if r.vendor_id else (r.user.get_full_name() or r.user.get_username()),
                     "note": r.note,
                 })
-            # A vendor that states it does (or shares) this control is
-            # Responsible for it, whether or not anyone typed a RACI row.
+            # A vendor that states it does or shares this control counts as Responsible even without a RACI row.
             already = {(x["kind"], x["party_id"]) for x in cells["responsible"]}
             for sr in c.shared_responsibilities.all():
                 if ("vendor", sr.vendor_id) in already:

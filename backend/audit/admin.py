@@ -10,9 +10,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     search_fields = ("detail", "object_id")
     readonly_fields = [f.name for f in AuditLog._meta.fields]
 
-    # The trail is read-only here as it is in the API: nobody, a superuser
-    # included, adds, edits or deletes an entry. Leaving delete at Django's
-    # default would let "Delete selected" clear the trail.
+    # Read-only for everyone, a superuser included: Django's default delete would let "Delete selected" clear the trail.
     def has_add_permission(self, request):
         return False
 

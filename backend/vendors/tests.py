@@ -1,8 +1,3 @@
-"""
-Vendor risk: the register, assurance posture, the shared responsibility
-matrix, the import recogniser, and how vendors surface in RACI, readiness and
-the notifications feed.
-"""
 import io
 import zipfile
 from datetime import timedelta
@@ -27,8 +22,7 @@ def _vendor(**extra):
 
 
 def _xlsx(rows):
-    """A minimal .xlsx with one sheet and inline strings, enough for the
-    stdlib reader the importer sits on."""
+    """A minimal .xlsx (one sheet, inline strings): enough for the stdlib reader the importer uses."""
     def cell(ref, value):
         text = str(value).replace("&", "&amp;").replace("<", "&lt;")
         return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'
@@ -56,9 +50,6 @@ def _xlsx(rows):
     return buf.getvalue()
 
 
-# --------------------------------------------------------------------------- #
-# Register
-# --------------------------------------------------------------------------- #
 class VendorRegisterTests(APITestBase):
     def test_everyone_reads_and_only_the_frameworks_capability_writes(self):
         v = _vendor()
@@ -115,8 +106,7 @@ class VendorRegisterTests(APITestBase):
         self.assertLess(len(ctx.captured_queries), 12, len(ctx.captured_queries))
 
     def test_the_list_and_the_export_cost_the_same_queries_for_one_vendor_and_for_many(self):
-        """A bound of "fewer than twelve" passes a query per vendor for the
-        first few vendors. Equal counts for one and for six do not."""
+        """Equal counts for one vendor and for six catch a query per vendor; a bound like "under twelve" would not."""
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
 
@@ -143,8 +133,6 @@ class VendorRegisterTests(APITestBase):
         self.assertIn("Northwind Cloud", r.content.decode("utf-8"))
 
     def test_export_names_a_nameless_owner_by_username(self):
-        """createsuperuser asks for no first or last name, and such an owner
-        must not export as a blank."""
         import csv
 
         from testutils import make_user
@@ -161,7 +149,6 @@ class VendorRegisterTests(APITestBase):
         self.assertEqual(rows["Unowned Co"]["Owner"], "")
 
     def test_the_returned_questionnaire_email_greets_a_nameless_owner_by_username(self):
-        """It must not open with "Hello ," for such an owner."""
         from types import SimpleNamespace
 
         from django.core import mail
@@ -208,7 +195,6 @@ class AssuranceTests(APITestBase):
         self.assertEqual(v.assurance()["posture"], "unsatisfactory")
 
     def test_risk_rating_crosses_tier_with_posture(self):
-        """A critical vendor with nothing on file is the case this exists for."""
         critical = _vendor(name="A", tier="critical")
         self.assertEqual(critical.risk_rating(), "critical")
         self._assess(critical)
@@ -262,8 +248,6 @@ class AssuranceTests(APITestBase):
         self.assertEqual(ok.data["reviewed_by_name"], self.manager.get_full_name())
 
     def test_a_reader_without_the_folder_learns_a_copy_exists_but_not_which(self):
-        """The writer-side check has a mirror on the way out: the assessment
-        must not become an index of documents behind folder permissions."""
         v = _vendor()
         hidden = make_doc(self.tree.ctrl2, owner=self.owner, name="Northwind SOC 2 - qualified opinion")
         r = self.client_for(self.manager).post("/api/vendor-assessments/", {
@@ -295,9 +279,6 @@ class AssuranceTests(APITestBase):
         self.assertEqual({a["kind"] for a in detail["assessments"]}, {"pci_aoc", "resp_matrix"})
 
 
-# --------------------------------------------------------------------------- #
-# Shared responsibility matrix
-# --------------------------------------------------------------------------- #
 class MatrixTests(APITestBase):
     def setUp(self):
         super().setUp()
@@ -321,7 +302,6 @@ class MatrixTests(APITestBase):
         self.assertEqual((r.data["saved"], r.data["cleared"]), (2, 0))
         r = self.c.get(f"/api/vendors/{self.v.pk}/matrix/").data
         self.assertEqual(r["summary"]["stated"], 2)
-        # Clearing one
         r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
             {"control": self.tree.c1.pk, "responsibility": None}]}, format="json")
         self.assertEqual((r.data["saved"], r.data["cleared"]), (0, 1))
@@ -371,8 +351,6 @@ class MatrixTests(APITestBase):
 
 
 class ImportRecognitionTests(APITestBase):
-    """The vendor's file, whatever shape it came in."""
-
     def setUp(self):
         super().setUp()
         self.v = _vendor(name="Northwind")
@@ -398,7 +376,6 @@ class ImportRecognitionTests(APITestBase):
         self.assertEqual(by["TC1.1"]["customer_statement"], "You patch the guest")
 
     def test_two_mark_columns_in_the_pci_layout(self):
-        """AWS-style: X under the provider, X under the customer, both = shared."""
         csv = ("Req #,Northwind,Customer\n"
                "TC1.1,X,\n"
                "TC1.2,X,X\n").encode()
@@ -411,10 +388,7 @@ class ImportRecognitionTests(APITestBase):
         self.assertIn("customer_mark", roles)
 
     def test_the_vendors_acronym_and_an_unnamed_mark_column_are_read_as_marks(self):
-        """AWS writes "AWS" at the top of its column, not "Amazon Web Services";
-        and a vendor we know by a name that appears nowhere in the file still
-        gets its column, because a column of X's beside "Customer" can only be
-        the provider."""
+        """AWS writes "AWS" at the top of its column, and a column of X's beside "Customer" can only be the provider."""
         refs = self.refs
         csv = "Requirement,AWS,Customer\n1.3,X,X\n12.1,,X\n".replace("1.3", "TC1.1").replace("12.1", "TC1.2").encode()
         out = mx.recognise("m.csv", csv, "Amazon Web Services", refs)
@@ -464,9 +438,7 @@ class ImportRecognitionTests(APITestBase):
         self.assertEqual({r["responsibility"] for r in out["rows"]}, {"provider"})
 
     def test_an_em_dash_cell_is_read_as_na(self):
-        """A cell holding only an em dash means "not this side", as "-" does.
-        The token must stay distinct from "-": otherwise a tick column with em
-        dash blanks reads as statements and every row as shared."""
+        """An em dash cell is "not this side", as "-" is; the tokens stay apart or tick columns read as statements."""
         dash = "\u2014"
         csv = f"Requirement,AWS,Customer\nTC1.1,X,{dash}\nTC1.2,{dash},X\n".encode()
         out = mx.recognise("m.csv", csv, "Amazon Web Services", self.refs)
@@ -541,8 +513,7 @@ class ImportRecognitionTests(APITestBase):
         self.assertEqual([c["name"] for c in self.v.matrix_layout["columns"]], ["Requirement", "AWS", "Customer", "Notes"])
         self.assertEqual(self.v.matrix_layout["file"], "aws.csv")
         self.assertEqual(self.client_for(self.viewer).get(f"/api/vendors/{self.v.pk}/").data["matrix_layout"]["file"], "aws.csv")
-        # Back to them in their own columns: X marks where they were, a column
-        # we never understood left blank rather than guessed.
+        # Back in their own columns: X marks where they were, a column we never understood left blank.
         r = self.c.get(f"/api/vendors/{self.v.pk}/matrix/export/?layout=vendor")
         self.assertEqual(r.status_code, 200)
         lines = r.content.decode("utf-8").strip().splitlines()
@@ -567,9 +538,6 @@ class ImportRecognitionTests(APITestBase):
         self.assertEqual(r.status_code, 403)
 
 
-# --------------------------------------------------------------------------- #
-# RACI, readiness, risks, notifications
-# --------------------------------------------------------------------------- #
 class RaciTests(APITestBase):
     def test_exactly_one_accountable_per_control(self):
         c = self.client_for(self.manager)
@@ -722,8 +690,7 @@ class VendorRiskAndFeedTests(APITestBase):
         self.assertEqual(notify_tasks.run_vendor_scan(), 0)          # and not twice
 
     def test_two_overlapping_bridge_letter_runs_send_one_reminder(self):
-        """The second run read "not yet chased" before the first claimed it. The
-        claim is one UPDATE that only one of them wins."""
+        """The second run read "not yet chased" before the first claimed it; the claim is one UPDATE only one wins."""
         from unittest import mock
 
         from django.core import mail

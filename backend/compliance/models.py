@@ -1,4 +1,3 @@
-"""Framework / control library models."""
 from django.conf import settings
 from django.db import models
 
@@ -6,7 +5,6 @@ from accounts.tenancy import TenantModel
 
 
 class Framework(TenantModel):
-    """A compliance framework, e.g. SOC 2, ISO 27001, PCI DSS."""
     key = models.SlugField(max_length=40)
     name = models.CharField(max_length=120)
     version = models.CharField(max_length=60, blank=True)
@@ -24,7 +22,6 @@ class Framework(TenantModel):
 
 
 class ControlCategory(TenantModel):
-    """A grouping of controls within a framework (domain / requirement family)."""
     tenant_parent = "framework"
     framework = models.ForeignKey(Framework, on_delete=models.CASCADE, related_name="categories")
     key = models.CharField(max_length=40)
@@ -34,7 +31,6 @@ class ControlCategory(TenantModel):
     class Meta:
         ordering = ["framework", "order", "key"]
         unique_together = ("framework", "key")
-        # Django's default plural is "control categorys".
         verbose_name_plural = "control categories"
 
     def __str__(self):
@@ -52,12 +48,7 @@ class Control(TenantModel):
 
     category = models.ForeignKey(ControlCategory, on_delete=models.CASCADE, related_name="controls")
     control_id = models.CharField(max_length=40)
-    # Where the control sits in its category: its place in the framework's
-    # data file, the way ControlCategory.order places categories. A text sort
-    # of control_id reads A.5.1, A.5.10 ... A.5.19, A.5.2 for ISO 27001, and no
-    # text or numeric sort suits every standard: NIST CSF 2.0 lists GV.OC,
-    # GV.RM, GV.RR, GV.PO, GV.OV, GV.SC. 0 means not placed; save() puts such
-    # a control last in its category.
+    # Place in the framework's data file (no sort of control_id suits every standard); 0 means unplaced.
     order = models.PositiveIntegerField(default=0)
     title = models.CharField(max_length=255)
     objective = models.TextField(blank=True)
@@ -67,12 +58,8 @@ class Control(TenantModel):
         on_delete=models.SET_NULL, related_name="owned_controls",
     )
 
-    # --- operating-effectiveness testing ---------------------------------
-    # "Implemented" says the control was built; these say somebody checked it
-    # still works, which is what an auditor asks. Recorded with who and when,
-    # because the audit middleware logs field NAMES only: without provenance a
-    # single manager could backdate all 217 controls and the trail would read
-    # `fields=last_tested_on` 217 times.
+    # Who and when are stored beside the date: audit logging records field names only, so a backdated
+    # last_tested_on would otherwise leave no trace of who set it.
     last_tested_on = models.DateField(null=True, blank=True)
     test_interval_days = models.PositiveSmallIntegerField(
         null=True, blank=True,
@@ -91,7 +78,7 @@ class Control(TenantModel):
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:
-            # Read twice below, and Django accepts any iterable here.
+            # Materialised: Django accepts any iterable, and it is read twice below.
             update_fields = kwargs["update_fields"] = list(update_fields)
         if self._needs_place(update_fields):
             self.order = self.next_order(self.category_id)
@@ -100,13 +87,8 @@ class Control(TenantModel):
         super().save(*args, **kwargs)
 
     def _needs_place(self, update_fields):
-        """A new control with no place, or one moved to another category
-        without a new place, goes last in its category. Callers that know
-        the place (the seeders) pass ``order``, and it is kept.
-
-        Whether it moved is read from the row, not remembered from the load:
-        a deferred field or a partial refresh would make a remembered place
-        wrong. Only a save that can write the category pays the query."""
+        """A new unplaced control, or one moved to another category without a new place, goes last in its category.
+        Moved-ness is read from the row, not remembered from the load: a deferred field or partial refresh lies."""
         if self._state.adding:
             return not self.order
         if update_fields is not None and (
@@ -122,9 +104,7 @@ class Control(TenantModel):
 
     @classmethod
     def next_order(cls, category_id):
-        """One past the last place in the category. Unscoped on purpose: the
-        category already names the workspace, and a seeder may run with none
-        active."""
+        """Unscoped on purpose: the category already names the workspace, and a seeder may run with none active."""
         last = (cls._base_manager.filter(category_id=category_id)
                 .aggregate(last=models.Max("order"))["last"])
         return (last or 0) + 1
@@ -138,10 +118,6 @@ class Control(TenantModel):
 
 
 class ControlMapping(TenantModel):
-    """
-    Links controls across frameworks that address the same underlying theme,
-    so a single piece of evidence can satisfy multiple standards.
-    """
     theme = models.CharField(max_length=200)
     controls = models.ManyToManyField(Control, related_name="mappings")
 
@@ -153,14 +129,6 @@ class ControlMapping(TenantModel):
 
 
 class ControlEvidence(TenantModel):
-    """
-    Links a document (the evidence) to a control it helps satisfy.
-
-    This is the reverse-mapping backbone: a control can cite many documents,
-    and one document (e.g. an Access Control Policy) can satisfy controls
-    across several frameworks at once. Each link records who made it and why,
-    so the mapping itself is an audit artifact.
-    """
     tenant_parent = "control"
 
     control = models.ForeignKey(
@@ -186,13 +154,7 @@ class ControlEvidence(TenantModel):
 
 
 class Responsibility(TenantModel):
-    """One RACI assignment on a control. The party is a user OR a vendor.
-
-    ``Control.owner`` stays as the fast path for "who is accountable"; the
-    matrix view treats it as an implicit Accountable when no explicit row
-    exists. A vendor as Responsible is how shared responsibility (a cloud
-    provider owning physical security) is recorded and reported.
-    """
+    """One RACI row; the party is a user or a vendor. ``Control.owner`` is an implicit Accountable when none exists."""
 
     class Role(models.TextChoices):
         RESPONSIBLE = "responsible", "Responsible"

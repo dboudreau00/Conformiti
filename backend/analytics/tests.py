@@ -1,5 +1,3 @@
-"""Dashboard aggregation: org-wide control figures, visibility-scoped documents,
-and the readiness history behind the trend line."""
 from io import StringIO
 
 from django.core.management import call_command
@@ -25,7 +23,6 @@ class AnalyticsTests(APITestBase):
         fw = next(f for f in s["frameworks"] if f["key"] == "tfw")
         self.assertEqual(fw["pct"], 50)
         self.assertEqual(s["readiness"]["pct"], 50)
-        # documents are scoped to what the caller may see
         self.assertEqual(s["documents"]["total"], 1)
         self.assertEqual(s["reviews"]["overdue"], 0)
         self.assertEqual(s["reviews"]["due_30"], 1)
@@ -54,7 +51,8 @@ class AnalyticsTests(APITestBase):
         today = timezone.localdate()
         prev = (today.replace(day=1) - timezone.timedelta(days=1))
         ReadinessSnapshot.objects.create(date=prev.replace(day=1), implemented=1, applicable=10, total_controls=10)
-        ReadinessSnapshot.objects.create(date=prev, implemented=2, applicable=10, total_controls=10)   # last of prev month: 20%
+        ReadinessSnapshot.objects.create(
+            date=prev, implemented=2, applicable=10, total_controls=10)   # last of prev month: 20%
         ReadinessSnapshot.objects.create(date=today, implemented=5, applicable=10, total_controls=10)  # this month: 50%
         t = trend()
         self.assertEqual([p["pct"] for p in t["points"]], [20, 50])
@@ -75,6 +73,6 @@ class ControlsExportTests(APITestBase):
         self.assertEqual(r["Content-Type"], "text/csv")
         body = r.content.decode()
         self.assertIn("'=HYPERLINK", body)
-        self.assertNotIn("TC1.2", body)  # status filter applied
+        self.assertNotIn("TC1.2", body)
         r = self.client_for(self.viewer).get("/api/controls/export/")
         self.assertIn("TC1.2", r.content.decode())

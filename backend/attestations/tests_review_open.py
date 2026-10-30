@@ -1,4 +1,4 @@
-"""Regression tests for the attestation findings left open after 0.9.3."""
+"""The in-app signature check against the published key list, and the seal's row lock."""
 from accounts import tenancy
 from accounts.models import Workspace
 
@@ -8,15 +8,7 @@ from .tests import PackageTestBase
 
 
 class SignatureStatusTests(PackageTestBase):
-    """Medium 7: the in-app check must not trust the key stored beside the
-    signature.
-
-    The manifest, the signature and the public key all live in the same row.
-    Verifying one against the other only proves the row is self-consistent, so
-    anyone who could write to the table could re-sign a doctored manifest with
-    a key of their own and be told "valid". The published key list is the
-    reference.
-    """
+    """The in-app check trusts the published key list, never the public key stored beside the signature."""
 
     def setUp(self):
         super().setUp()
@@ -28,8 +20,6 @@ class SignatureStatusTests(PackageTestBase):
         self.assertEqual(signing.signature_status(self.package), "valid")
 
     def test_a_manifest_re_signed_with_an_unpublished_key_is_not_valid(self):
-        """The whole attack: rewrite the manifest, sign it with a key you
-        made up, and store your own public key next to it."""
         import json
 
         from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -52,7 +42,6 @@ class SignatureStatusTests(PackageTestBase):
         self.assertEqual(signing.signature_status(self.package), "invalid")
 
     def test_a_swapped_public_key_on_a_published_key_id_is_not_valid(self):
-        """Keeping a real key id while substituting the key material."""
         from cryptography.hazmat.primitives.asymmetric import ed25519
 
         other = ed25519.Ed25519PrivateKey.generate().public_key()
@@ -61,7 +50,6 @@ class SignatureStatusTests(PackageTestBase):
         self.assertEqual(signing.signature_status(self.package), "invalid")
 
     def test_another_organisations_key_is_not_valid_here(self):
-        """A key id that exists, but belongs to somebody else."""
         beta = Workspace.objects.create(name="Beta Ltd", slug="beta-sig")
         with tenancy.scoped(beta):
             theirs = signing.current_key_info(create=True)
@@ -81,24 +69,13 @@ class SignatureStatusTests(PackageTestBase):
 
 
 class SealLockTests(PackageTestBase):
-    """Medium 11: sealing must not check that the package is open and then act
-    on the answer with nothing holding the row.
-
-    Evidence pinned in the gap would land inside the package but outside the
-    manifest: a bundle whose signature covers less than it contains, which is
-    what a signed manifest exists to rule out. The seal re-reads the package
-    under a row lock, and every write that changes what the manifest would say
-    queues behind the same lock.
-    """
+    """Sealing re-reads the package under a row lock, so evidence pinned in the gap cannot land outside the manifest."""
 
     def test_a_package_sealed_in_the_gap_is_caught(self):
-        """Stands in for the race: the view's own copy says draft, the
-        database says sealed. Without the re-read this sealed twice."""
+        """Stands in for the race: the view's copy says draft, the database says sealed."""
         self.add_control()
-        # What the request holds after get_object().
         stale = EvidencePackage.objects.get(pk=self.package.pk)
         self.assertTrue(stale.is_open)
-        # What another worker did in the meantime.
         EvidencePackage.objects.filter(pk=self.package.pk).update(
             status=EvidencePackage.Status.SEALED)
 
@@ -126,7 +103,6 @@ class SealLockTests(PackageTestBase):
         self.assertTrue(row.evidence.filter(pk=pinned.pk).exists())
 
     def test_sealing_still_works(self):
-        """The lock must not have made the ordinary path fail."""
         self.add_control()
         r = self.manager_client.post(f"/api/evidence-packages/{self.package.pk}/seal/",
                                      {"assertion": "A" * 80}, format="json")

@@ -1,7 +1,3 @@
-"""
-Sample rows: the operating-effectiveness workpaper. Who may list items and
-when, who records results, what the seal freezes, and what the bundle says.
-"""
 import io
 import json
 import zipfile
@@ -27,7 +23,6 @@ class SampleTests(PackageTestBase):
         body.update(extra)
         return (client or self.manager_client).post("/api/package-samples/", body, format="json")
 
-    # ------------------------------------------------------------- draft
     def test_the_organisation_lists_items_and_the_population_while_drafting(self):
         r = self.manager_client.patch(f"/api/package-controls/{self.row.pk}/", {
             "population_size": 42, "population_source": "HR termination report",
@@ -45,14 +40,13 @@ class SampleTests(PackageTestBase):
         self.assertEqual(rows[0]["samples"][0]["identifier"], "u-1042")
 
     def test_only_the_frameworks_capability_lists_items_in_a_draft(self):
-        # The draft is not readable to them, so its control row is answered as
-        # one that does not exist, never a 403 that would confirm it.
+        # The draft is unreadable to them, so its control row answers as one that does not exist, never a 403.
         for client in (self.owner_client, self.client_for(self.viewer)):
             r = self.list_item(client)
             self.assertEqual(r.status_code, 400)
             self.assertEqual(r.data["package_control"], [f'Invalid pk "{self.row.pk}" - object does not exist.'])
         r = self.owner_client.patch(f"/api/package-controls/{self.row.pk}/", {"population_size": 3}, format="json")
-        self.assertEqual(r.status_code, 404)   # the draft is not even readable to them
+        self.assertEqual(r.status_code, 404)
 
     def test_evidence_must_be_pinned_to_the_same_control(self):
         self.add_control(self.tree.c2)
@@ -76,7 +70,6 @@ class SampleTests(PackageTestBase):
         r = self.list_item()
         self.assertEqual(r.status_code, 400)
 
-    # -------------------------------------------------------------- seal
     def test_sealing_freezes_the_listed_items_into_the_manifest(self):
         self.manager_client.patch(f"/api/package-controls/{self.row.pk}/", {
             "population_size": 42, "population_source": "HR report", "sampling_method": "random"}, format="json")
@@ -92,7 +85,6 @@ class SampleTests(PackageTestBase):
         self.assertEqual(control["samples"][0]["evidence_path"], control["evidence"][0]["path"])
         self.assertEqual(control["samples"][0]["result"], "pending")
         self.assertTrue(all(s.sealed_in for s in PackageSample.objects.all()))
-        # Nothing the organisation does afterwards changes the sealed items.
         sample = PackageSample.objects.first()
         r = self.manager_client.patch(f"/api/package-samples/{sample.pk}/", {"identifier": "changed"}, format="json")
         self.assertEqual(r.status_code, 403)
@@ -103,7 +95,6 @@ class SampleTests(PackageTestBase):
         r = self.manager_client.patch(f"/api/package-controls/{self.row.pk}/", {"population_size": 1}, format="json")
         self.assertEqual(r.status_code, 400)
 
-    # ----------------------------------------------------------- auditor
     def _issued(self):
         self.list_item()
         self.seal()
@@ -120,10 +111,8 @@ class SampleTests(PackageTestBase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["tested_by_name"], self.auditor.get_full_name())
         self.assertIsNotNone(r.data["tested_at"])
-        # A sealed item's identity stays fixed even for the auditor...
         r = self.auditor_client.patch(f"/api/package-samples/{sample.pk}/", {"identifier": "x"}, format="json")
         self.assertEqual(r.status_code, 403)
-        # ...and the organisation never touches a result.
         r = self.manager_client.patch(f"/api/package-samples/{sample.pk}/", {"result": "pass"}, format="json")
         self.assertEqual(r.status_code, 403)
         rows = self.auditor_client.get(f"/api/package-controls/?package={self.package.pk}").data["results"]
@@ -137,13 +126,11 @@ class SampleTests(PackageTestBase):
         self.assertEqual(r.status_code, 201, r.data)
         self.assertFalse(r.data["sealed_in"])
         self.assertEqual(r.data["tested_by_name"], self.auditor.get_full_name())
-        # Their own rows they may correct or drop; the manifest's they may not.
         r = self.auditor_client.patch(f"/api/package-samples/{r.data['id']}/", {"description": "leaver"}, format="json")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.auditor_client.delete(f"/api/package-samples/{r.data['id']}/").status_code, 204)
         sealed = PackageSample.objects.get(sealed_in=True)
         self.assertEqual(self.auditor_client.delete(f"/api/package-samples/{sealed.pk}/").status_code, 403)
-        # And the sampling note is theirs, like a conclusion.
         r = self.auditor_client.patch(f"/api/package-controls/{self.row.pk}/", {
             "sampling_note": "25 of 42 at random"}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
@@ -151,11 +138,6 @@ class SampleTests(PackageTestBase):
         self.assertEqual(r.status_code, 403)
 
     def test_a_sample_cannot_be_moved_to_a_control_in_another_package(self):
-        """The auditor's own selection on the issued package is theirs to
-        correct, but not to re-point: `package_control` is scoped to the
-        workspace, so without this check a PATCH would carry the sample into a
-        draft they cannot read, where sealing writes it into that manifest.
-        The organisation's own sealed-in row cannot leave its package either."""
         sealed = self._issued()
         other = EvidencePackage.objects.create(
             name="Next year", engagement="FY27", audit_firm="Example Assurance LLP",
@@ -179,7 +161,6 @@ class SampleTests(PackageTestBase):
                                       {"package_control": elsewhere.pk}, format="json")
         self.assertEqual(r.status_code, 400, r.data)
         self.assertEqual(PackageSample.objects.get(pk=sealed.pk).package_control_id, self.row.pk)
-        # Naming the row it already sits on is not a move.
         r = self.auditor_client.patch(f"/api/package-samples/{mine}/", {
             "package_control": self.row.pk, "description": "same row"}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
@@ -198,7 +179,6 @@ class SampleTests(PackageTestBase):
         r = self.auditor_client.patch(f"/api/package-samples/{sample.pk}/", {"result": "pass"}, format="json")
         self.assertIn(r.status_code, (400, 404))
 
-    # ------------------------------------------------------------ bundle
     def test_the_bundle_carries_the_sample_workpaper(self):
         sample = self._issued()
         self.auditor_client.patch(f"/api/package-samples/{sample.pk}/", {
@@ -212,7 +192,7 @@ class SampleTests(PackageTestBase):
         self.assertIn("u-1042", samples)
         self.assertIn("Exception", samples)
         self.assertIn("Late removal", samples)
-        self.assertIn("yes", samples)   # in sealed manifest
+        self.assertIn("yes", samples)
         controls = zf.read("controls.csv").decode("utf-8-sig")
         self.assertIn("Sample exceptions", controls.splitlines()[0])
         sums = zf.read("SHA256SUMS").decode("utf-8")

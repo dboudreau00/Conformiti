@@ -1,7 +1,4 @@
-"""Regression tests for findings in REVIEWS.md (0.9.0 review).
-
-Each class names the finding it covers.
-"""
+"""Regression tests for findings in REVIEWS.md (0.9.0 review); each class names its finding."""
 from django.conf import settings
 from django.test import TestCase, override_settings
 
@@ -12,13 +9,8 @@ from testutils import APITestBase, make_user
 
 
 class TotpReplayTests(TestCase):
-    """Medium 4: a spent code must not stay good for its whole window.
-
-    TOTP is valid for 30 seconds plus a step of drift either way. Without a
-    record of which codes have been spent, six digits read over a shoulder,
-    lifted from a phishing form or replayed off a proxied login page work
-    again for up to 90 seconds.
-    """
+    """Medium 4: a spent code must not stay good for its whole window: TOTP is valid for 30 seconds plus a step of
+    drift either way, so six digits lifted from a phishing form would work again for up to 90 seconds."""
 
     def setUp(self):
         self.user = make_user("totp-user")
@@ -31,8 +23,7 @@ class TotpReplayTests(TestCase):
         self.assertFalse(self.device.verify(code), "the same code authenticated twice")
 
     def test_a_stale_object_cannot_replay_it(self):
-        """Two requests arriving together each hold their own copy of the row;
-        the claim has to happen in the database, not in Python."""
+        """Two requests hold their own copies of the row, so the claim has to happen in the database, not in Python."""
         code = mfa_lib.totp(self.secret)
         first = MfaDevice.objects.get(pk=self.device.pk)
         second = MfaDevice.objects.get(pk=self.device.pk)
@@ -40,8 +31,7 @@ class TotpReplayTests(TestCase):
         self.assertFalse(second.verify(code))
 
     def test_an_earlier_code_still_inside_the_window_is_refused(self):
-        """The drift window looks backwards as well as forwards: accepting
-        the previous step after the current one would reopen the replay."""
+        """The window looks backwards too: accepting the previous step after the current one would reopen the replay."""
         import time
 
         now = time.time()
@@ -49,7 +39,6 @@ class TotpReplayTests(TestCase):
         self.assertFalse(self.device.verify(mfa_lib.totp(self.secret, at=now - mfa_lib.PERIOD)))
 
     def test_the_next_window_still_works(self):
-        """Refusing replays must not lock the account out of its next code."""
         import time
 
         now = time.time()
@@ -64,9 +53,7 @@ class TotpReplayTests(TestCase):
 
 
 class BackupCodeClaimTests(TestCase):
-    """Low 9: a backup code is claimed atomically. Reading, checking and
-    marking it used in three separate steps would let one code authenticate
-    two sign-ins that arrive together."""
+    """Low 9: a backup code is claimed atomically, or one code could authenticate two sign-ins that arrive together."""
 
     def setUp(self):
         self.user = make_user("codes-user")
@@ -77,8 +64,7 @@ class BackupCodeClaimTests(TestCase):
         self.assertFalse(self.user.verify_backup_code(self.codes[0]))
 
     def test_a_concurrent_second_use_loses(self):
-        """Both callers see an unused row; only the UPDATE that matches
-        `used_at IS NULL` may return true."""
+        """Both callers see an unused row; only the UPDATE that matches ``used_at IS NULL`` may return true."""
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
@@ -95,12 +81,8 @@ class BackupCodeClaimTests(TestCase):
 
 
 class SlicedQuerysetTests(TestCase):
-    """Low 2: _pin() must not skip a queryset that is already sliced.
-
-    A queryset built with no workspace active and read inside one would
-    otherwise come back without the workspace condition, with every
-    organisation's rows. It refuses instead.
-    """
+    """Low 2: _pin() must not skip an already-sliced queryset: one built with no workspace active and read inside one
+    would return every organisation's rows, so it refuses."""
 
     def setUp(self):
         self.a = tenancy.default_workspace()
@@ -140,12 +122,8 @@ class SlicedQuerysetTests(TestCase):
 
 
 class ComplianceInboxTests(TestCase):
-    """Low 1: each organisation's reminders go to its own address.
-
-    The subject lines carry document names, vendor names and auditor requests,
-    so one installation-wide mailbox would publish every tenant's business to
-    whoever runs the box.
-    """
+    """Low 1: each organisation's reminders go to its own address: the subject lines carry document and vendor names,
+    so one installation-wide mailbox would publish every tenant's business to whoever runs the box."""
 
     def setUp(self):
         self.a = tenancy.default_workspace()
@@ -170,8 +148,7 @@ class ComplianceInboxTests(TestCase):
 
 
 class SsoAssertionDefaultTests(TestCase):
-    """Low 4: the shipped list of "the provider asserted a second factor"
-    must not include the two RFC 8176 values that are not second factors."""
+    """Low 4: the shipped list of asserted second factors must not include the two RFC 8176 values that are not."""
 
     def test_user_presence_and_pin_are_not_second_factors(self):
         self.assertNotIn("user", settings.SSO_MFA_ASSERTIONS,
@@ -185,8 +162,7 @@ class SsoAssertionDefaultTests(TestCase):
 
 
 class AuditorRoleDescriptionTests(APITestBase):
-    """High 13: the shipped description must promise only what the code
-    enforces."""
+    """High 13: the shipped description must promise only what the code enforces."""
 
     def test_the_description_no_longer_claims_folders_are_the_limit(self):
         description = self.roles["Auditor"].description

@@ -1,8 +1,4 @@
-"""
-SAML 2.0 sign-in, fully offline: a self-signed certificate stands in for the
-provider, responses are signed with signxml exactly as an IdP would sign them,
-and every check on the way in is exercised with a response that fails it.
-"""
+"""SAML 2.0 sign-in offline: a self-signed certificate stands in for the provider; each check meets a bad response."""
 import base64
 import datetime as dt
 import secrets
@@ -51,8 +47,7 @@ NS = saml.NS
 
 
 class FakeIdp:
-    """Builds signed Responses the way a provider would, with knobs for every
-    thing the consumer must refuse."""
+    """Builds signed Responses as a provider would, with a knob for everything the consumer must refuse."""
 
     def __init__(self, flow):
         self.flow = flow
@@ -68,16 +63,12 @@ class FakeIdp:
         self.not_before = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=1)
         self.context = "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"
         self.attrs = {"givenName": "Val", "sn": "Viewer"}
-        # Unique per response, as a real provider's would be: the consumer
-        # remembers every id it has seen, refused sign-ins included.
+        # Unique per response: the consumer remembers every id it has seen, refused sign-ins included.
         self.assertion_id = "_a" + secrets.token_hex(15)
         self.sign = "response"       # response | assertion | none
         self.status = "urn:oasis:names:tc:SAML:2.0:status:Success"
         self.extra_assertion = None
-        # Both normally follow self.recipient. Set one to "" to leave that
-        # attribute empty without touching the other, which is how a response
-        # that names no destination, or a confirmation that names no
-        # recipient, is built.
+        # Both follow self.recipient unless set; "" leaves the attribute empty (no destination, or no recipient).
         self.destination = None
         self.subject_recipient = None
         self.subject_expiry = None   # None = the default window; "" = omit the attribute
@@ -104,7 +95,8 @@ class FakeIdp:
             f'<saml:AudienceRestriction><saml:Audience>{self.audience}</saml:Audience></saml:AudienceRestriction>'
             f'</saml:Conditions>'
             f'<saml:AuthnStatement AuthnInstant="{self._t(self.not_before)}"><saml:AuthnContext>'
-            f'<saml:AuthnContextClassRef>{self.context}</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement>'
+            f'<saml:AuthnContextClassRef>{self.context}</saml:AuthnContextClassRef>'
+            f'</saml:AuthnContext></saml:AuthnStatement>'
             f'<saml:AttributeStatement>{attrs}</saml:AttributeStatement>'
             f'</saml:Assertion>'
         )
@@ -175,7 +167,6 @@ class SamlFlowTests(APITestBase):
         self.assertIn(f"sso_error={code}", r["Location"], r["Location"])
         self.assertTrue(AuditLog.objects.filter(action="login_failed", detail__contains=f"({code})").exists())
 
-    # ------------------------------------------------------------- start
     def test_start_sends_a_deflated_authn_request_and_a_flow_cookie(self):
         flow, query = self.start()
         raw = zlib.decompress(base64.b64decode(query["SAMLRequest"][0]), -15)
@@ -202,7 +193,6 @@ class SamlFlowTests(APITestBase):
             self.assertFalse(self.anon.get("/api/auth/config/").data["saml"]["enabled"])
             self.assertEqual(self.anon.get("/api/auth/saml/metadata/").status_code, 404)
 
-    # -------------------------------------------------------- happy path
     def test_a_signed_response_links_by_email_and_signs_in(self):
         ticket = self.sign_in()
         self.assertEqual(OidcIdentity.objects.get(issuer=IDP, subject="val@example.com").user, self.viewer)
@@ -215,9 +205,7 @@ class SamlFlowTests(APITestBase):
         self.assertFalse(self.anon.cookies.get(saml.FLOW_COOKIE, None) and self.anon.cookies[saml.FLOW_COOKIE].value)
 
     def test_a_transient_name_id_is_not_the_subject(self):
-        """A transient NameID is new at every sign-in. Used as the subject it
-        added an identity row per sign-in and pinned the account to nothing;
-        the address is the subject instead, so two sign-ins are one identity."""
+        """Sign-ins with different transient NameIDs are one identity, keyed by the address."""
         def transient(value):
             def tweak(idp):
                 idp.name_format = saml.TRANSIENT_FORMAT
@@ -248,7 +236,6 @@ class SamlFlowTests(APITestBase):
         user = OidcIdentity.objects.get(subject="new@corp.example").user
         self.assertEqual((user.first_name, user.last_name, user.role.name), ("Val", "Viewer", "Viewer"))
 
-    # ------------------------------------------------------------ refusals
     def test_unsigned_or_wrongly_signed_responses_are_refused(self):
         def unsigned(idp):
             idp.sign = "none"
@@ -305,15 +292,11 @@ class SamlFlowTests(APITestBase):
         self.refused("token", issuer)
 
         def recipient(idp):
-            # Destination and Recipient both point elsewhere: the response
-            # is not ours at all.
+            # Destination and Recipient both point elsewhere: the response is not ours at all.
             idp.recipient = "https://evil.example/acs"
         self.refused("token", recipient)
 
     def test_a_response_that_names_no_destination_is_refused(self):
-        """The POST binding requires Destination. Accepting its absence would
-        let a response captured at one service provider be replayed at
-        another by dropping the attribute (REVIEWS.md (0.9.5 review), S-6)."""
         def no_destination(idp):
             idp.destination = ""
         self.refused("token", no_destination)
@@ -324,10 +307,6 @@ class SamlFlowTests(APITestBase):
         self.refused("state", no_recipient)
 
     def test_a_confirmation_with_no_expiry_confirms_nothing(self):
-        """L-1. The POST binding requires NotOnOrAfter on a bearer
-        confirmation. An assertion that omits it would be bounded by the
-        Conditions window instead, or by an hour when that is absent too, and
-        once the replay row is pruned the same assertion could post again."""
         def no_expiry(idp):
             idp.subject_expiry = ""
         self.refused("state", no_expiry)
@@ -337,7 +316,6 @@ class SamlFlowTests(APITestBase):
             idp.in_response_to = "_notours"
         self.refused("state", other_request)
         self.refused("state", relay="wrong")
-        # No flow cookie at all: nothing to answer.
         flow, _ = self.start()
         idp = FakeIdp(flow)
         self.anon.cookies.pop(saml.FLOW_COOKIE)
@@ -351,7 +329,6 @@ class SamlFlowTests(APITestBase):
         r = self.anon.post("/api/auth/saml/acs/", {"SAMLResponse": payload, "RelayState": flow["relay"]})
         self.assertNotIn("sso_error", r["Location"])
         self.assertTrue(SsoAssertion.objects.filter(assertion_id=idp.assertion_id).exists())
-        # Same assertion again, with a fresh flow that it happens to answer.
         flow2, _ = self.start()
         idp2 = FakeIdp(flow2)
         idp2.assertion_id = idp.assertion_id
@@ -379,7 +356,6 @@ class SamlFlowTests(APITestBase):
             idp.email = idp.name_id = "ada@example.com"
         self.refused("privileged", as_admin)
 
-    # ------------------------------------------------------------ step-up
     def _enrol(self, user):
         secret = mfa_lib.generate_secret()
         MfaDevice.objects.create(user=user, secret=secret, enabled=True)

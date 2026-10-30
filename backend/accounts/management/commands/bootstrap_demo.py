@@ -1,23 +1,5 @@
-"""
-Populate a demo dataset so the dashboard is immediately useful.
-
-Run AFTER seeding frameworks and folders:
-
-    python manage.py seed_frameworks --with-folders
-    python manage.py bootstrap_demo
-
-Creates:
-  * admin (superuser) + one user per built-in role
-  * example folder permissions (RBAC demonstration)
-  * sample documents with varied review dates (upcoming, due soon, overdue)
-  * a couple of audit-milestone calendar events
-
-Seeds nothing in a workspace the demo was retired from with remove_demo_data,
-so a container that keeps SEED_DEMO_DATA=true cannot put the sample
-organisation back into real data on its next boot. `--force` seeds it anyway,
-makes the demo accounts usable again and records that after the retirement,
-so later boots refresh the demo until remove_demo_data retires it again.
-"""
+"""Seed the demo dataset; run after ``seed_frameworks --with-folders``. A workspace the demo was retired from is left
+alone unless ``--force``, so SEED_DEMO_DATA=true cannot put the sample organisation back into real data on a reboot."""
 import hashlib
 import re
 from datetime import timedelta
@@ -45,11 +27,8 @@ DEMO_USERS = [
 
 
 def check_demo_password(password):
-    """Refuse a chosen DEMO_PASSWORD the password policy would refuse for
-    any of the demo accounts. They all share it and `admin` is a superuser:
-    unchecked, `DEMO_PASSWORD=admin` would create a superuser with a
-    five-letter password on an installation that asks everyone else for
-    twelve."""
+    """Refuse a chosen DEMO_PASSWORD the password policy would refuse for a demo account: they all share it and
+    ``admin`` is a superuser."""
     from django.contrib.auth.password_validation import validate_password
     from django.core.exceptions import ValidationError
 
@@ -70,39 +49,22 @@ def check_demo_password(password):
               "generated and printed once.")
 
 
-# The seeded access review is named for the quarter it was created in, so both
-# the seeder and remove_demo_data identify it by shape rather than by a literal.
+# Named for the quarter it was created in, so the seeder and remove_demo_data match it by shape, not by a literal.
 ACCESS_REVIEW_PATTERN = r"^Q[1-4] [0-9]{4} access review$"
 
-# The seeded evidence package, matched by name in both directions.
 DEMO_PACKAGE_NAME = "SOC 2 Type II fieldwork"
 
-# The seeded vendors, matched by name in both directions.
 DEMO_VENDOR_NAMES = ["Amazon Web Services", "Okta", "Stripe", "Brightline Security Ltd"]
 
-# remove_demo_data records the retirement as an audit-log entry of this type
-# in the workspace it cleaned. The entry outlives the demo accounts (a
-# --delete run removes them), so it is what tells a later bootstrap_demo, and
-# a container still booting with SEED_DEMO_DATA=true, to leave the workspace
-# alone. `bootstrap_demo --force` answers it with an entry of the same type
-# saying the demo was seeded again, rather than deleting it: the audit trail
-# is immutable, so the newest of these entries is the one that counts.
+# remove_demo_data records the retirement as an audit entry of this type, which outlives the demo accounts. --force
+# answers it with a newer REVIVED_ACTION entry instead of deleting it: the trail is immutable, the newest entry counts.
 RETIRED_OBJECT_TYPE = "demo-data"
 RETIRED_ACTION = "delete"
 REVIVED_ACTION = "create"
 
-# The demo's control programme (_control_program): walking the register in
-# PROGRAMME_ORDER, the control at position i gets programme_values(i). The
-# seeder records each application in the audit log as a PROGRAMME_OBJECT_TYPE
-# entry whose object_id names the last control it saw and a fingerprint of
-# the order it walked ("<last pk>-<fingerprint>", PROGRAMME_MARK), so
-# remove_demo_data can restore exactly what it set, and only where nobody
-# has changed it since. A seed that starts the demo on a register already
-# worked on sets nothing and records a walk of no controls ("0-..."), so that
-# retirement is not mistaken for one of a demo seeded without a record. The
-# audit log shows object_id as the record's reference, so the entry's detail
-# stays in plain words. The entry has its own type, so it never counts as a
-# retirement or a revival.
+# The programme at position i of PROGRAMME_ORDER gets programme_values(i). Each run is recorded as a
+# PROGRAMME_OBJECT_TYPE audit entry with object_id "<last pk>-<fingerprint>" (PROGRAMME_MARK), so remove_demo_data
+# restores only what the programme set and only where nobody has changed it since.
 PROGRAMME_ORDER = ("category__framework__key", "category__order", "control_id")
 PROGRAMME_OBJECT_TYPE = "demo-controls"
 PROGRAMME_MARK = re.compile(r"(\d+)-([0-9a-f]{16})")
@@ -113,10 +75,8 @@ _PROGRAMME_NOT_APPLICABLE = {24}
 
 
 def programme_values(i):
-    """(status, owner username) the demo programme gives the control at
-    position ``i`` of PROGRAMME_ORDER. A status of None leaves the control
-    as the programme found it, which is Not started: it only ever runs on an
-    untouched register."""
+    """(status, owner username) the programme gives the control at position ``i`` of PROGRAMME_ORDER; a status of None
+    leaves it Not started, since the programme only ever runs on an untouched register."""
     r = i % 25
     if r in _PROGRAMME_IMPLEMENTED:
         status = Control.Status.IMPLEMENTED
@@ -131,13 +91,11 @@ def programme_values(i):
 
 
 def programme_fingerprint(pks):
-    """A short digest of the control ids in the order the programme walked."""
     return hashlib.sha256(",".join(str(pk) for pk in pks).encode()).hexdigest()[:16]
 
 
 def retirement_recorded():
-    """True when the newest demo-data entry in the active workspace's audit
-    log is a retirement, not a later --force that seeded the demo again."""
+    """True when the newest demo-data audit entry is a retirement, not a later --force that seeded the demo again."""
     from audit.models import AuditLog
 
     newest = (AuditLog.objects.filter(object_type=RETIRED_OBJECT_TYPE)
@@ -146,13 +104,8 @@ def retirement_recorded():
 
 
 def retired():
-    """True when the demo dataset was retired from the active workspace.
-
-    Either remove_demo_data recorded it (and no --force has seeded it again
-    since), or the demo accounts are still there and none of them is active:
-    a retirement by a release older than the record, or accounts an
-    administrator switched off by hand.
-    """
+    """True when the demo was retired from the active workspace: recorded, or the demo accounts exist and none is
+    active (an older release's retirement, or accounts switched off by hand)."""
     if retirement_recorded():
         return True
     accounts = User.objects.filter(username__in=[u[0] for u in DEMO_USERS],
@@ -161,19 +114,8 @@ def retired():
 
 
 def own_administrator_present(workspace):
-    """True when ``workspace`` has an administrator that is not a demo account.
-
-    remove_demo_data refuses to retire the demo until one exists, and this is
-    the test it applies. The advice this command prints, and the container's
-    boot banner, read the same answer, so they name createsuperuser first
-    exactly when remove_demo_data would refuse.
-
-    An administrator is an active superuser, or an active account whose role
-    manages users (an auditor role manages nobody, whatever it stores, as
-    User._cap has it), in this workspace. A superuser with no workspace at
-    all counts too: one detached by hand is still the administrator an
-    operator may have made. Read unscoped for that last case.
-    """
+    """True when ``workspace`` has an active administrator that is not a demo account: a superuser (with this workspace
+    or none) or a user-managing non-auditor role. Shared by remove_demo_data, this command's advice, the boot banner."""
     from django.db.models import Q
 
     with tenancy.scoped(workspace):
@@ -192,20 +134,19 @@ def own_administrator_present(workspace):
 # (control_id, doc name, cadence, review offset in days from today)
 SAMPLE_DOCS = [
     ("CC6.1", "Access Control Policy", "annual", 45),
-    ("CC6.2", "User Access Provisioning Procedure", "annual", 6),      # due soon
-    ("CC7.4", "Incident Response Plan", "semiannual", -3),             # overdue
+    ("CC6.2", "User Access Provisioning Procedure", "annual", 6),
+    ("CC7.4", "Incident Response Plan", "semiannual", -3),
     ("A.5.1", "Information Security Policy", "annual", 20),
     ("A.8.13", "Backup and Restore Procedure", "quarterly", 12),
     ("1.3", "Network Segmentation Standard", "annual", 90),
-    ("12.1", "PCI Information Security Policy", "annual", 1),          # due tomorrow
-    ("A.8.8", "Penetration Test Report", "annual", 120),               # a real PDF
-    ("A.7.2", "Data Centre Badge Reader Photo", "annual", 200),         # a real PNG
+    ("12.1", "PCI Information Security Policy", "annual", 1),
+    ("A.8.8", "Penetration Test Report", "annual", 120),
+    ("A.7.2", "Data Centre Badge Reader Photo", "annual", 200),
 ]
 
 
 def _demo_pdf(title, subtitle):
-    """A small, valid single-page PDF built by hand, so the demo has one file
-    the in-browser viewer renders natively as well as text files."""
+    """A small valid single-page PDF built by hand, so the in-browser viewer has a file to render natively."""
     def esc(s):
         return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
     content = (
@@ -237,7 +178,6 @@ def _demo_pdf(title, subtitle):
 
 
 def _demo_png(width=480, height=300):
-    """A small RGB gradient PNG (stdlib only) standing in for a photo."""
     import struct
     import zlib
 
@@ -263,6 +203,74 @@ def sample_bytes(name, control_id):
     if name == "Data Centre Badge Reader Photo":
         return ".png", _demo_png()
     return ".txt", f"{name}\nControl: {control_id}\n(demo file)\n".encode("utf-8")
+
+
+def _vendor_specs(mia, owen, today):
+    """Four vendors in the states the register shows: a full matrix, a report about to lapse, a report already
+    lapsed (the seeded vendor risk points at it), and no matrix yet, which raises the onboarding prompt."""
+    return [
+        dict(name="Amazon Web Services", category="Cloud hosting", website="https://aws.amazon.com",
+             tier="critical", data_handled="customer PII, cardholder data (tokenised)",
+             services="EC2, RDS, S3 and KMS in eu-west-1", owner=mia, review_cadence="annual",
+             last_reviewed=today - timedelta(days=200),
+             assessments=[
+                 ("soc2_type2", "SOC 2 Type II (Spring report)", -120, 245, "satisfactory"),
+                 ("pci_aoc", "PCI DSS 4.0 AOC, service provider", -90, 275, "satisfactory"),
+             ],
+             matrix=[
+                 ("pci_dss_v4", "1.3", "shared",
+                  "Edge network controls, DDoS protection and the physical boundary of every AWS region.",
+                  "Security groups, network ACLs and VPC segmentation between the CDE and everything else."),
+                 ("soc2", "CC6.6", "shared",
+                  "Protection of the AWS global network and its perimeter.",
+                  "Perimeter rules for our own workloads: WAF policy, ingress allow-lists, bastion access."),
+                 ("soc2", "A1.2", "provider",
+                  "Multi-AZ infrastructure redundancy and durability of managed services.", ""),
+                 ("iso27001", "A.8.13", "shared",
+                  "Snapshot and replication capability for RDS and S3.",
+                  "Backup schedules, retention and quarterly restore tests of our data."),
+                 ("pci_dss_v4", "12.1", "customer", "",
+                  "Our information security policy governs how we use the platform; AWS has no part in it."),
+             ]),
+        dict(name="Okta", category="Identity provider", website="https://www.okta.com",
+             tier="high", data_handled="workforce identities, authentication events",
+             services="Workforce Identity Cloud (SSO, MFA, lifecycle)", owner=owen, review_cadence="annual",
+             last_reviewed=today - timedelta(days=300),
+             assessments=[("soc2_type2", "SOC 2 Type II", -340, 25, "satisfactory")],
+             matrix=[
+                 ("soc2", "CC6.1", "shared",
+                  "Authentication service, MFA factors and session management.",
+                  "Which factors are required, who is enrolled, and the access policy per application."),
+                 ("soc2", "CC6.2", "shared",
+                  "Lifecycle APIs and SCIM provisioning.",
+                  "Joiner/mover/leaver process and the approvals that drive it."),
+                 ("iso27001", "A.5.15", "provider",
+                  "Role-based access within the Okta tenant itself.", ""),
+                 ("iso27001", "A.5.18", "shared",
+                  "Provisioning and deprovisioning connectors.",
+                  "Timely removal of leavers and periodic access reviews."),
+             ]),
+        dict(name="Stripe", category="Payment processing", website="https://stripe.com",
+             tier="critical", data_handled="cardholder data (never touches our systems)",
+             services="Payments, Radar, Billing", owner=mia, review_cadence="annual",
+             last_reviewed=today - timedelta(days=380),
+             assessments=[
+                 ("soc2_type2", "SOC 2 Type II", -420, -40, "satisfactory"),
+                 ("pci_aoc", "PCI DSS Level 1 AOC", -60, 305, "satisfactory"),
+             ],
+             matrix=[
+                 ("pci_dss_v4", "12.10", "shared",
+                  "Incident response for the Stripe platform, including notification to merchants.",
+                  "Our own IR plan for integration and account compromise."),
+                 ("pci_dss_v4", "7.1", "customer", "",
+                  "Who in our organisation may access the Stripe dashboard and API keys."),
+             ]),
+        dict(name="Brightline Security Ltd", category="Penetration testing", website="https://brightline.example",
+             tier="low", data_handled="test findings only", services="Annual external penetration test",
+             owner=owen, review_cadence="annual", last_reviewed=None,
+             assessments=[("pentest", "External penetration test", -14, 351, "exceptions")],
+             matrix=[]),
+    ]
 
 
 class Command(BaseCommand):
@@ -310,17 +318,13 @@ class Command(BaseCommand):
             if self._revive:
                 self._record_revival()
         if self._password_shown:
-            # remove_demo_data refuses while the demo accounts are the only
-            # administrators, so until one of the operator's own exists the
-            # advice starts with making it.
+            # remove_demo_data refuses while the demo accounts are the only administrators, so the advice starts with
+            # making one.
             if own_administrator_present(workspace):
                 retire = "Retire these accounts before real use: manage.py remove_demo_data"
             elif opts.get("superuser_follows"):
-                # The entrypoint seeds before it creates the DJANGO_SUPERUSER_*
-                # account, so "create one" here would be contradicted a few
-                # lines further down the same log. Its banner asks again once
-                # that step has run, and names createsuperuser only if there is
-                # still no administrator of the operator's own.
+                # The entrypoint seeds before it creates the DJANGO_SUPERUSER_* account; its banner, printed after
+                # that step, gives the advice instead.
                 retire = ("The boot banner below, printed after the DJANGO_SUPERUSER_* "
                           "step, says what to run before real use.")
             else:
@@ -340,14 +344,8 @@ class Command(BaseCommand):
             ))
 
     def demo_password(self):
-        """The password the demo accounts are created with.
-
-        `DEMO_PASSWORD` when an operator sets one (the test suites and the
-        end-to-end run do); otherwise a fresh random one per installation,
-        printed once. A constant would be a published credential on every
-        deployment that runs `docker compose up`. A chosen one is held to the
-        password policy (check_demo_password).
-        """
+        """DEMO_PASSWORD when set (held to the password policy), else a fresh random one per installation, printed
+        once: a constant would be a published credential on every deployment."""
         if self._password is None:
             import os
             import secrets
@@ -359,28 +357,23 @@ class Command(BaseCommand):
                 check_demo_password(chosen)
                 self._password = chosen
             else:
-                # Sized from the policy, so a longer PASSWORD_MIN_LENGTH
-                # cannot leave the generated one short of it.
+                # Sized from the policy, so a longer PASSWORD_MIN_LENGTH cannot leave the generated one short.
                 length = max(12, getattr(settings, "PASSWORD_MIN_LENGTH", 12))
                 self._password = "demo-" + secrets.token_urlsafe(length)
         return self._password
 
     _password = None
     _password_shown = False
-    # Set by --force on a retired workspace: remove_demo_data left the accounts
-    # switched off with no usable password, and seeding around them would
-    # bring back the sample records with nobody able to sign in to see them.
+    # Set by --force on a retired workspace: its demo accounts are switched off, and seeding around them would leave
+    # nobody able to sign in.
     _revive = False
-    # The (object_id, detail) of the audit entry _control_program leaves for
-    # _record_programme.
+    # The (object_id, detail) of the audit entry _control_program leaves for _record_programme.
     _programme_record = None
-    # No part of the demo was here before this run: it starts the demo.
+    # No part of the demo was here before this run.
     _fresh = False
 
     @staticmethod
     def _demo_present():
-        """Whether any of the demo is in the active workspace: its accounts,
-        or the sample documents or vendors it adds."""
         from vendors.models import Vendor
 
         return (User.objects.filter(username__in=[u[0] for u in DEMO_USERS],
@@ -391,9 +384,7 @@ class Command(BaseCommand):
     def _users(self):
         names = [u[0] for u in DEMO_USERS]
         if self._revive or User.objects.filter(username__in=names).count() < len(names):
-            # Resolved, and a chosen one checked, before any account is
-            # created: a refused DEMO_PASSWORD must not leave an account
-            # behind with no password at all.
+            # Resolved before any account is created, so a refused DEMO_PASSWORD leaves no account without a password.
             self.demo_password()
         for username, first, last, role_name, is_super in DEMO_USERS:
             role = Role.objects.filter(name=role_name).first()
@@ -415,8 +406,8 @@ class Command(BaseCommand):
         self.stdout.write(f"  Users: {User.objects.count()}")
 
     def _permissions(self):
-        """Give the Control Owner edit on the SOC 2 CC6 folder and the Auditor
-        view on the ISO 27001 root, as an RBAC example."""
+        """Control Owner edit on the CC6 folder, Auditor view on the ISO 27001 root; remove_demo_data matches exactly
+        these two grants."""
         owner_role = Role.objects.filter(name="Control Owner").first()
         auditor_role = Role.objects.filter(name="Auditor").first()
 
@@ -463,9 +454,6 @@ class Command(BaseCommand):
         self.stdout.write(f"  Sample documents created: {made}")
 
     def _evidence(self):
-        """Cross-framework evidence links for the seeded documents, so the
-        reverse mapping demos the 'one document satisfies many controls' story
-        (each doc's primary control comes from its folder; these add the rest)."""
         from compliance.models import ControlEvidence
 
         mia = User.objects.filter(username="mia").first()
@@ -485,7 +473,6 @@ class Command(BaseCommand):
             doc = Document.objects.filter(name=doc_name).first()
             if not doc:
                 continue
-            # Also record the document's own primary control as an explicit link.
             if doc.control_id:
                 _, created = ControlEvidence.objects.get_or_create(
                     control=doc.control, document=doc,
@@ -506,8 +493,6 @@ class Command(BaseCommand):
         self.stdout.write(f"  Evidence links created: {made}")
 
     def _risks(self):
-        """A small, realistic risk register: one overdue, one mitigating with a
-        Jira key, one vendor risk, one closed, so every state demos."""
         from governance.models import Risk, RiskNote
 
         mia = User.objects.filter(username="mia").first()
@@ -564,12 +549,6 @@ class Command(BaseCommand):
         self.stdout.write(f"  Risks created: {made}")
 
     def _vendors(self):
-        """Four third parties in the states the register is built to show:
-        a critical cloud provider with a full shared responsibility matrix, an
-        identity provider whose SOC 2 report is about to lapse, a payment
-        processor whose report already has (the seeded vendor risk points at
-        it), and a freshly onboarded pen-test firm with no matrix yet, which
-        raises the onboarding prompt in the notification tray."""
         from compliance.models import Responsibility
         from governance.models import Risk
         from vendors.models import SharedResponsibility, Vendor, VendorAssessment
@@ -582,71 +561,8 @@ class Command(BaseCommand):
         def ctrl(fw, cid):
             return Control.objects.filter(category__framework__key=fw, control_id=cid).first()
 
-        VENDORS = [
-            dict(name="Amazon Web Services", category="Cloud hosting", website="https://aws.amazon.com",
-                 tier="critical", data_handled="customer PII, cardholder data (tokenised)",
-                 services="EC2, RDS, S3 and KMS in eu-west-1", owner=mia, review_cadence="annual",
-                 last_reviewed=today - timedelta(days=200),
-                 assessments=[
-                     ("soc2_type2", "SOC 2 Type II (Spring report)", -120, 245, "satisfactory"),
-                     ("pci_aoc", "PCI DSS 4.0 AOC, service provider", -90, 275, "satisfactory"),
-                 ],
-                 matrix=[
-                     ("pci_dss_v4", "1.3", "shared",
-                      "Edge network controls, DDoS protection and the physical boundary of every AWS region.",
-                      "Security groups, network ACLs and VPC segmentation between the CDE and everything else."),
-                     ("soc2", "CC6.6", "shared",
-                      "Protection of the AWS global network and its perimeter.",
-                      "Perimeter rules for our own workloads: WAF policy, ingress allow-lists, bastion access."),
-                     ("soc2", "A1.2", "provider",
-                      "Multi-AZ infrastructure redundancy and durability of managed services.", ""),
-                     ("iso27001", "A.8.13", "shared",
-                      "Snapshot and replication capability for RDS and S3.",
-                      "Backup schedules, retention and quarterly restore tests of our data."),
-                     ("pci_dss_v4", "12.1", "customer", "",
-                      "Our information security policy governs how we use the platform; AWS has no part in it."),
-                 ]),
-            dict(name="Okta", category="Identity provider", website="https://www.okta.com",
-                 tier="high", data_handled="workforce identities, authentication events",
-                 services="Workforce Identity Cloud (SSO, MFA, lifecycle)", owner=owen, review_cadence="annual",
-                 last_reviewed=today - timedelta(days=300),
-                 assessments=[("soc2_type2", "SOC 2 Type II", -340, 25, "satisfactory")],   # expiring
-                 matrix=[
-                     ("soc2", "CC6.1", "shared",
-                      "Authentication service, MFA factors and session management.",
-                      "Which factors are required, who is enrolled, and the access policy per application."),
-                     ("soc2", "CC6.2", "shared",
-                      "Lifecycle APIs and SCIM provisioning.",
-                      "Joiner/mover/leaver process and the approvals that drive it."),
-                     ("iso27001", "A.5.15", "provider",
-                      "Role-based access within the Okta tenant itself.", ""),
-                     ("iso27001", "A.5.18", "shared",
-                      "Provisioning and deprovisioning connectors.",
-                      "Timely removal of leavers and periodic access reviews."),
-                 ]),
-            dict(name="Stripe", category="Payment processing", website="https://stripe.com",
-                 tier="critical", data_handled="cardholder data (never touches our systems)",
-                 services="Payments, Radar, Billing", owner=mia, review_cadence="annual",
-                 last_reviewed=today - timedelta(days=380),
-                 assessments=[
-                     ("soc2_type2", "SOC 2 Type II", -420, -40, "satisfactory"),           # expired
-                     ("pci_aoc", "PCI DSS Level 1 AOC", -60, 305, "satisfactory"),
-                 ],
-                 matrix=[
-                     ("pci_dss_v4", "12.10", "shared",
-                      "Incident response for the Stripe platform, including notification to merchants.",
-                      "Our own IR plan for integration and account compromise."),
-                     ("pci_dss_v4", "7.1", "customer", "",
-                      "Who in our organisation may access the Stripe dashboard and API keys."),
-                 ]),
-            dict(name="Brightline Security Ltd", category="Penetration testing", website="https://brightline.example",
-                 tier="low", data_handled="test findings only", services="Annual external penetration test",
-                 owner=owen, review_cadence="annual", last_reviewed=None,
-                 assessments=[("pentest", "External penetration test", -14, 351, "exceptions")],
-                 matrix=[]),   # freshly onboarded: no matrix -> onboarding prompt
-        ]
         made = 0
-        for spec in VENDORS:
+        for spec in _vendor_specs(mia, owen, today):
             assessments = spec.pop("assessments")
             matrix = spec.pop("matrix")
             vendor, created = Vendor.objects.get_or_create(
@@ -673,9 +589,9 @@ class Command(BaseCommand):
 
         stripe = Vendor.objects.filter(name="Stripe").first()
         if stripe:
-            Risk.objects.filter(title="Payment processor SOC 2 report expired", vendor__isnull=True).update(vendor=stripe)
+            Risk.objects.filter(
+                title="Payment processor SOC 2 report expired", vendor__isnull=True).update(vendor=stripe)
 
-        # A few explicit RACI rows on top of what the register implies.
         okta = Vendor.objects.filter(name="Okta").first()
         for control, party, role, note in [
             (ctrl("soc2", "CC6.1"), mia, "accountable", "Programme owner for logical access"),
@@ -699,15 +615,13 @@ class Command(BaseCommand):
             ("ISO 27001 surveillance audit", 120, CalendarEvent.Type.AUDIT),
             ("Quarterly access review", 14, CalendarEvent.Type.TASK),
         ]:
-            # Keyed by title only: the date moves, so keying on it would
-            # create a new copy each time the seeder runs on a later day.
+            # Keyed by title only: the date moves, so keying on it would add a copy on every later run.
             CalendarEvent.objects.get_or_create(
                 title=title, defaults=dict(event_type=etype, date=today + timedelta(days=offset)),
             )
         self.stdout.write(f"  Calendar events: {CalendarEvent.objects.count()}")
 
     def _governance(self):
-        """Seed meeting cadences and a champion group (idempotent)."""
         from datetime import date
 
         from governance.models import ChampionGroup, GroupMember, MeetingMinute, MeetingSeries
@@ -771,19 +685,11 @@ class Command(BaseCommand):
             )
 
     def _access_review(self):
-        """Seed one in-flight access review (idempotent).
-
-        Without this the User audit screen is empty on a fresh install and
-        the README screenshot does not match the demo. The review is left
-        part-decided on purpose: an open review with work still to do is what
-        the screen is for.
-        """
+        """One part-decided access review, so the User audit screen is not empty on a fresh install."""
         from governance.models import AccessReview, AccessReviewItem
         from governance.views import _snapshot_items
 
-        # Matched by pattern, not by exact name: the name carries the quarter it
-        # was seeded in, so a later run must recognise an earlier quarter's
-        # review as "already seeded" instead of stacking another one.
+        # Matched by pattern: the name carries the quarter, so a later run must recognise an earlier quarter's review.
         if AccessReview.objects.filter(name__regex=ACCESS_REVIEW_PATTERN).exists():
             self.stdout.write("  Access review: already present, left alone")
             return
@@ -793,8 +699,7 @@ class Command(BaseCommand):
         review = AccessReview.objects.create(name=name, created_by=admin)
         _snapshot_items(review)
 
-        # Decide every row but the last, so the progress meter reads 4/5 and
-        # the "1 decision left" prompt has something to point at.
+        # One row stays undecided, so the progress meter reads 4/5 and the "1 decision left" prompt shows.
         decisions = {
             "admin": (AccessReviewItem.Decision.KEEP, "Break-glass administrator; MFA enforced."),
             "aria": (AccessReviewItem.Decision.KEEP, "External auditor, read-only for the audit window."),
@@ -816,18 +721,10 @@ class Command(BaseCommand):
         )
 
     def _evidence_package(self):
-        """Seal one evidence package and issue it to the demo auditor.
-
-        Without this the auditor workspace is an empty screen on a fresh
-        install. The package is sealed and issued on purpose: a draft would
-        not show the manifest digest, and an unissued package would not show
-        what an external auditor sees.
-        """
-        from datetime import timedelta
-
+        """One sealed evidence package issued to the demo auditor, so the auditor workspace is not empty."""
         from attestations.bundle import GENERATOR, assign_paths, build_manifest
         from attestations.manifest import canonical_bytes, sha256_hex
-        from attestations.models import EvidencePackage, PackageControl, PackageGrant
+        from attestations.models import EvidencePackage, PackageControl, PackageGrant, PackageSample
         from attestations.snapshot import pin_document, snapshot_control
         from compliance.models import ControlEvidence
 
@@ -872,10 +769,7 @@ class Command(BaseCommand):
             for evidence_link in control.evidence_links.select_related("document", "linked_by"):
                 pin_document(row, evidence_link.document, mia or admin, link=evidence_link)
 
-        # A population and three sampled items on the access-control row, so
-        # the operating-effectiveness workpaper is not blank on a fresh install.
-        # Listed before sealing, so they are part of the manifest.
-        from attestations.models import PackageSample
+        # A population and three samples on the access-control row, listed before sealing so they are in the manifest.
         sampled = package.controls.filter(control_ref="CC6.2").first() \
             or package.controls.order_by("control_ref").first()
         if sampled:
@@ -920,7 +814,6 @@ class Command(BaseCommand):
         from attestations import signing
         signing.sign_package(package)
 
-        # One row already concluded, so the workpaper is not uniformly blank.
         first = package.controls.order_by("ordinal").first()
         if first:
             first.design_conclusion = PackageControl.Conclusion.NO_EXCEPTIONS
@@ -929,8 +822,6 @@ class Command(BaseCommand):
             first.concluded_by_name = aria.get_full_name() if aria else ""
             first.concluded_at = now
             first.save()
-        # Two of the three sampled items already tested by the auditor: one
-        # pass, one exception, one still open.
         if sampled and aria:
             results = {"u-1042": ("pass", ""),
                        "u-1077": ("fail", "Access removed 4 business days after termination (SLA: 1).")}
@@ -960,11 +851,7 @@ class Command(BaseCommand):
         self._pbc_requests(package, aria, mia or admin)
 
     def _pbc_requests(self, package, aria, mia):
-        """The auditor's request list on the demo package: one answered and
-        accepted, one provided and waiting on the auditor, one open and due
-        soon, so the list shows every state on a fresh install."""
-        from datetime import timedelta
-
+        """The auditor's PBC request list on the demo package: one line each accepted, provided and open."""
         from attestations.models import PbcItem, PbcRequest
         from attestations.snapshot import digest_and_size
 
@@ -1010,22 +897,14 @@ class Command(BaseCommand):
         self.stdout.write("  PBC request list: 3 line(s) on the demo package")
 
     def _control_program(self):
-        """Give the control libraries a plausible programme state (a spread of
-        statuses and owners), so readiness, coverage and the sidebar badges
-        have something to show. Applied only while every control is still
-        untouched, so it never overwrites an operator's real statuses."""
+        """A spread of statuses and owners across the control libraries, applied only while every control is untouched
+        so an operator's real statuses are never overwritten."""
         if Control.objects.exclude(status=Control.Status.NOT_STARTED).exists() \
                 or Control.objects.filter(owner__isnull=False).exists():
             self.stdout.write("  Control programme: already set, left alone")
             if self._fresh:
-                # This seed starts the demo on a register someone already
-                # worked on, so the demo sets no status at all. Recorded as a
-                # walk of no controls, which remove_demo_data reads back as
-                # nothing to reset. Without the record, the retirement would
-                # take the statuses for those of a demo seeded by an older
-                # release (which kept no record) and warn about the wrong
-                # cause. A refresh boot finds the demo already here and adds
-                # nothing.
+                # Record a walk of no controls: without it remove_demo_data would take the retirement for that of a
+                # demo seeded by an older release (no record) and warn about the wrong cause.
                 self._programme_record = (
                     f"0-{programme_fingerprint([])}",
                     "Demo control programme not applied: the controls already had statuses "
@@ -1043,9 +922,7 @@ class Command(BaseCommand):
             control.save(update_fields=["status", "owner"])
             walked.append(control.pk)
         if walked:
-            # Written at the end of the run: _audit seeds its sample history
-            # only into an empty log. (object_id, detail): what
-            # remove_demo_data reads back, and the words a person reads.
+            # Recorded at the end of the run (_record_programme): _audit seeds sample history only into an empty log.
             self._programme_record = (
                 f"{max(walked)}-{programme_fingerprint(walked)}",
                 f"Demo control programme set statuses and owners on {len(walked)} controls; "
@@ -1065,21 +942,9 @@ class Command(BaseCommand):
                                 object_id=mark, detail=detail)
 
     def _history(self):
-        """Record today's readiness point and, on a first seed, back-fill five
-        monthly points before it so the dashboard trend has a shape on day
-        one.
-
-        The back-fill goes only into a trend with no point before today, and
-        never into a workspace the demo was retired from (this run's --force,
-        or a demo-data entry in its audit log): that trend is the operator's
-        real history, and invented months are never mixed into it, just as
-        _audit's sample rows are never mixed into real entries.
-        remove_demo_data relies on this. On the run that retires the demo it
-        deletes the points dated before today, but only those from the newest
-        --force revival on when there is one (the earlier ones are the
-        operator's), and none where no demo was ever seeded; a later run
-        deletes none. Back-filled months dated before a revival would be out
-        of its reach and would stay in a real installation's trend."""
+        """Record today's readiness point and, on a first seed, back-fill five monthly ones. Never into a trend that has
+        a point before today or a workspace the demo was retired from: remove_demo_data could not reach months dated
+        before a revival, and invented months would stay in real history."""
         from dateutil.relativedelta import relativedelta
 
         from analytics.models import ReadinessSnapshot
@@ -1111,11 +976,8 @@ class Command(BaseCommand):
         self.stdout.write(f"  Readiness history: {made} monthly points + today ({now.pct}%)")
 
     def _record_revival(self):
-        """--force seeded a workspace remove_demo_data had retired. Say so in
-        the audit log, after the retirement, so later boots with
-        SEED_DEMO_DATA=true refresh the demo instead of reporting it removed
-        while its accounts are live. ip_address stays empty, so
-        remove_demo_data's seeded-row match never deletes this entry either."""
+        """--force seeded a retired workspace: log it after the retirement so later boots refresh the demo; ip_address
+        stays empty so remove_demo_data's seeded-row match never deletes this entry."""
         from audit.models import AuditLog
 
         AuditLog.objects.create(
@@ -1125,21 +987,11 @@ class Command(BaseCommand):
         )
 
     def _audit(self):
-        """A short, plausible audit history so the viewer isn't empty on first
-        visit. Real entries accrue automatically as people use the app.
-
-        Only into an empty log: a workspace seeded again with --force already
-        holds real entries (its retirement among them), and invented history
-        never goes in among those."""
-        from datetime import timedelta
-
-        from django.utils import timezone
-
+        """A short sample audit history so the viewer is not empty; only into an empty log, never among real entries."""
         from audit.models import AuditLog
 
         if AuditLog.objects.exists():
             return
-        User = get_user_model()
         by = {u.username: u for u in User.objects.all()}
         now = timezone.now()
         rows = [
@@ -1158,6 +1010,6 @@ class Command(BaseCommand):
                 user=user, action=action, object_type=otype,
                 object_id=oid, detail=detail, ip_address=ip,
             )
-            # auto_now_add ignores a provided timestamp; stagger via update()
+            # auto_now_add ignores a provided timestamp, so stagger it with update().
             AuditLog.objects.filter(pk=entry.pk).update(timestamp=now - timedelta(days=days_ago, hours=3))
         self.stdout.write("  audit: seeded 9 sample log entries")

@@ -1,5 +1,3 @@
-"""Deployment-level behaviour: secret-key handling, demo-data retirement,
-the full seed + demo bootstrap, and integration hardening."""
 import json
 import logging
 import os
@@ -25,18 +23,14 @@ from testutils import APITestBase, make_user
 
 
 def _raw_secret(user):
-    """The stored column, bypassing the decrypting descriptor."""
     return MfaDevice.objects.filter(user=user).values_list("secret", flat=True).first()
 
 BACKEND = Path(__file__).resolve().parent.parent
 
 
 def _run_check(env_overrides, drop=(), debug_default=True):
-    """`manage.py check` in a fresh process, so settings.py runs again under
-    `env_overrides`. `drop` names further variables (prefixes) to take out
-    of this process's environment first. settings.py defaults DJANGO_DEBUG to
-    off, so the process gets DJANGO_DEBUG=true (the developer's .env) unless an
-    override sets it or `debug_default=False` leaves it unset."""
+    """``manage.py check`` in a fresh process, so settings.py reruns under ``env_overrides``; ``drop`` removes more env
+    prefixes. DJANGO_DEBUG=true is set unless an override sets it or ``debug_default`` is False."""
     strip = ("DJANGO_", "POSTGRES_", "CACHE_URL", *drop)
     env = {k: v for k, v in os.environ.items() if not k.startswith(strip)}
     if debug_default:
@@ -50,9 +44,6 @@ def _run_check(env_overrides, drop=(), debug_default=True):
 
 
 def _dotenv_sets(key):
-    """Whether the checkout's .env sets ``key``. settings.py loads that file in
-    every subprocess below without overriding the environment, so a case that
-    needs the key unset cannot be run on a machine whose .env sets it."""
     try:
         text = (BACKEND.parent / ".env").read_text(encoding="utf-8")
     except OSError:
@@ -63,7 +54,6 @@ def _dotenv_sets(key):
 class SecretKeyBootTests(SimpleTestCase):
 
     def test_debug_defaults_to_off(self):
-        """With DJANGO_DEBUG unset the guard runs: no real key, no boot."""
         if _dotenv_sets("DJANGO_DEBUG") or _dotenv_sets("DJANGO_SECRET_KEY"):
             self.skipTest("the checkout's .env sets DJANGO_DEBUG or the key")
         r = _run_check({"EMAIL_PROVIDER": "console"}, debug_default=False)
@@ -88,7 +78,7 @@ class SecretKeyBootTests(SimpleTestCase):
             self.assertGreaterEqual(len(first), 64)
             r = _run_check(env)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(key_file.read_text().strip(), first)  # stable across boots
+            self.assertEqual(key_file.read_text().strip(), first)
 
     def test_list_and_hour_settings_fail_with_their_names(self):
         base = {"EMAIL_PROVIDER": "console"}
@@ -146,9 +136,6 @@ class SecretKeyBootTests(SimpleTestCase):
 
 
 class KeyFilePublishTests(SimpleTestCase):
-    """The key files every worker reads at boot, created by whichever worker
-    gets there first and agreed on by the rest."""
-
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
@@ -204,8 +191,6 @@ class KeyFilePublishTests(SimpleTestCase):
                 self.agree(start_empty=False)
 
     def test_eight_workers_filling_an_empty_file_at_once_agree_on_one_key(self):
-        """Each used to replace the file with its own key and return that key, so
-        the workers disagreed and only the last was on disk."""
         for _ in range(5):
             with self.subTest():
                 self._tmp.cleanup()
@@ -214,9 +199,6 @@ class KeyFilePublishTests(SimpleTestCase):
                 self.agree(start_empty=True)
 
     def test_a_claim_still_being_deleted_on_windows_counts_as_held(self):
-        """Eight workers at once on Windows: one releases the claim while
-        another creates it, and the second got PermissionError, which errored
-        the worker instead of waiting its turn."""
         from config import keyfile
 
         claim = self.path.with_name(".key.fill")
@@ -285,18 +267,12 @@ class KeyFilePublishTests(SimpleTestCase):
 
 @mock.patch.dict(os.environ, {"DEMO_PASSWORD": "DemoPass123!"})
 class DemoDataTests(TestCase):
-    """bootstrap_demo generates a password unless DEMO_PASSWORD names one;
-    these tests pin it so the assertions below are stable."""
-
     def test_bootstrap_then_remove(self):
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         with tempfile.TemporaryDirectory() as media:
-            from django.test import override_settings
             with override_settings(MEDIA_ROOT=media):
                 call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 User = get_user_model()
-                # bootstrap_demo generates a password unless DEMO_PASSWORD
-                # names one; this suite pins it so the assertion is stable.
                 self.assertTrue(User.objects.get(username="admin").check_password("DemoPass123!"))
                 from documents.models import Document
                 from governance.models import Risk
@@ -309,10 +285,8 @@ class DemoDataTests(TestCase):
                 self.assertGreater(_Control.objects.filter(owner__isnull=False).count(), 60)
                 self.assertEqual(ReadinessSnapshot.objects.count(), 6)
                 self.assertEqual(CalendarEvent.objects.count(), 3)
-                # health reports the demo accounts
                 from config.health import demo_accounts_present
                 self.assertTrue(demo_accounts_present())
-                # idempotent, and it never clobbers a status an operator changed
                 _Control.objects.filter(status="implemented").update(status="not_started")
                 call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 self.assertEqual(Document.objects.count(), 9)
@@ -320,7 +294,6 @@ class DemoDataTests(TestCase):
                 self.assertEqual(ReadinessSnapshot.objects.count(), 6)
                 self.assertEqual(_Control.objects.filter(status="implemented").count(), 0)
 
-                # refuses to strand the install without an admin
                 with self.assertRaises(CommandError):
                     call_command("remove_demo_data", verbosity=0, stdout=StringIO())
                 make_user("realadmin", superuser=True)
@@ -330,7 +303,7 @@ class DemoDataTests(TestCase):
                 self.assertEqual(Document.objects.count(), 0)
                 self.assertEqual(Risk.objects.count(), 0)
                 self.assertFalse(demo_accounts_present())
-                self.assertEqual(ReadinessSnapshot.objects.count(), 1)  # only today's point survives
+                self.assertEqual(ReadinessSnapshot.objects.count(), 1)
                 from compliance.models import Responsibility
                 from documents.models import FolderPermission
                 from vendors.models import Vendor
@@ -338,19 +311,12 @@ class DemoDataTests(TestCase):
                 self.assertEqual(Responsibility.objects.count(), 0)
                 self.assertFalse(FolderPermission.objects.filter(user__isnull=True).exists(),
                                  "the seeded role-wide grants are standing access; they must go")
-                # the libraries survive
                 from compliance.models import Control
                 self.assertEqual(Control.objects.count(), 217)
                 call_command("remove_demo_data", "--delete", verbosity=0, stdout=StringIO())
                 self.assertFalse(User.objects.filter(username="mia").exists())
 
     def test_a_superuser_with_no_workspace_counts_as_the_surviving_administrator(self):
-        """The sequence the README documents: `createsuperuser`, then
-        `remove_demo_data`, with the superuser belonging to no workspace at
-        all. `createsuperuser` files its account in a workspace, but an account
-        detached by hand, or made by an older release, has none. The guard,
-        which runs inside one workspace, must still see it or the documented
-        path dead-ends."""
         from accounts import tenancy
 
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
@@ -359,8 +325,6 @@ class DemoDataTests(TestCase):
                 call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 User = get_user_model()
                 platform = make_user("realadmin", superuser=True)
-                # Detached by hand, as an older release's createsuperuser left
-                # it: no workspace at all.
                 User.objects.filter(pk=platform.pk).update(workspace=None)
                 with tenancy.unscoped():
                     self.assertIsNone(User.objects.get(pk=platform.pk).workspace_id)
@@ -369,8 +333,6 @@ class DemoDataTests(TestCase):
                 self.assertFalse(User.objects.get(username="admin").is_active)
 
     def test_an_auditor_role_that_stores_manage_users_is_no_surviving_administrator(self):
-        """The guard reads a role the way User._cap does: an auditor role holds
-        no capability, so its holder cannot be the administrator left behind."""
         from accounts.models import Role
 
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
@@ -386,12 +348,8 @@ class DemoDataTests(TestCase):
                 self.assertTrue(get_user_model().objects.get(username="admin").is_active)
 
     def test_remove_still_finds_the_data_when_the_demo_accounts_are_already_gone(self):
-        """An operator who deleted the demo users by hand first must not be
-        left with the demo vendors, documents and RACI rows. Those rows lose
-        their creator (SET_NULL), so the match must still find them."""
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         with tempfile.TemporaryDirectory() as media:
-            from django.test import override_settings
             with override_settings(MEDIA_ROOT=media):
                 call_command("bootstrap_demo", verbosity=0, stdout=StringIO())
                 from documents.models import Document
@@ -405,17 +363,12 @@ class DemoDataTests(TestCase):
                 self.assertEqual(Document.objects.count(), 0)
 
 
-# --------------------------------------------------------------------------- #
-# Field encryption
-# --------------------------------------------------------------------------- #
 KEY_A = "test-key-alpha-000000000000000000000000"
 KEY_B = "test-key-bravo-111111111111111111111111"
 
 
 @override_settings(FIELD_ENCRYPTION_KEYS=[KEY_A])
 class FieldEncryptionTests(SimpleTestCase):
-    """The primitive, independent of any model."""
-
     def setUp(self):
         self.aad = fieldcrypto.aad_for("accounts_mfadevice", "secret", 7)
 
@@ -445,20 +398,16 @@ class FieldEncryptionTests(SimpleTestCase):
         env = fieldcrypto.encrypt("secret", self.aad)
         prefix, kid, nonce, blob = env.split("$", 3)
 
-        # Flip one bit of the ciphertext itself. Mutating the last base64
-        # character is not enough: unpadded base64url leaves spare bits in the
-        # final character, so some edits decode to identical bytes.
+        # Flip a bit of the decoded bytes: editing the last base64url character can decode to the same bytes.
         raw = bytearray(fieldcrypto._unb64(blob))
         raw[0] ^= 0x01
         self.assertIsNone(fieldcrypto.decrypt(
             f"{prefix}${kid}${nonce}${fieldcrypto._b64(bytes(raw))}", self.aad))
 
-        # A different nonce invalidates the tag too.
         other_nonce = fieldcrypto._b64(bytes(12))
         self.assertIsNone(fieldcrypto.decrypt(
             f"{prefix}${kid}${other_nonce}${blob}", self.aad))
 
-        # And structurally broken envelopes fail closed rather than raising.
         for junk in ("fc1$xxxxxxxx$bad$bad", "fc1$onlytwo$parts", "fc1$"):
             self.assertIsNone(fieldcrypto.decrypt(junk, self.aad))
 
@@ -492,8 +441,6 @@ class FieldEncryptionTests(SimpleTestCase):
 
 
 class FieldKeyRingBootTests(SimpleTestCase):
-    """How settings.py resolves the ring."""
-
     def test_an_explicit_key_wins_and_is_reported_as_such(self):
         r = _run_check({"DJANGO_FIELD_ENCRYPTION_KEY": KEY_A, "EMAIL_PROVIDER": "console"})
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -511,9 +458,6 @@ class FieldKeyRingBootTests(SimpleTestCase):
                 self.assertEqual(oct(key_file.stat().st_mode)[-3:], "600")
 
     def test_a_placeholder_secret_key_is_never_used_to_derive_a_ring(self):
-        """`dev-insecure-change-me` is published in this repository. Deriving a
-        ring from it would make "encrypted at rest" a false claim, so settings
-        must fall through to a generated key file instead."""
         with tempfile.TemporaryDirectory() as tmp:
             probe = Path(tmp) / "source.txt"
             code = (
@@ -553,13 +497,10 @@ class FieldKeyRingBootTests(SimpleTestCase):
 
 @override_settings(FIELD_ENCRYPTION_KEYS=[KEY_A])
 class MigrationHelperTests(TestCase):
-    """The migration path and the live field must agree byte for byte."""
-
     def test_encrypt_existing_rows_upgrades_legacy_plaintext(self):
         user = make_user("legacy")
         MfaDevice.objects.create(user=user, secret="JBSWY3DPEHPK3PXP")
-        # Put the column back to plaintext, as a database from before field
-        # encryption has it.
+        # update() skips pre_save, so the column holds plaintext as a database from before field encryption does.
         MfaDevice.objects.filter(user=user).update(secret="JBSWY3DPEHPK3PXP")
         self.assertEqual(_raw_secret(user), "JBSWY3DPEHPK3PXP")
 
@@ -599,7 +540,6 @@ class FieldKeyRotationTests(TestCase):
             self.assertNotEqual(new_id, old_id)
             self.assertEqual(new_id, fieldcrypto.key_ids()[0])
 
-        # The old key alone can no longer read it; the new one alone can.
         with override_settings(FIELD_ENCRYPTION_KEYS=[KEY_B]):
             self.assertEqual(MfaDevice.objects.get(user=user).secret, "ROTATEROTATEROTA")
 
@@ -622,9 +562,6 @@ class FieldKeyRotationTests(TestCase):
         self.assertIn("Status only: nothing was changed.", out.getvalue())
 
     def test_an_empty_column_is_neither_unreadable_nor_plaintext(self):
-        """A workspace with no Slack or Teams webhook stores an empty value.
-        Rotation must not warn that it is "not readable under any current
-        key", and --status must not count it as plaintext."""
         out, err = StringIO(), StringIO()
         call_command("rotate_field_keys", stdout=out, stderr=err)
         self.assertNotIn("not readable", err.getvalue())
@@ -644,13 +581,8 @@ class FieldKeyRotationTests(TestCase):
 
 
 class ValidatorPortabilityTests(SimpleTestCase):
-    """tools/validate.py runs on a bare checkout, before pip install.
-
-    The CI `validate` job installs nothing, so any module the validator imports
-    must depend on the standard library alone. Check 17 imports
-    documents.clamav; importing documents.scanning instead would break that job
-    while passing everywhere else.
-    """
+    """tools/validate.py runs on a bare checkout (CI installs nothing) and imports documents.clamav,
+    so that module must depend on the standard library alone."""
 
     def test_the_scanner_client_imports_without_django(self):
         code = (
@@ -662,9 +594,7 @@ class ValidatorPortabilityTests(SimpleTestCase):
         ) % str(BACKEND)
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(("DJANGO_", "PYTHONPATH"))}
-        # -S and an empty PYTHONPATH is as close to "nothing installed" as we
-        # can get without a second interpreter; the real guard is that this
-        # module imports no third-party name at all.
+        # An empty PYTHONPATH is as near to "nothing installed" as one interpreter gets; the source scan is the guard.
         env["PYTHONPATH"] = ""
         r = subprocess.run([sys.executable, "-c", code], env=env,
                            capture_output=True, text=True, timeout=60)
@@ -679,8 +609,6 @@ class ValidatorPortabilityTests(SimpleTestCase):
 
 class ReadinessConfigTests(SimpleTestCase):
     def test_malformed_bands_refuse_to_boot(self):
-        """A single bad value would otherwise take the whole control register
-        down on first read, not at boot."""
         for bad in ("90", "90,70,40", "40,40,90", "40,70,900"):
             r = _run_check({"READINESS_BANDS": bad, "EMAIL_PROVIDER": "console"})
             self.assertNotEqual(r.returncode, 0, f"READINESS_BANDS={bad} should be refused")
@@ -691,10 +619,6 @@ class ReadinessConfigTests(SimpleTestCase):
 
 
 class FirstAdministratorHealthTests(TestCase):
-    """`first_admin_needed` on /api/health/: what the sign-in page reads to
-    explain how the first administrator is made, and the administrator check
-    the container's boot banner prints from."""
-
     def flag(self):
         from rest_framework.test import APIClient
 
@@ -717,8 +641,6 @@ class FirstAdministratorHealthTests(TestCase):
         self.assertIs(self.flag(), True, "every account deactivated: nobody can sign in")
 
     def test_an_account_in_any_workspace_counts(self):
-        """The flag is about the installation, not the workspace the caller
-        or the request happens to have active."""
         from accounts import tenancy
         from accounts.models import Workspace
         from config.health import first_admin_needed
@@ -752,7 +674,6 @@ class FirstAdministratorHealthTests(TestCase):
         self.assertTrue(administrator_present())
 
     def test_an_auditor_role_that_stores_manage_users_is_no_administrator(self):
-        """The banner agrees with User._cap: an auditor holds no capability."""
         from accounts.models import Role
         from config.health import administrator_present
 
@@ -762,21 +683,12 @@ class FirstAdministratorHealthTests(TestCase):
         self.assertFalse(administrator_present())
 
 
-# Production-shaped: DEBUG off with a strong key, so settings.py reaches the
-# checks it only makes when DEBUG is off.
 _PRODUCTION = {"DJANGO_DEBUG": "false", "DJANGO_SECRET_KEY": "k" * 60, "EMAIL_PROVIDER": "console"}
 _BOOT_VARS = ("BEHIND_TLS", "NUM_PROXIES", "LOG_LEVEL")
 
 
 class BootWarningTests(SimpleTestCase):
-    """The RuntimeWarnings settings.py prints at every start with DEBUG off.
-    Each names a setting that is missing and falls silent once it is set, so
-    a correct configuration starts quietly."""
-
     def test_num_proxies_is_asked_for_only_while_it_is_unset(self):
-        """A deliberate NUM_PROXIES=1 (right when the host's own nginx
-        terminates TLS) must not warn: advising 2 there would key the
-        throttles on an address the client writes."""
         env = {**_PRODUCTION, "BEHIND_TLS": "true", "CACHE_URL": "redis://localhost:6379/2"}
         if not _dotenv_sets("NUM_PROXIES"):
             r = _run_check(env, drop=_BOOT_VARS)
@@ -796,15 +708,12 @@ class BootWarningTests(SimpleTestCase):
         self.assertNotIn("NUM_PROXIES", r.stderr)
 
     def test_cache_url_is_asked_for_with_debug_off_until_it_is_set(self):
-        """Without it every gunicorn worker counts the login throttle on its
-        own, so three workers allow three times the configured rate."""
         quiet = {**_PRODUCTION, "BEHIND_TLS": "false"}
         if not _dotenv_sets("CACHE_URL"):
             r = _run_check(quiet, drop=_BOOT_VARS)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("CACHE_URL is not set", r.stderr)
             self.assertIn("redis://localhost:6379/2", r.stderr)
-            # The dev server and the test suite run with DEBUG on: not a word.
             r = _run_check({"DJANGO_DEBUG": "true", "EMAIL_PROVIDER": "console"}, drop=_BOOT_VARS)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertNotIn("CACHE_URL", r.stderr)
@@ -814,11 +723,6 @@ class BootWarningTests(SimpleTestCase):
 
 
 class LoggingNoiseTests(SimpleTestCase):
-    """What DJANGO_DEBUG=true, the local .env's setting, prints. django.template
-    would log a chained traceback at DEBUG for every variable a template could
-    not resolve: 46 lines per 404 in the dev server's terminal, and dozens of
-    tracebacks in the documented test gate."""
-
     # `python -c PROBE test` leaves sys.argv[1] == "test", as `manage.py test` does.
     PROBE = (
         "import json, logging\n"
@@ -832,9 +736,7 @@ class LoggingNoiseTests(SimpleTestCase):
     )
 
     def probe(self, argv=(), **env):
-        """Load settings in a fresh process with ``env`` (and ``argv`` as the
-        command line), render a template with a missing variable, and return
-        the effective levels and whatever was logged."""
+        """Load settings in a fresh process, render a template with a missing variable, and return (levels, stderr)."""
         full = {k: v for k, v in os.environ.items()
                 if not k.startswith(("DJANGO_", "POSTGRES_", "CACHE_URL", *_BOOT_VARS))}
         full.update({"DJANGO_SETTINGS_MODULE": "config.settings", "EMAIL_PROVIDER": "console",
@@ -863,14 +765,10 @@ class LoggingNoiseTests(SimpleTestCase):
         self.assertEqual(levels["django.template"], logging.WARNING)
 
     def test_an_empty_log_level_counts_as_unset(self):
-        """`LOG_LEVEL=` in a .env must not be read as an unknown level."""
         levels, _ = self.probe(LOG_LEVEL="", **_PRODUCTION)
         self.assertEqual(levels["django"], logging.INFO)
 
     def test_the_test_runner_prints_only_real_request_errors(self):
-        """Hundreds of 4xx answers in the suite are deliberate, so they must
-        not each print a WARNING line in the test gate. A 5xx still logs at
-        ERROR."""
         levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true")
         self.assertEqual(levels["django.request"], logging.ERROR)
         levels, _ = self.probe(argv=("runserver",), DJANGO_DEBUG="true")
@@ -879,9 +777,6 @@ class LoggingNoiseTests(SimpleTestCase):
         self.assertEqual(levels["django.request"], logging.WARNING, "a LOG_LEVEL set on purpose wins")
 
     def test_the_test_runner_does_not_list_every_email_it_sends(self):
-        """Each console email the suite sends would be an INFO line in the
-        test gate, dozens of them between the dots. A run with LOG_LEVEL set,
-        and every other command, still lists them."""
         levels, _ = self.probe(argv=("test",), DJANGO_DEBUG="true")
         self.assertEqual(levels["notifications.email_service"], logging.WARNING)
         levels, _ = self.probe(argv=("runserver",), DJANGO_DEBUG="true")
@@ -891,10 +786,6 @@ class LoggingNoiseTests(SimpleTestCase):
 
 
 class OptionsMetadataTests(TestCase):
-    """An OPTIONS request must not answer with the view's docstring as its
-    "description": that is developer notes on the login throttle and CSRF,
-    for anyone to read, signed in or not."""
-
     def test_options_still_answers_but_carries_no_docstring(self):
         from config.urls import ThrottledTokenObtainPairView
 
@@ -914,8 +805,6 @@ class OptionsMetadataTests(TestCase):
 
 
 class ShippedTextTests(SimpleTestCase):
-    """verify.py goes to auditors inside every sealed bundle, so it is copy."""
-
     def test_the_shipped_verifier_has_no_em_or_en_dash(self):
         text = (BACKEND / "attestations" / "verifier.py").read_text(encoding="utf-8")
         # Escapes, so no dash sweep of this file can rewrite what it looks for.
@@ -923,9 +812,6 @@ class ShippedTextTests(SimpleTestCase):
             self.assertNotIn(dash, text)
 
     def test_the_backends_shipped_text_has_no_em_or_en_dash(self):
-        """Every template the backend renders is text a person reads (the
-        emails above all). Code, scripts and configuration are not copy: a
-        dash in a comment there is fine."""
         files = [p for p in BACKEND.glob("**/templates/**/*") if p.is_file()]
         self.assertGreater(len(files), 10)
         for path in files:
@@ -934,8 +820,6 @@ class ShippedTextTests(SimpleTestCase):
                 self.assertNotIn(dash, text, path.relative_to(BACKEND))
 
     def test_the_validators_dash_check_covers_text_bodies_only(self):
-        """Check 20 guards what people read, and leaves code, scripts and
-        configuration alone, comments included."""
         import importlib.util
 
         spec = importlib.util.spec_from_file_location(
@@ -952,10 +836,6 @@ class ShippedTextTests(SimpleTestCase):
 
 
 class JsonBodyShapeTests(APITestBase):
-    """Every endpoint reads its JSON body as named fields. A list or a bare
-    value is valid JSON with no fields, and used to reach `request.data.get`
-    and answer 500, anonymous endpoints included. The parser refuses it."""
-
     def test_a_json_body_that_is_not_an_object_is_a_400_everywhere(self):
         from rest_framework.test import APIClient
 

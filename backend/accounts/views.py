@@ -1,4 +1,3 @@
-"""User and role API views, self-service MFA, and sign-out."""
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from rest_framework import viewsets
@@ -32,9 +31,7 @@ class RoleViewSet(viewsets.ModelViewSet):
     permission_classes = [CanManageUsers]
 
     def perform_update(self, serializer):
-        # Built-in roles are the documented baseline the demo, docs and access
-        # reviews refer to; their capability flags can't be silently rewritten
-        # through the API (create a custom role instead).
+        # Built-in roles are the documented baseline: their capability flags cannot be rewritten through the API.
         if serializer.instance.is_system:
             changed = {
                 k for k, v in serializer.validated_data.items()
@@ -45,10 +42,8 @@ class RoleViewSet(viewsets.ModelViewSet):
                     "Capability flags on built-in roles are fixed. Create a custom role "
                     "with the flags you need and assign it instead."
                 )
-        # Same guarantee as the user edits: no change may leave the workspace
-        # without an active administrator. A custom role can carry
-        # can_manage_users, and removing the flag from it would bypass the
-        # user-level guard.
+        # No change may leave the workspace without an active administrator; dropping can_manage_users from a custom
+        # role would otherwise bypass the user-level guard.
         role = serializer.instance
         if (role.can_manage_users
                 and serializer.validated_data.get("can_manage_users", True) is False
@@ -78,8 +73,7 @@ class RoleViewSet(viewsets.ModelViewSet):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    # Ordered, because the list is paginated: without it the paginator warns
-    # and a page boundary can repeat or skip a person.
+    # Ordered because the list is paginated: unordered, a page boundary can repeat or skip a person.
     queryset = User.objects.select_related("role").order_by("username", "pk")
     permission_classes = [CanManageUsers]
     search_fields = ["username", "email", "first_name", "last_name"]
@@ -89,11 +83,6 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.action in ("create", "update", "partial_update"):
             return UserWriteSerializer
         return UserSerializer
-
-    # ---- lockout / privilege guards ----------------------------------------
-    # These stop an administrator removing their own access, touching a
-    # superuser without being one, or stripping the last remaining
-    # administrator.
 
     def _other_active_admins(self, excluding):
         return (
@@ -117,7 +106,6 @@ class UserViewSet(viewsets.ModelViewSet):
             if "role" in data and data["role"] != target.role:
                 raise PermissionDenied("You cannot change your own role. Ask another administrator.")
 
-        # Never allow the org to end up with zero active administrators.
         deactivating = data.get("is_active") is False
         new_role = data.get("role", target.role)
         loses_admin = (
@@ -134,24 +122,20 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def reset_mfa(self, request, pk=None):
-        """Admin lockout recovery: remove a user's MFA enrollment so they can
-        re-enroll (e.g. lost device with no backup codes left)."""
         target = self.get_object()
         if target.is_superuser and not request.user.is_superuser:
             raise PermissionDenied("Only a superuser can reset a superuser's MFA.")
         device = getattr(target, "mfa_device", None)
         if device:
             device.delete()
-        # Passkeys go too: this is the recovery path for a person whose only
-        # remaining key was flagged as cloned.
+        # Passkeys go too: the recovery path for a person whose only remaining key was flagged as cloned.
         removed = target.passkeys.count()
         target.passkeys.all().delete()
         target.backup_codes.all().delete()
         from accounts.session_views import end_all_sessions
         from audit.events import record_auth_event
 
-        # This is the recovery path for a compromised or lost second factor,
-        # so the existing sessions go with it.
+        # A compromised or lost second factor: the existing sessions go too.
         end_all_sessions(target)
         record_auth_event(request, target, "mfa",
                           f"MFA reset by {request.user.get_username()}: authenticator "
@@ -171,11 +155,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get", "patch"], permission_classes=[IsAuthenticated])
     def me(self, request):
-        """Return, or update, the currently authenticated user's own profile.
-
-        PATCH only touches safe self-editable fields (name, email, job title);
-        role and active status can never be changed here.
-        """
+        """The caller's own profile. PATCH touches only safe fields: role and active status never change here."""
         if request.method == "PATCH":
             ser = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
             ser.is_valid(raise_exception=True)
@@ -184,21 +164,15 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
     def change_password(self, request):
-        """Change the authenticated user's own password (verifies the current one)."""
         ser = PasswordChangeSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
         ser.save()
         return Response({"detail": "Password updated."})
 
 
-# ==========================================================================
-# Sign-out: revoke the refresh token server-side
-# ==========================================================================
 class LogoutView(APIView):
-    """Blacklist the caller's refresh token so it cannot mint further access
-    tokens. The (short-lived) access token expires on its own. Idempotent: an
-    already-revoked or malformed token still returns 200 so the client can
-    always finish clearing its local state."""
+    """Blacklist the caller's refresh token; the access token expires on its own. Idempotent: an already-revoked or
+    malformed token still answers 200, so the client can always finish clearing its local state."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -211,21 +185,14 @@ class LogoutView(APIView):
                 RefreshToken(refresh).blacklist()
                 revoked = True
             except TokenError:
-                revoked = False
+                pass
         record_logout(request)
         return Response({"detail": "Signed out.", "refresh_revoked": revoked})
 
 
-# ==========================================================================
-# Multi-factor authentication (TOTP): self-service enable/disable + admin reset
-# ==========================================================================
 class _MfaThrottle(SimpleRateThrottle):
-    """Per-identity limit on the MFA setup/verify/disable endpoints.
-
-    Subclasses SimpleRateThrottle so its ``scope`` binds directly to the
-    THROTTLE_MFA rate. (ScopedRateThrottle reads its scope from a view
-    ``throttle_scope`` attribute these APIViews don't set, which would silently
-    disable the limit.)"""
+    """Per-identity limit on the MFA endpoints. Not ScopedRateThrottle, which reads ``throttle_scope`` from a view and
+    would silently not apply to these APIViews."""
     scope = "mfa"
 
     def get_cache_key(self, request, view):
@@ -234,6 +201,10 @@ class _MfaThrottle(SimpleRateThrottle):
         else:
             ident = self.get_ident(request)
         return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
+def _reauth_required(detail):
+    return Response({"detail": detail, "code": "reauth_required"}, status=403)
 
 
 class MfaStatusView(APIView):
@@ -256,8 +227,7 @@ class MfaStatusView(APIView):
 
 
 class MfaSetupView(APIView):
-    """Begin enrollment: (re)issue a pending secret and its otpauth URI. The
-    device stays disabled until the user confirms a code at /mfa/verify/."""
+    """Begin enrollment: (re)issue a pending secret and its otpauth URI; the device stays disabled until verified."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
@@ -265,14 +235,10 @@ class MfaSetupView(APIView):
         device = getattr(request.user, "mfa_device", None)
         if device and device.enabled:
             return Response({"detail": "MFA is already enabled. Disable it first to re-enroll."}, status=400)
-        # Asked for here as well as at /verify/, so nobody scans a QR code
-        # only to be turned away. Without it, a hijacked session on a
-        # password-only account could enrol the attacker's authenticator, take
-        # the backup codes, and leave the owner needing the attacker's phone
-        # to sign in. Adding a passkey asks the same.
+        # Asked here as well as at /verify/, so nobody scans a QR code only to be turned away. Without it a hijacked
+        # session could enrol the attacker's authenticator and lock the owner out. A passkey enrolment asks the same.
         if not reauthenticated(request):
-            return Response({"detail": "Confirm your password to set up an authenticator.",
-                             "code": "reauth_required"}, status=403)
+            return _reauth_required("Confirm your password to set up an authenticator.")
         secret = mfa_lib.generate_secret()
         if device:
             device.secret = secret
@@ -288,8 +254,7 @@ class MfaSetupView(APIView):
 
 
 class MfaVerifyView(APIView):
-    """Confirm a code to switch MFA on, and return one-time backup codes
-    (shown exactly once)."""
+    """Confirm a code to switch MFA on; returns the backup codes, shown exactly once."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
@@ -300,21 +265,17 @@ class MfaVerifyView(APIView):
         if device.enabled:
             return Response({"detail": "MFA is already enabled."}, status=400)
         if not reauthenticated(request):
-            return Response({"detail": "Confirm your password to turn on the authenticator.",
-                             "code": "reauth_required"}, status=403)
+            return _reauth_required("Confirm your password to turn on the authenticator.")
         code = (request.data.get("code") or "").strip()
-        # device.verify rather than mfa_lib.verify: it spends the time step,
-        # so the code that switched the factor on cannot then be replayed to
-        # sign in with it.
+        # device.verify, not mfa_lib.verify: it spends the time step, so the code that switched the factor on cannot
+        # be replayed to sign in.
         if not device.verify(code):
             return Response({"detail": "That code isn't valid. Check your authenticator and try again."}, status=400)
         from django.utils import timezone
         device.enabled = True
         device.confirmed_at = timezone.now()
         device.save(update_fields=["enabled", "confirmed_at"])
-        # Codes belong to the account: a person who already holds unused ones
-        # (from a passkey enrolment) keeps them rather than having them
-        # silently replaced.
+        # Codes belong to the account: unused ones from a passkey enrolment are kept, not silently replaced.
         codes = None
         if request.user.backup_codes_remaining == 0:
             codes = request.user.issue_backup_codes()
@@ -327,15 +288,12 @@ class MfaVerifyView(APIView):
 
 
 class MfaDisableView(APIView):
-    """Turn MFA off. Requires the account password (re-auth) to prevent a
-    hijacked session from silently removing the second factor."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
     def post(self, request):
         if not reauthenticated(request):
-            return Response({"detail": "Confirm your password, or a code from a factor you still have.",
-                             "code": "reauth_required"}, status=403)
+            return _reauth_required("Confirm your password, or a code from a factor you still have.")
         device = getattr(request.user, "mfa_device", None)
         if device:
             device.delete()
@@ -352,8 +310,7 @@ class MfaDisableView(APIView):
 
 
 class MfaBackupCodesView(APIView):
-    """Regenerate backup codes (invalidates the old set). Re-authenticated,
-    and open to anyone with a second factor (authenticator app or passkey)."""
+    """Regenerate backup codes, invalidating the old set, for anyone with a second factor (app or passkey)."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
@@ -361,8 +318,7 @@ class MfaBackupCodesView(APIView):
         if not request.user.mfa_enabled:
             return Response({"detail": "Enrol an authenticator app or a passkey first."}, status=400)
         if not reauthenticated(request):
-            return Response({"detail": "Confirm your password, or a code from a factor you still have.",
-                             "code": "reauth_required"}, status=403)
+            return _reauth_required("Confirm your password, or a code from a factor you still have.")
         codes = request.user.issue_backup_codes()
         from audit.events import record_auth_event
 

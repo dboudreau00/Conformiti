@@ -1,11 +1,4 @@
-"""
-Time-based one-time passwords (TOTP, RFC 6238) and recovery codes.
-
-Implemented on the standard library alone (hmac/hashlib/base64/struct) so MFA
-adds no dependency and works with any authenticator app (Google Authenticator,
-Authy, 1Password, Microsoft Authenticator and others). Correctness is covered by
-the RFC 4226 / 6238 test vectors in tests (see tools/validate.py check 13).
-"""
+"""TOTP (RFC 6238) and recovery codes on the standard library alone, so MFA adds no dependency."""
 import base64
 import hashlib
 import hmac
@@ -52,14 +45,8 @@ def totp(secret, at=None, period=PERIOD, digits=DIGITS, algo=ALGO):
 
 
 def matched_counter(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=ALGO, window=1):
-    """The time step a submitted code matches, or None if none does.
-
-    Constant-time, allowing +/- `window` steps of clock drift (so a code valid
-    in the adjacent 30s window still passes). The step is returned instead of
-    a boolean so the caller can refuse a code it has already accepted: a TOTP
-    is valid for its whole window, and with nothing recorded an intercepted
-    code works again until it expires (see ``MfaDevice.verify``).
-    """
+    """The time step a submitted code matches (+/- ``window`` steps of drift, constant-time), or None. The step is
+    returned, not a boolean, so the caller can refuse a replayed code (see ``MfaDevice.verify``)."""
     if at is None:
         at = time.time()
     code = (code or "").strip().replace(" ", "")
@@ -87,7 +74,6 @@ def verify(secret, code, at=None, period=PERIOD, digits=DIGITS, algo=ALGO, windo
 
 
 def otpauth_uri(secret, account, issuer="Conformiti"):
-    """The otpauth:// URI an authenticator scans or accepts pasted in."""
     label = quote(f"{issuer}:{account}")
     params = urlencode({
         "secret": secret, "issuer": issuer,
@@ -97,7 +83,6 @@ def otpauth_uri(secret, account, issuer="Conformiti"):
 
 
 def generate_backup_codes(count=10, groups=2, group_len=4):
-    """Single-use recovery codes like ``abcd-efgh`` (shown once at enrollment)."""
     codes = []
     for _ in range(count):
         parts = [

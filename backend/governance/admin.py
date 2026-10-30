@@ -42,8 +42,7 @@ class MeetingSeriesAdmin(admin.ModelAdmin):
 class MeetingMinuteAdmin(admin.ModelAdmin):
     list_display = ["series", "date", "title", "created_by"]
     list_filter = ["series"]
-    # The file arrives through the API, where uploads are checked and
-    # scanned (documents/admin.py says why the admin takes none).
+    # Uploads are checked and scanned in the API, so the admin takes none (documents/admin.py says why).
     readonly_fields = ["file"]
 
 

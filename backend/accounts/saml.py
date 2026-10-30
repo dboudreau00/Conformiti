@@ -1,30 +1,5 @@
-"""
-Single sign-on over SAML 2.0 (SP-initiated, HTTP-Redirect out, HTTP-POST back).
-
-Same posture as OIDC (accounts/oidc.py): the provider is configured from the
-environment only, the identity-to-account rules are the same code, and the
-tokens reach the SPA through the same one-time ticket. SAML adds XML, which is
-where SAML deployments tend to break, so the rules here are strict:
-
-* The provider's signing certificate from the environment is the only trust
-  anchor. There is no metadata fetch and no certificate taken from the message.
-* Only the element the signature covers is read. A Response whose signature
-  covers one assertion and which carries a second, unsigned assertion (the
-  classic wrapping attack) yields nothing from the second.
-* Parsing resolves no entities, loads nothing from the network and refuses
-  DTDs; a response over 256 KB is refused before it is parsed.
-* The flow state (request id, relay, where to go next) travels in a signed,
-  HttpOnly cookie instead of the session: the provider's POST back to us is
-  cross-site, and a SameSite=Lax session cookie is not sent on it. The flow
-  cookie is SameSite=None; Secure, so it is sent, and the assertion's
-  InResponseTo must match it.
-* An assertion id is accepted once. Replays are refused from a shared table
-  rather than a per-process cache.
-
-Only HTTP-POST binding responses with a bearer subject are accepted; requests
-are not signed (the providers that require signed requests are rare, and a
-signing key would be one more secret to keep).
-"""
+"""SAML 2.0 sign-in (SP-initiated, HTTP-POST back). The only trust anchor is the certificate from the environment, and
+only the element the signature covers is read (wrapping attacks); an assertion id is accepted once."""
 import base64
 import datetime as dt
 import secrets
@@ -51,14 +26,13 @@ NS = {
 BEARER = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
 SUCCESS = "urn:oasis:names:tc:SAML:2.0:status:Success"
 EMAIL_FORMAT = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
-# A transient NameID is a fresh opaque value at every sign-in (SAML core 8.3.8),
-# so it identifies nobody across sign-ins and is never used as the subject.
+# A transient NameID is a fresh opaque value per sign-in (SAML core 8.3.8): never the subject.
 TRANSIENT_FORMAT = "urn:oasis:names:tc:SAML:2.0:nameid-format:transient"
 POST_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
 
 FLOW_COOKIE = "conformiti_saml"
 FLOW_TTL = 600
-SKEW = 180                # seconds of clock drift tolerated on NotBefore/NotOnOrAfter
+SKEW = 180
 MAX_RESPONSE = 256 * 1024
 
 ASYMMETRIC = frozenset({
@@ -101,9 +75,8 @@ class Config:
         return bool(self.idp_entity_id and self.sso_url and self.cert)
 
     def as_oidc(self):
-        """The account-resolution policy in the shape resolve_user() reads.
-        A signed assertion is the provider vouching for the address, so the
-        email counts as verified."""
+        """The policy in the shape resolve_user() reads; a signed assertion vouches for the address, so no
+        verified-email claim is required."""
         return OidcConfig(
             issuer=self.idp_entity_id, client_id="", client_secret="", scopes="", label=self.label,
             redirect_uri="", allowed_domains=self.allowed_domains, auto_provision=self.auto_provision,
@@ -165,9 +138,6 @@ def _parse_time(text):
     return value
 
 
-# --------------------------------------------------------------------------- #
-# Outbound: the AuthnRequest
-# --------------------------------------------------------------------------- #
 def begin(request, next_path="/"):
     """Build the AuthnRequest and the flow cookie; return (url, cookie_value)."""
     cfg = config()
@@ -208,9 +178,6 @@ def read_flow(request):
         return None
 
 
-# --------------------------------------------------------------------------- #
-# Inbound: the Response
-# --------------------------------------------------------------------------- #
 def _parse(raw):
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False,
                              huge_tree=False, remove_comments=True, remove_pis=True)
@@ -226,8 +193,7 @@ def _parse(raw):
 
 
 def _signed_assertion(root, cfg):
-    """Verify every signature against the provider's certificate and return
-    the one assertion the signed content vouches for."""
+    """Verify every signature against the provider's certificate; return the one assertion the signature covers."""
     try:
         results = XMLVerifier().verify(
             root, x509_cert=cfg.cert,
@@ -304,9 +270,8 @@ def complete(request, flow):
     response_to = root.get("InResponseTo")
     if response_to and not _same(response_to, flow["id"]):
         raise OidcError("state", "the response answers a different request")
-    # Destination is required. The HTTP-POST binding says a signed response
-    # carries it, and accepting an absent one would let a response captured at
-    # one service be replayed at another (REVIEWS.md (0.9.5 review), S-6).
+    # Destination is required: accepting an absent one would let a response captured at one service be replayed at
+    # another (REVIEWS.md (0.9.5 review), S-6).
     destination = root.get("Destination")
     if not destination:
         raise OidcError("token", "the response does not say where it was meant to go")
@@ -342,16 +307,12 @@ def complete(request, flow):
             continue
         if not _same(data.get("InResponseTo", ""), flow["id"]):
             continue
-        # Same rule as Destination above: a confirmation that names no
-        # recipient confirms nothing.
+        # Same rule as Destination: a confirmation that names no recipient confirms nothing.
         recipient = data.get("Recipient")
         if not recipient or recipient != flow["acs"]:
             continue
-        # NotOnOrAfter is required. The profile makes it mandatory on a bearer
-        # confirmation, and without it the replay table would remember the
-        # assertion only for the Conditions window (or an hour); once that row
-        # is pruned the same assertion could be posted again. Same reasoning
-        # as Recipient above.
+        # NotOnOrAfter is required: without it the replay row is pruned after the Conditions window (or an hour)
+        # and the same assertion could be posted again.
         expiry = _parse_time(data.get("NotOnOrAfter"))
         if expiry is None or now - skew >= expiry:
             continue
@@ -372,10 +333,7 @@ def complete(request, flow):
     if not email:
         email = _first(attrs, EMAIL_ATTRS)
     if transient:
-        # The address is the stable thing to pin the account by. Without this
-        # every sign-in was a new subject: a new identity row each time, and
-        # one account could never be told apart from another holding the
-        # same address at the provider.
+        # A transient NameID is new at every sign-in: pin the account by the address instead.
         name_id = email.strip().lower()
     if not email and "@" in name_id:
         email = name_id
@@ -414,9 +372,6 @@ def _refuse_replay(assertion_id, expires_at):
         raise OidcError("state", "this assertion has already been used")
 
 
-# --------------------------------------------------------------------------- #
-# Our metadata, for the provider's administrator
-# --------------------------------------------------------------------------- #
 def metadata_xml(request):
     cfg = config()
     sp, acs = sp_entity_id(request, cfg), acs_url(request, cfg)
@@ -426,6 +381,7 @@ def metadata_xml(request):
         '<md:SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" '
         'protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">'
         f'<md:NameIDFormat>{EMAIL_FORMAT}</md:NameIDFormat>'
-        f'<md:AssertionConsumerService Binding={quoteattr(POST_BINDING)} Location={quoteattr(acs)} index="0" isDefault="true"/>'
+        f'<md:AssertionConsumerService Binding={quoteattr(POST_BINDING)} Location={quoteattr(acs)} '
+        'index="0" isDefault="true"/>'
         '</md:SPSSODescriptor></md:EntityDescriptor>\n'
     )

@@ -1,34 +1,17 @@
-"""Create a key file that every process booting at once agrees on.
-
-Workers start together, and each of them reads the key file before it has been
-written. A key is therefore written whole to a private temporary name and linked
-into place: nobody reads a half-written file, and two processes cannot each keep
-a key of their own, because the one that loses the link reads the winner's.
-
-A file that is there but empty (an operator's ``touch``, or the last crash of a
-release that wrote the name first) is filled the same way, under a claim only
-one process can take. The others wait for the file to fill and read what it
-holds. A claim older than :data:`STALE_SECONDS` was left by a process that died,
-and is cleared once.
-
-This module imports nothing but the standard library: ``settings.py`` imports it.
-"""
+"""One key file for concurrent workers: written whole, linked into place, and whichever file wins is returned.
+Imports only the standard library, because ``settings.py`` imports it."""
 import os
 import secrets
 import time
 from pathlib import Path
 
-#: How long a process waits for another to finish filling an empty file.
 WAIT_SECONDS = 15
-#: A claim older than this was left behind by a process that died holding it.
 STALE_SECONDS = 60
 
 
 def _retrying(action):
-    """Run ``action``, trying again for a moment when Windows reports a sharing
-    violation as PermissionError: a file that another process is reading cannot
-    be replaced, and one that is being replaced cannot be read, for the few
-    milliseconds that takes. Anywhere else the first attempt is the only one."""
+    """Run ``action``, retrying briefly on PermissionError: Windows reports a sharing violation that way
+    while another process reads or replaces the file."""
     for attempt in range(60):
         try:
             return action()
@@ -54,9 +37,8 @@ def _unlink(path):
 
 
 def _link(source, destination):
-    """Give ``source``'s content the name ``destination`` if nobody has taken it:
-    True when this process did, False when the name was already there. A
-    filesystem without hard links gets an exclusive create instead."""
+    """Hard-link ``source`` as ``destination`` (an exclusive create where links fail):
+    True when this process took the name."""
     try:
         os.link(str(source), str(destination))
         return True
@@ -73,21 +55,18 @@ def _link(source, destination):
     return True
 
 
-#: Windows refuses to create a name whose file another process is still
-#: deleting (a claim just released) with PermissionError, not FileExistsError.
+#: Windows raises PermissionError, not FileExistsError, for a name whose file is still being deleted.
 DELETE_PENDING_REFUSED = os.name == "nt"
 
 
 def _take(claim):
-    """Take the claim on filling an empty key file, or say it is held."""
     try:
         os.close(os.open(str(claim), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
         return True
     except FileExistsError:
         return False
     except PermissionError:
-        # Held for a moment longer on Windows. Anywhere else the directory
-        # cannot be written, which is a real error.
+        # Windows: the name is still held for a moment. Elsewhere the directory is unwritable, which is a real error.
         if DELETE_PENDING_REFUSED:
             return False
         raise
@@ -101,10 +80,8 @@ def _age(path):
 
 
 def publish(path, text):
-    """Make ``path`` hold ``text`` unless a key is there already, and return what
-    the file holds once this has run: ``text`` when this process created it, the
-    other process's when it got there first. Only an empty file counts as no
-    key. Raises OSError for a filesystem that will not do it."""
+    """Make ``path`` hold ``text`` unless a key is there; return what the file holds, which may be another process's.
+    Only an empty file counts as no key. Raises OSError where the filesystem will not do it."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
@@ -125,16 +102,14 @@ def _place(path, tmp, text):
     while True:
         current = _read(path)
         if current is not None and current.strip():
-            return current                       # a key is there: it wins
+            return current
         if current is None:
             if _link(tmp, path):
                 return text
             continue                             # lost the race: read the winner's
-        # An empty file. One process fills it; the rest wait and read.
         if _take(claim):
             try:
-                # Asked again under the claim: the process that held it before
-                # us may have filled the file and let go since this loop read it.
+                # Re-read under the claim: the previous holder may have filled the file since the loop read it.
                 current = _read(path)
                 if current is not None and current.strip():
                     return current

@@ -1,4 +1,3 @@
-"""Framework / control API views."""
 import csv
 
 from django.db.models import Count, Q
@@ -22,16 +21,15 @@ from .serializers import (
 )
 
 
-# Control.Meta.ordering plus the id, so every page of the register is stable.
+# Spelled out because aggregate queries drop Meta.ordering; the id is a unique tie-break so pages never repeat or skip.
 CONTROL_ORDER = ("category", "order", "control_id", "id")
 MAX_BULK_DOCUMENTS = 500
-# The documents /control-evidence/choices/ lists; the front end names the same number.
+# ControlDetail.jsx mirrors this number.
 CHOICES_DOCUMENT_CAP = 500
 
 
 def _controls_with_evidence_counts(user, qs=None):
-    """Annotate controls with an evidence count restricted to the folders this
-    user may see, so the mapping never leaks documents past folder RBAC."""
+    """Evidence counts cover only folders ``user`` can see, so the register never leaks documents past folder RBAC."""
     visible = accessible_folder_ids(user)
     base = qs if qs is not None else Control.objects.all()
     annotated = base.select_related(
@@ -43,13 +41,6 @@ def _controls_with_evidence_counts(user, qs=None):
             distinct=True,
         )
     )
-    # Readiness needs four more signals; adding them here keeps the whole
-    # register to one query instead of three per row.
-    #
-    # The counts make this a GROUP BY query, and Django drops Meta.ordering
-    # from those, so the order is spelled out: Meta.ordering, then the id as a
-    # unique tie-break. Without it the paged list has no ORDER BY and
-    # PostgreSQL may repeat or skip a control between pages.
     return scoring.annotate(annotated, user).order_by(*CONTROL_ORDER)
 
 
@@ -61,7 +52,6 @@ class FrameworkViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def controls(self, request, key=None):
-        """All controls for a framework, grouped-ready and filterable by status."""
         qs = _controls_with_evidence_counts(
             request.user, Control.objects.filter(category__framework__key=key)
         )
@@ -72,16 +62,10 @@ class FrameworkViewSet(viewsets.ModelViewSet):
 
 
 class ControlViewSet(viewsets.ModelViewSet):
-    """List/retrieve controls; update status and owner (assign responsibility).
-
-    Controls are seeded reference data: they're read and PATCHed (status/owner),
-    never created or deleted through the API. Exposing create/PUT/DELETE would
-    either 500 (control_id/title/category are read-only, so a create has no
-    category) or let a manager destroy seeded catalog rows, so restrict the
-    verbs to list/retrieve + PATCH."""
     queryset = Control.objects.select_related("category", "category__framework", "owner").all()
     serializer_class = ControlSerializer
     permission_classes = [CanManageFrameworks]
+    # Seeded catalog: read and PATCH only. A create would 500 (no category) and DELETE would destroy catalog rows.
     http_method_names = ["get", "patch", "head", "options"]
     search_fields = ["control_id", "title", "objective"]
     filterset_fields = ["status", "owner", "category", "category__framework__key"]
@@ -91,11 +75,6 @@ class ControlViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def readiness(self, request, pk=None):
-        """Why this control scores what it scores.
-
-        The register shows a number; this lists the signals behind it and
-        what would move it.
-        """
         control = self.get_object()
         return Response({
             "control": control.pk,
@@ -105,11 +84,7 @@ class ControlViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def export(self, request):
-        """The control register as CSV (respects the same filters as the
-        list: framework, status, owner, search). ``q`` is the register page's
-        own search box: the text must appear in the control's id and title as
-        the page shows them (``A.5.1 Policies for security``), whatever the
-        case. Evidence counts are the caller's visible counts, like the list."""
+        """The register as CSV with the list's filters; ``q`` matches "<control_id> <title>" as the page shows it."""
         from django.db.models import Value
         from django.db.models.functions import Concat
 
@@ -140,23 +115,8 @@ class ControlViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def atlas(self, request):
-        """Every control as one small record, with the crosswalk beside it, for
-        the dashboard's coverage atlas.
-
-        The register pages by fifty and the crosswalk nests every control in
-        every theme, so drawing the whole programme from them is dozens of
-        requests. This is one, and its queries do not grow with the controls.
-
-        Everything is keyed by id: ``control_id`` is only unique within its
-        category and a framework key only within its workspace. Controls come
-        in register order and categories in territory order, so the order of
-        the arrays is the layout. ``score`` and ``band`` are the caller's, the
-        same the register shows for the row (the evidence behind a score counts
-        only the folders the caller can see); the programme figure on the
-        dashboard counts every folder. ``themes`` lists only themes that join
-        two or more controls, as ids: the controls sharing a theme with one are
-        its crosswalk partners, worked out by the reader, so no edge list.
-        """
+        """Every control as one small record plus the crosswalk, keyed by id (``control_id`` is unique only within its
+        category). ``score`` and ``band`` are the caller's, counting only the folders they can see."""
         categories = (
             ControlCategory.objects.select_related("framework")
             .order_by("framework__name", "framework__key", "framework_id", "order", "key", "id")
@@ -169,8 +129,6 @@ class ControlViewSet(viewsets.ModelViewSet):
             })
             entry["categories"].append({"id": cat.pk, "key": cat.key, "name": cat.name})
 
-        # Only what the score reads: the register's heavier joins (objective,
-        # owner and tester names) are not wanted here.
         queryset = scoring.annotate(
             Control.objects.only(
                 "id", "control_id", "title", "status", "owner", "last_tested_on",
@@ -191,9 +149,7 @@ class ControlViewSet(viewsets.ModelViewSet):
                 "band": result["band"],
             })
 
-        # The mapping is read through ControlMapping, which is scoped to the
-        # workspace; the auto-created join table is not, so a member that is
-        # not one of this workspace's controls is dropped here.
+        # The auto-created join table is not workspace-scoped: members outside this workspace's controls are dropped.
         place = {c["id"]: i for i, c in enumerate(controls)}
         members, names = {}, {}
         rows = ControlMapping.objects.order_by("theme", "id").values_list("id", "theme", "controls")
@@ -217,16 +173,23 @@ class ControlMappingViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ["theme"]
 
 
-class ControlEvidenceViewSet(viewsets.ModelViewSet):
-    """
-    The control <-> evidence mapping. Links are immutable audit artifacts:
-    they are created and deleted, never edited (so no PUT/PATCH).
+def _document_id(value):
+    """A document id as an int; a numeric string is accepted so it matches the integer pks compared later."""
+    number = None
+    if isinstance(value, (int, str)) and not isinstance(value, bool):
+        try:
+            number = int(value)
+        except ValueError:
+            pass
+    # Past the database's integer type the query raises OverflowError, a 500 for what is only a wrong id.
+    if number is None or abs(number) >= 2 ** 63:
+        raise ValidationError({"documents": f"{value!r} is not a document id."})
+    return number
 
-    Visibility mirrors folder RBAC: you only see links whose document lives in
-    a folder you can view. Creating or removing a link requires edit access to
-    that document's folder, or the manage-frameworks capability.
-    """
+
+class ControlEvidenceViewSet(viewsets.ModelViewSet):
     serializer_class = ControlEvidenceSerializer
+    # Links are immutable audit artifacts: created and deleted, never edited.
     http_method_names = ["get", "post", "delete", "head", "options"]
     filterset_fields = ["control", "document", "control__category__framework__key"]
 
@@ -241,7 +204,6 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             )
         )
 
-    # -- authorisation helpers ----------------------------------------------
     def _can_link(self, document):
         user = self.request.user
         return user.can_manage_frameworks or document.folder.can_edit(user)
@@ -265,11 +227,9 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             self._deny()
         instance.delete()
 
-    # -- actions --------------------------------------------------------------
     @action(detail=False, methods=["post"])
     def bulk(self, request):
-        """Attach several documents to one control in a single call: the
-        audit-prep flow ('these five docs are the evidence for CC6.1')."""
+        """Attach several documents to one control in a single call."""
         try:
             control = Control.objects.get(pk=request.data.get("control"))
         except (Control.DoesNotExist, TypeError, ValueError):
@@ -279,21 +239,9 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             raise ValidationError({"documents": "Provide a non-empty list of document ids."})
         if len(raw_ids) > MAX_BULK_DOCUMENTS:
             raise ValidationError({"documents": f"At most {MAX_BULK_DOCUMENTS} documents per call."})
-        # Whole numbers only (a numeric string is accepted). Anything else used
-        # to reach the query and raise a 500, and "5" never matched 5 below, so
-        # a document that was linked was also reported as not found.
         doc_ids = []
         for value in raw_ids:
-            if isinstance(value, bool) or not isinstance(value, (int, str)):
-                raise ValidationError({"documents": f"{value!r} is not a document id."})
-            try:
-                number = int(value)
-            except ValueError:
-                raise ValidationError({"documents": f"{value!r} is not a document id."})
-            # Bigger than the database's integer type reaches the query and
-            # raises OverflowError there, a 500 for what is only a wrong id.
-            if abs(number) >= 2 ** 63:
-                raise ValidationError({"documents": f"{value!r} is not a document id."})
+            number = _document_id(value)
             if number not in doc_ids:
                 doc_ids.append(number)
         note = str(request.data.get("note") or "")[:255]
@@ -327,10 +275,7 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def choices(self, request):
-        """Unpaginated pick-lists for the link UIs: the caller's visible
-        documents (the first CHOICES_DOCUMENT_CAP by name, with
-        ``documents_truncated`` saying whether there were more) and the full
-        control catalog (small: ~217 rows)."""
+        """Unpaginated pick-lists: visible documents (capped; ``documents_truncated`` says if more) and all controls."""
         visible = accessible_folder_ids(request.user)
         q = (request.query_params.get("q") or "").strip()
         docs = (
@@ -342,7 +287,6 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
         controls = Control.objects.select_related(
             "category", "category__framework"
         ).order_by("category__framework__name", "category__order", "category__key", "order", "control_id")
-        # One more than the cap, so "there were more" is known rather than guessed.
         listed = list(docs[:CHOICES_DOCUMENT_CAP + 1])
         return Response({
             "documents": [

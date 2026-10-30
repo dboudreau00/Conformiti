@@ -1,29 +1,5 @@
-"""
-HttpOnly cookie authentication: the same SimpleJWT tokens, delivered where
-JavaScript cannot read them.
-
-The SPA's default is the Authorization header, so existing deployments keep
-working when they upgrade. Set ``AUTH_TRANSPORT=cookie`` to move a deployment
-across; both modes accept a Bearer header, so an API client keeps working
-either way.
-
-**Benefit.** With header auth, any XSS can read the access token and the
-refresh token out of ``localStorage``. With cookie auth it can still make
-requests as the user while the page is open (the browser attaches the cookie
-automatically), but it cannot exfiltrate a credential that keeps working after
-the tab closes.
-
-**Cost.** A cookie is sent on every same-site request, so cookie mode needs
-CSRF protection that header mode does not. Unsafe methods must carry
-``X-CSRFToken`` matching the readable ``csrftoken`` cookie. This is Django's
-own double-submit check, reused.
-
-Same-origin only. The shipped stack serves the SPA and the API from one nginx,
-and the CSP is ``connect-src 'self'``. A split-origin configuration would need
-``SameSite=None; Secure``, a cookie domain and CORS credentials, which is more
-configuration to get wrong for a topology the product does not otherwise
-support.
-"""
+"""The SimpleJWT tokens as HttpOnly cookies (AUTH_TRANSPORT=cookie); a Bearer header works in both modes.
+Cookie mode needs CSRF: unsafe methods must carry X-CSRFToken (Django's double-submit check). Same-origin only."""
 from datetime import datetime, timezone
 
 from django.conf import settings
@@ -47,9 +23,8 @@ def _secure():
 
 
 def access_cookie_name():
-    """`__Host-` when the cookie is Secure: bound to this exact host, Path=/,
-    no Domain, so nothing on a sibling subdomain can plant or replace it.
-    Browsers refuse the prefix over plain http, hence the plain fallback."""
+    """`__Host-` when the cookie is Secure: bound to this host with Path=/ and no Domain, so a sibling subdomain cannot
+    plant or replace it. Browsers refuse the prefix over plain http, hence the plain fallback."""
     configured = getattr(settings, "AUTH_COOKIE_ACCESS", "") or ""
     if configured:
         return configured
@@ -73,13 +48,11 @@ def _cookie_kwargs():
     return {
         "httponly": True,
         "secure": _secure(),
-        # Fixed rather than configurable: see the module docstring.
         "samesite": "Lax",
     }
 
 
 def set_auth_cookies(response, access=None, refresh=None):
-    """Attach the tokens as HttpOnly cookies, each scoped to what needs it."""
     common = _cookie_kwargs()
     if access is not None:
         response.set_cookie(
@@ -88,9 +61,8 @@ def set_auth_cookies(response, access=None, refresh=None):
             **common,
         )
     if refresh is not None:
-        # Scoped to the one endpoint that consumes it. /api/auth/ would put the
-        # 7-day refresh token on nine endpoints, including the ones that return
-        # the TOTP secret and the backup codes and the ones carrying a password.
+        # Scoped to the one endpoint that consumes it: /api/auth/ would send the 7-day refresh token to the endpoints
+        # that return the TOTP secret and backup codes or carry a password.
         response.set_cookie(
             refresh_cookie_name(), refresh,
             path=getattr(settings, "AUTH_COOKIE_REFRESH_PATH", "/api/auth/token/"),
@@ -101,18 +73,13 @@ def set_auth_cookies(response, access=None, refresh=None):
 
 
 def clear_auth_cookies(response):
-    """Expire both cookies.
-
-    Hand-rolled rather than ``delete_cookie`` because that drops ``httponly``
-    and the configured ``secure`` flag, and a browser will not replace a
-    Secure+HttpOnly cookie with one that lacks those attributes.
-    """
+    """Expire both cookies. Not ``delete_cookie``: it drops ``httponly`` and ``secure``, and a browser will not replace
+    a Secure+HttpOnly cookie with one that lacks them."""
     common = _cookie_kwargs()
     refresh_path = getattr(settings, "AUTH_COOKIE_REFRESH_PATH", "/api/auth/token/")
     response.set_cookie(access_cookie_name(), "", path=access_cookie_path(), max_age=0, **common)
     response.set_cookie(refresh_cookie_name(), "", path=refresh_path, max_age=0, **common)
-    # Also expire the unprefixed names, so a sign-out after an upgrade leaves
-    # nothing behind under the old names.
+    # Also expire the unprefixed names, so a sign-out after an upgrade leaves nothing behind.
     for legacy, path in (("conformiti_access", "/api/"), ("conformiti_refresh", refresh_path)):
         if legacy not in (access_cookie_name(), refresh_cookie_name()):
             response.set_cookie(legacy, "", path=path, max_age=0, **common)
@@ -120,34 +87,23 @@ def clear_auth_cookies(response):
 
 
 def rotate_csrf(request):
-    """Issue a fresh CSRF token across the authentication boundary.
-
-    ``django.contrib.auth.login()`` does this for exactly this reason: the
-    CSRF cookie lives a year, is readable by script, and in cookie mode it is
-    the only thing standing between a live session cookie and a cross-site
-    write. Carrying a pre-login token into a post-login session is a fixation
-    hazard for no benefit.
-    """
+    """Issue a fresh CSRF token across the authentication boundary, as ``django.contrib.auth.login()`` does: a token
+    carried over is a fixation hazard, and in cookie mode the CSRF cookie guards the session cookie."""
     rotate_token(request)
 
 
 class _Enforcer(CsrfViewMiddleware):
-    """Reuse Django's CSRF check rather than writing a second one."""
+    """Django's CSRF check, answering with the failure reason instead of a response."""
 
     def _reject(self, request, reason):
         return reason
 
 
 class CookieJWTAuthentication(JWTAuthentication):
-    """Authenticate from the access cookie when no Bearer header is present.
-
-    A Bearer header always wins, so scripts and integrations are unaffected by
-    the transport setting.
-    """
+    """Authenticates from the access cookie when no Bearer header is present; a Bearer header always wins."""
 
     def get_user(self, validated_token):
-        """As SimpleJWT's, but loading the workspace and role in the same
-        query and refusing a person whose workspace has been archived."""
+        """SimpleJWT's, plus workspace and role loaded in the same query and a refusal for an archived workspace."""
         from rest_framework_simplejwt.exceptions import InvalidToken
         from rest_framework_simplejwt.settings import api_settings
 
@@ -181,14 +137,7 @@ class CookieJWTAuthentication(JWTAuthentication):
         return self.get_user(validated), validated
 
     def _enforce_csrf(self, request):
-        """Only a cookie-authenticated unsafe request needs this. A Bearer
-        header is not attached by the browser on its own, so it cannot be
-        forged cross-site.
-
-        The two endpoints that *set* these cookies authenticate nobody, so
-        they never reach this method and have to ask for themselves. See
-        ``csrf_required`` below.
-        """
+        """Cookie-authenticated unsafe requests only: a browser does not attach a Bearer header on its own."""
         if request.method in SAFE_METHODS:
             return
         reason = _Enforcer(lambda r: None).process_view(request, None, (), {})
@@ -197,14 +146,8 @@ class CookieJWTAuthentication(JWTAuthentication):
 
 
 def _refuse_if_superseded(user, validated_token):
-    """Refuse an access token minted before the account's sessions were ended.
-
-    Blacklisting reaches refresh tokens only, so without this check an access
-    token in a hijacked tab would keep working for the rest of its hour after
-    "sign out everywhere". A token with no ``iat`` was minted by something that
-    does not set it; it is refused rather than trusted, because the
-    alternative is a claim the holder controls.
-    """
+    """Refuse an access token minted before the account's sessions were ended: blacklisting reaches refresh tokens only.
+    A token with no ``iat`` is refused rather than trusted."""
     stamped = getattr(user, "sessions_valid_from", None)
     if not stamped:
         return
@@ -215,17 +158,8 @@ def _refuse_if_superseded(user, validated_token):
 
 
 def csrf_required(request):
-    """Django's CSRF check, for a view that authenticates nobody.
-
-    ``_enforce_csrf`` above runs inside authentication, so it only sees a
-    request that already has a session. The endpoints that hand out the auth
-    cookies have none by definition, so they call this to keep login itself
-    from being forgeable: a cross-site form post would sign the visitor's
-    browser into the attacker's account, and anything the visitor then uploads
-    as evidence would land there.
-    Returns a reason string when the request fails, None when it passes, and
-    None in header mode, where no cookie is being set.
-    """
+    """Django's CSRF check for a view that authenticates nobody (the cookie-setting endpoints), so login cannot be
+    forged cross-site. Returns a reason string on failure; None on pass, and in header mode."""
     if not cookie_mode():
         return None
     return _Enforcer(lambda r: None).process_view(request, None, (), {})

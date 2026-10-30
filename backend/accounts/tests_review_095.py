@@ -1,13 +1,5 @@
-"""The third-party review of 0.9.5, fixed in 0.9.5b (REVIEWS.md (0.9.5 review)).
-
-S-1 webhook URLs readable by every role · S-2 the host allow-list and the
-redirect-following request · S-3 encryption at rest · S-5 the mailed link's
-base · S-6 the SAML attributes that were optional · S-7 the sign-out that
-could not see the refresh cookie.
-
-S-4 lives in ``documents.tests_uploads`` with the rest of upload validation,
-and S-8 in ``attestations.tests_review_fixes`` beside the check it changes.
-"""
+"""Findings S-1 to S-7 of REVIEWS.md (0.9.5 review). S-4 is in documents.tests_uploads, S-8 in
+attestations.tests_review_fixes."""
 from unittest import mock
 
 from django.test import override_settings
@@ -29,9 +21,7 @@ def stub_dns(case, addresses=PUBLIC_ADDRESS):
 
 
 class WebhookSecrecyTests(APITestBase):
-    """S-1. An incoming-webhook URL is a credential: whoever holds it can post
-    into the channel as the app. No read may return it, whichever account makes
-    it, the issued external auditor included."""
+    """S-1. No read returns an incoming-webhook URL (a credential), whichever account asks, auditors included."""
 
     def setUp(self):
         super().setUp()
@@ -63,8 +53,7 @@ class WebhookSecrecyTests(APITestBase):
                 self.assertNotIn(key, r.data, (user.username, key))
 
     def test_saving_the_reminder_address_leaves_a_configured_channel_alone(self):
-        """The settings form cannot read the URL back, so it sends the field
-        only when someone typed one. A PATCH without it must not clear it."""
+        """The settings form cannot read the URL back, so a PATCH without the field must not clear it."""
         client = self.client_for(self.admin)
         r = client.patch(f"/api/workspaces/{self.admin.workspace_id}/",
                          {"notification_email": "grc@example.com"}, format="json")
@@ -81,8 +70,7 @@ class WebhookSecrecyTests(APITestBase):
 
 
 class WebhookDestinationTests(APITestBase):
-    """S-2. ``"hooks.slack.com" in url`` is not a host check, and a request
-    that follows redirects has no host at all by the time it arrives."""
+    """S-2. A substring test is not a host check, and a request that follows redirects has no host on arrival."""
 
     SPOOFS = [
         "https://hooks.slack.com.attacker.example/x",   # a longer name
@@ -112,8 +100,7 @@ class WebhookDestinationTests(APITestBase):
             format="json").status_code, 200)
 
     def test_the_admin_cannot_store_what_the_api_refuses(self):
-        """The Django admin never runs a serializer, which is why the same
-        rule is on the model."""
+        """The Django admin never runs a serializer, which is why the same rule is on the model."""
         from django.core.exceptions import ValidationError
 
         workspace = Workspace.objects.get(pk=self.admin.workspace_id)
@@ -123,8 +110,7 @@ class WebhookDestinationTests(APITestBase):
 
     @override_settings(WEBHOOK_SYNC=True, NOTIFY_EVENTS=[])
     def test_a_stored_url_is_checked_again_before_every_post(self):
-        """A value can reach the column another way: a fixture, a restored
-        backup, a release older than this rule."""
+        """A value can reach the column another way: a fixture or a restored backup."""
         Workspace.objects.filter(pk=self.admin.workspace_id).update(
             slack_webhook_url="https://redis.internal/x")
         stub_dns(self)
@@ -148,8 +134,6 @@ class WebhookDestinationTests(APITestBase):
 
     @override_settings(WEBHOOK_SYNC=True, NOTIFY_EVENTS=[])
     def test_a_name_that_resolves_inside_the_network_is_refused(self):
-        """The check that matters: the host passes the allow-list and still
-        answers with a private address."""
         Workspace.objects.filter(pk=self.admin.workspace_id).update(slack_webhook_url=SLACK)
         stub_dns(self, [(2, 1, 6, "", ("169.254.169.254", 443))])
         with mock.patch("notifications.webhooks._open") as sender:
@@ -182,17 +166,12 @@ class WebhookAtRestTests(APITestBase):
         self.assertEqual(Workspace.objects.get(pk=workspace.pk).slack_webhook_url, SLACK)
 
     def test_a_workspace_created_with_a_webhook_already_set_keeps_it(self):
-        """The envelope is bound to the row id, which does not exist until the
-        insert lands. Creating a workspace with a webhook filled in is a real
-        path: the admin's add form does exactly that."""
+        """The envelope is bound to the row id, which only exists after the insert; the admin's add form does this."""
         created = Workspace.objects.create(name="Beta Ltd", slug="beta-ltd",
                                            slack_webhook_url=SLACK)
         self.assertEqual(Workspace.objects.get(pk=created.pk).slack_webhook_url, SLACK)
 
     def test_an_envelope_moved_between_organisations_does_not_decrypt(self):
-        """What binding to the row id buys: a ciphertext lifted out of one
-        organisation's row reads as empty in another's, rather than handing
-        over a working channel."""
         from django.db import connection
 
         first = Workspace.objects.get(pk=self.admin.workspace_id)
@@ -209,13 +188,8 @@ class WebhookAtRestTests(APITestBase):
 
 
 class KeyRotationCoverageTests(APITestBase):
-    """Related to S-3.
-
-    The rotation command finds encrypted columns through the model registry
-    instead of a hand-written list. A list would leave newly encrypted columns
-    on the old key, and step 3 of a key rotation (drop the old key) would then
-    make every stored value in them unreadable.
-    """
+    """Related to S-3. The rotation command finds encrypted columns through the model registry: a hand-written list
+    would leave new ones on the old key, unreadable once the old key is dropped."""
 
     def test_every_encrypted_column_is_rotated(self):
         from accounts.management.commands.rotate_field_keys import encrypted_columns
@@ -242,8 +216,7 @@ class KeyRotationCoverageTests(APITestBase):
                 FIELD_ENCRYPTION_KEYS=[newest] + list(settings.FIELD_ENCRYPTION_KEYS)):
             call_command("rotate_field_keys", stdout=StringIO(), stderr=StringIO())
             self.assertEqual(Workspace.objects.get(pk=workspace.pk).slack_webhook_url, SLACK)
-            # Read the column itself: the descriptor caches the plaintext back
-            # onto the instance once the attribute has been touched.
+            # Read the column itself: the descriptor caches the plaintext once the attribute has been touched.
             from django.db import connection
 
             with connection.cursor() as cursor:
@@ -254,8 +227,7 @@ class KeyRotationCoverageTests(APITestBase):
 
 
 class QuestionnaireLinkBaseTests(APITestBase):
-    """S-5. The token in a questionnaire link is a bearer credential, so the
-    host it points at cannot come from the request that asked for it."""
+    """S-5. A questionnaire link's token is a bearer credential, so its host cannot come from the asking request."""
 
     @override_settings(DEBUG=False, PUBLIC_URL="")
     def test_off_debug_an_unset_public_url_refuses_rather_than_guesses(self):
@@ -285,8 +257,7 @@ class QuestionnaireLinkBaseTests(APITestBase):
 
 
 class SignOutTests(APITestBase):
-    """S-7. The refresh cookie's path is /api/auth/token/, so a sign-out
-    anywhere else never receives it."""
+    """S-7. The refresh cookie's path is /api/auth/token/, so a sign-out anywhere else never receives it."""
 
     @override_settings(AUTH_TRANSPORT="cookie")
     def test_the_token_path_sign_out_revokes_the_refresh_token(self):
@@ -313,6 +284,4 @@ class SignOutTests(APITestBase):
         self.assertEqual(r.status_code, 200)
 
 
-# S-6 is tested in ``tests_saml``, against the signed-assertion harness that
-# already lives there: a response naming no destination, and a bearer
-# confirmation naming no recipient.
+# S-6 is tested in ``tests_saml``, against its signed-assertion harness.

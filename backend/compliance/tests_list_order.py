@@ -1,15 +1,3 @@
-"""Paged registers carry an ORDER BY that ends in a unique id.
-
-The control, risk, vendor and evidence-package lists annotate counts, which
-makes them GROUP BY queries, and Django drops Meta.ordering from those. The
-folder-permission model has no Meta.ordering at all. Unordered, each page is a
-LIMIT/OFFSET over rows PostgreSQL may return in any order, so a register built
-from several pages can repeat one row and skip another. Each viewset therefore
-orders its own queryset: Meta.ordering (where there is one), then the id.
-
-The page size is patched down to 2 so a handful of rows spans several pages,
-and Django's UnorderedObjectListWarning is raised as an error while paging.
-"""
 import warnings
 from datetime import timedelta
 from unittest import mock
@@ -34,7 +22,6 @@ PAGE = 2
 
 
 def list_queryset(viewset, user):
-    """The queryset a list request would paginate, filters applied."""
     request = APIRequestFactory().get("/")
     force_authenticate(request, user=user)
     view = viewset(action_map={"get": "list"})
@@ -49,9 +36,7 @@ class ListOrderTests(APITestBase):
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
-        # Controls: a second framework whose name sorts first, and controls
-        # created out of their places, whose ids also sort wrongly as text
-        # (AA.10 before AA.2), so Meta.ordering has something to do.
+        # A second framework whose name sorts first, and controls created out of place (AA.10 sorts before AA.2).
         alpha = Framework.objects.create(key="alpha", name="Alpha Framework", version="1")
         cat = ControlCategory.objects.create(framework=alpha, key="AA", name="AA", order=0)
         for control_id, place in (("AA.10", 3), ("AA.1", 1), ("AA.2", 2)):
@@ -89,8 +74,6 @@ class ListOrderTests(APITestBase):
     )
 
     def page_through(self, route):
-        """Every id the list returns, page by page, with an unordered page an
-        error rather than a warning."""
         client = self.client_for(self.admin)
         ids, page = [], 1
         with warnings.catch_warnings(), mock.patch.object(PageNumberPagination, "page_size", PAGE):
@@ -122,7 +105,6 @@ class ListOrderTests(APITestBase):
                 self.assertEqual(ids, expected)
 
     def test_the_fixture_exercises_the_order(self):
-        """Guards the test itself: insertion order is not the answer."""
         ids, _ = self.page_through("/api/controls/")
         controls = Control.objects.in_bulk(ids)
         self.assertEqual([controls[i].control_id for i in ids[:3]], ["AA.1", "AA.2", "AA.10"])
@@ -145,8 +127,6 @@ class ListOrderTests(APITestBase):
         self.assertEqual(control_ids, sorted(control_ids, reverse=True))
 
     def test_the_framework_control_list_is_ordered_too(self):
-        """Not paged, but it shares the annotated queryset, so it gets the
-        same order rather than whatever the GROUP BY returns."""
         r = self.client_for(self.admin).get(f"/api/frameworks/{self.tree.framework.key}/controls/")
         self.assertEqual([row["control_id"] for row in r.data], ["TC1.1", "TC1.2"])
         r = self.client_for(self.admin).get("/api/frameworks/alpha/controls/")

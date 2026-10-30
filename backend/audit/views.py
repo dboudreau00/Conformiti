@@ -1,10 +1,5 @@
-"""Read-only audit trail API.
-
-The log itself is written server-side by AuditLogMiddleware; this only exposes
-it to the people who review it: administrators, auditors, and managers with
-view-all. There is no write, update or delete surface: the trail is immutable
-evidence.
-"""
+"""Read-only audit trail API for administrators, auditors and view-all managers: no write, update or delete surface,
+because the trail is immutable evidence."""
 import django_filters as filters
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -18,10 +13,7 @@ from .serializers import AuditLogSerializer
 
 
 class AuditLogFilter(filters.FilterSet):
-    """``user`` as a number. The trail is readable by an issued auditor with
-    no live grant, by the product decision recorded in REVIEWS.md (0.9.5f review), so the
-    filter on it must not answer whether an id belongs to anybody
-    (0.9.5i, L-1)."""
+    """``user`` filters as a plain number, so the trail never tells a reader whether an id belongs to a person."""
 
     user = person("user_id")
 
@@ -31,8 +23,6 @@ class AuditLogFilter(filters.FilterSet):
 
 
 class CanViewAuditLog(BasePermission):
-    """Admins, auditors, and view-all managers may read the trail."""
-
     def has_permission(self, request, view):
         u = request.user
         return bool(
@@ -54,8 +44,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         if self.request.user.is_superuser:
-            # Installation-level events (a failed sign-in for a username that
-            # exists nowhere) belong to no workspace; the operator sees them.
+            # Events with no workspace (a failed sign-in for an unknown username) are the operator's to see.
             from accounts import tenancy
 
             with tenancy.unscoped():
@@ -73,12 +62,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False)
     def facets(self, request):
-        """Distinct values for the viewer's filter dropdowns.
-
-        ``.order_by()`` with no arguments is required: otherwise the model's
-        Meta ordering (-timestamp) is added to the SELECT behind DISTINCT,
-        which makes every row distinct and returns the same action once per
-        entry, duplicating every option in the filter dropdowns."""
+        """Distinct values for the filter dropdowns. A bare ``order_by()`` is required: Meta ordering would join the
+        DISTINCT and repeat every option."""
         base = AuditLog.objects.order_by()
         actions = sorted(set(base.values_list("action", flat=True).distinct()))
         types = sorted({t for t in base.values_list("object_type", flat=True).distinct() if t})

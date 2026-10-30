@@ -1,10 +1,3 @@
-"""Controls come in their standard's order.
-
-A text sort of control_id reads A.5.1, A.5.10 ... A.5.19, A.5.2 for ISO 27001
-and 12.1, 12.10, 12.2 for PCI DSS. Each control therefore holds its place in
-its framework's data file (Control.order), the way categories hold theirs,
-and every list of controls sorts on it.
-"""
 import csv
 import importlib
 import io
@@ -38,7 +31,6 @@ class ControlOrderTests(APITestBase):
         call_command("seed_frameworks", verbosity=0, stdout=StringIO())
 
     def register(self, framework_key):
-        """The paged register for one framework, every page."""
         client = self.client_for(self.admin)
         ids, page = [], 1
         while True:
@@ -82,9 +74,7 @@ class ControlOrderTests(APITestBase):
 
 
 class TiedCategoryTests(APITestBase):
-    """Two categories may share an order (the admin can set any). Places
-    restart at 1 in each, so every list must break the tie on the category
-    before the place, or the two interleave: AA-1, BB-1, AA-2."""
+    """Tied category orders: places restart at 1 in each, so lists must sort on category first or they interleave."""
 
     @classmethod
     def setUpTestData(cls):
@@ -117,9 +107,6 @@ class TiedCategoryTests(APITestBase):
 
 
 class ControlPlacementTests(APITestBase):
-    """Controls a seeder creates without a place go last in their category,
-    in the order they were created."""
-
     def test_the_fixture_controls_were_placed_in_creation_order(self):
         self.assertEqual((self.tree.c1.order, self.tree.c2.order), (1, 2))
 
@@ -164,8 +151,6 @@ class ControlPlacementTests(APITestBase):
         self.assertEqual((c.category_id, c.order), (other.pk, 7))
 
     def test_a_move_is_seen_after_a_partial_load_or_refresh(self):
-        """The stored place is read from the row, so a deferred field or a
-        partial refresh cannot hide a move."""
         other = self.other_category()
         Control.objects.create(category=other, control_id="TD1.1", title="Already there")
         c = Control.objects.only("id", "control_id", "title").get(pk=self.tree.c1.pk)
@@ -192,8 +177,6 @@ class ControlPlacementTests(APITestBase):
 
 
 class PlaceControlsMigrationTests(APITestBase):
-    """compliance 0008 places the rows an existing installation already has."""
-
     def run_migration(self):
         state = MigrationExecutor(connection).loader.project_state(("compliance", "0008_control_order"))
 
@@ -207,7 +190,6 @@ class PlaceControlsMigrationTests(APITestBase):
     def test_existing_rows_are_placed_from_the_files_then_by_creation(self):
         call_command("seed_frameworks", verbosity=0, stdout=StringIO())
         a5 = ControlCategory.objects.get(framework__key="iso27001", key="A5")
-        # A control the files do not list, in a shipped category.
         Control.objects.create(category=a5, control_id="A.5.0-local", title="Local")
         Control.objects.update(order=0)
 
@@ -228,8 +210,7 @@ class PlaceControlsMigrationTests(APITestBase):
         self.assertFalse(Control.objects.filter(order=0).exists())
 
     def test_a_listed_control_missing_from_its_category_leaves_a_gap_not_a_tie(self):
-        """Listed controls take their file place, so the next seed changes
-        nothing and a control the file does not list stays last."""
+        """Listed controls take their file place, so the next seed changes nothing."""
         call_command("seed_frameworks", verbosity=0, stdout=StringIO())
         a5 = ControlCategory.objects.get(framework__key="iso27001", key="A5")
         a6 = ControlCategory.objects.get(framework__key="iso27001", key="A6")

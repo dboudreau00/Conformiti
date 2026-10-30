@@ -1,5 +1,4 @@
-"""Signing-key creation under concurrency, and the strictness of verify.py's
-Ed25519 point decoding."""
+"""Signing-key creation under concurrency, and verify.py's strict Ed25519 point decoding."""
 import os
 import tempfile
 import threading
@@ -19,9 +18,7 @@ class KeyFileCreationTests(SimpleTestCase):
             def worker():
                 results.append(signing._generate_into(path))
 
-            # A reader that polls while the workers generate: what it finds is
-            # either no file or a whole key, never the empty or half-written file
-            # that a create-then-write would show, which parses as "no key".
+            # A polling reader must find no file or a whole key, never the empty file a create-then-write would show.
             seen, stop = [], threading.Event()
 
             def reader():
@@ -46,13 +43,11 @@ class KeyFileCreationTests(SimpleTestCase):
             self.assertEqual(partial, [], "a reader saw a key file that was not whole")
             winners = [r for r in results if r is not None]
             self.assertEqual(len(winners), 1)
-            # What is on disk is the winner's key, whole, mode 0600.
             on_disk = signing._parse_private(path.read_text(encoding="utf-8"), "test")
             self.assertEqual(signing.public_b64(on_disk.public_key()),
                              signing.public_b64(winners[0].public_key()))
             if os.name == "posix":
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-            # No temporary file is left behind.
             self.assertEqual([p.name for p in path.parent.iterdir()], ["signing.pem"])
 
 

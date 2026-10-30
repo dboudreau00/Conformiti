@@ -1,11 +1,8 @@
-"""Thin Amazon SES wrapper (boto3). Credentials come from the standard AWS
-credential chain: env vars, shared config, or an IAM role."""
+"""Amazon SES sender (boto3). Credentials come from the standard AWS chain: env vars, shared config or an IAM role."""
 from django.conf import settings
 
-#: Seconds to make the connection and to wait for the answer. boto3's own
-#: defaults are a minute for each with up to five attempts, so a service that
-#: does not answer would hold the request that sends a message for minutes. A
-#: message is tried once: a retry after a slow answer could send it twice.
+#: Seconds to connect and to wait for the answer. boto3's defaults (a minute each, five attempts) would hold the
+#: sending request for minutes; a message is tried once, since a retry after a slow answer could send it twice.
 CONNECT_TIMEOUT = 5
 READ_TIMEOUT = 15
 

@@ -1,10 +1,3 @@
-"""Shared fixtures for the test suite.
-
-Tests build a *small* hand-made framework (one framework, one category, two
-controls, the matching folder spine) rather than seeding the full 217-control
-library, so a class-level fixture costs milliseconds. Suites that specifically
-exercise the seed commands call them explicitly.
-"""
 import io
 import shutil
 import tempfile
@@ -79,13 +72,8 @@ def grant(folder, role=None, user=None, level=VIEW):
 
 
 def make_xlsx(rows, storage="inline"):
-    """A one-sheet .xlsx built by hand, enough for the stdlib readers.
-
-    ``rows`` are lists of text, written as given: &, < and > are escaped and
-    an ``_xHHHH_`` escape is left alone, so a test can craft what Excel would
-    write. ``storage`` is how the cells hold it: ``inline`` (inlineStr),
-    ``shared`` (the shared-strings table) or ``formula`` (a cached text result).
-    """
+    """A one-sheet .xlsx built by hand from ``rows`` of text (&, < and > escaped, ``_xHHHH_`` escapes left alone).
+    ``storage`` is ``inline`` (inlineStr), ``shared`` (shared strings) or ``formula`` (a cached text result)."""
     ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     shared = []
@@ -124,18 +112,11 @@ class APITestBase(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # A paged list with no ORDER BY is LIMIT/OFFSET over rows in whatever
-        # order the database hands back, so a register read page by page can
-        # repeat one row and skip another. Django only issues a warning, which
-        # scrolls past in the test output; here it fails the test instead. Set
-        # per class because unittest resets the warning filters as the run
-        # starts, and from the first class on it holds for the rest of the run.
+        # An unordered paginated list can repeat or skip rows; make Django's warning a failure. Set per class,
+        # because unittest resets the warning filters as the run starts.
         warnings.filterwarnings("error", category=UnorderedObjectListWarning)
         cls._media = tempfile.mkdtemp(prefix="conformiti-test-media-")
-        # Header transport for the suite: most tests read the tokens out of
-        # the login response. Cookie mode (the shipped default) is exercised
-        # by the classes that opt into it with override_settings, which wins
-        # over this because it is applied by setUpClass below.
+        # Header transport: most tests read tokens from the login response; classes testing cookie mode override it.
         cls._override = override_settings(MEDIA_ROOT=cls._media, AUTH_TRANSPORT="header")
         cls._override.enable()
         super().setUpClass()
@@ -168,9 +149,7 @@ class APITestBase(TestCase):
 
 
 def assert_same_as_missing(case, real, missing, real_pk, missing_pk=999999):
-    """An id the caller may not see answers exactly as an id that is not there:
-    the status, the wording and the error code. Any difference tells them which
-    ids exist."""
+    """An id the caller may not see must answer exactly like one that is not there: status, wording and error code."""
     case.assertEqual(real.status_code, 400, getattr(real, "data", real.content[:300]))
     case.assertEqual(missing.status_code, 400, getattr(missing, "data", missing.content[:300]))
     case.assertEqual(str(real.data).replace(str(real_pk), "N"), str(missing.data).replace(str(missing_pk), "N"))

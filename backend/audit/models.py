@@ -1,4 +1,3 @@
-"""Read-only audit trail of mutating actions, kept as compliance evidence."""
 from django.conf import settings
 from django.db import models
 
@@ -6,12 +5,8 @@ from accounts.tenancy import TenantModel
 
 
 class AuditLog(TenantModel):
-    # An entry belongs to the workspace the action happened in, which is the
-    # active one, not the actor's own. A superuser switched into another
-    # tenant is acting on that tenant, and its administrators have to see it.
-    # The few paths that run with no workspace active (sign-in, SSO) pass the
-    # workspace explicitly; nullable covers a failed sign-in for a username
-    # that exists nowhere.
+    # The workspace the action happened in, which is the active one and not the actor's own.
+    # No-workspace paths (sign-in, SSO) pass it explicitly; null covers a failed sign-in for an unknown username.
     workspace = models.ForeignKey(
         "accounts.Workspace", null=True, blank=True, on_delete=models.CASCADE,
         related_name="+", editable=False,
@@ -20,7 +15,7 @@ class AuditLog(TenantModel):
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="audit_entries",
     )
-    action = models.CharField(max_length=20)          # create / update / delete
+    action = models.CharField(max_length=20)
     object_type = models.CharField(max_length=80, blank=True)
     object_id = models.CharField(max_length=80, blank=True)
     detail = models.CharField(max_length=255, blank=True)

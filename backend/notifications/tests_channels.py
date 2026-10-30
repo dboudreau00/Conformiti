@@ -1,4 +1,3 @@
-"""Slack / Teams webhooks and the emailed digest."""
 import json
 import urllib.error
 from io import StringIO
@@ -15,20 +14,16 @@ from notifications.models import NotificationReceipt, WebhookDelivery
 from notifications.tasks import post_daily_summary, run_digests
 from testutils import APITestBase, make_doc
 
-# Real Slack and Teams hosts: a webhook may only address a host those
-# services issue webhooks on, checked before every post.
+# Real Slack and Teams hosts: the allow-list is checked before every post.
 SLACK_HOOK = "https://hooks.slack.com/services/T/B/x"
 TEAMS_HOOK = "https://example.webhook.office.com/webhookb2/hook"
 CHANNELS = dict(SLACK_WEBHOOK_URL=SLACK_HOOK, TEAMS_WEBHOOK_URL=TEAMS_HOOK,
                 WEBHOOK_SYNC=True, PUBLIC_URL="https://grc.example", NOTIFY_EVENTS=[])
-# One public address, so the suite never depends on DNS. Everything else about
-# the URL is checked for real.
+# One public address, so the suite never depends on DNS; everything else about the URL is checked for real.
 PUBLIC_ADDRESS = [(2, 1, 6, "", ("93.184.216.34", 443))]
 
 
 class FakeUrlopen:
-    """Records every POST and answers 200 (or what ``status`` says)."""
-
     def __init__(self, status=200):
         self.calls = []
         self.status = status
@@ -42,7 +37,6 @@ class FakeUrlopen:
 
 
 def stub_dns(case, addresses=PUBLIC_ADDRESS):
-    """Answer every lookup with one public address, for the length of a test."""
     patcher = mock.patch("config.outbound.socket.getaddrinfo", return_value=addresses)
     patcher.start()
     case.addCleanup(patcher.stop)
@@ -59,8 +53,7 @@ class WebhookTests(PackageTestBase):
         self.addCleanup(self.patcher.stop)
 
     def failing(self, *outcomes):
-        """A stand-in for _open that answers each call with the next outcome:
-        an HTTP status, or an exception to raise."""
+        """A stand-in for _open answering each call with the next outcome: an HTTP status or an exception to raise."""
         calls = []
 
         def send(request, timeout=None, pinned_ip=None):
@@ -138,9 +131,9 @@ class WebhookTests(PackageTestBase):
         with mock.patch("notifications.webhooks.threading.Thread", Recorder):
             with self.captureOnCommitCallbacks(execute=False) as callbacks:
                 webhooks.post_event("test", "Hello", "Body")
-                self.assertEqual(started, [])        # nothing yet: the transaction is open
+                self.assertEqual(started, [])
             self.assertEqual(len(callbacks), 1)
-            callbacks[0]()                           # the commit
+            callbacks[0]()
             self.assertEqual(len(started), 1)
 
     @override_settings(WEBHOOK_SYNC=False)
@@ -176,11 +169,6 @@ class WebhookTests(PackageTestBase):
         self.assertEqual(WebhookDelivery.objects.filter(ok=True).count(), 2)
 
     def test_text_from_outside_cannot_mention_the_channel_or_plant_a_link(self):
-        """A vendor types their name into the public questionnaire and it ends
-        up in the organisation's channel. Slack reads `<!channel>` as a mention
-        of everyone and `<url|label>` as a link, so the three characters it
-        reserves are escaped, in the blocks and in the fallback text that the
-        notification itself shows; Teams renders a TextBlock literally."""
         webhooks.post_event("test", "Returned by <!channel>", "<https://evil.example|Approve in Conformiti> & co",
                             facts=[("Vendor tier", "<b>")], sync=True)
         by_url = {c["url"]: c["body"] for c in self.http.calls}
@@ -210,8 +198,6 @@ class WebhookTests(PackageTestBase):
             self.assertEqual(webhooks.post_event("package.sealed", "x", "y", sync=True), [])
 
     def test_a_failing_endpoint_is_recorded_and_never_breaks_the_caller(self):
-        import urllib.error
-        self.http.status = 500
         with mock.patch("notifications.webhooks._open",
                         side_effect=urllib.error.URLError("refused")):
             self.assertEqual(webhooks.post_event("test", "x", "y", sync=True), ["slack", "teams"])
@@ -273,7 +259,6 @@ class DigestTests(APITestBase):
         self.assertEqual(c.patch("/api/users/me/", {"digest": "hourly"}, format="json").status_code, 400)
         make_doc(self.tree.ctrl1, self.owner, name="Late policy", days=-3)
         make_doc(self.tree.ctrl1, self.owner, name="Soon policy", days=5)
-        # Nobody else asked; Owen gets one email with both items, once per day.
         self.assertEqual(run_digests(dry_run=True), 1)
         self.assertEqual(len(mail.outbox), 0)
         self.assertEqual(run_digests(), 1)
@@ -284,7 +269,6 @@ class DigestTests(APITestBase):
         self.assertIn("Review overdue: Late policy", message.body)
         self.assertIn("https://grc.example/documents", message.body)
         self.assertEqual(run_digests(), 0)
-        # Tomorrow it goes again; a dismissed item stays out.
         self.owner.refresh_from_db()
         self.owner.digest_sent_at = timezone.now() - timezone.timedelta(days=1)
         self.owner.save()
@@ -302,13 +286,11 @@ class DigestTests(APITestBase):
         self.owner.save()
         make_doc(self.tree.ctrl1, self.owner, name="Late", days=-1)
         tuesday, monday = date(2026, 9, 8), date(2026, 9, 7)
-        # Val (weekly, empty tray) never gets one, Monday or not; Owen gets his.
         self.assertEqual(run_digests(today=tuesday), 1)
         self.assertEqual([m.to for m in mail.outbox], [["owen@test.local"]])
         self.owner.digest = "off"
         self.owner.save()
         self.assertEqual(run_digests(today=monday), 0)
-        # A weekly person with something in the tray gets it on Monday only.
         make_doc(self.tree.ctrl1, self.viewer, name="Val's late doc", days=-1)
         self.assertEqual(run_digests(today=tuesday), 0)
         self.assertEqual(run_digests(today=monday), 1)

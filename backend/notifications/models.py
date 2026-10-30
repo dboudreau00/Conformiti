@@ -1,12 +1,9 @@
-"""Read / dismissed state for the derived per-user notifications."""
 from django.conf import settings
 from django.db import models
 
 
 class NotificationReceipt(models.Model):
-    """Tracks, per user and per stable notification key, whether an item has
-    been seen (read) or dismissed. Notifications themselves are computed on the
-    fly (see notifications.py); only this small state table is stored."""
+    """Read and dismissed state per user and notification key; the notifications themselves are computed, not stored."""
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notification_receipts"
     )
@@ -24,8 +21,7 @@ class NotificationReceipt(models.Model):
 
 
 class WebhookDelivery(models.Model):
-    """One attempt to post an event to Slack or Teams, so an operator can
-    see whether the channel is receiving. Pruned to the newest few hundred."""
+    """One attempt to post an event to Slack or Teams, so an operator can see whether the channel is receiving."""
     event = models.CharField(max_length=40)
     channel = models.CharField(max_length=10)
     ok = models.BooleanField(default=False)

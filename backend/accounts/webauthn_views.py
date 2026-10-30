@@ -1,4 +1,3 @@
-"""Self-service passkey management: list, enrol, rename, remove."""
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,8 +11,7 @@ from .views import _MfaThrottle
 
 
 class PasskeyListView(APIView):
-    """GET: the caller's passkeys. There is no POST: enrolment is two steps
-    (``/register/options/`` then ``/register/``)."""
+    """Read-only: enrolment is two steps, ``/register/options/`` then ``/register/``."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -31,8 +29,7 @@ class PasskeyRegisterOptionsView(APIView):
     throttle_classes = [_MfaThrottle]
 
     def post(self, request):
-        # Asked for here rather than at /register/, so nobody is sent to their
-        # authenticator only to be turned away after touching it.
+        # Asked here, not at /register/, so nobody touches their authenticator only to be turned away.
         if not reauthenticated(request):
             return Response({"detail": "Confirm your password to add a passkey.",
                              "code": "reauth_required"}, status=403)
@@ -58,8 +55,7 @@ class PasskeyRegisterView(APIView):
                               f"passkey enrolment refused ({exc.code})")
             return Response({"detail": exc.message, "code": exc.code}, status=400)
         record_auth_event(request, request.user, "mfa", f"passkey enrolled: {row.name}")
-        # The account's first second factor comes with its recovery codes,
-        # shown once, as enabling the authenticator app does.
+        # The account's first second factor comes with recovery codes, shown once, as with the authenticator app.
         codes = None
         if first_factor and request.user.backup_codes_remaining == 0:
             codes = request.user.issue_backup_codes()
@@ -68,10 +64,8 @@ class PasskeyRegisterView(APIView):
 
 
 class PasskeyDetailView(APIView):
-    """PATCH renames. DELETE removes, and takes proof the account is yours in
-    the body, as turning off the authenticator app does, so a hijacked session
-    cannot quietly strip a factor or clear the suspect mark on a key it
-    cloned."""
+    """DELETE needs proof the account is the caller's, as turning off the authenticator app does: a hijacked session
+    must not quietly strip a factor or clear the suspect mark on a cloned key."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
@@ -93,10 +87,8 @@ class PasskeyDetailView(APIView):
         row = self._get(request, pk)
         if row is None:
             return Response({"detail": "No such passkey."}, status=404)
-        # Not a bare check_password: an account provisioned through an
-        # identity provider has no usable password, so its owner could not
-        # remove a passkey reported as cloned. A backup code, or a code from
-        # the authenticator app, proves the same thing.
+        # Not a bare check_password: an SSO-provisioned account has no usable password, and a backup code or an
+        # authenticator code proves the same thing.
         if not reauthenticated(request):
             return Response({"detail": "Confirm your password, or a code from a factor you still have.",
                              "code": "reauth_required"}, status=403)

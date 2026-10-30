@@ -1,5 +1,3 @@
-"""Daily readiness snapshot (Celery beat; cron installs can call
-``manage.py record_readiness`` instead)."""
 import logging
 
 from celery import shared_task
@@ -13,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 @shared_task(name="analytics.tasks.record_readiness_snapshot")
 def record_readiness_snapshot():
-    """One snapshot per workspace per day."""
     result = {}
     for workspace in tenancy.for_each_workspace():
         # A failure in one workspace must not leave the later ones unrecorded.

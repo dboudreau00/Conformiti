@@ -1,5 +1,4 @@
-"""Roll-forward pairing of pinned evidence, the signing-key registry keyed by
-the whole public key, and a blank key file."""
+"""Roll-forward evidence pairing, the key registry, blank key files, bundle trail limits and verifier output."""
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -70,7 +69,6 @@ class BlankKeyFileTests(SimpleTestCase):
                 with self.assertRaises(ImproperlyConfigured) as caught:
                     signing.load_private_key()
                 self.assertIn("empty", str(caught.exception))
-                # The health and settings views report it instead of crashing.
                 info = signing.current_key_info()
                 self.assertIsNone(info["key_id"])
                 self.assertIn("empty", info["error"])
@@ -88,8 +86,6 @@ class BlankKeyFileTests(SimpleTestCase):
 
 
 class KeyRegistryTests(TestCase):
-    """A registry row is the whole public key; the 16-character id is a label."""
-
     def fresh(self):
         return signing.public_b64(signing.ed25519.Ed25519PrivateKey.generate().public_key())
 
@@ -109,7 +105,6 @@ class KeyRegistryTests(TestCase):
             SigningKey.objects.filter(public_key=pub).update(key_id=signing.key_id(other))
         with self.assertRaises(ImproperlyConfigured), transaction.atomic():
             signing.register_key(other)
-        # The first key's row was not rewritten to the second key.
         self.assertEqual(SigningKey.objects.get(public_key=pub).public_key, pub)
 
     def test_registering_a_new_key_retires_the_old_one(self):
@@ -126,8 +121,6 @@ from attestations.tests import PackageTestBase  # noqa: E402
 
 
 class BundleFindingsTests(PackageTestBase):
-    """What an exported bundle says about itself when it is cut short or incomplete."""
-
     def export_zip(self):
         import io
         import zipfile
@@ -190,7 +183,6 @@ class BundleFindingsTests(PackageTestBase):
 
     def test_a_bundle_that_cannot_read_its_verifier_fails_instead_of_leaving_it_out(self):
         import io
-        from pathlib import Path
         from unittest import mock
 
         self.add_control()
@@ -201,9 +193,7 @@ class BundleFindingsTests(PackageTestBase):
 
 
 class VerifierOutputTests(SimpleTestCase):
-    """verify.py prints the package's name and the names of files from a bundle
-    it has no reason to trust. An escape sequence in either can hide the FAIL
-    lines that follow it (set the colour to the background, clear the screen)."""
+    """Package and file names in a bundle are untrusted: an escape sequence could hide the FAIL lines that follow."""
 
     HOSTILE = "x\x1b[2J\x1b[8my\x07z"
 

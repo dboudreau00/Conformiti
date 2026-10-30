@@ -1,4 +1,3 @@
-"""Record and read readiness history."""
 import logging
 
 from django.db import DatabaseError, transaction
@@ -36,13 +35,8 @@ def _measure(scored=None):
 
 
 def record_today(force=False, scored=None):
-    """Create (or, with force, refresh) today's snapshot. Idempotent; never
-    raises: a read replica or a locked table must not break the dashboard.
-
-    ``scored`` is a ``programme_score()`` result the caller already holds: the
-    summary scores the programme for its own figures, and measuring again here
-    would score every control twice per request. A row that exists is not
-    measured at all unless ``force`` asks for it."""
+    """Create (or, with ``force``, refresh) today's snapshot; returns None on a DatabaseError rather than raising.
+    ``scored`` is a ``programme_score()`` result the caller already holds, so the programme is not scored twice."""
     today = timezone.localdate()
     try:
         with transaction.atomic():
@@ -63,10 +57,8 @@ def record_today(force=False, scored=None):
 
 
 def trend(months=TREND_MONTHS):
-    """Monthly series ending this month: the last snapshot of each of the
-    last ``months`` calendar months, plus the delta (percentage points) between
-    the latest point and the one before it. Months with no snapshot are
-    omitted, so a fresh install shows one point and no invented history."""
+    """The last snapshot of each of the last ``months`` calendar months, plus the percentage-point delta between the
+    latest two. Months without a snapshot are omitted, so no history is invented."""
     today = timezone.localdate()
     first_month = today.replace(day=1)
     for _ in range(months - 1):
@@ -86,9 +78,7 @@ def trend(months=TREND_MONTHS):
             "applicable": snap.applicable,
         })
     delta = points[-1]["pct"] - points[-2]["pct"] if len(points) >= 2 else None
-    # The score is the headline figure. Its own delta is offered only when
-    # both months measured it; otherwise the implemented share is the only
-    # history, and the dashboard says which one it shows.
+    # The score delta is offered only when both months measured a score.
     scored = [p for p in points if p["score"] is not None]
     score_delta = (scored[-1]["score"] - scored[-2]["score"]
                    if len(scored) >= 2 and scored[-1] is points[-1] else None)

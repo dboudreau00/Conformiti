@@ -19,11 +19,7 @@ class CalendarEventSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_by"]
 
     def to_representation(self, instance):
-        """Withhold a linked document the reader cannot open.
-
-        The merged feed already does this; the list and detail routes must not
-        hand back the id it hides. Writes still accept the id.
-        """
+        """Withhold a linked document the reader cannot open, as the feed does. Writes still accept the id."""
         data = super().to_representation(instance)
         if instance.document_id is not None:
             visible = self._visible_folders()
@@ -32,11 +28,7 @@ class CalendarEventSerializer(serializers.ModelSerializer):
         return data
 
     def _visible_folders(self):
-        """The reader's folders, worked out once per request.
-
-        A list serializer shares its context with every row, so the folder walk
-        runs once for the page rather than once per event.
-        """
+        """The reader's folder ids, computed once per request through the shared serializer context."""
         request = self.context.get("request")
         if request is None:
             return None

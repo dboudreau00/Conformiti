@@ -1,4 +1,3 @@
-"""Root URL configuration."""
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -18,12 +17,8 @@ from .health import HealthView
 
 
 class LoginRateThrottle(SimpleRateThrottle):
-    """Per-IP limit on the login / token-refresh endpoints.
-
-    Subclasses SimpleRateThrottle so its ``scope`` binds directly to the
-    THROTTLE_LOGIN rate. (ScopedRateThrottle would instead read the scope from
-    a view ``throttle_scope`` attribute these views don't define, which would
-    leave the endpoint unthrottled.)"""
+    """Per-IP login limit. ``ScopedRateThrottle`` would read ``throttle_scope`` from views that do not define it,
+    which would leave the endpoint unthrottled."""
     scope = "login"
 
     def get_cache_key(self, request, view):
@@ -31,25 +26,14 @@ class LoginRateThrottle(SimpleRateThrottle):
 
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
-    """Login endpoint: tight per-IP rate limit (THROTTLE_LOGIN) + optional
-    TOTP second factor for accounts that have MFA enabled. Every attempt
-    (success, bad password, bad or missing OTP) is written to the audit trail.
-
-    In cookie mode it checks CSRF itself. The usual check runs inside
-    ``CookieJWTAuthentication``, so it only guards a request that already
-    carries a session, and this endpoint authenticates nobody: a cross-site
-    form post could otherwise sign the visitor's browser into the attacker's
-    account, and the evidence they upload next would go there.
-    ``SameSite=Lax`` does not help, because the cookie being set is in the
-    response rather than the request."""
+    """Login endpoint: per-IP throttle, optional TOTP, every attempt audited. In cookie mode it checks CSRF itself,
+    because the usual check only guards a request that already carries a session (login CSRF)."""
     throttle_classes = [LoginRateThrottle]
     serializer_class = MFATokenObtainPairSerializer
 
     def throttled(self, request, wait):
-        """A refused attempt reaches the trail too. DRF refuses it before
-        ``post`` runs, which is where every other attempt is recorded, so this
-        hook records the throttled reason. Once per client address and minute:
-        a flood of refused attempts must not turn into a flood of writes."""
+        """DRF refuses a throttled attempt before ``post`` runs, so record it here, once per client address and minute
+        so a flood of refused attempts is not a flood of writes."""
         from django.core.cache import cache
 
         ident = LoginRateThrottle().get_ident(request)
@@ -64,22 +48,19 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
         try:
             response = super().post(request, *args, **kwargs)
         except APIException as exc:
-            # A rejected password / OTP surfaces as an exception, not a
-            # response; render it here so the failure is still audited.
+            # A rejected password or OTP is an exception, not a response: render it so the failure is still audited.
             response = self.handle_exception(exc)
         record_login_attempt(request, response)
         if cookie_auth.cookie_mode() and response.status_code == 200:
             cookie_auth.set_auth_cookies(
                 response, response.data.get("access"), response.data.get("refresh"))
-            # The tokens leave in Set-Cookie, not in the body: putting them in
-            # both would hand script exactly what the cookies exist to hide.
+            # Tokens leave only in Set-Cookie: in the body too, they would hand script what HttpOnly hides.
             response.data = {"authenticated": True}
             cookie_auth.rotate_csrf(request)
         return response
 
 
 class RefreshRateThrottle(SimpleRateThrottle):
-    """Refresh gets its own budget: see THROTTLE_REFRESH in settings."""
     scope = "refresh"
 
     def get_cache_key(self, request, view):
@@ -90,9 +71,6 @@ class ThrottledTokenRefreshView(TokenRefreshView):
     throttle_classes = [RefreshRateThrottle]
 
     def post(self, request, *args, **kwargs):
-        """In cookie mode the refresh token arrives as a cookie the SPA cannot
-        read, so put it where the serializer expects it, and hand the rotated
-        pair back as cookies rather than as JSON."""
         refused = cookie_auth.csrf_required(request)
         if refused:
             return Response({"detail": f"CSRF failed: {refused}"}, status=403)
@@ -110,22 +88,16 @@ class ThrottledTokenRefreshView(TokenRefreshView):
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # ops
     path("api/health/", HealthView.as_view(), name="health"),
-    # auth
     path("api/auth/token/", ThrottledTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/token/refresh/", ThrottledTokenRefreshView.as_view(), name="token_refresh"),
     path("api/auth/logout/", LogoutView.as_view(), name="logout"),
     path("api/auth/session/", SessionView.as_view(), name="session"),
     path("api/auth/session/clear/", SessionClearView.as_view(), name="session_clear"),
-    # The same view, inside the refresh cookie's narrow path. The browser
-    # attaches the refresh cookie to this URL and not to the one above, so
-    # this is the only sign-out that can revoke the token when the access
-    # cookie has already expired (REVIEWS.md (0.9.5 review), S-7). The SPA calls this one
-    # and falls back to the other, which older builds still use.
+    # The refresh cookie's path covers only this URL, so it is the one sign-out that can revoke the token once the
+    # access cookie has expired (REVIEWS.md (0.9.5 review), S-7).
     path("api/auth/token/clear/", SessionClearView.as_view(), name="token_clear"),
     path("api/auth/config/", AuthConfigView.as_view(), name="auth_config"),
-    # apps
     path("api/", include("accounts.urls")),
     path("api/", include("audit.urls")),
     path("api/", include("notifications.urls")),

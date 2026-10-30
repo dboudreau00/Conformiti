@@ -1,14 +1,5 @@
-"""
-The questionnaire sent to the vendor: tokens, links, drafts, submission.
-
-The organisation keeps its side (``VendorViewSet`` actions, the invite
-viewset); the vendor's side is three unauthenticated endpoints keyed by the
-token in the link. Everything the vendor can do is bounded: read the
-questions and their own draft, save answers that pass the same validation the
-organisation's own screen uses, submit once. A submission creates the
-assessment and emails the vendor's owner; nothing else in the product is
-reachable from the link.
-"""
+"""The vendor's side is unauthenticated and keyed by the link token: read the questions and its own draft, save
+validated answers, submit once. Nothing else in the product is reachable from the link."""
 import hashlib
 import logging
 import secrets
@@ -55,9 +46,6 @@ def validate_answers(value):
     }
 
 
-# --------------------------------------------------------------------------- #
-# Tokens and links
-# --------------------------------------------------------------------------- #
 def _hash(token):
     return hashlib.sha256(str(token or "")[:256].encode("utf-8")).hexdigest()
 
@@ -78,19 +66,8 @@ def _trusted_origins():
 
 
 def public_base(request):
-    """Where the vendor will open the link.
-
-    ``PUBLIC_URL`` decides it. The token in that link is a bearer credential,
-    so the host it points at cannot be taken from the request: an ``Origin``
-    header is chosen by whoever sent the request, and a mailed link to an
-    attacker's copy of the sign-in page is the attack this blocks
-    (REVIEWS.md (0.9.5 review), S-5). Off DEBUG, an unset PUBLIC_URL is
-    refused rather than guessed.
-
-    In DEBUG a request-derived fallback is kept, because developers switch
-    between localhost ports, and even then only an origin the operator has
-    already named in CSRF_TRUSTED_ORIGINS or CORS_ALLOWED_ORIGINS is used.
-    """
+    """``PUBLIC_URL`` decides where the link points: the token is a bearer credential, so the host must not come from
+    the request (``Origin`` is attacker-chosen). Off DEBUG an unset URL is refused (REVIEWS.md (0.9.5 review), S-5)."""
     configured = getattr(settings, "PUBLIC_URL", "") or ""
     if configured:
         return configured.rstrip("/")
@@ -112,8 +89,7 @@ def public_link(request, token):
 
 
 def find(token):
-    """The invite behind a token, or None. Live or not: the public page tells
-    the vendor whether the link has expired or was already used."""
+    """The invite behind a token, or None; live or not, so the public page can say a link expired or was used."""
     if not token or len(token) > 256:
         return None
     return QuestionnaireInvite.objects.select_related("vendor", "sent_by").filter(
@@ -132,15 +108,9 @@ def _audit(request, invite, action, detail):
         logger.exception("Failed to record a questionnaire event")
 
 
-# --------------------------------------------------------------------------- #
-# The organisation's side
-# --------------------------------------------------------------------------- #
 def create_invite(vendor, request, email, days=None, message=""):
-    """Issue a link and email it. Returns ``(invite, link)``; the link is
-    returned exactly once, so the sender can paste it into their own mail if
-    the automatic one does not arrive."""
-    # Settled before anything is created: a link nobody can build safely is
-    # not worth revoking the vendor's live invitation for.
+    """Issue a link and email it; returns ``(invite, link)``, the one time the link exists in the clear."""
+    # Before anything is created: a link nobody can build safely must not revoke the vendor's live invitation.
     try:
         public_base(request)
     except LinkBaseUnset as exc:
@@ -157,11 +127,8 @@ def create_invite(vendor, request, email, days=None, message=""):
     token = secrets.token_urlsafe(32)
     user = request.user
     with transaction.atomic():
-        # One live link per vendor: a second send supersedes the first, so a
-        # forwarded old link cannot be answered alongside the new one. The
-        # vendor row is locked first because the revoke-then-create below has
-        # nothing of its own to lock: two simultaneous sends would each revoke
-        # what they could see and each create a link, leaving two live.
+        # One live link per vendor: a second send supersedes the first. The vendor row is locked because
+        # revoke-then-create has nothing else to lock: two simultaneous sends would leave two links live.
         Vendor.objects.select_for_update().filter(pk=vendor.pk).first()
         QuestionnaireInvite.objects.filter(
             vendor=vendor, submitted_at__isnull=True, revoked_at__isnull=True,
@@ -211,21 +178,11 @@ def revoke(invite, request):
     return invite
 
 
-# --------------------------------------------------------------------------- #
-# The vendor's side
-# --------------------------------------------------------------------------- #
 def public_state(invite, request=None):
-    """What the public page shows. Never the vendor's other data.
-
-    A link that is no longer open says so and stops there. For a revoked,
-    expired or submitted invite the draft answers, the vendor's name, the
-    organisation's name, the sender, the address it was sent to and the
-    private message must not be returned to whoever holds the URL (L-6).
-    """
+    """What the public page shows, never the vendor's other data. A link no longer open returns only its state:
+    the draft, names, address and private message must not reach whoever holds a dead URL (L-6)."""
     if invite.status != "open":
-        # The state, and nothing else, not even timestamps: they would tell
-        # whoever holds a dead URL when the vendor filed (0.9.5i, L-3). The
-        # page needs only the state to say "this link has expired".
+        # The state alone, not even timestamps: they would tell a holder of a dead URL when the vendor filed (L-3).
         return {"status": invite.status, "questions": [], "answers": {}}
     if invite.opened_at is None:
         invite.opened_at = timezone.now()
@@ -293,7 +250,8 @@ def submit(invite, answers, respondent_name, respondent_title="", request=None):
             title=f"Questionnaire answered by {locked.vendor.name}"[:200],
             issued_at=timezone.localdate(), result=VendorAssessment.Result.PENDING,
             answers=clean,
-            findings=(f"Answered by {name}{' (' + str(respondent_title).strip()[:160] + ')' if respondent_title else ''} "
+            findings=(f"Answered by {name}"
+                      f"{' (' + str(respondent_title).strip()[:160] + ')' if respondent_title else ''} "
                       f"<{locked.sent_to}> on {timezone.localdate().isoformat()} through the emailed "
                       f"questionnaire; {answered} of {len(DEFAULT_QUESTIONNAIRE)} answered. Pending review."),
         )

@@ -1,31 +1,5 @@
-"""
-Detached signatures over the sealed manifest.
-
-Digests alone prove integrity, not origin: anyone who could rewrite a bundle
-could rewrite manifest.json and every checksum consistently. The signature
-binds the manifest to the holder of the signing key, with this key management:
-
-* **The key never lives in the database.** It is an Ed25519 private key in a
-  file (``SIGNING_KEY_FILE``, generated at 0600 on first use; in the
-  compose stack it sits in the ``secrets`` volume beside the Django secret key)
-  or in the environment (``SIGNING_KEY``). A database dump, a backup, or a
-  SQL injection yields the evidence and every digest, but not the key.
-* **The public key is published**, at ``GET /api/signing-keys/`` and on the
-  package screen, so an auditor can fetch the fingerprint from the running
-  installation, or be handed it out of band, and compare it with the key
-  inside the bundle.
-* **The bundle verifies offline** with the standard library alone:
-  ``verify.py`` carries its own Ed25519 implementation. ``openssl`` works
-  too (the README says how).
-* **Rotation keeps history.** ``manage.py rotate_signing_key`` writes a new
-  key; every package remembers the public key that signed it, and the
-  ``SigningKey`` table lists current and retired keys with their dates.
-
-The signature proves that the manifest bytes were signed by whoever held the
-installation's signing key when the package was sealed. It does not prove that
-the key was never stolen: the audit trail's seal entry, the published
-fingerprint and the key file's permissions cover that, as SECURITY.md states.
-"""
+"""Ed25519 detached signatures over the sealed manifest. The key lives in ``SIGNING_KEY_FILE`` or ``SIGNING_KEY``,
+never in the database: a dump, a backup or a SQL injection must not yield it."""
 import base64
 import hashlib
 import os
@@ -68,10 +42,8 @@ def _parse_private(text, where):
 
 
 def _read_key_file(path, where):
-    """The key in an existing key file. A file that is there but blank is a
-    damaged install, not a choice: reading it as "no key" would leave every
-    package unsigned without a word, so it stops the boot of anything that
-    needs to sign instead."""
+    """The key in an existing key file. A blank file raises: reading it as "no key" would leave every package unsigned
+    without a word."""
     key = _parse_private(path.read_text(encoding="utf-8"), where)
     if key is None:
         raise ImproperlyConfigured(
@@ -82,17 +54,13 @@ def _read_key_file(path, where):
 
 
 def _generate_into(path):
-    """Create a new key file at 0600, or return None if another worker got
-    there first (the caller re-reads)."""
+    """Create a key file at 0600; None when another worker got there first (the caller re-reads)."""
     key = ed25519.Ed25519PrivateKey.generate()
     pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                             serialization.NoEncryption())
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Written in full to a private temporary name and then linked into place,
-    # so a second worker that sees the file sees all of it. Creating the final
-    # name first and writing after leaves a window in which another process
-    # reads an empty file, which parses as "no key" and silently leaves the
-    # package unsigned.
+    # Written whole under a private name, then linked into place: creating the final name first lets another process
+    # read an empty file, which parses as "no key" and leaves the package unsigned.
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -121,9 +89,8 @@ def _generate_into(path):
 
 
 def load_private_key(create=True):
-    """The installation's signing key, or None when signing is off or no key
-    location is configured. Cached by file mtime, so a rotation is picked up
-    without a restart."""
+    """The installation's signing key, or None when signing is off or no key location is configured.
+    Cached by file mtime, so a rotation is picked up without a restart."""
     if not enabled():
         return None
     explicit = getattr(settings, "SIGNING_KEY", "") or ""
@@ -150,22 +117,13 @@ def load_private_key(create=True):
     return key
 
 
-# --------------------------------------------------------------------------- #
-# Public-key encodings
-# --------------------------------------------------------------------------- #
 # Changing this changes every workspace's derived key, so it is versioned.
 _DERIVATION_INFO = b"conformiti/workspace-package-signing/v1/"
 
 
 def derive_workspace_key(root_key, slug):
-    """The signing key for one workspace, derived from the installation key.
-
-    With one key for the whole installation, a bundle from one organisation
-    would verify identically to a bundle from another, and the published
-    fingerprint would name the installation rather than the organisation.
-    Deriving keeps a single secret to protect and rotate while giving each
-    organisation its own identity.
-    """
+    """A workspace's signing key, derived from the installation key: one secret to protect and rotate, yet each
+    organisation has its own identity."""
     seed = HKDF(
         algorithm=hashes.SHA256(), length=32, salt=None,
         info=_DERIVATION_INFO + slug.encode("utf-8"),
@@ -174,11 +132,8 @@ def derive_workspace_key(root_key, slug):
 
 
 def active_private_key(create=True):
-    """The key that signs for the workspace this call is running in.
-
-    Falls back to the installation key when no workspace is active, which is
-    what management commands and the health endpoint see.
-    """
+    """The key that signs for the current workspace; the installation key when none is active (management commands,
+    the health endpoint)."""
     root = load_private_key(create=create)
     if root is None:
         return None
@@ -202,8 +157,7 @@ def public_pem(public_key):
 
 
 def fingerprint(public_key_or_b64):
-    """SHA-256 of the raw 32-byte public key, hex. The first 16 characters
-    are the key id people compare; the whole thing is what verify.py prints."""
+    """SHA-256 of the raw 32-byte public key, hex; the first 16 characters are the key id."""
     raw = (public_raw(public_key_or_b64) if hasattr(public_key_or_b64, "public_bytes")
            else base64.b64decode(public_key_or_b64))
     return hashlib.sha256(raw).hexdigest()
@@ -217,15 +171,8 @@ def public_from_b64(text):
     return ed25519.Ed25519PublicKey.from_public_bytes(base64.b64decode(text))
 
 
-# --------------------------------------------------------------------------- #
-# Signing and verifying
-# --------------------------------------------------------------------------- #
 def sign_bytes(raw):
-    """``(signature_b64, key_id, public_key_b64)`` or None when unsigned.
-
-    Signs with the active workspace's key, so a bundle carries the identity of
-    the organisation that produced it.
-    """
+    """``(signature_b64, key_id, public_key_b64)`` under the active workspace's key, or None when unsigned."""
     key = active_private_key()
     if key is None:
         return None
@@ -242,8 +189,8 @@ def verify_bytes(raw, signature_b64, public_key_b64):
 
 
 def register_key(public_key_b64):
-    """Record the key that just signed as current; anything else still marked
-    current is retired as of now (a rotation made without the command)."""
+    """Record the key that just signed as current and retire this workspace's other current keys (a rotation made
+    without the command)."""
     from django.db import IntegrityError, transaction
 
     from .models import SigningKey
@@ -252,9 +199,8 @@ def register_key(public_key_b64):
 
     workspace_id = tenancy.current_id()
     kid = key_id(public_key_b64)
-    # The row is found by the whole public key. The short id is a label for
-    # people to compare and is unique, so a different key that happens to share
-    # it makes this fail (an IntegrityError) rather than reuse the other key's row.
+    # Found by the whole public key. key_id is a unique label: a different key sharing it raises IntegrityError
+    # rather than reuse the other key's row.
     try:
         with transaction.atomic():
             row, _ = SigningKey.objects.get_or_create(
@@ -267,16 +213,14 @@ def register_key(public_key_b64):
         row.retired_at = None
         row.workspace_id = workspace_id
         row.save(update_fields=["retired_at", "workspace"])
-    # Only this workspace's other keys are retired: each organisation has its
-    # own current key, and retiring theirs would misreport the published list.
+    # Only this workspace's keys: each organisation has its own current key.
     (SigningKey.objects.filter(retired_at__isnull=True, workspace_id=workspace_id)
      .exclude(pk=row.pk).update(retired_at=timezone.now()))
     return row
 
 
 def sign_package(package):
-    """Sign the sealed manifest as stored. Returns the key id, or "" when
-    the installation has no signing key."""
+    """Sign ``manifest_json`` as stored; returns the key id, or "" when there is no signing key."""
     raw = (package.manifest_json or "").encode("utf-8")
     result = sign_bytes(raw) if raw else None
     if result is None:
@@ -291,31 +235,18 @@ def sign_package(package):
 
 
 def signature_status(package):
-    """'valid', 'invalid' or 'unsigned' for the stored manifest and signature.
-
-    Checked against the *registered* public key for the package's key id, not
-    against the copy stored on the package row. The manifest, the signature
-    and that copy all live in the same table, so anyone who can write to it
-    could re-sign a doctored manifest with a key of their own and the row
-    would be self-consistent. The published key list is the reference, and the
-    key has to belong to the organisation whose package this is.
-
-    This is the in-app convenience check. The one that decides anything is
-    ``verify.py`` inside the bundle, run against the fingerprint the
-    organisation published; it never sees this database at all.
-    """
+    """'valid', 'invalid' or 'unsigned', judged against the registered public key and never the copy on the package row:
+    anyone able to write the table could re-sign a doctored manifest with a key of their own."""
     from .models import SigningKey
 
     if not package.manifest_signature:
         return "unsigned"
     if not package.signing_public_key:
         return "invalid"
-    # Found by the whole key, not by the short id the package also carries.
     known = SigningKey.objects.filter(public_key=package.signing_public_key).first()
     if known is None or known.key_id != package.signing_key_id:
-        return "invalid"  # signed by a key this installation never published
-    # Keys recorded before per-workspace signing (0.9.3) carry no workspace
-    # and stay acceptable; a key belonging to another organisation does not.
+        return "invalid"
+    # Keys from before per-workspace signing carry no workspace and stay acceptable.
     if known.workspace_id is not None and package.workspace_id is not None \
             and known.workspace_id != package.workspace_id:
         return "invalid"
@@ -325,8 +256,8 @@ def signature_status(package):
 
 
 def current_key_info(create=True):
-    """What the health endpoint and the settings screen show: the key that
-    would sign for the workspace this call runs in."""
+    """Key details for the health endpoint and settings screen; a configuration error comes back as ``error``, not
+    raised."""
     try:
         key = active_private_key(create=create)
     except ImproperlyConfigured as exc:

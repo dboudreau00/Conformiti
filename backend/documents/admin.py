@@ -2,11 +2,8 @@ from django.contrib import admin
 
 from .models import Document, DocumentVersion, Folder, FolderPermission, FormTemplate
 
-# The admin stores a file exactly as it is sent: none of the checks the API
-# runs on an upload (size, extension, macro and OLE2 content, the malware
-# scanner) run there. So it takes no file at all, and the scanner's verdict is
-# not the admin's to change either: clearing quarantined_at would serve a file
-# the scanner had matched. Files arrive through the API, where the checks are.
+# The admin runs none of the API's upload checks (size, type, macros, scanner), so it takes no file; the scanner's
+# verdict is read-only there too: clearing quarantined_at would serve a file the scanner matched.
 FILE_FIELDS = ("file",)
 SCAN_FIELDS = ("scan_status", "scan_signature", "scanned_at", "quarantined_at")
 

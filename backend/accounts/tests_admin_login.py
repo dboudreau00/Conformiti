@@ -1,8 +1,3 @@
-"""The Django admin is part of the product's attack surface.
-
-Django's own admin login asks for a password and nothing else, and the session
-it creates must not authenticate the whole API. These tests cover both.
-"""
 from django.core.cache import cache
 from django.test import Client, override_settings
 
@@ -46,8 +41,6 @@ class AdminLoginTests(APITestBase):
         self.assertEqual(r.status_code, 302, getattr(r, "content", b"")[:400])
 
     def test_a_backup_code_gets_in(self):
-        """A passkey-only administrator has no authenticator, so the account's
-        backup codes are their way in."""
         codes = self.staffer.issue_backup_codes()
         self.enrol()
         r = self.post(otp=codes[0])
@@ -77,15 +70,11 @@ class AdminLoginTests(APITestBase):
 
 
 class AdminSessionIsNotAnApiCredentialTests(APITestBase):
-    """An admin session must not authenticate /api/ in production: it is
-    obtained through a different, weaker door."""
-
     @override_settings(DEBUG=False)
     def test_session_authentication_is_not_a_production_default(self):
         from django.conf import settings
 
-        # The setting is evaluated at import; assert the shipped intent
-        # directly rather than re-importing the module.
+        # The setting is evaluated at import, so the shipped intent is asserted from the source, not by re-importing.
         classes = settings.REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"]
         self.assertIn("accounts.cookie_auth.CookieJWTAuthentication", classes)
         source = open(settings.BASE_DIR / "config" / "settings.py", encoding="utf-8").read()

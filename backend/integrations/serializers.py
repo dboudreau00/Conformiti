@@ -6,7 +6,6 @@ from .models import JiraBoard, JiraIntegration
 
 
 class JiraConfigSerializer(serializers.ModelSerializer):
-    """The token is write-only; `has_token` tells the UI one is saved."""
     api_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
     has_token = serializers.SerializerMethodField()
 
@@ -18,13 +17,7 @@ class JiraConfigSerializer(serializers.ModelSerializer):
         return bool(obj.api_token)
 
     def validate_api_token(self, value):
-        """Bound in BYTES, not characters.
-
-        The column stores the encryption envelope, whose width was sized for a
-        255-*byte* token. 255 non-ASCII characters is up to 1020 UTF-8 bytes and
-        would overflow the column, giving a 500 at write time rather than a 400
-        here.
-        """
+        """Bound in BYTES, not characters: the column's width is sized for a 255-byte token."""
         if len(value.encode("utf-8")) > 255:
             raise serializers.ValidationError(
                 "API token is too long (limit 255 bytes). Jira tokens are far shorter; "
@@ -33,12 +26,8 @@ class JiraConfigSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data):
-        # An empty token field means "keep the saved one", but only for the
-        # host it was issued for. Moving base_url to another host with the
-        # token box empty would otherwise carry the saved credential across
-        # and send it to the new host on the next test, which defeats the
-        # write-only field for anyone who already holds this capability
-        # (0.9.5h, L-4).
+        # An empty token keeps the saved one only for the host it was issued for: moving base_url with the box
+        # empty would otherwise send the saved credential to the new host.
         from urllib.parse import urlsplit
 
         token = validated_data.pop("api_token", None)

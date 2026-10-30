@@ -1,22 +1,5 @@
-"""
-Standard-mailbox mailer (IMAP / POP3 + SMTP), built entirely on the Python
-standard library, so no third-party packages are required.
-
-Why both IMAP/POP3 *and* SMTP?
---------------------------------
-IMAP and POP3 are mailbox-*access* protocols: they let you connect to and read
-an existing mailbox. They cannot send mail. Delivering a message is always an
-SMTP operation. A "standard mailbox account" (Gmail, Microsoft 365,
-Fastmail, a cPanel mailbox, ...) therefore exposes two endpoints:
-
-    * IMAP/POP3  -> connect to the mailbox (used here to verify credentials and,
-                    for IMAP, to file a copy of each reminder in the Sent folder)
-    * SMTP       -> send the outgoing reminder
-
-This module drives both. ``EMAIL_PROVIDER=mailbox`` routes review reminders
-through here. Point the settings at your provider's IMAP/POP3 + SMTP hosts and
-the platform will mail document owners using nothing but a normal inbox.
-"""
+"""EMAIL_PROVIDER=mailbox: sends over SMTP; IMAP and POP3 only verify the account and, for IMAP, file a copy in Sent.
+Standard library only."""
 import imaplib
 import logging
 import poplib
@@ -31,11 +14,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
-# --------------------------------------------------------------------------- #
-# Message construction
-# --------------------------------------------------------------------------- #
 def build_message(subject, html_body, text_body, from_address, to_addresses):
-    """Assemble a multipart/alternative message (plain text + HTML)."""
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = from_address
@@ -52,10 +31,6 @@ def _domain_of(address):
     return address.split("@")[-1] if address and "@" in address else "localhost"
 
 
-# --------------------------------------------------------------------------- #
-# Configuration helpers (SMTP falls back to the mailbox host/credentials so the
-# common single-provider case needs almost no extra settings).
-# --------------------------------------------------------------------------- #
 def _smtp_conf():
     return {
         "host": settings.MAILBOX_SMTP_HOST or settings.MAILBOX_HOST,
@@ -68,17 +43,7 @@ def _smtp_conf():
     }
 
 
-# --------------------------------------------------------------------------- #
-# Sending (SMTP)
-# --------------------------------------------------------------------------- #
 def send_mailbox_email(subject, html_body, text_body, to_addresses, from_address=None):
-    """
-    Send one message over SMTP using the mailbox account's SMTP endpoint.
-
-    If ``MAILBOX_SAVE_SENT`` is enabled and the mailbox protocol is IMAP, a copy
-    of the sent message is appended to the configured Sent folder so the account
-    keeps a normal record of outgoing reminders.
-    """
     from_address = from_address or settings.DEFAULT_FROM_EMAIL
     to_addresses = [a for a in dict.fromkeys(to_addresses) if a]
     if not to_addresses:
@@ -110,9 +75,8 @@ def send_mailbox_email(subject, html_body, text_body, to_addresses, from_address
         try:
             append_to_sent(msg)
         except Exception:
-            # Filing the sent copy is best-effort; delivery already succeeded.
-            # Log it: a failing Sent folder otherwise looks identical to a
-            # working one, and operators rely on it as the audit copy.
+            # Best-effort, since delivery already succeeded; logged because operators rely on the Sent copy as the audit
+            # record and a failing folder would otherwise look like a working one.
             logger.warning(
                 "Reminder delivered but could not be filed in the '%s' IMAP folder.",
                 settings.MAILBOX_SENT_FOLDER or "Sent", exc_info=True,
@@ -120,16 +84,9 @@ def send_mailbox_email(subject, html_body, text_body, to_addresses, from_address
     return True
 
 
-# --------------------------------------------------------------------------- #
-# Mailbox connection (IMAP / POP3): verification and Sent-folder filing
-# --------------------------------------------------------------------------- #
 def _tls_context():
-    """A verifying TLS context.
-
-    imaplib/poplib default to ssl._create_stdlib_context(), which is an
-    *unverified* context (CERT_NONE, check_hostname=False): the mailbox
-    password would be handed to anyone who can present any certificate.
-    """
+    """A verifying context: imaplib and poplib default to an unverified one, which would hand the mailbox password
+    to anyone who presents any certificate."""
     return ssl.create_default_context()
 
 
@@ -141,8 +98,6 @@ def _imap_connect():
             ssl_context=_tls_context(), timeout=timeout,
         )
     else:
-        # No implicit TLS: upgrade with STARTTLS rather than sending the
-        # password in the clear.
         conn = imaplib.IMAP4(settings.MAILBOX_HOST, settings.MAILBOX_PORT, timeout=timeout)
         try:
             conn.starttls(ssl_context=_tls_context())
@@ -179,13 +134,11 @@ def _pop3_connect():
 
 
 def append_to_sent(msg):
-    """Append a sent message to the IMAP Sent folder (IMAP only)."""
     conn = _imap_connect()
     try:
         folder = settings.MAILBOX_SENT_FOLDER or "Sent"
-        # imaplib does not quote the mailbox argument, so an unquoted folder
-        # containing a space ("Sent Items", "[Gmail]/Sent Mail") is parsed as
-        # extra tokens and the APPEND fails.
+        # imaplib does not quote the mailbox argument, so a folder with a space ("Sent Items", "[Gmail]/Sent Mail")
+        # is parsed as extra tokens and the APPEND fails.
         conn.append(
             f'"{folder}"' if not folder.startswith('"') else folder,
             r"(\Seen)",
@@ -200,16 +153,12 @@ def append_to_sent(msg):
 
 
 def verify_mailbox():
-    """
-    Connect to the mailbox and return a short human-readable status string.
-    Used by ``manage.py test_mailbox`` to confirm credentials before relying on
-    the account for reminders. Raises on failure.
-    """
+    """Sign in over IMAP or POP3 and return a one-line status; raises on failure."""
     protocol = settings.MAILBOX_PROTOCOL
     if protocol == "imap":
         conn = _imap_connect()
         try:
-            typ, data = conn.list()
+            _, data = conn.list()
             boxes = len(data) if data else 0
             return f"IMAP OK ({settings.MAILBOX_HOST}:{settings.MAILBOX_PORT}): {boxes} mailboxes visible"
         finally:

@@ -31,18 +31,16 @@ urlpatterns = [
     path("auth/mfa/verify/", MfaVerifyView.as_view(), name="mfa_verify"),
     path("auth/mfa/disable/", MfaDisableView.as_view(), name="mfa_disable"),
     path("auth/mfa/backup-codes/", MfaBackupCodesView.as_view(), name="mfa_backup_codes"),
-    # Passkeys / security keys (WebAuthn) as a second factor. The sign-in half
-    # of the ceremony lives on /auth/token/ and /auth/oidc/redeem/ themselves.
+    # WebAuthn passkeys. The sign-in half of the ceremony lives on /auth/token/ and /auth/oidc/redeem/ themselves.
     path("auth/webauthn/", PasskeyListView.as_view(), name="webauthn_list"),
     path("auth/webauthn/register/options/", PasskeyRegisterOptionsView.as_view(),
          name="webauthn_register_options"),
     path("auth/webauthn/register/", PasskeyRegisterView.as_view(), name="webauthn_register"),
     path("auth/webauthn/<int:pk>/", PasskeyDetailView.as_view(), name="webauthn_detail"),
-    # Single sign-on (OpenID Connect). Configured from the environment only.
     path("auth/oidc/start/", OidcStartView.as_view(), name="oidc_start"),
     path("auth/oidc/callback/", OidcCallbackView.as_view(), name="oidc_callback"),
     path("auth/oidc/redeem/", OidcRedeemView.as_view(), name="oidc_redeem"),
-    # Single sign-on (SAML 2.0). Same ticket redemption as OIDC.
+    # SAML shares OIDC's ticket redemption.
     path("auth/saml/start/", SamlStartView.as_view(), name="saml_start"),
     path("auth/saml/acs/", SamlAcsView.as_view(), name="saml_acs"),
     path("auth/saml/metadata/", SamlMetadataView.as_view(), name="saml_metadata"),

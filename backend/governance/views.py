@@ -1,4 +1,3 @@
-"""Views for access reviews (with CSV export), meeting cadence, and groups."""
 import csv
 
 from django.db import transaction
@@ -31,16 +30,9 @@ from .serializers import (
 )
 
 
-# --------------------------------------------------------------------------- #
-# Permissions
-# --------------------------------------------------------------------------- #
 class AccessAuditPermission(BasePermission):
-    """Access reviews contain account data: managers run them, auditors may read.
-
-    One of the two places an external auditor is let in on purpose (the other
-    is the audit log): a periodic access review is an audit artefact, produced
-    to be inspected. Everything else in governance is refused below.
-    """
+    """Managers run access reviews, auditors may read them. With the audit log, one of the two places an external
+    auditor is let in on purpose."""
 
     def has_permission(self, request, view):
         u = request.user
@@ -52,9 +44,8 @@ class AccessAuditPermission(BasePermission):
 
 
 class ManageDocumentsOrReadOnly(BasePermission):
-    """Meeting cadence and minutes: the organisation's own governance record,
-    not an external auditor's to browse (they receive what is put in a
-    package)."""
+    """Meeting cadence and minutes are the organisation's own record: an external auditor gets only what is put in a
+    package."""
 
     def has_permission(self, request, view):
         u = request.user
@@ -71,9 +62,6 @@ class ManageUsersOrReadOnly(BasePermission):
         return True if request.method in SAFE_METHODS else u.can_manage_users
 
 
-# --------------------------------------------------------------------------- #
-# Access reviews
-# --------------------------------------------------------------------------- #
 CAP_FLAGS = [
     ("can_manage_users", "users"),
     ("can_manage_frameworks", "frameworks"),
@@ -83,13 +71,11 @@ CAP_FLAGS = [
     ("is_auditor", "auditor"),
 ]
 
-# Snapshot fields (names, job titles, notes) are user-controlled: every export
-# row goes through csv_safe so a value like "=1+1" can't execute as a formula.
+# Snapshot fields are user-controlled: every export row goes through csv_safe so "=1+1" cannot run as a formula.
 from config.csvsafe import csv_safe as _csv_safe  # noqa: E402
 
 
 def _snapshot_items(review):
-    """Create one grid row per user account with a stable point-in-time snapshot."""
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -111,14 +97,8 @@ def _snapshot_items(review):
 
 
 def _apply_revocations(request, review):
-    """Deactivate every account the review decided to revoke.
-
-    Returns ``{"revoked": [usernames], "skipped": [{"username", "reason"}]}``.
-    Three rows are never applied automatically, and are reported instead:
-    the reviewer's own account (a review must not sign its author out
-    mid-request), a superuser (deactivating the last one locks the
-    installation), and a user that no longer exists.
-    """
+    """Deactivate each account the review decided to revoke; returns ``{"revoked": [usernames], "skipped": [{"username",
+    "reason"}]}``. The reviewer's own account, superusers and missing users are reported, never applied."""
     from accounts.session_views import _blacklist_all
     from audit.events import record_auth_event
 
@@ -160,11 +140,8 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
         _snapshot_items(review)
 
     def perform_update(self, serializer):
-        # Under the row lock ``complete`` takes. The instance was read before
-        # the lock, so a completion that committed in between would otherwise
-        # be written back as open, with its revocations still applied.
-        from rest_framework.exceptions import ValidationError
-
+        # Under the row lock ``complete`` takes: the instance was read before it, so a completion that committed in
+        # between would otherwise be written back as open, with its revocations still applied.
         with transaction.atomic():
             locked = AccessReview.objects.select_for_update().get(pk=serializer.instance.pk)
             if locked.status == AccessReview.Status.COMPLETED:
@@ -172,12 +149,8 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
             serializer.save()
 
     def perform_destroy(self, instance):
-        # Deleting removes every row with it, so a completed review, the
-        # evidence that the control operated, must not be deletable, and the
-        # status is read again under the lock rather than trusted from a
-        # request that may have started before a completion.
-        from rest_framework.exceptions import ValidationError
-
+        # A completed review is the evidence that the control operated, so it is not deletable; the status is re-read
+        # under the lock, not trusted from a request that began before a completion.
         with transaction.atomic():
             locked = AccessReview.objects.select_for_update().get(pk=instance.pk)
             if locked.status == AccessReview.Status.COMPLETED:
@@ -187,10 +160,8 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         self.get_object()  # permission and workspace checks
-        # One transaction under a row lock: two clicks (or two reviewers) must
-        # not both pass the status check and apply the revocations twice, and a
-        # failure half way through must not leave some accounts revoked on a
-        # review that still reads as open.
+        # One transaction under a row lock: two completions must not both pass the status check and apply the
+        # revocations twice, and a failure half way must not leave accounts revoked on a review that reads as open.
         with transaction.atomic():
             review = AccessReview.objects.select_for_update().get(pk=pk)
             if review.status == AccessReview.Status.COMPLETED:
@@ -201,11 +172,6 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
                     {"detail": f"{pending} row(s) still pending a decision."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            # A revoke decision that nobody carried out would show the control
-            # was not operating. Completing the review applies every "revoke"
-            # row (the account is deactivated and its sessions are revoked) and
-            # reports which rows it could not apply and why, so the reviewer
-            # finishes the job by hand.
             applied = _apply_revocations(request, review)
             review.status = AccessReview.Status.COMPLETED
             review.completed_at = timezone.now()
@@ -216,7 +182,6 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def export(self, request, pk=None):
-        """Download the review grid as CSV: the audit evidence artifact."""
         review = self.get_object()
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = (
@@ -242,23 +207,17 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
 
 
 class AccessReviewItemViewSet(viewsets.ModelViewSet):
-    """Rows are created by the snapshot, edited (decision/notes) via PATCH.
-
-    Pagination is disabled: a review's rows (one per user account) are a bounded
-    set the grid needs in full to compute decided/total and show every account.
-    Default 50-row pagination would truncate the audit grid for orgs with
-    more than 50 users."""
     queryset = AccessReviewItem.objects.select_related("review", "decided_by")
     serializer_class = AccessReviewItemSerializer
     permission_classes = [AccessAuditPermission]
+    # The grid needs every account at once; the default 50-row page would truncate the audit grid.
     pagination_class = None
     filterset_fields = ["review", "decision"]
     http_method_names = ["get", "patch", "head", "options"]
 
     def perform_update(self, serializer):
-        # Under the review's row lock, the one ``complete`` takes: a decision
-        # cannot land between the completion check and its revocations, nor
-        # after the review has been sealed.
+        # Under the review's row lock (the one ``complete`` takes): no decision lands between the completion check and
+        # its revocations, or after the review is sealed.
         with transaction.atomic():
             review = AccessReview.objects.select_for_update().get(pk=serializer.instance.review_id)
             if review.status == AccessReview.Status.COMPLETED:
@@ -266,9 +225,6 @@ class AccessReviewItemViewSet(viewsets.ModelViewSet):
             serializer.save()
 
 
-# --------------------------------------------------------------------------- #
-# Meetings
-# --------------------------------------------------------------------------- #
 class MeetingSeriesViewSet(viewsets.ModelViewSet):
     queryset = MeetingSeries.objects.select_related("owner")
     serializer_class = MeetingSeriesSerializer
@@ -295,12 +251,8 @@ class MeetingMinuteViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
-        """Minutes are read through the API so no storage path is published.
-
-        These are internal governance records, not package evidence: an
-        external auditor has no route to them, grant or no grant."""
-        from rest_framework.exceptions import PermissionDenied
-
+        """Minutes are internal governance records, not package evidence: an external auditor has no route to them,
+        grant or no grant."""
         from documents.downloads import serve_stored_file
         if request.user.is_auditor:
             raise PermissionDenied("Meeting minutes are not part of an audit package.")
@@ -308,9 +260,6 @@ class MeetingMinuteViewSet(viewsets.ModelViewSet):
         return serve_stored_file(minute.file, f"{minute.title or 'minutes'}")
 
 
-# --------------------------------------------------------------------------- #
-# Champion groups
-# --------------------------------------------------------------------------- #
 class ChampionGroupViewSet(viewsets.ModelViewSet):
     queryset = ChampionGroup.objects.select_related("owner")
     serializer_class = ChampionGroupSerializer
@@ -325,9 +274,6 @@ class GroupMemberViewSet(viewsets.ModelViewSet):
     filterset_fields = ["group"]
 
 
-# ==========================================================================
-# Risk register
-# ==========================================================================
 from django.db.models import Count
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
@@ -340,16 +286,13 @@ from .serializers import RiskNoteSerializer, RiskSerializer
 
 
 class RiskPermission(BasePermission):
-    """Read: any authenticated user (the register is program-wide context).
-    Create / delete / import: framework managers.
-    Update: framework managers, or the risk's owner driving their remediation."""
+    """Read: anyone but an external auditor. Create, delete, import: framework managers. Update: framework managers,
+    or the risk's owner driving their remediation."""
 
     def has_permission(self, request, view):
         user = request.user
         if not (user and user.is_authenticated) or is_external_auditor(user):
-            # The register is programme-wide context for the people running
-            # the programme. An outside auditor gets the findings that reach
-            # a package, not the organisation's whole book of open risk.
+            # An outside auditor gets the findings that reach a package, not the whole register.
             return False
         if request.method in SAFE_METHODS:
             return True
@@ -373,10 +316,8 @@ class RiskViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "description", "jira_key"]
 
     def get_queryset(self):
-        # The note count makes this a GROUP BY query, which Django runs
-        # without Meta.ordering, so the order is explicit: Meta.ordering, then
-        # the id as a unique tie-break, or pages may repeat or skip a risk.
-        # A valid ?ordering= still replaces it.
+        # The note count makes this a GROUP BY, which ignores Meta.ordering: the order is explicit, with the id as a
+        # unique tie-break, or pages may repeat or skip a risk.
         return (
             Risk.objects.select_related(
                 "owner", "created_by",
@@ -389,7 +330,6 @@ class RiskViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-    # ---- register-level summary (page header / dashboards) -----------------
     @action(detail=False, methods=["get"])
     def summary(self, request):
         today = timezone.localdate()
@@ -406,7 +346,6 @@ class RiskViewSet(viewsets.ModelViewSet):
             "by_rating": by_rating,
         })
 
-    # ---- CSV export (audit evidence) ---------------------------------------
     @action(detail=False, methods=["get"])
     def export(self, request):
         response = HttpResponse(content_type="text/csv")
@@ -432,12 +371,10 @@ class RiskViewSet(viewsets.ModelViewSet):
             ]))
         return response
 
-    # ---- CSV / XLSX import --------------------------------------------------
     @action(detail=False, methods=["post"], url_path="import")
     def import_file(self, request):
-        """Ingest a register from .csv or .xlsx. Creates new risks, skips rows
-        whose title already exists, and reports per-row warnings. Parsing is
-        dependency-free (see governance/risk_import.py)."""
+        """Create risks from a .csv or .xlsx register: a title that already exists is skipped, and row problems come
+        back as warnings."""
         upload = request.FILES.get("file")
         if upload is None:
             raise ValidationError({"file": "Attach a .csv or .xlsx file."})
@@ -451,7 +388,6 @@ class RiskViewSet(viewsets.ModelViewSet):
         if fatal:
             raise ValidationError({"file": fatal})
 
-        # Resolve owners by username, email, or full name (case-insensitive).
         owner_lookup = {}
         for u in User.objects.all():
             owner_lookup[u.username.lower()] = u
@@ -461,7 +397,6 @@ class RiskViewSet(viewsets.ModelViewSet):
             if full:
                 owner_lookup.setdefault(full, u)
 
-        # Resolve controls by control_id, or "framework_key:control_id".
         control_lookup = {}
         for c in Control.objects.select_related("category__framework"):
             control_lookup.setdefault(c.control_id.lower(), []).append(c)
@@ -522,8 +457,7 @@ class RiskViewSet(viewsets.ModelViewSet):
 
 
 class RiskNoteViewSet(viewsets.ModelViewSet):
-    """Progress notes on a risk. Anyone authenticated may read and add to the
-    thread; a note can be deleted by its author or a framework manager."""
+    """Anyone but an external auditor may read and add notes; a note is deleted by its author or a framework manager."""
     serializer_class = RiskNoteSerializer
     http_method_names = ["get", "post", "delete", "head", "options"]
     filterset_fields = ["risk"]

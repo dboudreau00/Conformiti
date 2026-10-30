@@ -1,29 +1,5 @@
-"""
-WebAuthn (passkeys and security keys) as a second factor: the protocol.
-
-This module is the relying-party side of WebAuthn Level 2, reduced to what a
-second factor needs: build the options the browser is given, and verify what
-it hands back. It knows nothing about Django; ``accounts/passkeys.py`` is the
-glue that stores credentials and challenges. Cryptography comes from the
-``cryptography`` package the project already depends on; the CBOR and COSE
-parsing is here in full because both are small, and a reader should be able
-to check every byte the server trusts without following an import.
-
-Not implemented:
-
-* **Attestation verification.** The browser is asked for ``"none"`` and
-  whatever statement arrives is ignored. Attestation proves which make of
-  authenticator created a key; a second factor needs only that the same key
-  signs next time, and verifying attestation chains is a large surface with
-  no benefit to this product.
-* **Discoverable (usernameless) login.** A passkey is always presented
-  after the password, so the server always knows whose credentials to allow.
-
-The counter rule lives in ``counter_regressed`` and in
-``passkeys.finish_login``: a signature counter that fails to increase is a
-sign the credential was cloned, and the response is to refuse the sign-in and
-mark the credential, never to drop the account to password-only.
-"""
+"""WebAuthn relying party for a second factor; CBOR and COSE are parsed here so every byte it trusts can be read.
+Not implemented: attestation verification (the statement is ignored), discoverable (usernameless) login."""
 import base64
 import hashlib
 import hmac
@@ -35,14 +11,11 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
 
-# COSE algorithm identifiers (RFC 9053) this relying party accepts, in the
-# order they are offered to the browser. ES256 is what every authenticator
-# supports; RS256 is Windows Hello; EdDSA is newer keys.
+# COSE algorithm identifiers (RFC 9053), in the order they are offered to the browser.
 ES256, RS256, EDDSA = -7, -257, -8
 ALGORITHMS = (ES256, RS256, EDDSA)
 ALGORITHM_NAMES = {ES256: "ES256", RS256: "RS256", EDDSA: "EdDSA"}
 
-# Hard ceilings on what is parsed. A browser never sends anything near these.
 MAX_CLIENT_DATA = 64 * 1024
 MAX_ATTESTATION = 64 * 1024
 MAX_AUTH_DATA = 64 * 1024
@@ -58,8 +31,7 @@ FLAG_ED = 0x80   # extensions present
 
 
 class WebAuthnError(Exception):
-    """A response the relying party refuses. ``code`` is short and stable
-    (for the audit trail); ``message`` is for a person."""
+    """A refused response: ``code`` is short and stable (audit trail), ``message`` is for a person."""
 
     def __init__(self, code, message=None):
         super().__init__(message or code)
@@ -67,9 +39,6 @@ class WebAuthnError(Exception):
         self.message = message or code
 
 
-# --------------------------------------------------------------------------- #
-# base64url
-# --------------------------------------------------------------------------- #
 def b64url_encode(raw):
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
@@ -86,9 +55,6 @@ def b64url_decode(text, limit=None, what="value"):
         raise WebAuthnError("format", f"{what} is not valid base64url")
 
 
-# --------------------------------------------------------------------------- #
-# CBOR (RFC 8949), the definite-length subset CTAP2 authenticators emit
-# --------------------------------------------------------------------------- #
 def _cbor_head(data, offset):
     if offset >= len(data):
         raise WebAuthnError("cbor", "truncated")
@@ -99,8 +65,7 @@ def _cbor_head(data, offset):
         return major, info, offset
     widths = {24: 1, 25: 2, 26: 4, 27: 8}
     if info not in widths:
-        # 28-30 are reserved; 31 is an indefinite length, which no
-        # authenticator produces and which would make sizes unbounded.
+        # 28-30 are reserved; 31 (indefinite length) would make sizes unbounded and no authenticator sends it.
         raise WebAuthnError("cbor", "unsupported length encoding")
     width = widths[info]
     if offset + width > len(data):
@@ -161,7 +126,6 @@ def cbor_decode(data, offset=0, depth=0):
 
 
 def cbor_loads(data):
-    """Decode exactly one item that fills ``data``."""
     value, end = cbor_decode(data)
     if end != len(data):
         raise WebAuthnError("cbor", "trailing bytes")
@@ -178,9 +142,7 @@ def _cbor_len(major, n):
 
 
 def cbor_dumps(value):
-    """Canonical (definite-length) encoder for the same subset. Used by the
-    test-suite's fake authenticator and kept beside the decoder so the two
-    are reviewed together."""
+    """Canonical encoder for the same subset; used by the tests' fake authenticator."""
     if value is True:
         return b"\xf5"
     if value is False:
@@ -204,9 +166,6 @@ def cbor_dumps(value):
     raise TypeError(f"cannot encode {type(value).__name__}")
 
 
-# --------------------------------------------------------------------------- #
-# COSE keys (RFC 9052/9053) <-> cryptography public keys
-# --------------------------------------------------------------------------- #
 def cose_to_public_key(cose):
     """Return ``(public_key, algorithm)`` for a COSE_Key map, or raise."""
     if not isinstance(cose, dict):
@@ -278,9 +237,6 @@ def verify_signature(key, algorithm, data, signature):
     return True
 
 
-# --------------------------------------------------------------------------- #
-# Authenticator data and client data
-# --------------------------------------------------------------------------- #
 class AuthData:
     __slots__ = ("rp_id_hash", "flags", "sign_count", "aaguid", "credential_id", "public_key_cose")
 
@@ -343,8 +299,7 @@ def _normalise_origin(origin):
 
 
 def parse_client_data(raw, expected_type, expected_challenge, origins):
-    """Check the collected client data: ceremony type, our challenge, an
-    origin we serve. Returns the parsed object."""
+    """Check ceremony type, our challenge and an origin we serve; return the parsed client data."""
     if len(raw) > MAX_CLIENT_DATA:
         raise WebAuthnError("format", "client data too large")
     try:
@@ -370,13 +325,8 @@ def rp_id_hash(rp_id):
     return hashlib.sha256(str(rp_id).encode("utf-8")).digest()
 
 
-# --------------------------------------------------------------------------- #
-# Options the browser is given
-# --------------------------------------------------------------------------- #
 def user_handle(user_pk):
-    """An opaque, stable, non-identifying ``user.id`` for the authenticator
-    (the spec forbids PII here). Only informative in this design: a passkey is
-    always looked up through ``allowCredentials`` after the password."""
+    """An opaque, non-identifying ``user.id``: the spec forbids PII here."""
     return hashlib.sha256(f"conformiti:webauthn:user:{user_pk}".encode("ascii")).digest()
 
 
@@ -417,9 +367,6 @@ def authentication_options(*, rp_id, challenge, allow, user_verification="prefer
     }
 
 
-# --------------------------------------------------------------------------- #
-# Verification
-# --------------------------------------------------------------------------- #
 class Registered:
     __slots__ = ("credential_id", "public_key_der", "algorithm", "sign_count", "aaguid",
                  "backup_eligible", "backup_state", "transports", "user_verified")
@@ -441,8 +388,7 @@ def _response_of(credential):
 
 
 def verify_registration(credential, *, challenge, rp_id, origins, require_user_verification=False):
-    """Check a ``navigator.credentials.create()`` result and return what to
-    store. Attestation is not examined (see the module docstring)."""
+    """Check a ``navigator.credentials.create()`` result and return what to store; attestation is not examined."""
     response = _response_of(credential)
     client_raw = b64url_decode(response.get("clientDataJSON"), MAX_CLIENT_DATA, "clientDataJSON")
     parse_client_data(client_raw, "webauthn.create", challenge, origins)
@@ -485,8 +431,8 @@ def verify_registration(credential, *, challenge, rp_id, origins, require_user_v
 
 def verify_authentication(credential, *, challenge, rp_id, origins, public_key_der, algorithm,
                           require_user_verification=False):
-    """Check a ``navigator.credentials.get()`` result against a stored key.
-    Returns the authenticator data (the caller applies the counter rule)."""
+    """Check a ``navigator.credentials.get()`` result against a stored key; the caller applies the counter rule to the
+    returned authenticator data."""
     response = _response_of(credential)
     client_raw = b64url_decode(response.get("clientDataJSON"), MAX_CLIENT_DATA, "clientDataJSON")
     parse_client_data(client_raw, "webauthn.get", challenge, origins)
@@ -507,10 +453,8 @@ def verify_authentication(credential, *, challenge, rp_id, origins, public_key_d
 
 
 def counter_regressed(stored, presented):
-    """The clone check. An authenticator that keeps a counter increments it on
-    every signature; a value that fails to increase means a second copy of the
-    private key has been signing. Authenticators that do not count report 0
-    both times, which is not a regression."""
+    """The clone check: a counter that fails to increase means a second copy of the key has been signing.
+    Authenticators that do not count report 0 both times, which is not a regression."""
     if stored == 0 and presented == 0:
         return False
     return presented <= stored

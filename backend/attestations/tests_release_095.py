@@ -1,7 +1,4 @@
-"""0.9.5: the bundled verifier refuses an unsigned bundle, and the public key
-list does not enumerate the organisations on an installation. 0.9.5oa: an id
-the caller cannot read, in a PBC line or an attachment, answers as an id that
-is not there."""
+"""The verifier refuses an unsigned bundle; the key list names no organisations; unreadable PBC ids read as missing."""
 import subprocess
 import sys
 import tempfile
@@ -23,11 +20,7 @@ def run_verifier(root, *flags):
 
 
 class UnsignedBundleTests(PackageTestBase):
-    """A bundle with its signatures stripped and its file list rewritten to
-    match must not verify with exit 0. Every checksum agrees with itself but
-    nothing proves who made it, and automation keyed on the exit code would
-    accept a forgery.
-    """
+    """A bundle with its signatures stripped and its file list rewritten to match must not verify with exit 0."""
 
     def export(self):
         import io
@@ -55,8 +48,7 @@ class UnsignedBundleTests(PackageTestBase):
             root = Path(tmp)
             (root / "manifest.sig").unlink()
             (root / "SHA256SUMS.sig").unlink()
-            # The attacker also drops the two signature files from the list,
-            # so no checksum mismatch is left to catch them.
+            # The attacker also drops the signature files from the list, so no checksum mismatch is left to catch them.
             sums = root / "SHA256SUMS"
             sums.write_text("".join(
                 line for line in sums.read_text().splitlines(keepends=True)
@@ -66,14 +58,11 @@ class UnsignedBundleTests(PackageTestBase):
             self.assertIn("UNSIGNED", r.stdout)
             self.assertNotIn("OK:", r.stdout)
 
-            # Accepting an unsigned bundle is a deliberate act, and says so.
             allowed = run_verifier(tmp, "--allow-unsigned")
             self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
             self.assertIn("does not prove their origin", allowed.stdout)
 
     def test_only_the_file_list_signature_stripped_is_not_ok_either(self):
-        """The manifest signature alone covers what was sealed; the auditor's
-        conclusions written afterwards are covered only by SHA256SUMS.sig."""
         zf = self.export()
         with tempfile.TemporaryDirectory() as tmp:
             zf.extractall(tmp)
@@ -96,8 +85,7 @@ class UnsignedBundleTests(PackageTestBase):
 
 
 class SigningKeyDirectoryTests(APITestBase):
-    """``/api/signing-keys/`` is public, so an auditor can compare keys. It
-    must not also publish the list of tenants."""
+    """``/api/signing-keys/`` is public: it must not also publish the list of tenants."""
 
     def test_single_workspace_answers_without_a_slug(self):
         r = self.client_for().get("/api/signing-keys/")
@@ -128,12 +116,7 @@ class SigningKeyDirectoryTests(APITestBase):
             self.assertEqual(Workspace.objects.filter(is_active=True).count(), 1)
 
     def test_and_the_archived_one_is_not_in_the_answer_either(self):
-        """0.9.5f, L-2. Archived organisations are deliberately not counted:
-        an installation that has retired a workspace is still single-tenant
-        and should not have to name itself. The unnamed answer must still
-        not list every key on the server (scoping to None is unscoped), or
-        the organisations that had left would be disclosed by the route that
-        publishes one public key."""
+        """An archived organisation is not counted, and the unnamed answer must not list every key on the server."""
         from attestations.models import SigningKey
 
         old = Workspace.objects.create(name="Old Co", slug="old-co", is_active=False)
@@ -147,9 +130,7 @@ class SigningKeyDirectoryTests(APITestBase):
 
 
 class PbcHiddenIdTests(PbcBase):
-    """A PBC line's control and an attachment's document and request accepted
-    any row in the workspace, and the view then answered 403, which confirmed
-    the id."""
+    """An id the caller cannot read answers as an id that is not there, not as the 403 that confirmed it exists."""
 
     def setUp(self):
         super().setUp()

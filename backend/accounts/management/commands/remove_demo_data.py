@@ -1,39 +1,5 @@
-"""
-Retire the demo dataset before going live.
-
-    python manage.py remove_demo_data            # deactivate demo users, delete sample content
-    python manage.py remove_demo_data --delete   # also delete the demo user accounts
-    python manage.py remove_demo_data --dry-run  # report only
-
-The seeded accounts share one password generated at seed time, so they must
-never survive into a real deployment. This command:
-
-  * deactivates (or, with --delete, removes) the five demo users. It refuses
-    to run until an administrator of your own exists (manage.py
-    createsuperuser), so the installation is never left without one;
-  * deletes the sample documents, risks, meeting series, champion group,
-    calendar events, the seeded access review and the nine seeded audit-log
-    rows, matching them by the exact names bootstrap_demo created;
-  * undoes the demo's control programme. Every control a demo account owns
-    is left with no owner, and every status the seeder set (Implemented, In
-    progress, Not applicable) goes back to Not started unless someone has
-    changed it since. The seeder records what it set in the audit log; for a
-    demo seeded by an older release, which kept no record, its fixed pattern
-    is read back instead, and only while the demo owners still sit exactly
-    where it put them. When neither can be trusted no status changes, and the
-    output says why;
-  * drops the demo's readiness history (the back-filled points and those
-    recorded since the seed, or since a `bootstrap_demo --force` seeded it
-    again, all dated before today) and records today's point again from
-    what is left;
-  * leaves the framework/control libraries, folders and roles intact;
-  * records the retirement in the audit log, which bootstrap_demo checks, so
-    a container still started with SEED_DEMO_DATA=true does not seed the demo
-    back into the workspace on its next boot.
-
-Idempotent: safe to run again. A later run resets no status and deletes no
-readiness history, because what changed after the retirement is yours.
-"""
+"""Retire the demo dataset. Idempotent: a later run resets no status and deletes no readiness history, because what
+changed since the retirement is the operator's. The retirement record stops ``bootstrap_demo`` seeding it back."""
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -64,38 +30,28 @@ DEMO_EVENTS = [
 ]
 DEMO_AUDIT_IPS = ["10.0.0.4", "10.0.0.11", "10.0.0.23"]
 
-# What _programme_resets found.
 PROGRAMME_READ = "read"              # these controls still hold the demo's status
 PROGRAMME_UNREADABLE = "unreadable"  # a live programme that cannot be read back
 PROGRAMME_LEFT_BEHIND = "left"       # an older release retired the demo and kept its statuses
 
-# Why a live programme cannot be read back: the warning names the cause that
-# applies, so the operator is not sent looking for a change that never
-# happened.
+# Keyed by the cause _programme_resets found: the warning names the one that applies, so the operator is not sent
+# looking for a change that never happened.
 _OLDER_RELEASE = ("The demo was seeded by an older release, which kept no record of the "
                   "statuses it set; only the controls the demo accounts own show where it set "
                   "them, and ")
 UNREADABLE_BECAUSE = {
-    # The demo's record names the controls it walked, and they are not all
-    # there in the same order.
     "library": ("Some controls that existed when the demo was seeded have since been removed "
                 "from the control library or reordered in it."),
-    # A record whose reference does not parse.
     "record": "The demo's record of the statuses it set cannot be read.",
-    # No record, and nothing left to read the pattern back from.
     "accounts": _OLDER_RELEASE + "no demo account is left.",
     "owners": _OLDER_RELEASE + "no control is owned by a demo account any more.",
-    # No record, and the demo owners sit where the pattern does not put them.
-    # Without the record an added or removed control cannot be told apart
-    # from owners changed by hand, so both are named.
     "moved": (_OLDER_RELEASE + "those are no longer the controls it gave them (controls were "
               "added or removed, or owners changed, since it was seeded)."),
 }
 
 
 def _owners_where_the_programme_put_them(walk, demo_by_pk):
-    """True when at least one control in ``walk`` has a demo owner, and every
-    one that has sits at a position where the programme made that account its
+    """True when some control in ``walk`` has a demo owner and every such control sits where the programme put that
     owner: the evidence that ``walk`` is the order the programme walked."""
     seen = False
     for i, control in enumerate(walk):
@@ -109,9 +65,7 @@ def _owners_where_the_programme_put_them(walk, demo_by_pk):
 
 
 def _still_as_seeded(walk):
-    """The pks of the controls in ``walk`` whose status is still the one the
-    programme gave the position they hold. A status someone changed since
-    differs from it and is left alone."""
+    """The pks in ``walk`` whose status still matches the programme's for that position; changed ones are left alone."""
     pks = []
     for i, control in enumerate(walk):
         status = programme_values(i)[0]
@@ -152,30 +106,17 @@ class Command(BaseCommand):
         demo_users = list(
             User.objects.filter(username__in=DEMO_USERNAMES, email__endswith="@example.com")
         )
-        # Guard: the org must keep at least one active superuser or
-        # administrator that is not a demo account. The test lives beside the
-        # seeder (own_administrator_present) because the seeder's advice and
-        # the container's boot banner use it too: they tell an operator to
-        # run createsuperuser first exactly when this would refuse.
-        # `createsuperuser` files its account in the first workspace that is
-        # not archived, but a superuser with no workspace at all still
-        # counts: one detached by hand may be the administrator an operator
-        # made before retiring the demo users. A role counts the way
-        # User._cap reads it: an auditor role holds no capability, whatever
-        # it stores.
+        # Never leave the installation without an administrator of its own; the seeder's advice and the boot banner
+        # share this test, so all three say "run createsuperuser" exactly when this refuses.
         if demo_users and not own_administrator_present(workspace):
             raise CommandError(
                 "Refusing: no administrator other than the demo accounts exists. "
                 "Create your own first (python manage.py createsuperuser), then re-run."
             )
-        # Whether this run is the one that retires the demo. A later run finds
-        # its own record and leaves the statuses and the readiness history
-        # alone: they are the operator's from the retirement on.
+        # Only the run that retires the demo resets statuses and readiness history: afterwards they are the operator's.
         retiring = not retirement_recorded()
 
-        # "Created by a demo account" must also match rows whose creator was
-        # already deleted (SET_NULL) by an earlier --delete run, or a second
-        # run finds nothing and still reports success.
+        # Also match rows whose creator an earlier --delete run removed (SET_NULL), or a second run finds nothing.
         demo_or_gone = Q(created_by__username__in=DEMO_USERNAMES) | Q(created_by__isnull=True)
         docs = Document.objects.filter(name__in=[d[1] for d in SAMPLE_DOCS]).filter(
             Q(owner__username="owen") | Q(owner__isnull=True))
@@ -184,29 +125,25 @@ class Command(BaseCommand):
         groups = ChampionGroup.objects.filter(name__in=DEMO_GROUPS)
         events = CalendarEvent.objects.filter(title__in=DEMO_EVENTS)
         audit_rows = AuditLog.objects.filter(ip_address__in=DEMO_AUDIT_IPS, detail__regex=r"^[a-z]")
-        # Only the seeded review, and only while a demo account owns it: a real
-        # review an operator started in the same quarter must survive.
+        # Only while a demo account owns it: a real review started in the same quarter must survive.
         reviews = AccessReview.objects.filter(
             name__regex=ACCESS_REVIEW_PATTERN, created_by__username__in=DEMO_USERNAMES
         )
         packages = EvidencePackage.objects.filter(
             name=DEMO_PACKAGE_NAME, created_by__username__in=DEMO_USERNAMES
         )
-        # Vendors cascade to their assessments, shared responsibility rows and
-        # RACI rows; a risk that named one is kept and loses the link.
+        # Vendors cascade to their assessments and RACI rows; a risk that named one is kept and loses the link.
         from compliance.models import Responsibility
         from documents.models import FolderPermission
         from vendors.models import Vendor
         vendors = Vendor.objects.filter(name__in=DEMO_VENDOR_NAMES).filter(demo_or_gone)
         raci = Responsibility.objects.filter(demo_or_gone)
-        # The two role-wide grants the seeder demonstrates RBAC with; left in
-        # place they are standing access nobody asked for.
+        # The seeder's two role-wide RBAC grants: left behind they would be standing access nobody asked for.
         seeded_grants = FolderPermission.objects.filter(user__isnull=True).filter(
             Q(role__name="Control Owner", folder__name__startswith="CC6 -", access_level="edit")
             | Q(role__name="Auditor", folder__is_framework_root=True, folder__name__icontains="27001",
                 access_level="view"))
-        # Counted before anything changes, then reported in the tense of what
-        # happened: "would be" for a dry run, done for a real one.
+        # Counted before anything is deleted, so a real run can still report them.
         counts = [
             ("Sample vendors", vendors.count()),
             ("Seeded RACI rows", raci.count()),
@@ -220,15 +157,12 @@ class Command(BaseCommand):
             ("Seeded access reviews", reviews.count()),
             ("Seeded evidence packages", packages.count()),
         ]
-        # Whether this workspace shows any sign of the demo at all. Run on an
-        # installation that never seeded it, the command has no history and
-        # no statuses of the demo's to take: they are all the operator's.
+        # With no sign of the demo there is no history or status of its to take: all of it is the operator's.
         demo_seen = bool(demo_users) or any(n for _, n in counts)
         history = self._demo_history(retiring and demo_seen)
         counts.append(("Seeded readiness history points", history.count()))
 
-        # The control programme. Owners first: a control owned by an account
-        # that can no longer sign in is effectively unowned.
+        # A control owned by an account that can no longer sign in is effectively unowned.
         demo_by_pk = {u.pk: u.username for u in demo_users}
         demo_owned = Control.objects.filter(owner_id__in=list(demo_by_pk))
         programme, reset, unreadable = self._programme_resets(demo_by_pk, retiring, demo_seen)
@@ -262,13 +196,10 @@ class Command(BaseCommand):
                     user.is_active = False
                     user.set_unusable_password()
                     user.save(update_fields=["is_active", "password"])
-            # Today's point counted the links, risks and statuses that just
-            # went; the dashboard trend ends on it.
+            # Today's point counted the data that just went; the dashboard trend ends on it.
             record_today(force=True)
-            # The record bootstrap_demo checks before seeding. Written once per
-            # retirement: again only after a `bootstrap_demo --force` has seeded
-            # the demo back since the last one. ip_address stays empty, so the
-            # seeded-row match above can never delete it on a later run.
+            # The record bootstrap_demo checks before seeding. ip_address stays empty, so the seeded-row match above
+            # can never delete it on a later run.
             if retiring:
                 AuditLog.objects.create(
                     user=None, action=RETIRED_ACTION, object_type=RETIRED_OBJECT_TYPE,
@@ -307,13 +238,8 @@ class Command(BaseCommand):
 
     @staticmethod
     def _demo_history(demo_to_retire):
-        """The readiness points the demo produced, all dated before today
-        (today's is recorded again once the demo is gone): the back-filled
-        months and every point recorded since the seed. After a `bootstrap_demo
-        --force` revival, only the points from the revival's day on: the ones
-        before it are the operator's, and the revival back-fills no months
-        (bootstrap_demo._history), so none of the demo's sit before it. None
-        on a later run, or where no demo was ever seeded."""
+        """The demo's readiness points dated before today; after a ``bootstrap_demo --force`` revival only those from
+        the revival's day on, and none on a later run or where no demo was ever seeded."""
         from analytics.models import ReadinessSnapshot
         from audit.models import AuditLog
 
@@ -323,24 +249,14 @@ class Command(BaseCommand):
         revived = (AuditLog.objects.filter(object_type=RETIRED_OBJECT_TYPE, action=REVIVED_ACTION)
                    .order_by("-pk").values_list("timestamp", flat=True).first())
         if revived is not None:
-            # Seeded again with --force after an earlier retirement: the
-            # points from before that are the operator's own history.
+            # Seeded again with --force: the points from before that are the operator's own history.
             history = history.filter(date__gte=timezone.localdate(revived))
         return history
 
     @staticmethod
     def _programme_resets(demo_by_pk, retiring, demo_seen):
-        """What to do about the statuses the demo's control programme set.
-
-        Returns (PROGRAMME_READ, pks, None) with the controls still holding
-        the status the programme gave them (none once the programme was
-        retired already, or where no demo was ever seeded);
-        (PROGRAMME_UNREADABLE, [], why) for a live programme whose order can
-        no longer be recovered, ``why`` keying UNREADABLE_BECAUSE; or
-        (PROGRAMME_LEFT_BEHIND, pks, None) when an older release retired the
-        demo without undoing it, which is reported and never reset: the
-        operator's own work since then looks the same.
-        """
+        """Returns ``(state, pks, why)``; ``why`` keys UNREADABLE_BECAUSE. PROGRAMME_LEFT_BEHIND is reported and never
+        reset, because the operator's own work since then looks the same."""
         from audit.models import AuditLog
         from compliance.models import Control
 
@@ -355,15 +271,12 @@ class Command(BaseCommand):
             mark = PROGRAMME_MARK.fullmatch(record.object_id)
             walk = (list(Control.objects.filter(pk__lte=int(mark.group(1))).order_by(*PROGRAMME_ORDER))
                     if mark else [])
-            # The fingerprint proves the controls it walked are all there, in
-            # the same order; controls added since have larger ids and fall
-            # outside the walk.
+            # The fingerprint proves the walked controls are all there in the same order; later ones have larger ids.
             if mark and programme_fingerprint(c.pk for c in walk) == mark.group(2):
                 return PROGRAMME_READ, _still_as_seeded(walk), None
             why = "library" if mark else "record"
         else:
-            # Seeded by a release that kept no record: the whole register, in
-            # the order the programme walks it.
+            # An older release kept no record: the whole register, in the order the programme walks it.
             walk = list(Control.objects.order_by(*PROGRAMME_ORDER))
             if not demo_by_pk:
                 why = "accounts"

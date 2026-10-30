@@ -1,17 +1,4 @@
-"""
-Third-party vendor risk management.
-
-A vendor is any outside party the organisation relies on for a control: the
-cloud provider that owns physical security, the payroll processor that holds
-PII, the pen-test firm whose report is evidence. An auditor asks the same
-questions about each one: how critical is it, what data does it touch, what
-assurance do we hold over it, and has that assurance expired.
-
-Assurance is modelled as ``VendorAssessment`` rows: a SOC 2 report, an ISO
-certificate, a penetration test, a signed DPA or a completed questionnaire,
-each with a validity window, an outcome, and optionally the document that
-evidences it. The register's risk view is derived from those, never typed in.
-"""
+"""Assurance is ``VendorAssessment`` rows; the register's risk view is derived from them, never typed in."""
 from datetime import timedelta
 
 from django.conf import settings
@@ -20,23 +7,30 @@ from django.utils import timezone
 
 from accounts.tenancy import TenantModel
 
-# The questionnaire the product ships. Deliberately short: every question maps
-# to something an auditor will ask about the vendor, and a long sheet is less
-# likely to be completed than twelve questions. Answers are stored on the
-# assessment as JSON keyed by ``id``.
+# Answers are stored on the assessment as JSON keyed by ``id``. Short on purpose: a long sheet goes unfinished.
 DEFAULT_QUESTIONNAIRE = [
     {"id": "soc2", "text": "Does the vendor hold a current SOC 2 Type II report (or equivalent)?", "area": "assurance"},
-    {"id": "iso", "text": "Is the vendor certified to ISO/IEC 27001, and is the certificate current?", "area": "assurance"},
-    {"id": "pentest", "text": "Has an independent penetration test been performed in the last 12 months?", "area": "assurance"},
-    {"id": "data_location", "text": "Where is our data stored and processed, and can it leave that region?", "area": "data"},
-    {"id": "encryption", "text": "Is our data encrypted in transit and at rest, and who holds the keys?", "area": "data"},
-    {"id": "subprocessors", "text": "Which sub-processors handle our data, and are we told when that list changes?", "area": "data"},
-    {"id": "access", "text": "Is access to our data limited by role, reviewed periodically, and protected by MFA?", "area": "access"},
-    {"id": "incident", "text": "What is the incident notification commitment, in hours, and how is it delivered?", "area": "resilience"},
-    {"id": "bcp", "text": "Is there a tested business-continuity plan, and what are the recovery objectives?", "area": "resilience"},
-    {"id": "dpa", "text": "Is a data-processing agreement in place, and does it cover breach notification?", "area": "contract"},
+    {"id": "iso", "text": "Is the vendor certified to ISO/IEC 27001, and is the certificate current?",
+     "area": "assurance"},
+    {"id": "pentest", "text": "Has an independent penetration test been performed in the last 12 months?",
+     "area": "assurance"},
+    {"id": "data_location", "text": "Where is our data stored and processed, and can it leave that region?",
+     "area": "data"},
+    {"id": "encryption", "text": "Is our data encrypted in transit and at rest, and who holds the keys?",
+     "area": "data"},
+    {"id": "subprocessors", "text": "Which sub-processors handle our data, and are we told when that list changes?",
+     "area": "data"},
+    {"id": "access", "text": "Is access to our data limited by role, reviewed periodically, and protected by MFA?",
+     "area": "access"},
+    {"id": "incident", "text": "What is the incident notification commitment, in hours, and how is it delivered?",
+     "area": "resilience"},
+    {"id": "bcp", "text": "Is there a tested business-continuity plan, and what are the recovery objectives?",
+     "area": "resilience"},
+    {"id": "dpa", "text": "Is a data-processing agreement in place, and does it cover breach notification?",
+     "area": "contract"},
     {"id": "exit", "text": "On termination, how and when is our data returned and deleted?", "area": "contract"},
-    {"id": "insurance", "text": "Does the vendor carry cyber-liability insurance, and to what limit?", "area": "contract"},
+    {"id": "insurance", "text": "Does the vendor carry cyber-liability insurance, and to what limit?",
+     "area": "contract"},
 ]
 
 
@@ -62,9 +56,8 @@ class Vendor(TenantModel):
     CADENCE_DAYS = {"quarterly": 91, "semiannual": 182, "annual": 365, "biennial": 730}
 
     name = models.CharField(max_length=160)
-    # The column layout of the last matrix file they sent us, so the matrix
-    # can go back to them in their own shape: {"columns": [{"name", "role"}],
-    # "file", "framework", "saved_at"}.
+    # The last matrix file's column layout, so the matrix can go back in their own shape:
+    # {"columns": [{"name", "role"}], "file", "framework", "saved_at"}.
     matrix_layout = models.JSONField(null=True, blank=True)
     category = models.CharField(
         max_length=80, blank=True,
@@ -108,9 +101,7 @@ class Vendor(TenantModel):
         return self.name
 
     def compute_next_review(self):
-        """Next review counts from the last one, or from onboarding when there
-        has never been one, and never from "now", or a vendor that keeps being
-        edited would keep being pushed out of the overdue list."""
+        """Counts from the last review or onboarding, never from now, or an edited vendor would never become overdue."""
         base = self.last_reviewed or (self.created_at.date() if self.created_at else timezone.localdate())
         self.next_review_date = base + timedelta(days=self.CADENCE_DAYS[self.review_cadence])
         return self.next_review_date
@@ -120,12 +111,8 @@ class Vendor(TenantModel):
         return self.status in (self.Status.ACTIVE, self.Status.OFFBOARDING)
 
     def assurance(self):
-        """The current state of what we hold over this vendor.
-
-        Returns a dict the register and the notifications feed both use, so
-        the two never disagree: which assessments are current, which have
-        expired, and a single posture word.
-        """
+        """Counts of current, expired and unsatisfactory assessments plus one posture word. The register and the
+        notification feed both use it, so they never disagree."""
         today = timezone.localdate()
         rows = list(self.assessments.all())
         current, expired, missing_result = [], [], []
@@ -155,8 +142,6 @@ class Vendor(TenantModel):
         }
 
     def risk_rating(self):
-        """Tier crossed with assurance posture. A critical vendor with expired
-        assurance is the case this exists to surface."""
         posture = self.assurance()["posture"]
         tier_rank = {"critical": 3, "high": 2, "medium": 1, "low": 0}[self.tier]
         posture_rank = {"none": 3, "unsatisfactory": 3, "expired": 2, "partial": 1, "current": 0}[posture]
@@ -171,7 +156,6 @@ class Vendor(TenantModel):
 
 
 class VendorAssessment(TenantModel):
-    """One piece of assurance we hold over a vendor, with its validity window."""
     tenant_parent = "vendor"
 
     class Kind(models.TextChoices):
@@ -187,8 +171,7 @@ class VendorAssessment(TenantModel):
         BRIDGE_LETTER = "bridge_letter", "Bridge letter"
         OTHER = "other", "Other"
 
-    # The kinds a bridge letter bridges: a SOC report whose period has ended
-    # while the next one is still being written.
+    # The kinds a bridge letter bridges: a SOC report whose period ended while the next is still being written.
     BRIDGEABLE = ("soc2_type1", "soc2_type2")
 
     class Result(models.TextChoices):
@@ -206,8 +189,6 @@ class VendorAssessment(TenantModel):
     expires_at = models.DateField(null=True, blank=True,
                                   help_text="When this stops being acceptable evidence.")
     result = models.CharField(max_length=16, choices=Result.choices, default=Result.PENDING)
-    # The report itself lives in the evidence library, so it can be pinned into
-    # an audit package like any other document.
     document = models.ForeignKey(
         "documents.Document", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="vendor_assessments",
@@ -219,8 +200,7 @@ class VendorAssessment(TenantModel):
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="vendor_assessments_reviewed",
     )
-    # When the bridge-letter reminder for this lapsed report went out: one
-    # email per lapse, never one per day.
+    # When the bridge-letter reminder went out: one email per lapse, never one per day.
     bridge_reminded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -237,19 +217,6 @@ class VendorAssessment(TenantModel):
 
 
 class SharedResponsibility(TenantModel):
-    """One control's split between us and a vendor, with a statement each way.
-
-    This is the PCI DSS "responsibility matrix" (v4 Req 12.8.5 / TPSP guidance)
-    generalised to every framework: for each control, does the provider do it,
-    do we, or is it shared, and what does each side do. An
-    auditor reads this before anything else about the vendor, because it tells
-    them which controls' evidence to expect from whom.
-
-    Kept as its own structure rather than a document: the vendor's PDF is filed
-    as a ``VendorAssessment`` of kind ``resp_matrix``; this is the machine-
-    readable version we can cross-check against the control register, prompt
-    people to complete, and export.
-    """
     tenant_parent = "vendor"
 
     class Responsibility(models.TextChoices):
@@ -286,16 +253,7 @@ class SharedResponsibility(TenantModel):
 
 
 class QuestionnaireInvite(TenantModel):
-    """The questionnaire, sent to the vendor to answer themselves.
-
-    A time-boxed link, like an audit package grant but for someone with no
-    account: the vendor's contact gets an email with a URL carrying a random
-    token, answers the shipped questions in the browser, saves a draft as
-    often as they like, and submits once. The submission lands as a
-    ``VendorAssessment`` of kind ``questionnaire`` with ``result=pending`` for
-    the organisation to review. Only the token's hash is stored; the link is
-    shown once to the person who sent it and travels in the email.
-    """
+    """A time-boxed link to the questionnaire for someone with no account. Only the token's hash is stored."""
     tenant_parent = "vendor"
     DEFAULT_DAYS = 14
     MAX_DAYS = 90

@@ -1,4 +1,3 @@
-"""Celery entrypoint. Run: celery -A config worker -B -l info"""
 import os
 
 from celery import Celery

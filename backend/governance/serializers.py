@@ -1,4 +1,3 @@
-"""Serializers for access reviews, meeting cadence, and champion groups."""
 import math
 
 from django.utils import timezone
@@ -17,9 +16,6 @@ from .models import (
 )
 
 
-# --------------------------------------------------------------------------- #
-# Access reviews
-# --------------------------------------------------------------------------- #
 class AccessReviewItemSerializer(serializers.ModelSerializer):
     decided_by_name = PersonNameField("decided_by")
 
@@ -68,8 +64,7 @@ class AccessReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ["status", "created_by", "completed_at"]
 
     def validate(self, attrs):
-        # The rows are locked on completion, and so is the review itself:
-        # otherwise the name and notes of the evidence could be rewritten.
+        # A completed review is evidence: its name and notes are locked, like its rows.
         if self.instance and self.instance.status == AccessReview.Status.COMPLETED:
             raise serializers.ValidationError("This review is completed and read-only.")
         return attrs
@@ -81,13 +76,9 @@ class AccessReviewSerializer(serializers.ModelSerializer):
         return obj.items.exclude(decision=AccessReviewItem.Decision.PENDING).count()
 
 
-# --------------------------------------------------------------------------- #
-# Meeting cadence
-# --------------------------------------------------------------------------- #
 class MeetingMinuteSerializer(serializers.ModelSerializer):
     created_by_name = PersonNameField("created_by")
-    # Write-only for the same reason as DocumentSerializer.file: a serialized
-    # storage URL is an unauthenticated second route to the bytes.
+    # Write-only: a serialized storage URL would be an unauthenticated second route to the bytes.
     file = serializers.FileField(required=False, allow_null=True, write_only=True)
     download_url = serializers.SerializerMethodField()
 
@@ -121,9 +112,7 @@ class MeetingSeriesSerializer(serializers.ModelSerializer):
             "active", "held_this_year", "expected_to_date", "cadence_status", "created_at",
             "workspace",
         ]
-        # The model field accepts 0 (which reads as "complete" at once) and
-        # anything up to 32767. Hold the API to the range the interface offers:
-        # at least once a year, at most weekly.
+        # The model accepts 0 (reads as "complete" at once) up to 32767: the API allows once a year through weekly.
         extra_kwargs = {"required_per_year": {"min_value": 1, "max_value": 52}}
 
     def _held(self, obj):
@@ -133,7 +122,6 @@ class MeetingSeriesSerializer(serializers.ModelSerializer):
         return self._held(obj)
 
     def get_expected_to_date(self, obj):
-        """How many occurrences should have happened by now, pro-rated by month."""
         today = timezone.localdate()
         return min(obj.required_per_year, math.ceil(obj.required_per_year * today.month / 12))
 
@@ -144,9 +132,6 @@ class MeetingSeriesSerializer(serializers.ModelSerializer):
         return "on_track" if held >= self.get_expected_to_date(obj) else "behind"
 
 
-# --------------------------------------------------------------------------- #
-# Champion groups
-# --------------------------------------------------------------------------- #
 class GroupMemberSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.get_full_name", read_only=True, default="")
     username = serializers.CharField(source="user.username", read_only=True)
@@ -166,10 +151,7 @@ class ChampionGroupSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "purpose", "owner", "owner_name", "member_count", "created_at", "workspace"]
 
 
-# --------------------------------------------------------------------------
-# Risk register
-# --------------------------------------------------------------------------
-from .models import Risk, RiskNote  # noqa: E402  (appended feature block)
+from .models import Risk, RiskNote  # noqa: E402
 
 
 class RiskNoteSerializer(serializers.ModelSerializer):
@@ -211,9 +193,8 @@ class RiskSerializer(serializers.ModelSerializer):
             "impact": {"min_value": 1, "max_value": 5},
         }
 
-    # What a risk's owner may change without being a framework manager: the
-    # remediation fields. Who owns it, how it is rated and how it is treated
-    # stay with the managers (RiskPermission lets the owner through to here).
+    # What a risk's owner may change without being a framework manager: remediation only. Ownership, rating and
+    # treatment stay with managers (RiskPermission lets the owner through to here).
     OWNER_EDITABLE = {"status", "mitigation_plan", "due_date", "jira_key"}
 
     def validate(self, attrs):
@@ -235,7 +216,6 @@ class RiskSerializer(serializers.ModelSerializer):
         return annotated if annotated is not None else obj.notes.count()
 
     def update(self, instance, validated_data):
-        """Bookkeep closed_at when the status crosses the closed boundary."""
         new_status = validated_data.get("status", instance.status)
         if new_status == Risk.Status.CLOSED and instance.status != Risk.Status.CLOSED:
             validated_data["closed_at"] = timezone.now()

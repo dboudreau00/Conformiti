@@ -1,6 +1,3 @@
-"""Detached signatures: the key lives in a file, the seal signs the manifest,
-the bundle carries signature and key, the shipped stdlib verifier agrees with
-the cryptography library, and rotation keeps old packages verifying."""
 import base64
 import io
 import os
@@ -18,8 +15,6 @@ from attestations.tests import ASSERTION, PackageTestBase
 
 
 class SigningKeyMixin:
-    """A throwaway key file per test class."""
-
     @classmethod
     def setUpClass(cls):
         cls._keydir = tempfile.mkdtemp(prefix="conformiti-signing-")
@@ -56,7 +51,6 @@ class VerifierVectorTests(PackageTestBase):
             pub = signing.public_raw(key.public_key())
             self.assertTrue(verifier.ed25519_verify(pub, msg, sig))
             self.assertFalse(verifier.ed25519_verify(pub, msg + b"!", sig))
-            # And the PEM the bundle carries decodes to the same raw key.
             self.assertEqual(verifier.read_public_key(signing.public_pem(key.public_key())), pub)
 
 
@@ -67,8 +61,7 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
 
     def test_sealing_signs_the_manifest_with_a_file_key_created_on_first_use(self):
         from django.conf import settings as live
-        # Another test in this class may already have created the class's key
-        # file; start from none so first-use generation is what is exercised.
+        # Start from no key file so first-use generation is what is exercised.
         if os.path.exists(live.SIGNING_KEY_FILE):
             os.remove(live.SIGNING_KEY_FILE)
         signing._cache.update(path=None, mtime=None, key=None)
@@ -82,15 +75,12 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         self.assertTrue(signing.verify_bytes(self.package.manifest_json.encode(),
                                              self.package.manifest_signature, self.package.signing_public_key))
         self.assertEqual(signing.signature_status(self.package), "valid")
-        # Registered as the current key, and published.
         row = SigningKey.objects.get()
         self.assertEqual((row.key_id, row.retired_at), (self.package.signing_key_id, None))
-        # Each workspace signs with its own derived key (0.9.3), so the
-        # published list is asked for by organisation.
+        # Each workspace signs with its own derived key, so the published list is asked for by organisation.
         pub = APIClient().get("/api/signing-keys/", {"workspace": "default"}).data
         self.assertEqual(pub["current"]["key_id"], row.key_id)
         self.assertEqual(pub["keys"][0]["fingerprint"], signing.fingerprint(row.public_key))
-        # The seal entry says so.
         from audit.models import AuditLog
         self.assertTrue(AuditLog.objects.filter(action="seal", detail__contains=f"signed key={row.key_id}").exists())
 
@@ -101,7 +91,6 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         self.assertEqual(sig["fingerprint"][:16], sig["key_id"])
         v = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/verify/").data
         self.assertEqual((v["ok"], v["signature"]), (True, "valid"))
-        # A tampered manifest is caught by verify, whatever the file digests say.
         EvidencePackage.objects.filter(pk=self.package.pk).update(
             manifest_json=self.package.manifest_json.replace("SOC 2 fieldwork", "SOC 2 fieldwerk"))
         v = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/verify/").data
@@ -126,9 +115,7 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
             self.assertEqual(code, 0, out.getvalue())
             self.assertIn("signature    : VALID", out.getvalue())
             self.assertIn(self.package.signing_key_id, out.getvalue())
-            # Alter the manifest: the checksums line still matches the altered
-            # file only if SHA256SUMS is rewritten too. Do that, as a forger
-            # would, and the signature is what still fails.
+            # Forge the manifest and rewrite SHA256SUMS to match, as an attacker would: only the signature still fails.
             manifest_path = os.path.join(root, "manifest.json")
             with open(manifest_path, "rb") as fh:
                 forged = fh.read().replace(b"SOC 2 fieldwork", b"SOC 2 fieldwerk")
@@ -163,10 +150,8 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         new_id = [k for k in keys if k != old_id][0]
         self.assertEqual(keys[new_id].label, "FY27")
         self.assertIsNone(keys[new_id].retired_at)
-        # The old package still verifies under the key it carries.
         self.package.refresh_from_db()
         self.assertEqual(signing.signature_status(self.package), "valid")
-        # A new package is signed with the new key.
         other = EvidencePackage.objects.create(name="Next", created_by=self.manager,
                                                created_by_name="Mia")
         self.manager_client.post(f"/api/evidence-packages/{other.pk}/add_controls/",
@@ -182,9 +167,6 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         self.assertIn(new_id, show.getvalue())
 
     def test_only_the_key_in_force_is_listed_as_current_whatever_the_registry_still_says(self):
-        """After a rotation a workspace's old key stays unretired until that
-        workspace seals again, so the retired mark cannot be what says which
-        key is current: the key in force is."""
         from accounts import tenancy
 
         self.seal()
@@ -198,10 +180,6 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         self.assertTrue(flags[listed["current"]["key_id"]])
 
     def test_rotation_run_from_the_command_line_rotates_every_workspaces_key(self):
-        """A command line has no workspace active. It used to read the
-        installation key, print that as the new key, retire nothing and register
-        a key no package carries, so the fingerprint an operator handed to
-        auditors was never the one on their bundles."""
         from accounts import tenancy
         from accounts.models import Workspace
 
@@ -210,7 +188,6 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         out = StringIO()
         with tenancy.unscoped():
             call_command("rotate_signing_key", "--label", "FY27", stdout=out)
-        # Every key row belongs to a workspace: none is registered for the installation.
         self.assertFalse(SigningKey.objects.filter(workspace__isnull=True).exists())
         self.assertIsNotNone(SigningKey.objects.get(key_id=old_id).retired_at)
         current = SigningKey.objects.filter(retired_at__isnull=True)
@@ -219,7 +196,6 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
         new_id = listed["current"]["key_id"]
         self.assertNotEqual(new_id, old_id)
         self.assertEqual(SigningKey.objects.get(key_id=new_id).label, "FY27")
-        # The fingerprint printed for the workspace is the one its packages now carry.
         self.assertIn("default", out.getvalue())
         self.assertIn(new_id, out.getvalue())
         other = EvidencePackage.objects.create(name="Next", created_by=self.manager,
@@ -242,8 +218,7 @@ class SealSigningTests(SigningKeyMixin, PackageTestBase):
 
         seed = os.urandom(32)
         root = ed25519.Ed25519PrivateKey.from_private_bytes(seed)
-        # SIGNING_KEY is the installation root; what signs a package is the
-        # key derived from it for that package's workspace.
+        # SIGNING_KEY is the installation root; a package is signed with the key derived from it for its workspace.
         expected = signing.key_id(
             signing.derive_workspace_key(root, tenancy.current().slug).public_key())
         self.assertNotEqual(expected, signing.key_id(root.public_key()))

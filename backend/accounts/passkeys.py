@@ -1,16 +1,5 @@
-"""
-Passkeys: the Django side of WebAuthn.
-
-``accounts/webauthn.py`` is the protocol; this module keeps the credentials
-and challenges, resolves the relying-party id and origins for a request, and
-applies the one policy that matters: what happens when a signature counter
-goes backwards.
-
-Every ceremony is two calls: ``begin_*`` stores a challenge and returns the
-options for the browser plus an opaque ``state``; ``finish_*`` looks the
-challenge up by that state, verifies the browser's answer, and records the
-outcome. A challenge is single-use and lives five minutes.
-"""
+"""The Django side of ``webauthn.py``: stores credentials and challenges and applies the counter rule. Each ceremony is
+``begin_*`` (stores a challenge, returns the options and an opaque ``state``) then ``finish_*`` (consumes it once)."""
 import hashlib
 import secrets
 
@@ -26,8 +15,7 @@ MAX_PASSKEYS = 10
 
 
 class PasskeyRefused(Exception):
-    """A passkey ceremony the server will not accept. ``code`` is stable for
-    the audit trail; the message is for the person."""
+    """A refused passkey ceremony: ``code`` is stable (audit trail), ``message`` is for the person."""
 
     def __init__(self, code, message):
         super().__init__(message)
@@ -35,13 +23,9 @@ class PasskeyRefused(Exception):
         self.message = message
 
 
-# --------------------------------------------------------------------------- #
-# Relying party
-# --------------------------------------------------------------------------- #
 def rp_id(request):
-    """The relying-party id: WEBAUTHN_RP_ID, or the request's host without a
-    port. A credential is bound to this for life, so a deployment that moves
-    hostnames pins the old one here."""
+    """WEBAUTHN_RP_ID, else the request host without a port. Credentials are bound to it for life: a deployment that
+    moves hostnames must pin the old one."""
     configured = getattr(settings, "WEBAUTHN_RP_ID", "") or ""
     if configured:
         return configured
@@ -50,8 +34,7 @@ def rp_id(request):
 
 
 def origins(request):
-    """Origins whose ceremonies are accepted: WEBAUTHN_ORIGINS, or the origin
-    the request arrived on (the SPA and the API share one origin)."""
+    """Accepted origins: WEBAUTHN_ORIGINS, else the request's own (the SPA and the API share one)."""
     configured = getattr(settings, "WEBAUTHN_ORIGINS", None) or []
     if configured:
         return list(configured)
@@ -69,9 +52,6 @@ def rp_name():
     return getattr(settings, "WEBAUTHN_RP_NAME", "Conformiti") or "Conformiti"
 
 
-# --------------------------------------------------------------------------- #
-# Challenges
-# --------------------------------------------------------------------------- #
 def _hash(state):
     return hashlib.sha256(str(state or "")[:256].encode("utf-8")).hexdigest()
 
@@ -88,8 +68,7 @@ def _new_challenge(user, purpose):
 
 
 def _consume_challenge(user, purpose, state):
-    """Fetch-and-delete: a challenge answers exactly once, even under two
-    concurrent submissions."""
+    """Fetch-and-delete: a challenge answers exactly once, even under two concurrent submissions."""
     with transaction.atomic():
         row = (WebAuthnChallenge.objects.select_for_update()
                .filter(token_hash=_hash(state), user=user, purpose=purpose).first())
@@ -102,9 +81,6 @@ def _consume_challenge(user, purpose, state):
     return challenge
 
 
-# --------------------------------------------------------------------------- #
-# Enrolment
-# --------------------------------------------------------------------------- #
 def _credential_refs(user, usable_only=False):
     rows = user.usable_passkeys if usable_only else user.passkeys.all()
     return [(c.credential_id, c.transports or []) for c in rows]
@@ -151,12 +127,8 @@ def _default_name(registered, user):
     return f"{kind} {user.passkeys.count() + 1}"
 
 
-# --------------------------------------------------------------------------- #
-# Sign-in
-# --------------------------------------------------------------------------- #
 def begin_login(user, request):
-    """Options for the second step of a login: only this user's usable keys
-    are allowed, so a suspect credential is never even offered."""
+    """Options for the second login step, or None without a usable key; a suspect credential is never offered."""
     allow = _credential_refs(user, usable_only=True)
     if not allow:
         return None
@@ -169,13 +141,8 @@ def begin_login(user, request):
 
 
 def finish_login(user, request, payload):
-    """Verify an assertion for ``user``. Returns the credential used.
-
-    The counter rule is applied here and fails closed: a counter that did
-    not increase marks the credential suspect and refuses this sign-in. The
-    account keeps requiring a second factor (the person's other passkey, their
-    authenticator app, a backup code or an administrator's reset).
-    """
+    """Verify an assertion for ``user``; return the credential used. The counter rule fails closed: a counter that did
+    not increase marks the credential suspect and refuses this sign-in, never dropping the account to password-only."""
     if not isinstance(payload, dict):
         raise PasskeyRefused("format", "Malformed passkey response.")
     state = payload.get("state")
@@ -214,19 +181,14 @@ def finish_login(user, request, payload):
     return row
 
 
-# --------------------------------------------------------------------------- #
-# Status
-# --------------------------------------------------------------------------- #
 def factors(user):
-    """What the login screen may offer after the password."""
     usable = user.usable_passkeys.count()
     total = user.passkeys.count()
     return {
         "totp": user.totp_enabled,
         "passkey": usable > 0,
         "passkey_suspect": total - usable,
-        # Recovery codes belong to the account, so a passkey-only person can
-        # still type one when the key is lost.
+        # Recovery codes belong to the account, so a passkey-only person can still use one when the key is lost.
         "backup_codes": user.backup_codes_remaining > 0,
     }
 

@@ -1,4 +1,3 @@
-"""0.9.5: completing an access review carries out its own decisions."""
 from rest_framework.test import APIClient
 
 from governance.models import AccessReviewItem

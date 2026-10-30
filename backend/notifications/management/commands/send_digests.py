@@ -1,11 +1,3 @@
-"""Email each person who asked for a digest the items in their tray.
-
-    python manage.py send_digests            # daily people today; weekly people on Mondays
-    python manage.py send_digests --dry-run  # count only
-
-Run daily from cron when Celery beat is not in use (the compose worker runs it
-at REVIEW_SCAN_HOUR + 20 minutes).
-"""
 from django.core.management.base import BaseCommand
 
 from notifications.tasks import run_digests

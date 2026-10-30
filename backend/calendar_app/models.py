@@ -1,4 +1,3 @@
-"""Calendar events shown on the dashboard (audits, tasks, custom milestones)."""
 from django.conf import settings
 from django.db import models
 

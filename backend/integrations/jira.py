@@ -1,12 +1,3 @@
-"""
-Minimal Jira Cloud / Server client built on the Python standard library
-(urllib), with no extra dependencies. Used by the optional Jira integration to
-pull issues from specific boards so security work tracked in Jira is visible
-next to the controls it supports.
-
-Authentication is HTTP Basic with an Atlassian API token (email and token;
-create one at id.atlassian.com under Security > API tokens).
-"""
 import base64
 import http.client
 import json
@@ -21,13 +12,11 @@ MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
 
 class JiraError(Exception):
-    """Raised for any configuration, network, or Jira-side failure; the
-    message is safe to show to the user."""
+    """Any Jira failure; ``str()`` is safe to show the user."""
 
 
-# The URL safety checks live in config/outbound.py, shared with the chat
-# webhooks so there is no second, weaker copy (REVIEWS.md (0.9.5 review), S-2).
-# Jira keeps its own wording.
+# The URL checks live in config/outbound.py (never a second, weaker copy); only the wording is Jira's
+# (REVIEWS.md (0.9.5 review), S-2).
 _MESSAGES = {
     "scheme": "Jira base URL must start with https:// (e.g. https://your-team.atlassian.net).",
     "userinfo": "Jira base URL must not carry a username or password.",
@@ -48,9 +37,7 @@ _ip_is_public = outbound.ip_is_public
 
 
 def _assert_safe_base_url(base_url):
-    """Only allow https to a host that resolves exclusively to public IPs, and
-    return the validated IP to pin the connection to. A Jira Server install
-    may sit on a non-standard port, so the port is not restricted here."""
+    """Return the validated IP to pin to. The port is unrestricted: a Jira Server install may use a non-standard one."""
     try:
         return outbound.assert_safe_url(base_url, allowed_hosts=None, allowed_ports=None)
     except outbound.OutboundError as exc:
@@ -72,8 +59,7 @@ def _request(config, path, params=None):
         "Authorization": f"Basic {token}",
         "Accept": "application/json",
     })
-    # Connect to the exact IP we validated, refusing redirects, so the request
-    # can't be bounced to an internal address after the safety check.
+    # Dials the validated IP and refuses redirects, so the request cannot be bounced to an internal address.
     sender = outbound.opener(pinned_ip)
     try:
         with sender.open(req, timeout=15) as resp:
@@ -92,23 +78,20 @@ def _request(config, path, params=None):
     except urllib.error.URLError as exc:
         raise JiraError(f"Could not reach Jira: {getattr(exc, 'reason', exc)}")
     except (OSError, http.client.HTTPException) as exc:
-        # A timeout or reset while the body is being read is not a URLError, and
-        # neither is a chunked body cut short (IncompleteRead) or a garbled
-        # status line: all of them are Jira not answering properly.
+        # Neither a timeout while reading the body, IncompleteRead nor a garbled status line is a URLError.
         raise JiraError(f"Could not reach Jira: {exc}")
     except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
         raise JiraError("Jira returned a response that wasn't JSON. Check the base URL.")
 
 
 def verify(config):
-    """Confirm the credentials work; returns the authenticated account's name."""
+    """Confirm the credentials work and return the message to show the user."""
     me = _request(config, "/rest/api/3/myself")
     name = me.get("displayName") or me.get("emailAddress") or "unknown account"
     return f"Connected to Jira as {name}."
 
 
 def board_issues(config, board_id, max_results=50):
-    """Fetch issues on a board (Jira Agile API) as slim rows for the UI."""
     data = _request(
         config,
         f"/rest/agile/1.0/board/{int(board_id)}/issue",
@@ -117,9 +100,7 @@ def board_issues(config, board_id, max_results=50):
             "fields": "summary,status,assignee,priority,issuetype,updated",
         },
     )
-    # The browser never sees the base URL (it belongs to the manager-only
-    # configuration), so each row carries its own link to the issue rather
-    # than the page assembling one.
+    # The browser never sees base_url (manager-only configuration), so each row carries its own link.
     base = config.base_url.rstrip("/")
     rows = []
     for issue in data.get("issues", []):

@@ -1,5 +1,3 @@
-"""The questionnaire sent to the vendor: issuing the link, what the link can
-and cannot do, submission into a pending assessment, and the feed."""
 from django.core import mail
 from django.test import override_settings
 from django.utils import timezone
@@ -60,7 +58,6 @@ class SendTests(APITestBase):
         self.assertAlmostEqual(window.days, 29, delta=1)
 
     def test_the_audit_entry_counts_the_days_in_words(self):
-        """The entry must read '1 day' and '30 days', not '1 day(s)'."""
         v = _vendor()
         self.send(v, email="a@b.example", days=1)
         self.send(v, email="a@b.example", days=30)
@@ -120,13 +117,10 @@ class VendorSideTests(APITestBase):
         self.assertNotIn("owner", r.data)
         self.invite.refresh_from_db()
         self.assertIsNotNone(self.invite.opened_at)
-        # An unknown token answers 404 and gives nothing else away.
         self.assertEqual(self.anon.get("/api/questionnaire/nope/").status_code, 404)
         self.assertEqual(self.anon.get(f"/api/questionnaire/{self.token[:-1]}x/").status_code, 404)
 
     def test_a_body_that_is_not_an_object_is_refused_not_a_crash(self):
-        """A JSON list or string parses, has no fields, and used to answer 500
-        on an endpoint with no account in front of it."""
         for body in (["yes"], "yes", 7):
             with self.subTest(body=body):
                 r = self.anon.put(f"/api/questionnaire/{self.token}/", body, format="json")
@@ -149,7 +143,6 @@ class VendorSideTests(APITestBase):
         bad = self.anon.put(f"/api/questionnaire/{self.token}/",
                             {"answers": {"soc2": {"answer": "maybe"}}}, format="json")
         self.assertEqual(bad.status_code, 400)
-        # Nothing was filed against the vendor by saving a draft.
         self.assertFalse(VendorAssessment.objects.exists())
 
     def test_submitting_files_a_pending_assessment_notifies_and_closes_the_link(self):
@@ -173,7 +166,6 @@ class VendorSideTests(APITestBase):
         self.assertEqual(set(mail.outbox[0].to), {"owen@test.local", "mia@test.local", "grc@test.local"})
         self.assertIn("returned their security questionnaire", mail.outbox[0].subject)
         self.assertIn("3 of 12", mail.outbox[0].body)
-        # Second submission of the same link is refused; the draft is read-only.
         r = self.anon.post(f"/api/questionnaire/{self.token}/submit/", body, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data["code"], "submitted")
@@ -203,8 +195,6 @@ class VendorSideTests(APITestBase):
         self.anon.post(f"/api/questionnaire/{self.token}/submit/",
                        {"answers": {"soc2": {"answer": "no"}}, "respondent_name": "Nia"}, format="json")
         a = VendorAssessment.objects.get()
-        # The returned questionnaire surfaces to the owner and to managers,
-        # until someone records an outcome.
         owner_keys = [i["key"] for i in build_feed(self.owner)]
         self.assertIn(f"vendor-questionnaire:{a.pk}", owner_keys)
         self.assertIn(f"vendor-questionnaire:{a.pk}", [i["key"] for i in build_feed(self.manager)])
@@ -214,7 +204,6 @@ class VendorSideTests(APITestBase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["reviewed_by_name"], self.manager.get_full_name())
         self.assertNotIn(f"vendor-questionnaire:{a.pk}", [i["key"] for i in build_feed(self.owner)])
-        # The vendor detail carries the invite history.
         detail = self.client_for(self.manager).get(f"/api/vendors/{self.vendor.pk}/").data
         self.assertEqual(detail["questionnaire_invites"][0]["status"], "submitted")
         self.assertEqual(detail["questionnaire_invites"][0]["assessment_result"], "exceptions")
@@ -234,11 +223,7 @@ class VendorSideTests(APITestBase):
         self.assertEqual(codes, [200, 200, 200, 429])
 
     def test_without_public_url_the_send_is_refused_rather_than_guessed(self):
-        """The token in the link is a bearer credential. The host it points at
-        must not fall back to the request's own Origin header, which is chosen
-        by whoever sent the request: a spoofed one would put an attacker's
-        host in the vendor's email (REVIEWS.md (0.9.5 review), S-5). An unset
-        PUBLIC_URL is the shipped default, so this must fail closed."""
+        """Fails closed: the link host must not fall back to the request's Origin (REVIEWS.md (0.9.5 review), S-5)."""
         live = QuestionnaireInvite.objects.filter(
             vendor=self.vendor, revoked_at__isnull=True).count()
         with override_settings(PUBLIC_URL=""):
@@ -247,8 +232,7 @@ class VendorSideTests(APITestBase):
                 {}, HTTP_ORIGIN="https://phish.example", format="json")
         self.assertEqual(r.status_code, 400, r.data)
         self.assertIn("PUBLIC_URL", str(r.data))
-        # And nothing happened: the vendor's live link was not revoked to
-        # make room for one that could not be built.
+        # Nothing happened: the live link was not revoked to make room for one that could not be built.
         self.assertEqual(QuestionnaireInvite.objects.filter(
             vendor=self.vendor, revoked_at__isnull=True).count(), live)
         self.assertEqual(len(mail.outbox), 0)
@@ -257,12 +241,6 @@ class VendorSideTests(APITestBase):
 @override_settings(EMAIL_PROVIDER="console", ORGANISATION_NAME="Acme Ltd",
                    PUBLIC_URL="https://grc.acme.example")
 class OneLiveLinkTests(APITestBase):
-    """Low 10: "one live link per vendor" is enforced by revoking whatever is
-    visible and then inserting, a read-modify-write with nothing to lock
-    unless the vendor row is held. Two sends arriving together would each
-    revoke what they could see and each create a link, leaving two
-    answerable at once."""
-
     def send(self, vendor, **body):
         return self.client_for(self.manager).post(
             f"/api/vendors/{vendor.pk}/questionnaire/send/", body, format="json")
@@ -280,9 +258,6 @@ class OneLiveLinkTests(APITestBase):
         self.assertEqual(QuestionnaireInvite.objects.filter(vendor=v).count(), 2)
 
     def test_the_vendor_row_is_held_while_the_swap_happens(self):
-        """The serialising lock itself: without it the two statements above
-        interleave. SQLite takes a database-wide write lock instead, so this
-        is only meaningful on a backend with row locks."""
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
 
@@ -300,11 +275,7 @@ class OneLiveLinkTests(APITestBase):
 @override_settings(EMAIL_PROVIDER="console", COMPLIANCE_TEAM_EMAIL="grc@test.local",
                    ORGANISATION_NAME="Acme Ltd", PUBLIC_URL="https://grc.acme.example")
 class DeadLinkDisclosureTests(APITestBase):
-    """L-6, 0.9.5h. PUT and submit call ``_require_live``, and GET must not
-    leak what they refuse. After a link expires, is revoked or is submitted,
-    the unauthenticated page must not return the vendor's name, the
-    organisation's name, the sender, the address it was sent to or the private
-    message that went with it, as well as clearing the draft answers."""
+    """L-6: a dead link (expired, revoked or submitted) must not leak names, address or message on the public GET."""
 
     def setUp(self):
         super().setUp()
@@ -317,8 +288,6 @@ class DeadLinkDisclosureTests(APITestBase):
         self.anon = APIClient()
 
     def kill(self, how):
-        """`status` is computed from the timestamps, so the link is killed the
-        way the product kills it."""
         if how == "expired":
             self.invite.expires_at = timezone.now() - timezone.timedelta(days=1)
             self.invite.save(update_fields=["expires_at"])
@@ -332,9 +301,7 @@ class DeadLinkDisclosureTests(APITestBase):
         self.assertEqual(self.invite.status, how)
 
     def revive(self):
-        """Back to open between the states, rather than re-running setUp,
-        which would send a second questionnaire to the same vendor and hit
-        the one-live-link rule."""
+        """Back to open between states: re-running setUp would send a second questionnaire (one-live-link rule)."""
         self.invite.expires_at = timezone.now() + timezone.timedelta(days=7)
         self.invite.revoked_at = None
         self.invite.submitted_at = None
@@ -353,8 +320,6 @@ class DeadLinkDisclosureTests(APITestBase):
                 self.assertNotIn("Dana", body)
 
     def test_it_still_says_which_state_it_is_in(self):
-        """The vendor has to be told the link is dead, which is not the same
-        as being told whose it was."""
         self.kill("expired")
         r = self.anon.get(f"/api/questionnaire/{self.token}/")
         self.assertEqual(r.status_code, 200)

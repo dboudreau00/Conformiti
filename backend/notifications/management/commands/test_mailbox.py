@@ -1,19 +1,3 @@
-"""
-Check that email from Conformiti reaches people, whatever EMAIL_PROVIDER is.
-
-    python manage.py test_mailbox                 # mailbox only: sign in, send nothing
-    python manage.py test_mailbox --to you@x.com  # send a sample review reminder
-
-With EMAIL_PROVIDER=mailbox the MAILBOX_* account is signed in to first (IMAP
-or POP3), which proves the credentials before anything is sent. The other
-providers (smtp, ses, console) have no mailbox to sign in to, so they need
---to.
-
-The test message is a sample review reminder, sent through
-notifications.email_service with the template and transport the reminder scan
-uses, so a message that arrives shows real reminders will. With console it is
-printed here, not delivered.
-"""
 from datetime import timedelta
 
 from django.conf import settings
@@ -92,7 +76,7 @@ class Command(BaseCommand):
 
     @staticmethod
     def _route(provider):
-        """Where send_templated_email hands the message for ``provider``."""
+        """Where ``send_templated_email`` sends for ``provider``; mirrors its branches."""
         if provider == "mailbox":
             return f"over SMTP ({settings.MAILBOX_SMTP_HOST or settings.MAILBOX_HOST})"
         if provider == "ses":

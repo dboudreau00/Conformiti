@@ -1,9 +1,4 @@
-"""
-The PBC request list: who raises a line, who answers it, who judges it, and
-who can read what came back. The access tests are the ones that matter: the
-assignee route is a deliberate, narrow disclosure and must stay narrow, and
-the party that names a person is always the organisation.
-"""
+"""The PBC request list. The assignee route is a deliberate, narrow disclosure and must stay narrow."""
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -54,7 +49,6 @@ class RaiseAndEditTests(PbcBase):
             self.assertEqual(self.raise_line(client).status_code, 403)
         self.raise_line(self.auditor_client)
         self.assertEqual(self.owner_client.get("/api/pbc-requests/").data["count"], 0)
-        # A revoked auditor loses the list with the grant.
         self.package.grants.update(revoked_at=timezone.now())
         self.assertEqual(self.auditor_client.get("/api/pbc-requests/").data["count"], 0)
         self.assertEqual(self.raise_line(self.auditor_client).status_code, 403)
@@ -70,7 +64,6 @@ class RaiseAndEditTests(PbcBase):
                                       {"assignee": self.owner.pk, "due_date": "2030-01-01"}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["assignee_name"], "Owen Tester")
-        # Status is never patched directly, and lines are withdrawn not deleted.
         self.assertEqual(self.manager_client.patch(f"/api/pbc-requests/{mine['id']}/",
                                                    {"status": "accepted"}, format="json").status_code, 400)
         self.assertEqual(self.manager_client.delete(f"/api/pbc-requests/{mine['id']}/").status_code, 400)
@@ -84,11 +77,7 @@ class RaiseAndEditTests(PbcBase):
 
 
 class AssigneeDisclosureTests(PbcBase):
-    """M-2, 0.9.5h. /api/users/ is denied to an auditor because it is the
-    staff directory. `assignee` is a writable foreign key onto every account
-    in the workspace and the reply carries `assignee_name`, so without a guard
-    an auditor with a live grant could read that directory one sequential pk
-    at a time."""
+    """An external auditor must not read the staff directory through ``assignee``."""
 
     def test_an_auditor_cannot_name_anybody(self):
         r = self.raise_line(self.auditor_client, assignee=self.owner.pk)
@@ -98,11 +87,6 @@ class AssigneeDisclosureTests(PbcBase):
         self.assertNotIn(self.owner.username, body)
 
     def test_a_real_pk_and_an_unknown_one_look_the_same(self):
-        """The refusal must not say which pks are people.
-
-        The message echoes the pk the caller sent, which tells them nothing
-        new. The code and the wording must be identical either way, so the
-        reply cannot be used to enumerate."""
         real = self.raise_line(self.auditor_client, assignee=self.owner.pk)
         unknown = self.raise_line(self.auditor_client, assignee=999999)
         self.assertEqual(real.status_code, unknown.status_code)
@@ -132,10 +116,7 @@ class AssigneeDisclosureTests(PbcBase):
 class AnswerTests(PbcBase):
     def setUp(self):
         super().setUp()
-        # The auditor raises the line and names nobody: the staff list is the
-        # organisation's, and an auditor naming a person could read the
-        # directory they are refused at /api/users/ one pk at a time
-        # (0.9.5h, M-2). The organisation routes it, which is the next line.
+        # An auditor cannot name an assignee (the staff list is the organisation's): the organisation routes the line.
         raised = self.raise_line(
             self.auditor_client,
             due_date=str(timezone.localdate() + timezone.timedelta(days=3))).data
@@ -143,7 +124,7 @@ class AnswerTests(PbcBase):
             f"/api/pbc-requests/{raised['id']}/",
             {"assignee": self.owner.pk}, format="json").data
         self.hidden = make_doc(self.tree.ctrl2, owner=self.manager, name="Hidden report", content=b"secret")
-        grant(self.tree.ctrl1, user=self.owner, level=VIEW)   # Owen's own control folder
+        grant(self.tree.ctrl1, user=self.owner, level=VIEW)
 
     def attach(self, client, doc, **extra):
         return client.post("/api/pbc-items/", {"request": self.line["id"], "document": doc.pk, **extra}, format="json")
@@ -154,10 +135,7 @@ class AnswerTests(PbcBase):
         self.assertEqual(listed["results"][0]["package_name"], "SOC 2 fieldwork")
         self.assertTrue(listed["results"][0]["can"]["answer"])
         self.assertFalse(listed["results"][0]["can"]["edit"])
-        # ...but not the package itself.
         self.assertEqual(self.owner_client.get("/api/evidence-packages/").data["count"], 0)
-        # Owen can attach the document in his own folder. One in a folder he
-        # cannot see is the same answer as an id that is not there.
         r = self.attach(self.owner_client, self.doc, note="Signed copy")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["content_sha256"], __import__("hashlib").sha256(b"policy bytes").hexdigest())
@@ -168,8 +146,7 @@ class AnswerTests(PbcBase):
         self.assertEqual(missing.status_code, 400)
         self.assertEqual(str(hidden.data).replace(str(self.hidden.pk), "N"),
                          str(missing.data).replace("999999", "N"))
-        self.assertEqual(self.attach(self.owner_client, self.doc).status_code, 400)   # already attached
-        # Marking provided, with the attachment standing in for a note.
+        self.assertEqual(self.attach(self.owner_client, self.doc).status_code, 400)
         r = self.owner_client.post(f"/api/pbc-requests/{self.line['id']}/provide/", {}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual((r.data["status"], r.data["provided_by_name"]), ("provided", "Owen Tester"))
@@ -191,17 +168,11 @@ class AnswerTests(PbcBase):
         self.assertTrue(AuditLog.objects.filter(action="read", detail__contains="from PBC-01").exists())
         self.package.refresh_from_db()
         self.assertEqual(self.package.grants.get().access_count, 1)
-        # The same document is still closed to the auditor by every other route.
         self.assertEqual(self.auditor_client.get(f"/api/documents/{self.doc.pk}/download/").status_code, 404)
-        # And the viewer, with no route at all, gets nothing.
         self.assertEqual(self.client_for(self.viewer).get(f"/api/pbc-items/{item.pk}/file/").status_code, 404)
         self.assertEqual(self.client_for(self.viewer).get("/api/pbc-items/").data["count"], 0)
 
     def test_the_attachment_stays_the_version_that_was_attached(self):
-        """An item records the version and digest it was attached at. A later
-        version of the document is the organisation's business; the auditor,
-        reading through the grant, gets the bytes the item names, exactly as a
-        pinned artefact does, and never the live file in their place."""
         self.attach(self.manager_client, self.doc)
         item = PbcItem.objects.get()
         self.assertEqual(item.version, 1)
@@ -213,7 +184,6 @@ class AnswerTests(PbcBase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(b"".join(r.streaming_content), b"policy bytes")
         self.assertEqual(self.auditor_client.get(f"/api/pbc-items/{item.pk}/preview/").status_code, 200)
-        # The organisation's own route serves the live document, as it should.
         r = self.manager_client.get(f"/api/documents/{self.doc.pk}/download/")
         self.assertEqual(b"".join(r.streaming_content), b"rewritten later")
 
@@ -229,18 +199,15 @@ class AnswerTests(PbcBase):
     def test_accept_and_return_are_the_auditors_and_a_returned_line_reopens(self):
         self.attach(self.manager_client, self.doc)
         lid = self.line["id"]
-        # Cannot judge what has not been provided.
         self.assertEqual(self.auditor_client.post(f"/api/pbc-requests/{lid}/accept/").status_code, 400)
         self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "Attached."}, format="json")
-        # The assignee is not a judge.
         self.assertEqual(self.owner_client.post(f"/api/pbc-requests/{lid}/accept/").status_code, 403)
         r = self.auditor_client.post(f"/api/pbc-requests/{lid}/return/", {}, format="json")
-        self.assertEqual(r.status_code, 400)          # a return says why
+        self.assertEqual(r.status_code, 400)
         r = self.auditor_client.post(f"/api/pbc-requests/{lid}/return/",
                                      {"returned_note": "Need the full period, not Q1."}, format="json")
         self.assertEqual((r.status_code, r.data["status"]), (200, "returned"))
         self.assertIn(f"pbc-returned:{lid}", [i["key"] for i in build_feed(self.owner)])
-        # Provide again, then accept; accepted lines are closed for good.
         self.attach(self.manager_client, self.hidden)
         self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "Full period."}, format="json")
         r = self.auditor_client.post(f"/api/pbc-requests/{lid}/accept/")
@@ -251,23 +218,18 @@ class AnswerTests(PbcBase):
         self.assertEqual(self.manager_client.delete(f"/api/pbc-items/{PbcItem.objects.first().pk}/").status_code, 400)
 
     def test_the_organisation_judges_only_a_line_it_raised_itself(self):
-        """The documented rule: the organisation closes a line it transcribed
-        from the auditor's email; a line the auditor raised is theirs to accept
-        or return. Any frameworks manager used to be able to accept it."""
-        lid = self.line["id"]                                   # raised by the auditor
+        lid = self.line["id"]
         self.attach(self.manager_client, self.doc)
         self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "Attached."}, format="json")
         self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/accept/").status_code, 403)
         self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/return/",
                                                   {"returned_note": "No."}, format="json").status_code, 403)
         self.assertEqual(PbcRequest.objects.get(pk=lid).status, "provided")
-        # The line the organisation raised itself, it may close.
         mine = self.raise_line(self.manager_client, title="Transcribed from the auditor's email").data
         self.manager_client.post("/api/pbc-items/", {"request": mine["id"], "document": self.doc.pk}, format="json")
         self.manager_client.post(f"/api/pbc-requests/{mine['id']}/provide/", {"response_note": "Done."}, format="json")
         r = self.manager_client.post(f"/api/pbc-requests/{mine['id']}/accept/")
         self.assertEqual((r.status_code, r.data["status"]), (200, "accepted"))
-        # And the auditor judges the line they raised.
         self.assertEqual(self.auditor_client.post(f"/api/pbc-requests/{lid}/accept/").status_code, 200)
 
     def test_detaching_the_last_document_reopens_a_provided_line_with_no_note(self):
@@ -279,7 +241,6 @@ class AnswerTests(PbcBase):
         row = PbcRequest.objects.get(pk=lid)
         self.assertEqual(row.status, "open")
         self.assertIsNone(row.provided_at)
-        # With a note saying why, the answer stands even with nothing attached.
         item = self.attach(self.manager_client, self.doc).data
         self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "Held on paper."}, format="json")
         self.manager_client.delete(f"/api/pbc-items/{item['id']}/")
@@ -290,15 +251,12 @@ class AnswerTests(PbcBase):
         self.attach(self.manager_client, self.doc)
         self.manager_client.post(f"/api/pbc-requests/{lid}/provide/", {"response_note": "x"}, format="json")
         self.assertEqual(self.manager_client.post(f"/api/pbc-requests/{lid}/withdraw/").status_code, 200)
-        # The line is the auditor's, so the auditor judges it; the organisation answers it.
         for action, client in (("accept", self.auditor_client), ("provide", self.manager_client)):
             self.assertEqual(client.post(f"/api/pbc-requests/{lid}/{action}/").status_code, 400, action)
         self.assertEqual(PbcRequest.objects.get(pk=lid).status, "withdrawn")
 
     def test_a_judgement_is_decided_on_the_status_read_under_the_lock_not_on_the_first_read(self):
-        """The requests above run one after another, so they would pass with no
-        lock at all. Here a withdrawal lands between the handler's first read of
-        the request and its locked re-read: the accept must see it."""
+        """A withdrawal landing between the handler's first read and its locked re-read must be seen by the accept."""
         from unittest import mock
 
         from attestations import pbc_views
@@ -316,9 +274,7 @@ class AnswerTests(PbcBase):
         with mock.patch.object(pbc_views.PbcRequestViewSet, "get_object",
                                another_request_lands_after_the_first_read):
             r = self.auditor_client.post(f"/api/pbc-requests/{lid}/accept/")
-        # Refused, and for the right reason. (The competing write above shares
-        # the request's transaction in a test, so the refusal rolls it back; on a
-        # real server it is another connection's and stays.)
+        # The competing write shares the test's transaction, so the refusal rolls it back; on a real server it stays.
         self.assertEqual(r.status_code, 400, r.data)
         self.assertIn("Only a provided request can be accepted", str(r.data))
 
@@ -365,7 +321,6 @@ class ReminderTests(PbcBase):
         self.assertEqual(PbcRequest.objects.get(pk=late["id"]).reminders_sent, [OVERDUE])
         self.assertEqual(PbcRequest.objects.get(pk=soon["id"]).reminders_sent, [7, 14, 30])
         self.assertEqual(run_pbc_scan(), 0)
-        # A new due date restarts the clock; a provided line is not chased.
         self.manager_client.patch(f"/api/pbc-requests/{late['id']}/",
                                   {"due_date": str(today + timezone.timedelta(days=1))}, format="json")
         self.assertEqual(PbcRequest.objects.get(pk=late["id"]).reminders_sent, [])

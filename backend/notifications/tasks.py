@@ -1,8 +1,3 @@
-"""Scheduled review-alert scanning.
-
-Runs daily via Celery beat (see CELERY_BEAT_SCHEDULE) or on demand via
-`python manage.py send_review_reminders` for cron-based deployments.
-"""
 import logging
 
 from celery import shared_task
@@ -17,19 +12,12 @@ from .wording import count_of
 
 logger = logging.getLogger(__name__)
 
-OVERDUE = -1  # sentinel stored in Document.reminders_sent
+OVERDUE = -1  # stored in reminders_sent beside the lead-day windows
 
 
 def compliance_inbox():
-    """Where this organisation's reminders and alerts go.
-
-    Every scan runs inside one workspace at a time (``for_each_workspace``),
-    and the subject lines carry document names, vendor names and auditor
-    requests. Sending them all to one installation-wide address would expose
-    every tenant's business to whoever runs the installation, so a workspace
-    names its own; the setting is the fallback, and is the whole answer for a
-    single-organisation install.
-    """
+    """The workspace's own notification address, else the setting. Subject lines carry document, vendor and auditor
+    request names, so one installation-wide inbox would expose every tenant to whoever runs the installation."""
     workspace = tenancy.current()
     own = (getattr(workspace, "notification_email", "") or "").strip() if workspace else ""
     return own or settings.COMPLIANCE_TEAM_EMAIL
@@ -58,14 +46,8 @@ def _notify(document, days, overdue, window=None):
 
 
 def run_review_scan(dry_run=False):
-    """
-    Send at most one reminder per document per run: the most urgent lead-time
-    window it has newly entered. Overdue documents get one overdue notice and
-    are marked expired. Never sends a duplicate for the same window.
-
-    With ``dry_run=True`` nothing is emailed or saved; the return value is the
-    number of documents that *would* be notified. Returns the notified count.
-    """
+    """One email per document per run, for the most urgent lead-time window it newly entered; overdue documents are
+    marked expired. With ``dry_run`` nothing is emailed or saved. Returns the number notified (or that would be)."""
     today = timezone.localdate()
     leads = settings.REVIEW_ALERT_LEAD_DAYS
     notified = 0
@@ -93,12 +75,8 @@ def run_review_scan(dry_run=False):
         if dry_run:
             continue
 
-        # Claim the window before sending it, with a conditional UPDATE that
-        # only succeeds if the row still records what this worker read. Two
-        # workers running the scan at once (a second beat, a manual run beside
-        # the scheduled one) would otherwise both read "not yet sent", both
-        # send and both save: one document, two emails. Only one of them wins
-        # the claim; the other sees zero rows updated and moves on.
+        # Claim the window before sending, with a conditional UPDATE that only matches while the row still holds what
+        # this worker read: of two concurrent scans only one wins, so the document is not emailed twice.
         fields = {"reminders_sent": sent}
         if overdue:
             fields["status"] = Document.Status.EXPIRED
@@ -106,9 +84,7 @@ def run_review_scan(dry_run=False):
         if not claimed:
             continue
 
-        # Isolate each document: a failing send (bad address, provider/network
-        # error) must not abort the whole scan and starve every document after
-        # it. On failure the claim is handed back so the next run retries.
+        # A failing send must not abort the scan; the claim is handed back so the next run retries.
         try:
             _notify(doc, days, overdue=overdue, window=window)
         except Exception:
@@ -118,7 +94,6 @@ def run_review_scan(dry_run=False):
             Document.objects.filter(pk=doc.pk, reminders_sent=sent).update(
                 reminders_sent=before, status=doc.status)
             notified -= 1
-            continue
 
     return notified
 
@@ -139,12 +114,8 @@ def _notify_bridge(vendor, report):
 
 
 def run_vendor_scan(dry_run=False):
-    """Email the owner (and the compliance team) once for every SOC report
-    that has lapsed with no newer report and no bridge letter on file.
-
-    One email per lapse: the report remembers it was chased, and the in-app
-    feed keeps nagging until a letter is filed. Returns the number chased.
-    """
+    """Email the owner and the compliance team once per lapsed SOC report with no newer report or bridge letter; the
+    report remembers it was chased. Returns the number chased."""
     from vendors.assurance import bridge_letter_gaps
 
     chased = 0
@@ -152,8 +123,7 @@ def run_vendor_scan(dry_run=False):
         if report.bridge_reminded_at:
             continue
         if not dry_run:
-            # Claim, then send (as the document and request scans do): two
-            # runs at once would both see "not yet chased" and both email.
+            # Claim, then send: two concurrent runs would both see "not yet chased" and both email.
             now = timezone.now()
             model = type(report)
             claimed = model.objects.filter(pk=report.pk, bridge_reminded_at__isnull=True).update(
@@ -187,9 +157,8 @@ def _notify_pbc(req, days, overdue, window=None):
 
 
 def run_pbc_scan(dry_run=False):
-    """Chase the auditor's request list: at most one email per request per
-    lead-time window (REVIEW_ALERT_LEAD_DAYS), one overdue notice, and
-    nothing for a line the auditor is sitting on. Returns the count."""
+    """Email each auditor request once per lead-time window (REVIEW_ALERT_LEAD_DAYS) and once when overdue; a line the
+    auditor is sitting on is skipped. Returns the count."""
     from attestations.models import EvidencePackage, PbcRequest
 
     today = timezone.localdate()
@@ -218,8 +187,7 @@ def run_pbc_scan(dry_run=False):
         notified += 1
         if dry_run:
             continue
-        # Same claim-then-send as the document scan above: the conditional
-        # UPDATE is what stops two concurrent runs sending the same reminder.
+        # Claim before sending, as in run_review_scan: the conditional UPDATE stops two concurrent runs sending twice.
         claimed = PbcRequest.objects.filter(pk=req.pk, reminders_sent=before).update(
             reminders_sent=sent)
         if not claimed:
@@ -230,14 +198,12 @@ def run_pbc_scan(dry_run=False):
             logger.exception("PBC reminder failed for request %s; will retry next run", req.pk)
             PbcRequest.objects.filter(pk=req.pk, reminders_sent=sent).update(reminders_sent=before)
             notified -= 1
-            continue
     return notified
 
 
 def run_scanner_watch(dry_run=False):
-    """Probe the malware scanner and email the compliance team once when it
-    goes down and once when it comes back. Returns "down", "up", "recovered"
-    or "off": what the probe found, not whether mail went out."""
+    """Email the compliance team once when the malware scanner goes down and once when it recovers. Returns "down",
+    "up", "recovered" or "off": what the probe found, not whether mail went out."""
     from documents import monitor
     from documents.models import ScannerStatus
 
@@ -281,15 +247,11 @@ def watch_scanner():
     return run_scanner_watch()
 
 
-# --------------------------------------------------------------------------- #
-# Digests: a person's own tray, by email, daily or weekly
-# --------------------------------------------------------------------------- #
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 
 
 def digest_items(user):
-    """The tray as the person would see it: computed now, dismissed items
-    left out."""
+    """The person's tray as the bell shows it: computed now, dismissed items left out."""
     from .models import NotificationReceipt
     from .notifications import build
 
@@ -301,17 +263,15 @@ def digest_items(user):
 
 
 def run_digests(dry_run=False, today=None):
-    """Email each person who asked for one the items in their tray. Daily
-    means every day; weekly means Mondays. One per day at most, and none
-    when the tray is empty. Returns the number sent."""
+    """Email each person who asked for a digest the items in their tray: daily people every day, weekly people on
+    Mondays, at most one a day and none for an empty tray. Returns the number sent."""
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
     today = today or timezone.localdate()
     base = (getattr(settings, "PUBLIC_URL", "") or "").rstrip("/")
     sent = 0
-    # A person's tray is computed in their own workspace; platform accounts
-    # with none get no digest.
+    # A tray is computed in the person's own workspace; platform accounts with none get no digest.
     with tenancy.unscoped():
         people = list(User.objects.filter(is_active=True, workspace__isnull=False, workspace__is_active=True)
                       .exclude(email="").exclude(digest=User.Digest.OFF))
@@ -338,8 +298,7 @@ def run_digests(dry_run=False, today=None):
         needs = "needs" if len(items) == 1 else "need"
         subject = f"[Conformiti] {count_of(len(items), 'item')} {needs} your attention"
         if not dry_run:
-            # Claim today's digest before sending it: a second run at the same
-            # moment finds the stamp already moved and sends nothing.
+            # Claim today's digest before sending: a concurrent run finds the stamp moved and sends nothing.
             now = timezone.now()
             with tenancy.unscoped():
                 claimed = User.objects.filter(pk=user.pk, digest_sent_at=user.digest_sent_at).update(
@@ -363,12 +322,9 @@ def send_digests():
     return run_digests()
 
 
-# --------------------------------------------------------------------------- #
-# The daily summary to Slack / Teams
-# --------------------------------------------------------------------------- #
 def post_daily_summary(today=None):
-    """One chat message a day with the organisation-wide counts that need
-    someone's attention. Nothing is posted when nothing is outstanding."""
+    """Post the workspace's outstanding counts (overdue documents, risks and auditor requests; quarantined files) to the
+    chat channels; returns [] without posting when nothing is outstanding."""
     from attestations.models import EvidencePackage, PbcRequest
     from documents import monitor
     from governance.models import Risk
@@ -393,11 +349,10 @@ def post_daily_summary(today=None):
 
 
 def run_all_scans(dry_run=False):
-    """The morning pass, once per workspace. Returns per-workspace counts."""
+    """The morning pass for each workspace. Returns ``{slug: counts}``, with None for a workspace whose scan failed."""
     result = {}
     for workspace in tenancy.for_each_workspace():
-        # One organisation's failure is its own: the loop carries on, so the
-        # rest of the installation still gets its morning pass.
+        # One organisation's failure must not stop the rest of the installation's morning pass.
         try:
             result[workspace.slug] = {
                 "documents": run_review_scan(dry_run=dry_run),

@@ -1,37 +1,6 @@
 #!/usr/bin/env python3
-"""
-Verify a Conformiti evidence package. Shipped inside every bundle as verify.py.
-
-    python3 verify.py .
-
-Read-only and standard-library only. It opens files, hashes them and prints a
-verdict; it extracts nothing, writes nothing and contacts nothing. Any path in
-SHA256SUMS or in the manifest that is absolute or contains a ".." segment is
-refused before it is opened.
-
-What a pass means: the files beside this script are the files that were sealed.
-When the bundle carries manifest.sig and signing-key.pub, it also means the
-manifest was signed by the holder of that key: compare the key fingerprint
-printed below with the one the organisation published (their installation
-shows it under Settings > About and at /api/signing-keys/). Without a
-signature, compare the manifest digest with the one they gave you separately.
-
-The Ed25519 check is implemented here in plain Python (RFC 8032) so nothing
-needs installing; it is slow by library standards and fine for one signature.
-openssl agrees with it:
-    base64 -d manifest.sig > manifest.sig.bin
-    openssl pkeyutl -verify -pubin -inkey signing-key.pub -rawin -in manifest.json -sigfile manifest.sig.bin
-
-Exit codes: 0 everything matches and both signatures verify; 1 a mismatch;
-2 the bundle is unusable; 3 every file matches but a signature is missing.
-
-Exit code 3 is deliberate. A bundle with its signatures stripped and its
-file list rewritten still has every checksum in agreement with itself, and a
-script that answered 0 to it would tell an automated check that a forgery was
-fine. Pass --allow-unsigned to accept an unsigned bundle on
-purpose (for example, one sealed by a release that predates bundle
-signatures) and compare the manifest digest with the one you were given.
-"""
+"""Verify a Conformiti evidence package (verify.py in every bundle): python3 verify.py [--allow-unsigned] [DIRECTORY].
+Read-only, standard library only. Exit codes: 0 all match; 1 mismatch; 2 unusable bundle; 3 files match but unsigned."""
 import base64
 import hashlib
 import json
@@ -40,9 +9,7 @@ import sys
 
 CHUNK = 64 * 1024
 
-# --------------------------------------------------------------------------- #
 # Ed25519 (RFC 8032), verification only
-# --------------------------------------------------------------------------- #
 _P = 2 ** 255 - 19
 _Q = 2 ** 252 + 27742317777372353535851937790883648493
 _D = (-121665 * pow(121666, _P - 2, _P)) % _P
@@ -115,8 +82,7 @@ def _encode(p):
 
 
 def ed25519_verify(public_key, message, signature):
-    """True when ``signature`` (64 bytes) is valid for ``message`` under the
-    raw 32-byte ``public_key``."""
+    """True when the 64-byte ``signature`` is valid for ``message`` under the raw 32-byte ``public_key``."""
     if len(public_key) != 32 or len(signature) != 64:
         return False
     try:
@@ -147,10 +113,8 @@ def read_public_key(text):
 
 
 def _safe(value):
-    """Text that came from the bundle, with anything a terminal would act on
-    written out instead. A forged manifest can name its package, or a file, with
-    an escape sequence that hides the lines below it (colour set to the
-    background, a screen clear), and the real FAIL with them."""
+    """Bundle text with anything a terminal would act on written out: a forged name could carry an escape sequence
+    that hides the real FAIL."""
     return "".join(
         ch if ch.isprintable()
         else ("%sx%02x" % (chr(92), ord(ch)) if ord(ch) < 256 else "%su%04x" % (chr(92), ord(ch)))
@@ -161,9 +125,6 @@ def fingerprint(public_key):
     return hashlib.sha256(public_key).hexdigest()
 
 
-# --------------------------------------------------------------------------- #
-# The bundle
-# --------------------------------------------------------------------------- #
 def unsafe(path):
     """Reject anything that could escape the bundle directory."""
     if not path or path.startswith(("/", "\\")):
@@ -213,13 +174,8 @@ NOT_IN_SUMS = ("SHA256SUMS", "SHA256SUMS.sig", "sums-key.pub")
 
 
 def check_sums_signature(root, problems):
-    """The signature over SHA256SUMS, which is what covers the rest of the
-    bundle. manifest.sig is made at seal and covers manifest.json alone; the
-    conclusions the auditor recorded afterwards live in controls.csv and
-    samples.csv, and are inside this one.
-
-    Returns 'valid', 'invalid', 'unsigned' or 'unusable'.
-    """
+    """Like ``check_signature`` for SHA256SUMS, whose signature covers the files written after the seal
+    (controls.csv, samples.csv)."""
     sig_path = os.path.join(root, "SHA256SUMS.sig")
     key_path = os.path.join(root, "sums-key.pub")
     if not os.path.isfile(sig_path):
@@ -244,11 +200,7 @@ def check_sums_signature(root, problems):
 
 
 def check_for_extra_files(root, listed, problems):
-    """Anything in the bundle that SHA256SUMS does not name.
-
-    Without this check, a file could be ADDED while every listed hash still
-    matches and nothing looks wrong.
-    """
+    """Report files SHA256SUMS does not name: a file ADDED to the bundle would otherwise go unnoticed."""
     for base, _dirs, files in os.walk(root):
         for name in files:
             full = os.path.join(base, name)
@@ -309,8 +261,7 @@ def main(root, allow_unsigned=False):
 
     check_for_extra_files(root, listed, problems)
 
-    # The manifest records what was sealed; SHA256SUMS records what is in the
-    # bundle. Comparing the two is how "sealed but since altered" is caught.
+    # The manifest records what was sealed, SHA256SUMS what is in the bundle: comparing the two catches alteration.
     for control in manifest.get("controls", []):
         for item in control.get("evidence", []):
             path = item.get("path") or ""
@@ -338,7 +289,8 @@ def main(root, allow_unsigned=False):
           f"by {_safe(package.get('sealed_by') or '?')}")
     prior = package.get("prior")
     if prior:
-        print(f"predecessor  : {_safe(prior.get('name', '?'))} (manifest {_safe(str(prior.get('manifest_sha256', ''))[:16])}…)")
+        print(f"predecessor  : {_safe(prior.get('name', '?'))} "
+              f"(manifest {_safe(str(prior.get('manifest_sha256', ''))[:16])}…)")
     print(f"controls     : {_safe(manifest.get('totals', {}).get('controls', '?'))}")
     print(f"evidence     : {_safe(manifest.get('totals', {}).get('evidence', '?'))}")
     print(f"files checked: {checked}")
@@ -364,6 +316,7 @@ def main(root, allow_unsigned=False):
     missing = [name for name, state in (("manifest.sig", signature),
                                         ("SHA256SUMS.sig", sums_signature))
                if state == "unsigned"]
+    # Exit 3, not 0: with the signatures stripped and the file list rewritten, every checksum still agrees with itself.
     if missing and not allow_unsigned:
         print(f"\nUNSIGNED: {' and '.join(missing)} missing.")
         print("Every file matches its checksum, but nothing proves who produced this bundle,")

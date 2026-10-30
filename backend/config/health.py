@@ -1,13 +1,4 @@
-"""Liveness / readiness endpoint.
-
-``GET /api/health/`` is unauthenticated and unthrottled so container
-healthchecks, load balancers and the installers can poll it. It reports the
-version, whether the database answers, whether the demo accounts still exist
-(the login screen uses that to decide whether to show the demo hint, and
-operators can alert on it in production), and whether the installation has no
-active account at all yet (the login screen then explains how the first
-administrator is created, since nobody can sign in to do it).
-"""
+"""GET /api/health/: unauthenticated and unthrottled so healthchecks and load balancers can poll it."""
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, connection
 from rest_framework import status
@@ -21,7 +12,6 @@ DEMO_USERNAMES = ("admin", "mia", "owen", "aria", "val")
 
 
 def demo_accounts_present():
-    """True when any seeded demo account is still active with its demo email."""
     User = get_user_model()
     return User.objects.filter(
         username__in=DEMO_USERNAMES, email__endswith="@example.com", is_active=True
@@ -29,15 +19,7 @@ def demo_accounts_present():
 
 
 def first_admin_needed():
-    """True while no active account exists anywhere on the installation.
-
-    The sign-in page uses it to say that nobody can sign in and how to fix
-    that on the server (createsuperuser, or reactivating an account), whether
-    the installation is empty or every account is switched off. The name is
-    the API's and stays. Counted across every workspace, whatever the request
-    or caller has active: one person able to sign in anywhere means the page
-    has nothing to explain.
-    """
+    """True while no active account exists in any workspace, whatever the request or caller has active."""
     from accounts import tenancy
 
     with tenancy.unscoped():
@@ -45,10 +27,8 @@ def first_admin_needed():
 
 
 def administrator_present():
-    """True when an active superuser, or an active account whose role manages
-    users, exists in any workspace. The container's boot banner reads it to
-    say plainly when nobody can administer the installation. An auditor role
-    manages nobody whatever it stores, as User._cap has it."""
+    """True when an active superuser, or an account whose role manages users, exists in any workspace.
+    An auditor role manages nobody whatever it stores, as ``User._cap`` has it."""
     from django.db.models import Q
 
     from accounts import tenancy
@@ -60,9 +40,6 @@ def administrator_present():
 
 
 def scanner_state():
-    """The malware scanner as the health endpoint reports it: off, or on and
-    reachable/unreachable. Cached for a minute in documents.monitor, so a
-    load balancer polling this never hammers clamd."""
     from documents import monitor
 
     try:
@@ -80,16 +57,8 @@ def scanner_state():
 
 
 def signing_state():
-    """The package-signing key as published: enabled, key id, fingerprint.
-    The key is created on first call when a file location is configured.
-
-    Packages are signed with a key derived for their workspace, and this
-    endpoint answers with no workspace of its own. On an installation serving
-    one organisation it reports that organisation's key, the one its packages
-    carry. With several it cannot know which is wanted and names none
-    (``per_workspace``); /api/signing-keys/?workspace=<slug> answers for one.
-    It never reports the installation's root key, which signs nothing, so a
-    fingerprint read here matches the packages."""
+    """The signing key as published. With one active workspace it is that workspace's key; with several it names none
+    (``per_workspace``). Never the installation's root key, which signs nothing."""
     from accounts import tenancy
     from accounts.models import Workspace
     from attestations import signing
@@ -104,8 +73,7 @@ def signing_state():
     except Exception:  # pragma: no cover - health must answer regardless
         return {"enabled": True, "key_id": None, "fingerprint": None, "error": "unavailable"}
     several = len(active) > 1
-    # Never echo the configuration error itself: it names the path of the
-    # private key, and this endpoint answers unauthenticated callers.
+    # Never echo the configuration error: it names the private key's path and this endpoint is unauthenticated.
     return {"enabled": info["enabled"], "algorithm": info["algorithm"],
             "key_id": None if several else info["key_id"],
             "fingerprint": None if several else info["fingerprint"],
@@ -126,18 +94,8 @@ class HealthView(APIView):
                 cur.fetchone()
         except DatabaseError:
             db_ok = False
-        # `demo_accounts` is unauthenticated on purpose. It puts "this
-        # installation still has its seeded demo accounts, remove them before
-        # real use" on the sign-in screen, where the person who can act on it
-        # will see it. Hiding it would remove that warning from the one page
-        # it belongs on. The demo accounts are not seeded by default, so an
-        # installation has nothing to disclose unless its operator asked for
-        # the demo dataset (REVIEWS.md (0.9.5 review), S-9).
-        # `first_admin_needed` is unauthenticated for the same reason: it is
-        # true only while nobody at all can sign in, and it tells the person
-        # at the sign-in page how the first administrator is made. It turns
-        # false with the first active account, so a deployment anyone uses
-        # discloses nothing through it.
+        # demo_accounts and first_admin_needed are unauthenticated on purpose: the sign-in screen shows them to the
+        # person who can act, and each turns false once it no longer applies (REVIEWS.md (0.9.5 review), S-9).
         body = {
             "status": "ok" if db_ok else "degraded",
             "version": __version__,

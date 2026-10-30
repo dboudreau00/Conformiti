@@ -1,16 +1,5 @@
-"""What an external auditor can reach, enumerated.
-
-The shipped "Auditor" role is described as "sees only granted folders". Read
-permission classes that grant reads to any authenticated account would open
-the risk register, the vendor file, the control library, the user directory
-and the shared calendar to someone the organisation invited to look at one
-engagement, because an auditor is an authenticated account.
-
-Access is deny-by-default, and this suite keeps it that way. It walks the DRF
-routers of every installed app instead of a hand-written list, so a viewset
-added later cannot quietly land on the auditor's side of the line: an
-unclassified prefix fails here before it ships.
-"""
+"""What an external auditor can reach, enumerated. Access is deny-by-default: the suite walks every installed app's
+DRF routers, so a viewset added later fails here until it is classified in ALLOWED or DENIED."""
 import importlib
 
 from django.apps import apps
@@ -18,9 +7,7 @@ from django.conf import settings
 
 from testutils import APITestBase
 
-# Reachable by an external auditor, and why. Contents are still scoped: an
-# auditor sees the packages issued to them and the folders granted with them,
-# which is a separate question from whether the route answers at all.
+# Reachable by an external auditor, and why. Contents are still scoped to what was issued or granted to them.
 ALLOWED = {
     "evidence-packages": "the engagement itself",
     "package-controls": "the workpaper rows they conclude on",
@@ -62,10 +49,8 @@ DENIED = {
 }
 
 
-# Actions on a denied collection that an external auditor may still reach,
-# because they act on the caller's own account rather than on the
-# organisation's programme. Everything else that declares its own
-# permission_classes has to refuse them.
+# Actions on a denied collection an external auditor may still reach, because they act on the caller's own account.
+# Everything else that declares its own permission_classes has to refuse them.
 SELF_SERVICE_ACTIONS = {
     ("users", "me"): "their own profile, the same row /users/me/ returns",
     ("users", "change_password"): "changing your own password is self-service",
@@ -90,7 +75,6 @@ def registered_viewsets():
 
 
 def registered_prefixes():
-    """Every DRF router prefix in every installed app of this project."""
     return {prefix for prefix, _viewset in registered_viewsets()}
 
 
@@ -100,7 +84,6 @@ class AuditorSurfaceTests(APITestBase):
         self.client_ = self.client_for(self.auditor)
 
     def test_every_registered_collection_is_classified(self):
-        """Every viewset must be classified explicitly."""
         unclassified = registered_prefixes() - set(ALLOWED) - set(DENIED)
         self.assertEqual(unclassified, set(), (
             "These collections are registered but nobody has decided whether an "
@@ -121,18 +104,14 @@ class AuditorSurfaceTests(APITestBase):
                 self.assertEqual(r.status_code, 200, f"/api/{prefix}/ -> {r.status_code}")
 
     def test_the_organisation_still_reads_its_own_programme(self):
-        """The refusal is about the role, not about the route."""
         manager = self.client_for(self.manager)
         for prefix in sorted(DENIED):
             with self.subTest(prefix=prefix):
                 self.assertEqual(manager.get(f"/api/{prefix}/").status_code, 200, prefix)
 
     def test_a_reachable_collection_still_answers_with_only_what_it_should(self):
-        """Reaching a route does not mean reading everything on it.
-        "workspaces" is on the allowed list so the auditor can see whose
-        engagement they are on, but the answer must not carry the
-        organisation's Slack and Teams webhook URLs, which are credentials
-        (REVIEWS.md (0.9.5 review), S-1)."""
+        """An auditor may read /api/workspaces/ to see whose engagement it is, but not the Slack/Teams webhook URLs,
+        which are credentials (REVIEWS.md (0.9.5 review), S-1)."""
         from accounts.models import Workspace
 
         workspace = Workspace.objects.get(pk=self.auditor.workspace_id)
@@ -146,8 +125,7 @@ class AuditorSurfaceTests(APITestBase):
             self.assertNotIn("grc@example.com", body, url)
 
     def test_the_analytics_summary_is_refused(self):
-        """Not a router prefix, but the same disclosure: readiness, coverage
-        and ownership for the whole organisation."""
+        """Not a router prefix, but the same disclosure: readiness and coverage of the whole organisation."""
         self.assertEqual(self.client_.get("/api/analytics/summary/").status_code, 403)
         self.assertEqual(self.client_for(self.manager).get("/api/analytics/summary/").status_code, 200)
 
@@ -158,15 +136,8 @@ class AuditorSurfaceTests(APITestBase):
 
 
 class AuditorActionSurfaceTests(APITestBase):
-    """The list route is not the whole collection.
-
-    ``permission_classes`` on an ``@action`` replaces the viewset's instead of
-    adding to it, so one decorator can reopen a collection this suite has
-    classified as denied while the walk above still passes, because it only
-    asks the list prefix. The Jira issues proxy is the example: it would hand
-    an external auditor the organisation's remediation backlog, board by
-    board, with the stored API token doing the fetching.
-    """
+    """``permission_classes`` on an ``@action`` replaces the viewset's, so one decorator can reopen a collection the
+    list walk classified as denied; the Jira issues proxy would hand an auditor the remediation backlog."""
 
     def setUp(self):
         super().setUp()
@@ -200,9 +171,7 @@ class AuditorActionSurfaceTests(APITestBase):
         ))
 
     def test_the_jira_backlog_is_refused_board_by_board(self):
-        """Board ids are sequential and the queryset is pinned to the
-        workspace, so an auditor could otherwise try 1, 2, 3 and read each
-        board."""
+        """Board ids are sequential, so an auditor could otherwise try 1, 2, 3 and read each board."""
         from integrations.models import JiraBoard
 
         board = JiraBoard.objects.create(board_id=1, name="Security backlog", added_by=self.manager)

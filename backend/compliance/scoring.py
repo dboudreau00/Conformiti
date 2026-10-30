@@ -1,36 +1,5 @@
-"""
-Per-control readiness: how ready a control is, rather than whether someone
-ticked "implemented".
-
-A plain ``implemented / applicable`` ratio would count a control as ready with
-no owner, no evidence, evidence that expired two years ago and an open control
-gap against it, which is the state an auditor finds and the dashboard would
-hide.
-
-Six signals, five of which earn and one of which subtracts:
-
-===============  ======  ===========================================
-signal           weight  what it answers
-===============  ======  ===========================================
-implementation   35      has the work been done?
-owner            10      is anyone accountable for it?
-evidence         20      is there anything to show?
-freshness        20      is what we would show still current?
-testing          15      has anyone checked that it works?
-risk_penalty     20 (-)  do we already know it is failing?
-===============  ======  ===========================================
-
-Weights need not sum to 100: the score is normalised over the five that earn,
-so doubling every weight leaves every score unchanged. With the defaults
-``possible == 100``, so a point reads as a percentage point and the breakdown
-is directly legible.
-
-**Everything here is folder-aware.** The evidence and freshness components are
-computed from the links the *caller* can see. An org-wide per-control integer
-handed to a folder-restricted external auditor is losslessly invertible: with
-the other four signals visible, the pair (evidence, freshness) maps injectively
-onto "does hidden evidence exist, is it approved, how fresh is it".
-"""
+"""Per-control readiness, not the share marked implemented. Evidence and freshness count only links the caller can
+see: an org-wide figure given to a folder-restricted auditor would reveal hidden evidence."""
 from django.conf import settings
 from django.db.models import Count, Max, Q
 from django.utils import timezone
@@ -46,9 +15,7 @@ DEFAULT_WEIGHTS = {
 EARNING = ["implementation", "owner", "evidence", "freshness", "testing"]
 
 BAND_LABELS = {
-    # Not "Not started"/"Not applicable": Control.status already uses those
-    # words, and the two would sit side by side on the same row. "Unscored"
-    # would mislead too, since a control in this band has a low score.
+    # Not "Not started"/"Not applicable": Control.status uses those words and the two sit side by side on a row.
     "not_started": "Not ready",
     "at_risk": "At risk",
     "nearly": "Nearly there",
@@ -58,11 +25,7 @@ BAND_LABELS = {
 
 
 def weights():
-    """Merged over the defaults, so a partial override is legal.
-
-    Read at call time, never captured at import, so ``@override_settings``
-    works in tests.
-    """
+    """Read at call time, never at import, so ``@override_settings`` works; a partial override is merged in."""
     return {**DEFAULT_WEIGHTS, **(getattr(settings, "READINESS_WEIGHTS", None) or {})}
 
 
@@ -84,14 +47,8 @@ def band_for(score):
 
 
 def annotate(queryset, user, visible=None):
-    """Add every signal the score needs, in one query.
-
-    ``evidence`` and ``freshness`` count only documents in folders ``user`` can
-    see. Call this on any queryset whose serializer will report a score, or the
-    serializer falls back to a per-row query. ``visible`` overrides the folder
-    set: the organisation-wide figure on the dashboard counts every folder,
-    because it is an aggregate and names nothing.
-    """
+    """Add every score signal in one query; evidence counts only folders ``user`` can see, or ``visible`` when given.
+    Annotate any queryset whose serializer reports a score, or each row falls back to its own query."""
     from documents.access import accessible_folder_ids
 
     visible = accessible_folder_ids(user) if visible is None else visible
@@ -106,8 +63,6 @@ def annotate(queryset, user, visible=None):
             filter=Q(risks__status__in=("open", "mitigating")),
             distinct=True,
         ),
-        # An explicit Accountable row in the responsibility matrix satisfies
-        # the owner signal just as Control.owner does.
         accountable_rows=Count(
             "responsibilities",
             filter=Q(responsibilities__role="accountable"),
@@ -117,22 +72,8 @@ def annotate(queryset, user, visible=None):
 
 
 def programme_score(queryset=None):
-    """The organisation's readiness: the mean score of every applicable
-    control, counting evidence in every folder, plus how many controls sit in
-    each band.
-
-    This is the number the dashboard shows. It is not the share of controls
-    marked *implemented*, which the register's own scoring exists to
-    disbelieve: a control marked implemented with no evidence, no owner, no
-    test and an open risk scores well under the bar in the register, so the
-    dashboard must agree with it.
-
-    Returns ``{"score", "applicable", "bands": {band: n}, "by_framework"}``;
-    ``score`` is None when nothing is applicable. ``by_framework`` is the same
-    three figures per framework id, from the same pass: every control is
-    visited once however it is grouped, so the lead schedule's rows cost
-    nothing extra. A framework with nothing applicable has no entry.
-    """
+    """Organisation readiness, counting evidence in every folder: ``{"score", "applicable", "bands", "by_framework"}``.
+    ``score`` is None when nothing applies; a framework with nothing applicable has no ``by_framework`` entry."""
     from django.db.models import F
 
     from documents.models import Folder
@@ -191,8 +132,7 @@ def _owner(control, weight):
 
 
 def _evidence(total, weight):
-    # Deliberately binary. A link count is trivially gamed, and an auditor asks
-    # whether there is evidence, not how many files there are.
+    # Binary on purpose: a link count is trivially gamed.
     if total:
         return 1.0, f"{total} document(s) linked as evidence."
     return 0.0, "No evidence linked."
@@ -204,10 +144,7 @@ def _freshness(total, approved, best_review, weight, today, fresh_days):
     if not approved:
         return 0.0, f"{total} document(s) linked but none are approved."
     if best_review is None:
-        # Zero, not half. Document.review_cadence accepts "none", which leaves
-        # next_review_date null, so awarding half the weight in perpetuity
-        # would make the one document nobody will ever chase the best-scoring
-        # evidence you can attach.
+        # Zero, not partial: a "none" review cadence leaves next_review_date null, and that must not score well.
         return 0.0, "Approved evidence has no review schedule."
     days = (best_review - today).days
     if days >= fresh_days:
@@ -234,12 +171,7 @@ def _testing(control, weight, today, default_interval):
 
 
 def score_control(control, user=None):
-    """The score and its full breakdown.
-
-    Uses the annotations from :func:`annotate` when present, and falls back to
-    per-row queries otherwise, so an unannotated caller still gets the right
-    answer, more slowly.
-    """
+    """Score and breakdown. An unannotated row costs per-row queries, scoped to ``user`` (all folders if None)."""
     if control.status == "not_applicable":
         return {
             "score": None,
@@ -265,8 +197,7 @@ def score_control(control, user=None):
         ("testing", *_testing(control, w["testing"], today, default_interval)),
     ]
 
-    # Accumulate exact fractions and round ONCE. Rounding each component before
-    # summing breaks the "doubling every weight changes nothing" invariant.
+    # Round once, at the end: rounding each component first breaks "doubling every weight changes nothing".
     earned = sum(w[key] * factor for key, factor, _ in factors)
     possible = sum(w[key] for key in EARNING)
     penalty = w["risk_penalty"] * min(1.0, 0.5 * open_risks)
@@ -277,7 +208,7 @@ def score_control(control, user=None):
             "key": key,
             "label": key.replace("_", " ").capitalize(),
             "weight": w[key],
-            # Display points only; the score above does not use these.
+            # Display only: the score is not summed from these.
             "points": round(w[key] * factor),
             "earned": factor >= 1.0,
             "detail": detail,
@@ -306,7 +237,6 @@ def _signals(control, user):
             getattr(control, "ev_best_review", None),
             getattr(control, "open_risks", 0),
         )
-    # Fallback: the caller did not annotate. Still folder-scoped.
     from documents.access import accessible_folder_ids
 
     links = control.evidence_links.all()
@@ -331,18 +261,12 @@ ACTIONS = {
 
 
 def _next_action(factors, open_risks, w):
-    """The single change that would move this control's score the most.
-
-    Ranked by points still on the table, not by position in the list: a control
-    missing 15 points of testing and 5 of freshness should be told to record a
-    test, not to tidy the review date.
-    """
+    """The action worth the most points still on the table; an open risk comes first."""
     if open_risks:
         return "Close or accept the open risk against this control."
     gaps = [(w[key] * (1.0 - factor), key) for key, factor, _ in factors if factor < 1.0]
     if not gaps:
         return None
-    # Ties break on the fixed component order, so the answer is deterministic.
     order = {key: i for i, key in enumerate(EARNING)}
     gaps.sort(key=lambda g: (-g[0], order[g[1]]))
     return ACTIONS[gaps[0][1]]

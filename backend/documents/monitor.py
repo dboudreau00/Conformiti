@@ -1,21 +1,5 @@
-"""
-Watching the malware scanner, and re-scanning what is already stored.
-
-An upload is scanned when scanning is on, and refused when the scanner cannot
-be reached (see ``scanning.py``). This module watches that boundary and looks
-behind it:
-
-* ``probe()``: is clamd answering? Cached briefly so the health endpoint and
-  the tray can ask cheaply; the result is also written to a one-row table so
-  every worker agrees on when the outage began and whether it has been
-  announced.
-* ``scan_document()``: run a stored file through clamd again. Signatures
-  arrive after files do; a document that was clean on upload can be malware
-  by next month's definitions. An infected file is **quarantined**: it stays
-  on disk for the investigation, but every route that serves its bytes
-  refuses it, and the fact is in the audit trail.
-* ``rescan()``: the sweep ``manage.py scan_evidence`` runs.
-"""
+"""Probes the malware scanner and re-scans stored files. A document the scanner flags is quarantined: kept on disk
+for the investigation, refused by every route that serves its bytes, and recorded in the audit trail."""
 import logging
 import time
 
@@ -76,8 +60,7 @@ def _record(document, action, detail, user=None):
     from audit.models import AuditLog
 
     try:
-        # The sweep runs with no workspace active; the document names the
-        # tenant this event belongs to.
+        # A rescan runs with no workspace active, so the document names the tenant.
         AuditLog.objects.create(
             user=user, action=action, object_type="documents", object_id=str(document.pk),
             detail=str(detail)[:255], workspace_id=document.workspace_id,
@@ -87,12 +70,8 @@ def _record(document, action, detail, user=None):
 
 
 def scan_document(document, user=None):
-    """Re-scan one stored document. Returns the new ``scan_status``.
-
-    Never raises for a scanner problem: the sweep must reach every file, and
-    a file the scanner could not inspect is recorded as ``error``, which is
-    a different fact from clean.
-    """
+    """Re-scan one stored document; returns the new ``scan_status``. Never raises for a scanner problem (the sweep must
+    reach every file): a file the scanner could not inspect is recorded as ``error``, which is not clean."""
     if not enabled():
         return document.scan_status
     if not document.file:
@@ -119,11 +98,8 @@ def scan_document(document, user=None):
                     f"QUARANTINED '{document.name}' v{document.version}: scanner matched {exc.signature}", user)
             from accounts import tenancy
             from notifications import webhooks
-            # The sweep walks every workspace with none active, which would
-            # send this to the installation's own channel: on a shared
-            # installation that names one organisation's document to whoever
-            # reads it. Posted from inside the document's workspace, it goes
-            # to that workspace's channels or nowhere.
+            # A rescan has no workspace active, so a bare post would go to the installation's own channel and name one
+            # organisation's document to whoever reads it: post from inside the document's workspace.
             with tenancy.scoped(document.workspace_id):
                 webhooks.post_event(
                     "document.quarantined", f"File quarantined: {document.name}",
@@ -146,8 +122,6 @@ def scan_document(document, user=None):
         document.scan_status = Document.Scan.CLEAN
         document.scan_signature = ""
         if document.quarantined_at is not None:
-            # Definitions change both ways; a false positive withdrawn
-            # upstream releases the file, and that is recorded too.
             _record(document, "update", f"released '{document.name}' from quarantine: rescan clean", user)
             document.quarantined_at = None
     document.scanned_at = now
@@ -156,8 +130,7 @@ def scan_document(document, user=None):
 
 
 def mark_clean(document):
-    """Called after an upload passed the scanner, so the sweep does not have
-    to look at it again this month."""
+    """Marks a document clean without scanning it: call only after an upload passed the scanner."""
     if not enabled():
         return
     document.scan_status = Document.Scan.CLEAN
@@ -167,7 +140,6 @@ def mark_clean(document):
 
 
 def rescan(queryset=None, dry_run=False, limit=None, user=None):
-    """Sweep stored documents. Returns counters."""
     qs = queryset if queryset is not None else Document.objects.all()
     qs = qs.order_by("scanned_at", "pk")
     if limit:
@@ -191,9 +163,7 @@ def quarantined():
 
 
 def refuse_if_quarantined(document):
-    """Every route that serves a document's bytes calls this first. A
-    quarantined file is a 403 with the signature, never a silent 404: the
-    person asking is entitled to know why they cannot have it."""
+    """Called first by every route that serves a document's bytes: quarantined means 403 with the signature, not 404."""
     from rest_framework.exceptions import PermissionDenied
 
     if document is not None and document.quarantined_at is not None:

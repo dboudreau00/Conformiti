@@ -17,8 +17,7 @@ class QuestionnaireInviteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QuestionnaireInvite
-        # token_hash is deliberately absent; the link itself is returned once,
-        # by the send action, and never again.
+        # token_hash is deliberately absent: the link is returned once, by the send action.
         fields = [
             "id", "vendor", "vendor_name", "sent_to", "message", "sent_by_name", "sent_at",
             "email_sent", "expires_at", "opened_at", "saved_at", "submitted_at",
@@ -55,24 +54,19 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
         return attrs
 
     def validate_vendor(self, vendor):
-        """An assessment belongs to the vendor it was made for. Re-pointing it
-        would move a vendor's SOC report, or a questionnaire its own invite is
-        linked to, onto another vendor's file."""
+        """An assessment cannot be re-pointed at another vendor: that would move a SOC report or its questionnaire."""
         if self.instance is not None and vendor != self.instance.vendor:
             raise serializers.ValidationError("An assessment cannot be moved to another vendor.")
         return vendor
 
     def validate_answers(self, value):
-        """Answers are keyed by the shipped question ids; anything else is a
-        client bug rather than data."""
         try:
             return validate_answers(value)
         except ValueError as exc:
             raise serializers.ValidationError(str(exc))
 
     def validate_document(self, doc):
-        """A report pinned to a vendor must be one the caller can see, or the
-        assessment becomes a way to name documents behind folder permissions."""
+        """The document must be visible to the caller, or an assessment can name documents behind folder permissions."""
         if doc is None:
             return doc
         if doc.folder_id not in self._visible_folders():
@@ -89,8 +83,7 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
         return visible
 
     def to_representation(self, instance):
-        """The same rule on the way out: a reader who cannot open the folder
-        learns that a copy is filed, not which document it is."""
+        """The same rule on the way out: a reader who cannot open the folder learns a copy is filed, not which."""
         data = super().to_representation(instance)
         hidden = bool(instance.document_id) and instance.document.folder_id not in self._visible_folders()
         if hidden:
@@ -130,8 +123,7 @@ class VendorSerializer(serializers.ModelSerializer):
     def get_risk_rating(self, obj):
         return obj.risk_rating()
 
-    # The view annotates these; the fallbacks cover a bare instance (a
-    # management command, a test).
+    # The view annotates these; the fallbacks cover a bare instance (a management command, a test).
     def get_assessment_count(self, obj):
         n = getattr(obj, "n_assessments", None)
         return n if n is not None else obj.assessments.count()

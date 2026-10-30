@@ -1,6 +1,3 @@
-"""The coverage atlas: every control in one response, with the crosswalk beside
-it, for the dashboard. Read-only, so the questions are who may read it, whose
-rows it holds, and what it costs."""
 from datetime import timedelta
 from io import StringIO
 
@@ -100,8 +97,6 @@ class AtlasTests(APITestBase):
         self.assertIsNotNone(rows[self.tree.c1.pk]["score"])
 
     def test_the_score_is_the_callers_not_the_organisations(self):
-        """Hidden evidence must not show up in a score: an org-wide integer per
-        control tells a folder-restricted reader whether it exists."""
         c1 = self.tree.c1
         Control.objects.filter(pk=c1.pk).update(
             status="implemented", owner=self.owner, last_tested_on=timezone.localdate() - timedelta(days=10))
@@ -168,9 +163,6 @@ class AtlasTenancyTests(tests_tenancy.TwoWorkspaces):
         self.assertEqual([t["theme"] for t in beta["themes"]], ["Beta theme"])
 
     def test_a_join_row_that_crosses_the_line_is_dropped_not_followed(self):
-        """The join table behind a many-to-many is not scoped to a workspace.
-        A row that links an Alpha theme to a Beta control must neither leak
-        the Beta control nor make a theme of one."""
         theme = ControlMapping.objects.create(theme="Alpha theme")
         theme.controls.add(self.tree.c1)
         with tenancy.unscoped():

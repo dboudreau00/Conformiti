@@ -1,4 +1,3 @@
-"""Control library, evidence mapping RBAC and seed idempotence."""
 import csv
 import io
 import json
@@ -30,10 +29,8 @@ class ControlApiTests(APITestBase):
         r = m.patch(f"/api/controls/{self.tree.c1.pk}/", {"status": "implemented", "owner": self.owner.pk}, format="json")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["owner_name"], "Owen Tester")
-        # the catalog itself is not writable through the API
         self.assertEqual(m.post("/api/controls/", {"control_id": "X"}, format="json").status_code, 405)
         self.assertEqual(m.delete(f"/api/controls/{self.tree.c1.pk}/").status_code, 405)
-        # identifying fields are read-only
         m.patch(f"/api/controls/{self.tree.c1.pk}/", {"control_id": "HACK", "title": "x"}, format="json")
         self.assertEqual(Control.objects.get(pk=self.tree.c1.pk).control_id, "TC1.1")
 
@@ -63,7 +60,6 @@ class EvidenceMappingTests(APITestBase):
 
     def test_link_requires_edit_or_framework_capability(self):
         payload = {"control": self.tree.c2.pk, "document": self.doc.pk, "note": "covers it"}
-        # viewer can't even see the document
         self.assertEqual(self.client_for(self.viewer).post("/api/control-evidence/", payload, format="json").status_code, 403)
         grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
         self.assertEqual(self.client_for(self.viewer).post("/api/control-evidence/", payload, format="json").status_code, 403)
@@ -72,17 +68,12 @@ class EvidenceMappingTests(APITestBase):
         self.assertEqual(r.status_code, 201)
         self.assertTrue(r.data["can_unlink"])
         self.assertEqual(ControlEvidence.objects.get(pk=r.data["id"]).linked_by, self.viewer)
-        # duplicate link -> 400, not 500
         self.assertEqual(self.client_for(self.viewer).post("/api/control-evidence/", payload, format="json").status_code, 400)
-        # An external auditor is refused this route outright, grant or no
-        # grant: it maps every control in the programme to its evidence, and
-        # their remit is the package issued to them (accounts/permissions.py,
-        # and accounts/tests_auditor_surface.py for the whole surface).
+        # An external auditor is refused this route outright, grant or no grant (accounts/permissions.py).
         grant(self.tree.ctrl1, user=self.auditor, level=EDIT)
         self.assertEqual(self.client_for(self.auditor).get(f"/api/control-evidence/{r.data['id']}/").status_code, 403)
         self.assertEqual(self.client_for(self.auditor).delete(f"/api/control-evidence/{r.data['id']}/").status_code, 403)
         self.assertEqual(self.client_for(self.manager).delete(f"/api/control-evidence/{r.data['id']}/").status_code, 204)
-        # links are immutable
         self.assertEqual(self.client_for(self.manager).patch(f"/api/control-evidence/{r.data['id']}/", {"note": "x"}, format="json").status_code, 405)
 
     def test_bulk_attach_reports_skips(self):
@@ -106,13 +97,11 @@ class EvidenceMappingTests(APITestBase):
         grant(self.tree.ctrl1, user=self.owner, level=EDIT)
         post = lambda docs: self.client_for(self.owner).post(
             "/api/control-evidence/bulk/", {"control": self.tree.c2.pk, "documents": docs}, format="json")
-        # Past the database's integer type is a wrong id, not a server error.
         too_big = [2 ** 63, 2 ** 70, -2 ** 70, str(2 ** 80)]
         for bad in (["abc"], [[1]], [None], [True], [{"id": 1}], list(range(1, 502)),
                     *([big] for big in too_big)):
             with self.subTest(bad=str(bad)[:30]):
                 self.assertEqual(post(bad).status_code, 400)
-        # A numeric string is the same document, and repeats count once.
         r = post([str(self.doc.pk), self.doc.pk])
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(len(r.data["created"]), 1)
@@ -130,7 +119,6 @@ class EvidenceMappingTests(APITestBase):
         self.assertIs(r.data["documents_truncated"], False)
         total = len(r.data["documents"])
         self.assertGreaterEqual(total, 2)
-        # Exactly at the cap is not truncated; one over it is.
         with mock.patch.object(compliance_views, "CHOICES_DOCUMENT_CAP", total):
             r = c.get("/api/control-evidence/choices/")
             self.assertIs(r.data["documents_truncated"], False)
@@ -160,11 +148,9 @@ class SeedTests(APITestBase):
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         self.assertEqual(Folder.objects.count(), folders_before)
         self.assertEqual(sum(counts.values()), 217)
-        # every control has exactly one folder, every folder root is flagged
         real = Folder.objects.filter(control__isnull=False).exclude(control__category__framework__key="tfw")
         self.assertEqual(real.count(), 217)
         self.assertEqual(Folder.objects.filter(is_framework_root=True).count(), 4)  # 3 real + the test one
-        # the ISO root name carries no path separator
         self.assertFalse(Folder.objects.filter(is_framework_root=True, name__contains="/").exists())
 
     def _theme_with_a_soc2_criterion(self):
@@ -189,10 +175,6 @@ class SeedTests(APITestBase):
         self.assertEqual(tuple(keys), CORE_FRAMEWORK_KEYS)
 
     def test_a_reseed_keeps_what_another_library_put_in_a_theme(self):
-        """The container runs seed_frameworks on every boot, in every workspace. A
-        control of a library this command does not ship, linked into a shared
-        theme some other way, must still be there afterwards, and a clause number
-        that merely matches must not pull one in."""
         entry, theme, shipped = self._theme_with_a_soc2_criterion()
         other = Framework.objects.create(key="other_lib", name="Other library")
         category = other.categories.create(key="ol", name="Other library controls")
@@ -209,8 +191,6 @@ class SeedTests(APITestBase):
         self.assertEqual(linked - {mine.pk}, shipped, "the shipped libraries keep exactly what the file lists")
 
     def test_a_reseed_still_corrects_the_shipped_libraries_own_links(self):
-        """The file stays the authority over its own libraries: a control of theirs
-        that it does not list in a theme is taken out again."""
         _entry, theme, shipped = self._theme_with_a_soc2_criterion()
         stray = Control.objects.filter(category__framework__key="soc2").exclude(pk__in=shipped).first()
         theme.controls.add(stray)
@@ -223,18 +203,13 @@ class SeedTests(APITestBase):
 
 
 class ReadinessScoringTests(APITestBase):
-    """A control is "ready" when someone owns it, evidence exists, the evidence
-    is current, it has been tested, and nothing is openly failing, rather than
-    when a box is ticked."""
-
     def setUp(self):
         super().setUp()
         self.control = self.tree.c1
         self.today = timezone.localdate()
 
     def _perfect(self):
-        """Implemented, owned, one approved document due in 90 days, tested 10
-        days ago, no open risks."""
+        """Implemented, owned, one approved document due in 90 days, tested 10 days ago, no open risks."""
         self.control.status = "implemented"
         self.control.owner = self.owner
         self.control.last_tested_on = self.today - timedelta(days=10)
@@ -270,7 +245,7 @@ class ReadinessScoringTests(APITestBase):
 
         ControlEvidence.objects.all().delete()
         doc.delete()
-        # evidence (20) and freshness (20) both fall away together.
+        # evidence (20) and freshness (20) both fall away together
         self.assertEqual(self._score()["score"], 35)
 
         self.control.status = "in_progress"
@@ -286,16 +261,12 @@ class ReadinessScoringTests(APITestBase):
         self.assertEqual(result["band_label"], "Excluded")
 
     def test_freshness_grades_on_the_freshest_approved_document(self):
-        """One current approved policy satisfies the control even if a stale
-        one is also linked."""
         self._perfect()
         stale = make_doc(self.tree.ctrl1, owner=self.owner, name="Old policy", days=-400)
         ControlEvidence.objects.create(control=self.control, document=stale, linked_by=self.manager)
         self.assertEqual(self._score()["score"], 100)
 
     def test_evidence_with_no_review_schedule_scores_zero_freshness(self):
-        """Otherwise the one document nobody will ever chase becomes the
-        best-scoring evidence you can attach."""
         self.control.status = "implemented"
         self.control.owner = self.owner
         self.control.last_tested_on = self.today
@@ -319,8 +290,7 @@ class ReadinessScoringTests(APITestBase):
 
     def test_open_risks_subtract_and_the_score_floors_at_zero(self):
         self._perfect()
-        # Two evidence links AND two risks: the only shape that catches a
-        # dropped distinct=True on either annotation.
+        # Two evidence links AND two risks: the only shape that catches a dropped distinct=True.
         second = make_doc(self.tree.ctrl1, owner=self.owner, name="Second policy", days=90)
         ControlEvidence.objects.create(control=self.control, document=second, linked_by=self.manager)
         Risk.objects.create(title="Gap one", control=self.control, status="open")
@@ -342,12 +312,9 @@ class ReadinessScoringTests(APITestBase):
         self.assertEqual(self._score()["score"], 100)
 
     def test_evidence_components_respect_folder_visibility(self):
-        """An org-wide per-control integer handed to a folder-restricted
-        auditor is losslessly invertible into whether hidden evidence exists."""
         self._perfect()
         self.assertEqual(self._score(self.admin)["score"], 100)
-        # aria holds no folder grants, so the evidence is invisible to her and
-        # must not show up in her score.
+        # The auditor holds no folder grants, so the evidence must not reach their score.
         self.assertEqual(accessible_folder_ids(self.auditor), set())
         self.assertEqual(self._score(self.auditor)["score"], 60)
 
@@ -375,9 +342,6 @@ class ReadinessScoringTests(APITestBase):
             self.assertEqual(self._score()["band"], "nearly")
 
     def test_band_labels_are_honest_and_do_not_collide_with_statuses(self):
-        """Two adjacent chips both called 'Not started' would be unusable, and
-        'Unscored' would be wrong, because a control in the lowest band does
-        have a score."""
         labels = set(scoring.BAND_LABELS.values())
         self.assertNotIn("Not started", labels)
         self.assertNotIn("Not applicable", labels)
@@ -405,8 +369,6 @@ class ReadinessScoringTests(APITestBase):
         self.assertEqual(r.data["next_best_action"], "Assign an owner.")
 
     def test_the_next_best_action_is_the_biggest_gap_not_the_first(self):
-        """A control missing 15 points of testing and 5 of freshness should be
-        told to record a test, not to tidy the review date."""
         self._perfect()
         doc = Document.objects.get(name="Policy")
         Document.objects.filter(pk=doc.pk).update(
@@ -433,8 +395,7 @@ class ReadinessScoringTests(APITestBase):
         self.control.refresh_from_db()
         self.assertEqual(self.control.last_tested_by, self.manager)
         self.assertIsNotNone(self.control.last_tested_recorded_at)
-        # The middleware also logs the PATCH (field names only). The row that
-        # matters is the explicit one naming the old and new dates.
+        # The middleware also logs the PATCH (field names only); the row that matters names the old and new dates.
         self.assertTrue(
             AuditLog.objects.filter(object_type="controls",
                                     detail__contains="last_tested_on never ->").exists(),
@@ -466,7 +427,6 @@ class ReadinessScoringTests(APITestBase):
         ids = [row[everything[0].index("Control ID")] for row in everything[1:]]
         self.assertGreater(len(ids), 1)
         keep = Control.objects.get(pk=self.tree.c1.pk)
-        # The id, then a space, then the title: the text the page matches on.
         shown = f"{keep.control_id} {keep.title}"
         for term in (keep.control_id, f"  {shown.upper()}  ", shown[2:12]):
             with self.subTest(term=term):
@@ -491,14 +451,7 @@ class ReadinessScoringTests(APITestBase):
 
 
 class NamelessAccountTests(APITestBase):
-    """createsuperuser asks for no first or last name. A control such an
-    account owns must not read as 'Unassigned', nor the test it recorded or
-    the evidence it linked as recorded by nobody."""
-
     def test_a_nameless_account_is_named_by_its_username(self):
-        import csv
-        import io
-
         from testutils import make_user
 
         root = make_user("rootadmin", self.roles["Administrator"], superuser=True,
@@ -522,13 +475,7 @@ class NamelessAccountTests(APITestBase):
 
 
 class FolderTreeFileTests(SimpleTestCase):
-    """The generated tree is tracked with eol=lf. Written with the platform's
-    newline, every Windows install would leave README.md and manifest.json
-    showing as modified."""
-
     def test_every_generated_text_file_is_written_with_lf(self):
-        import json
-        import os
         import tempfile
 
         from compliance.folder_tree import build_tree

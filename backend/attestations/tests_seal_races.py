@@ -1,12 +1,5 @@
-"""A write that arrives after a seal must be refused, and the seal must survive.
-
-On PostgreSQL the guard is a row lock; SQLite ignores row locks, so each test
-makes the loss deterministic another way: the view is handed an instance that
-was read BEFORE the seal committed (what a request that started earlier holds).
-Before the locks, the view believed that stale copy was still a draft and wrote
-it back over the sealed row: an empty manifest, digest and signature under a
-"sealed" audit entry, or a sealed package deleted outright.
-"""
+"""A write that arrives after a seal must be refused, and the seal must survive. SQLite ignores row locks, so each
+test hands the view an instance read BEFORE the seal committed, as a request that started earlier would hold."""
 from unittest import mock
 
 from attestations import views
@@ -66,10 +59,8 @@ class StaleWriteTests(PackageTestBase):
         self.assert_still_sealed()
 
     def test_a_withdrawal_keeps_the_manifest_the_seal_wrote(self):
-        """withdraw read the row before the seal finished and saved that copy
-        whole: a withdrawn package with an empty manifest, digest and signature."""
         self.add_control()
-        stale = EvidencePackage.objects.get(pk=self.package.pk)      # read while it was a draft
+        stale = EvidencePackage.objects.get(pk=self.package.pk)
         self.seal()
         sealed = (self.package.manifest_sha256, self.package.manifest_json, self.package.manifest_signature)
         self.assertTrue(sealed[0] and sealed[1])

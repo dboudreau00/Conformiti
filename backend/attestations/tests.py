@@ -1,11 +1,4 @@
-"""
-Evidence packages: the disclosure boundary, the seal, and the bundle.
-
-The tests that matter most are the RBAC ones. This app contains the only place
-in Conformiti where folder permissions are bypassed, so both directions have to
-be pinned: an auditor CAN read exactly what was packaged for them, and CANNOT
-read anything else, including the same document through any other route.
-"""
+"""Evidence packages: the disclosure boundary, the seal, and the bundle."""
 import io
 import json
 import zipfile
@@ -35,8 +28,6 @@ ASSERTION = (
 
 
 class PackageTestBase(APITestBase):
-    """A manager with a draft package holding one control and one document."""
-
     def setUp(self):
         super().setUp()
         self.doc = make_doc(self.tree.ctrl1, owner=self.owner,
@@ -78,13 +69,8 @@ class PackageTestBase(APITestBase):
         return r
 
 
-# --------------------------------------------------------------------------- #
-# Assembling and sealing
-# --------------------------------------------------------------------------- #
 class AssembleTests(PackageTestBase):
     def test_add_controls_and_roll_forward_refuse_values_that_are_not_what_they_ask_for(self):
-        """A text id, a float, a number past the database's integer, a boolean:
-        each used to reach the query and answer 500. Now each is a clear 400."""
         url = f"/api/evidence-packages/{self.package.pk}/add_controls/"
         for bad in (["abc"], [1.5], [2 ** 63], [-2 ** 70], [True], [[1]], [None], "5"):
             with self.subTest(bad=str(bad)[:20]):
@@ -111,8 +97,6 @@ class AssembleTests(PackageTestBase):
         self.assertEqual(item.document_name, "Access Control Policy")
         self.assertEqual(item.size_bytes, len(b"policy bytes"))
         self.assertEqual(item.content_sha256, mf.sha256_hex(b"policy bytes"))
-        # The link's own provenance is carried forward: who said this evidences
-        # this control, and when.
         self.assertEqual(item.linked_by_name, self.manager.get_full_name())
         self.assertIsNotNone(item.evidence_linked_at)
 
@@ -144,7 +128,6 @@ class AssembleTests(PackageTestBase):
         self.assertIn("assertion", r.data)
 
     def test_sealing_refuses_when_a_pinned_file_has_changed(self):
-        """The package must never claim bytes it can no longer produce."""
         self.add_control()
         self.doc.file.save("changed.txt", SimpleUploadedFile("changed.txt", b"different"), save=True)
         r = self.manager_client.post(f"/api/evidence-packages/{self.package.pk}/seal/",
@@ -160,8 +143,6 @@ class AssembleTests(PackageTestBase):
         self.assertEqual(len(self.package.manifest_sha256), 64)
         self.assertEqual(self.package.sealed_by_name, self.manager.get_full_name())
         entry = AuditLog.objects.filter(action="seal").latest("timestamp")
-        # Digest first: detail is capped at 255 characters and the digest is the
-        # only thing in the row that binds it to these bytes.
         self.assertTrue(entry.detail.startswith(f"sha256={self.package.manifest_sha256}"))
 
     def test_a_sealed_package_is_read_only(self):
@@ -178,9 +159,6 @@ class AssembleTests(PackageTestBase):
             self.manager_client.delete(f"/api/package-controls/{row.pk}/").status_code, 400)
 
 
-# --------------------------------------------------------------------------- #
-# The disclosure boundary
-# --------------------------------------------------------------------------- #
 class DisclosureBoundaryTests(PackageTestBase):
     def setUp(self):
         super().setUp()
@@ -191,21 +169,17 @@ class DisclosureBoundaryTests(PackageTestBase):
         self.item = PackageEvidence.objects.get()
 
     def test_the_grantee_reads_pinned_bytes_with_no_folder_grant(self):
-        # The premise: aria can see no folders at all.
         self.assertEqual(accessible_folder_ids(self.auditor), set())
         r = self.auditor_client.get(f"/api/package-evidence/{self.item.pk}/file/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(b"".join(r.streaming_content), b"policy bytes")
 
     def test_the_grant_widens_nothing_outside_the_package(self):
-        """The bypass is for the packaged rows and nothing else."""
         c = self.auditor_client
         self.assertEqual(c.get(f"/api/documents/{self.doc.pk}/").status_code, 404)
         self.assertEqual(c.get(f"/api/documents/{self.doc.pk}/download/").status_code, 404)
         self.assertEqual(c.get("/api/documents/").data["count"], 0)
         self.assertEqual(c.get("/api/folders/tree/").data, [])
-        # Refused outright rather than answered with an empty list: the
-        # control-evidence map is the organisation's, not the engagement's.
         self.assertEqual(c.get("/api/control-evidence/").status_code, 403)
 
     def test_a_reader_of_one_package_cannot_read_another(self):
@@ -231,9 +205,6 @@ class DisclosureBoundaryTests(PackageTestBase):
         self.assertIsNotNone(grant_row.last_accessed_at)
 
     def test_the_access_counter_is_incremented_by_the_database_not_by_the_request(self):
-        """Two auditors reading at once must both be counted. A count read into
-        the request and written back loses one of them; the statement has to
-        add one to what the row holds."""
         import re
 
         from django.db import connection
@@ -255,12 +226,9 @@ class DisclosureBoundaryTests(PackageTestBase):
         c = self.auditor_client
         self.assertEqual(c.get(f"/api/package-evidence/{self.item.pk}/file/").status_code, 404)
         self.assertEqual(c.get("/api/evidence-packages/").data["count"], 0)
-        # The grant survives as a record of what happened.
         self.assertIsNotNone(PackageGrant.objects.get().revoked_at)
 
     def test_revoking_twice_keeps_the_first_stamp(self):
-        """A second DELETE (a stale tab, or after Withdraw) is refused, and the
-        original who-and-when survives it with no second trail entry."""
         row = PackageGrant.objects.get()
         url = f"/api/package-grants/{row.pk}/"
         self.assertEqual(self.manager_client.delete(url).status_code, 204)
@@ -287,9 +255,6 @@ class DisclosureBoundaryTests(PackageTestBase):
     def test_deactivating_or_demoting_the_auditor_revokes_on_the_next_request(self):
         self.auditor.role = self.roles["Viewer"]
         self.auditor.save()
-        # Reading ends with the role, as SECURITY.md says: a grant is issued
-        # to an auditor, and it bypasses folder permissions that no other role
-        # gets round. Conclusions and reads both stop at once.
         self.assertEqual(
             self.client_for(self.auditor).get(
                 f"/api/package-controls/{PackageControl.objects.get().pk}/",
@@ -300,7 +265,6 @@ class DisclosureBoundaryTests(PackageTestBase):
         self.assertEqual(r.status_code, 404)
 
     def test_a_grant_on_a_draft_is_refused(self):
-        """Otherwise 'seal small, grant, keep adding' would widen silently."""
         draft = EvidencePackage.objects.create(name="Draft", created_by=self.manager)
         r = self.manager_client.post("/api/package-grants/", {
             "package": draft.pk, "user": self.auditor.pk,
@@ -335,13 +299,11 @@ class DisclosureBoundaryTests(PackageTestBase):
                 c.get(f"/api/evidence-packages/{self.package.pk}/export/").status_code, 404)
 
     def test_pinning_requires_visibility_and_is_not_launderable(self):
-        """A frameworks role with no view-all can only package what it can see."""
         narrow_role = Role.objects.create(name="Narrow frameworks", can_manage_frameworks=True)
         narrow = make_user("nick", narrow_role)
         grant(self.tree.ctrl1, user=narrow, level=VIEW)
         hidden = make_doc(self.tree.ctrl2, owner=self.owner, name="Hidden evidence")
-        # Linked to the control, so add_controls WILL encounter it and must
-        # skip it rather than pin a document this packager cannot see.
+        # Linked, so add_controls meets it and must skip it rather than pin a document this packager cannot see.
         ControlEvidence.objects.create(control=self.tree.c2, document=hidden,
                                        linked_by=self.manager)
         c = self.client_for(narrow)
@@ -353,16 +315,11 @@ class DisclosureBoundaryTests(PackageTestBase):
         self.assertEqual(r.status_code, 201)
         row = PackageControl.objects.get(package_id=own.data["id"], control=self.tree.c1)
 
-        # add_controls already pinned the visible document and skipped the
-        # invisible one, reporting it rather than dropping it silently.
         self.assertEqual(
             [s["document"] for s in r.data["skipped"]], ["Hidden evidence"])
         self.assertTrue(PackageEvidence.objects.filter(
             package_control=row, document=self.doc).exists())
 
-        # Pinning by hand follows the same rule: the visible document is
-        # allowed onto another row, the invisible one is refused outright and
-        # leaves nothing behind.
         other_row = PackageControl.objects.get(package_id=own.data["id"], control=self.tree.c2)
         ok = c.post("/api/package-evidence/",
                     {"package_control": other_row.pk, "document": self.doc.pk}, format="json")
@@ -381,9 +338,6 @@ class DisclosureBoundaryTests(PackageTestBase):
             404)
 
 
-# --------------------------------------------------------------------------- #
-# Conclusions
-# --------------------------------------------------------------------------- #
 class ConclusionTests(PackageTestBase):
     def setUp(self):
         super().setUp()
@@ -395,8 +349,7 @@ class ConclusionTests(PackageTestBase):
     def test_only_the_grantee_writes_conclusions(self):
         payload = {"design_conclusion": "no_exceptions"}
         url = f"/api/package-controls/{self.row.pk}/"
-        # Those who can see the package are refused the write (403); those who
-        # cannot see it at all are told nothing (404).
+        # Readers of the package get 403 on the write; those who cannot see it at all get 404.
         for persona in (self.manager, self.admin):
             self.assertEqual(
                 self.client_for(persona).patch(url, payload, format="json").status_code, 403,
@@ -442,7 +395,6 @@ class ConclusionTests(PackageTestBase):
         risk = Risk.objects.get(risk_type=Risk.Type.AUDIT_FINDING)
         self.assertIn("TC1.1", risk.title)
         self.assertEqual(risk.control, self.tree.c1)
-        # ...and only once.
         self.assertEqual(self.manager_client.post(f"{url}promote/").status_code, 400)
 
     def test_a_control_without_exceptions_cannot_be_promoted(self):
@@ -451,9 +403,6 @@ class ConclusionTests(PackageTestBase):
             400)
 
 
-# --------------------------------------------------------------------------- #
-# The manifest and the bundle
-# --------------------------------------------------------------------------- #
 class ManifestTests(PackageTestBase):
     def test_the_manifest_is_byte_deterministic(self):
         payload = {"b": 2, "a": [3, {"z": 1, "y": 2}]}
@@ -465,8 +414,6 @@ class ManifestTests(PackageTestBase):
         self.assertEqual(name, "001-passwd.pdf")
         self.assertNotIn("..", name)
         self.assertNotIn("/", name)
-        # The EXTENSION comes from the stored name, so a document called
-        # "report.html" cannot land as executable content in the auditor's tree.
         self.assertTrue(mf.safe_member_name("report.html", "report.pdf", 2).endswith(".pdf"))
         self.assertEqual(mf.safe_segment("A.8.15"), "A_8_15")
 
@@ -507,19 +454,15 @@ class BundleTests(PackageTestBase):
             self.assertIn(required, names)
         self.assertEqual(response["X-Conformiti-Integrity"], "ok")
 
-        # The manifest in the bundle is the sealed one, byte for byte.
         self.assertEqual(zf.read("manifest.json").decode("utf-8"), self.package.manifest_json)
         recorded = zf.read("MANIFEST.sha256").decode("utf-8").split()[0]
         self.assertEqual(recorded, self.package.manifest_sha256)
 
-        # Every SHA256SUMS line matches the member in the zip.
         for line in zf.read("SHA256SUMS").decode("utf-8").splitlines():
             digest, _, member = line.partition("  ")
             self.assertEqual(mf.sha256_hex(zf.read(member)), digest, member)
 
     def test_every_member_is_marked_as_an_ordinary_readable_file(self):
-        """Every member carries mode 0644 of its own, group-readable as well as
-        owner-readable (Python's default for a member with no mode is 0600)."""
         _, zf = self._export()
         for info in zf.infolist():
             mode = (info.external_attr >> 16) & 0o777
@@ -538,12 +481,9 @@ class BundleTests(PackageTestBase):
             self.assertNotIn("..", name.split("/"), name)
 
     def test_a_file_altered_after_sealing_is_reported_not_hidden(self):
-        """The bundle must not lie, and must not disagree with itself."""
         self.add_control()
         self.seal()
-        # Changed where it lies, which is what tampering is. A new version, or
-        # a new file under another name, leaves the sealed bytes to the
-        # package (snapshot.pinned_file).
+        # Overwritten in place, which is what tampering is: a new version would leave the sealed bytes to the package.
         with open(self.doc.file.path, "wb") as fh:
             fh.write(b"tampered")
         r = self.manager_client.get(f"/api/evidence-packages/{self.package.pk}/export/")
@@ -553,14 +493,12 @@ class BundleTests(PackageTestBase):
         integrity = zf.read("INTEGRITY.txt").decode("utf-8")
         self.assertIn("NOT the bytes that were sealed", integrity)
         self.assertIn("ALTERED", zf.read("evidence.csv").decode("utf-8-sig"))
-        # manifest keeps the SEALED digest; SHA256SUMS reports what is really here.
         manifest = json.loads(zf.read("manifest.json"))
         item = manifest["controls"][0]["evidence"][0]
         self.assertEqual(item["sha256"], mf.sha256_hex(b"policy bytes"))
         self.assertEqual(zf.read(item["path"]), b"tampered")
 
     def test_the_trail_extract_carries_no_ip_addresses(self):
-        """This file is designed to leave the building."""
         _, zf = self._export()
         header = zf.read("trail.csv").decode("utf-8-sig").splitlines()[0]
         self.assertNotIn("IP", header.upper())

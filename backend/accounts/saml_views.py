@@ -1,4 +1,3 @@
-"""The HTTP faces of SAML: start, the assertion consumer, and SP metadata."""
 from urllib.parse import quote
 
 from django.conf import settings
@@ -11,9 +10,8 @@ from .oidc_views import _LoginThrottle, _fail
 
 
 def _flow_cookie(response, request, value):
-    """Set (or clear) the flow cookie. The provider posts back cross-site, so
-    the cookie has to be SameSite=None, which browsers accept only with
-    Secure. Over plain http (a developer's machine) it falls back to Lax."""
+    """Set, or with ``None`` clear, the flow cookie. The provider posts back cross-site, so it is SameSite=None, which
+    browsers accept only with Secure; plain http falls back to Lax."""
     secure = request.is_secure() or bool(getattr(settings, "BEHIND_TLS", False))
     if value is None:
         response.set_cookie(saml.FLOW_COOKIE, "", max_age=0, path="/api/auth/saml/",
@@ -38,8 +36,7 @@ class SamlStartView(APIView):
 
 
 class SamlAcsView(APIView):
-    """Where the provider posts the signed Response. Never authenticated: the
-    browser arriving here carries nothing but the flow cookie."""
+    """The assertion consumer: the provider posts the signed Response here; the browser carries only the flow cookie."""
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [_LoginThrottle]
@@ -61,7 +58,6 @@ class SamlAcsView(APIView):
 
 
 class SamlMetadataView(APIView):
-    """Our SP metadata, for the provider's administrator to import."""
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = []

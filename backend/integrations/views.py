@@ -1,5 +1,3 @@
-"""Jira integration endpoints. Configuration is manager-only; anyone signed in
-can read the tracked boards and their issues (the whole point is visibility)."""
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, BasePermission
@@ -28,7 +26,6 @@ class ManageOrReadOnly(BasePermission):
 
 
 class JiraConfigView(APIView):
-    """GET/PATCH the single Jira configuration row (managers only)."""
     permission_classes = [CanManageIntegrations]
 
     def get(self, request):
@@ -43,7 +40,6 @@ class JiraConfigView(APIView):
 
 
 class JiraTestView(APIView):
-    """POST: verify the saved credentials against Jira and report the result."""
     permission_classes = [CanManageIntegrations]
 
     def post(self, request):
@@ -54,8 +50,7 @@ class JiraTestView(APIView):
 
 
 class JiraBoardViewSet(viewsets.ModelViewSet):
-    """Tracked boards. `issues` proxies the board's issues server-side so the
-    API token never reaches the browser."""
+    """Tracked boards; ``issues`` proxies server-side so the API token never reaches the browser."""
     queryset = JiraBoard.objects.all()
     serializer_class = JiraBoardSerializer
     permission_classes = [ManageOrReadOnly]
@@ -63,11 +58,8 @@ class JiraBoardViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(added_by=self.request.user)
 
-    # No permission_classes here on purpose. Setting them on an action
-    # REPLACES the viewset's pair rather than adding to it, and the pair is
-    # what refuses the issued external auditor: without it this route would
-    # hand them the organisation's remediation backlog, proxied with the
-    # stored API token, for any board id they tried (0.9.5f).
+    # No permission_classes here on purpose: on an action they REPLACE the viewset's pair, which is what
+    # refuses the issued external auditor (otherwise they could read the backlog through the stored API token).
     @action(detail=True, methods=["get"])
     def issues(self, request, pk=None):
         board = self.get_object()

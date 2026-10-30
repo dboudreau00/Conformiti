@@ -1,19 +1,5 @@
-"""The fifth independent review, fixed in 0.9.5h.
-
-M-1 the password login minted a refresh token before the second factor ·
-M-3 an auditor role could also hold capabilities, and the capability
-short-circuits ran above the auditor cap · M-4 the production topology put
-every caller in one throttle bucket · M-5 a site-local IPv6 address read as
-public, and an IP literal went unchecked under a proxy · M-6 a client could
-make ``request.is_secure()`` true on the plain-HTTP stack · L-2 signing out
-was the one cookie endpoint with no CSRF check · L-7 leading whitespace hid a
-formula from the CSV guard.
-
-M-2 lives in ``attestations.tests_pbc`` beside the list it changes, L-1 in
-``attestations.tests_review_fixes``, L-5 in ``documents.tests``, and L-6 in
-``vendors.tests_questionnaire``. L-3 is a shell script and L-8 is deferred;
-REVIEWS.md (0.9.5h review) says why.
-"""
+"""Findings M-1, M-3 to M-6, L-2, L-7 and L-8 of the fifth independent review. M-2: attestations.tests_pbc; L-1:
+attestations.tests_review_fixes; L-5: documents.tests; L-6: vendors.tests_questionnaire; L-3 is a shell script."""
 from unittest import mock
 
 from django.test import override_settings
@@ -25,11 +11,8 @@ from testutils import PASSWORD, APITestBase, make_user
 
 
 class LoginMintsAfterTheFactorTests(APITestBase):
-    """M-1. ``TokenObtainPairSerializer.validate`` authenticates and mints in
-    one call, so calling it before the MFA branch would leave a refresh token
-    in OutstandingToken, and move last_login, for a session no second factor
-    has authorised. The browser never sees it, but a database dump, a replica
-    and the admin do, and a signed JWT needs no key ring to use."""
+    """M-1. ``TokenObtainPairSerializer.validate`` authenticates and mints at once, so calling it before the MFA branch
+    would leave a refresh token (and a moved last_login) for a session no second factor has authorised."""
 
     def setUp(self):
         super().setUp()
@@ -46,9 +29,7 @@ class LoginMintsAfterTheFactorTests(APITestBase):
         self._forget_tokens()
 
     def _forget_tokens(self):
-        """Enrolment itself signs in nothing, but the setUp above used the
-        API; start the count from zero so the assertions below are about the
-        login under test."""
+        """Start the count from zero, so assertions are about the login under test, not setUp's API calls."""
         from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
         OutstandingToken.objects.filter(user=self.person).delete()
@@ -79,12 +60,8 @@ class LoginMintsAfterTheFactorTests(APITestBase):
         self.assertEqual(self.outstanding(), 0)
 
     def test_a_completed_login_still_mints_exactly_one(self):
-        """The positive control. Without it the assertions above would pass
-        just as well if minting had broken altogether.
-
-        A backup code rather than a fresh TOTP: enrolling spent this time
-        step deliberately, so the code that switched the factor on cannot
-        then sign in with it."""
+        """The positive control: without it the tests above would pass if minting had broken. A backup code, because
+        enrolling spent this TOTP time step, so the code that switched the factor on cannot sign in."""
         codes = self.person.issue_backup_codes()
         r = self.client_for(None).post(
             "/api/auth/token/",
@@ -104,12 +81,8 @@ class LoginMintsAfterTheFactorTests(APITestBase):
 
 
 class AuditorRoleHoldsNoCapabilitiesTests(APITestBase):
-    """M-3. The shipped Auditor role is ``is_auditor`` alone and is locked, but
-    a custom role could store any combination, and ``PackageGrant`` only asks
-    for ``is_auditor``. Without a cap, such an account could be issued an
-    engagement and then read every folder and every package, because the
-    capability short-circuits in both access modules sit above the auditor
-    cap."""
+    """M-3. A custom role could store ``is_auditor`` with capabilities, and ``PackageGrant`` only asks for
+    ``is_auditor``: uncapped, the account could read every folder and package through the access short-circuits."""
 
     def setUp(self):
         super().setUp()
@@ -124,8 +97,7 @@ class AuditorRoleHoldsNoCapabilitiesTests(APITestBase):
         self.assertTrue(self.person.is_auditor, "the role still identifies as an auditor")
 
     def test_the_stored_flags_are_untouched(self):
-        """No data migration: the row keeps what an operator configured, and
-        the cap is applied when it is read."""
+        """No data migration: the row keeps what an operator configured, and the cap is applied when it is read."""
         self.mixed.refresh_from_db()
         self.assertTrue(self.mixed.can_view_all)
 
@@ -143,7 +115,6 @@ class AuditorRoleHoldsNoCapabilitiesTests(APITestBase):
         self.assertEqual(readable_packages(self.person).count(), 0)
 
     def test_the_capabilities_payload_reports_the_capped_view(self):
-        """What the interface uses to decide which buttons exist."""
         r = self.client_for(self.person).get("/api/users/me/")
         self.assertEqual(r.status_code, 200)
         self.assertFalse(r.data["capabilities"]["view_all"])
@@ -169,19 +140,15 @@ class AuditorRoleHoldsNoCapabilitiesTests(APITestBase):
         self.assertEqual(r.status_code, 400, getattr(r, "data", r))
 
     def test_renaming_a_role_that_already_holds_both_still_works(self):
-        """Only introducing the combination is refused. Refusing to save an
-        existing row at all would force the operator to strip its flags."""
+        """Only introducing the combination is refused, or the operator would have to strip an existing row's flags."""
         r = self.client_for(self.admin).patch(
             f"/api/roles/{self.mixed.pk}/", {"description": "Historic"}, format="json")
         self.assertEqual(r.status_code, 200, getattr(r, "data", r))
 
 
 class ForwardedProtoTests(APITestBase):
-    """M-6. ``SECURE_PROXY_SSL_HEADER`` must not be set merely because DEBUG
-    is off: the shipped compose stack has DEBUG off, nginx on plain HTTP and
-    BEHIND_TLS false. Any client could then assert it was on https, and
-    ``build_absolute_uri`` would emit an OIDC redirect_uri and a SAML ACS at an
-    address they were never registered at."""
+    """M-6. ``SECURE_PROXY_SSL_HEADER`` must not follow DEBUG: on the plain-HTTP stack a client could claim https, and
+    ``build_absolute_uri`` would emit an OIDC redirect_uri and SAML ACS at an address never registered."""
 
     HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
@@ -197,8 +164,7 @@ class ForwardedProtoTests(APITestBase):
         self.assertTrue(r.wsgi_request.is_secure())
 
     def test_the_setting_follows_behind_tls_not_debug(self):
-        """The shipped image pins DEBUG off and BEHIND_TLS false, a
-        combination in which the client's header must not be trusted."""
+        """The shipped image pins DEBUG off and BEHIND_TLS false: the client's header must not be trusted then."""
         import importlib
 
         with mock.patch.dict("os.environ", {"DJANGO_DEBUG": "false", "BEHIND_TLS": "false"}):
@@ -209,10 +175,8 @@ class ForwardedProtoTests(APITestBase):
 
 
 class OutboundAddressTests(APITestBase):
-    """M-5. ``fec0::/10`` is deprecated site-local unicast that Python reports
-    as global, so ``ip_is_public`` needs an explicit rule for it. The Jira
-    base URL is set by anyone who can manage users and has no host
-    allow-list."""
+    """M-5. Python reports ``fec0::/10`` (deprecated site-local) as global, so ``ip_is_public`` needs a rule for it.
+    The Jira base URL is set by anyone who can manage users and has no host allow-list."""
 
     def test_site_local_ipv6_is_not_public(self):
         self.assertFalse(outbound.ip_is_public("fec0::1"))
@@ -230,8 +194,6 @@ class OutboundAddressTests(APITestBase):
             outbound.assert_safe_url("https://[fec0::1]/")
 
     def test_a_literal_is_checked_even_when_a_proxy_applies(self):
-        """A proxy resolves names; it does not change what a literal is, so
-        the check must not be skipped when a proxy is configured."""
         with mock.patch.object(outbound, "proxy_for", return_value="http://proxy.internal:3128"):
             with self.assertRaises(outbound.OutboundError):
                 outbound.assert_safe_url("https://169.254.169.254/")
@@ -245,10 +207,8 @@ class OutboundAddressTests(APITestBase):
 
 @override_settings(AUTH_TRANSPORT="cookie")
 class SignOutCsrfTests(APITestBase):
-    """L-2. The endpoint that clears the auth cookies needs its own CSRF
-    check like the ones that set them. It exists for the case where the access
-    cookie is gone and the refresh cookie is not, so the check inside cookie
-    authentication never runs."""
+    """L-2. The endpoint that clears the auth cookies needs its own CSRF check: it exists for when the access cookie is
+    gone and the refresh cookie is not, so the check inside cookie authentication never runs."""
 
     def setUp(self):
         super().setUp()
@@ -274,8 +234,7 @@ class SignOutCsrfTests(APITestBase):
 
 
 class CsvFormulaTests(APITestBase):
-    """L-7. The guard read the first character of the raw value. Excel ignores
-    leading whitespace when it decides whether a cell is a formula."""
+    """L-7. Excel ignores leading whitespace when it decides whether a cell is a formula, so the guard must too."""
 
     def test_leading_whitespace_does_not_hide_a_formula(self):
         for value in ("\n=cmd", " =1+1", "\t@SUM(A1)", "  -2+3"):
@@ -293,11 +252,8 @@ class CsvFormulaTests(APITestBase):
 
 
 class ThrottleDepthTests(APITestBase):
-    """M-4. NUM_PROXIES is the number of hops DRF walks back along
-    X-Forwarded-For to find the client. The default of 1 is the shipped nginx;
-    a TLS terminator in front of that adds a hop, and at 1 every visitor
-    shares the terminator's address, so one caller spends the login budget for
-    all of them. The production section of INSTALL.md must say so."""
+    """M-4. NUM_PROXIES is the hops DRF walks back along X-Forwarded-For. A TLS terminator in front of nginx adds one,
+    and at 1 every visitor shares its address, so one caller spends the login budget for all."""
 
     def test_the_production_checklist_names_it(self):
         import pathlib
@@ -318,12 +274,8 @@ class ThrottleDepthTests(APITestBase):
 
 
 class DeferredTests(APITestBase):
-    """L-8 is deferred, and the workaround it rests on has to keep working.
-
-    Reauth takes a password, a TOTP code or a backup code, not a passkey
-    assertion, so an SSO account whose only factor is a passkey needs its
-    backup codes. Enrolling the first passkey issues them; if that ever
-    stopped being true, the deferral would become a lockout."""
+    """L-8 is deferred on the strength of a workaround: reauth takes no passkey assertion, so an SSO account whose only
+    factor is a passkey needs backup codes, which the first enrolment issues. Without them it would be a lockout."""
 
     def test_enrolling_a_first_passkey_issues_backup_codes(self):
         from accounts.models import WebAuthnCredential

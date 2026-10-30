@@ -1,23 +1,5 @@
-"""
-In-browser preview of stored evidence, without ever rendering the file as HTML.
-
-The evidence library holds PDFs, Word documents and spreadsheets that people
-need to *look at* during a review, not just download. Browsers render PDFs
-natively; they cannot render .docx or .xlsx, and the usual ways round that are
-all wrong for compliance evidence: a third-party viewer means sending the
-document to someone else's server, and a client-side converter that emits HTML
-means a crafted document can inject markup into the application's origin.
-
-So this module does neither. Office files are parsed here, with the standard
-library, into a small structured vocabulary (headings, paragraphs with bold
-and italic runs, lists, tables, sheets of cells), and the front end renders
-that vocabulary itself. There is no HTML in the pipeline to sanitise because
-none is produced. Fidelity is deliberately modest; the download button is
-always beside the preview for anything that matters.
-
-PDFs are streamed inline, but only after the first bytes prove they are a PDF:
-a file called ``report.pdf`` that starts with ``<html`` is refused.
-"""
+"""Preview of stored evidence with no HTML in the pipeline: Office files are parsed here, with the standard library,
+into a vocabulary the front end renders. PDFs and images stream inline only once their first bytes prove the type."""
 import io
 import posixpath
 import re
@@ -32,7 +14,7 @@ MAX_SHEET_ROWS = 1000
 MAX_SHEET_COLS = 64
 MAX_SHEETS = 12
 MAX_UNZIPPED_BYTES = 40 * 1024 * 1024
-MAX_PART_BYTES = 12 * 1024 * 1024      # one XML part, read in bounded chunks, never trusting the header
+MAX_PART_BYTES = 12 * 1024 * 1024
 MAX_TEXT_BYTES = 512 * 1024
 
 PDF_MAGIC = b"%PDF-"
@@ -49,12 +31,11 @@ PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 
 
 class PreviewError(Exception):
-    """The file cannot be previewed. The message is safe to show."""
+    """The file cannot be previewed; the message is safe to show to the user."""
 
 
 def kind_for(name, head):
-    """Decide how a file may be shown from its magic bytes first, extension
-    second. The extension never overrides the bytes."""
+    """How a file may be shown: its magic bytes decide, and the extension never overrides them."""
     ext = posixpath.splitext(name or "")[1].lower()
     if head.startswith(PDF_MAGIC):
         return "pdf"
@@ -87,9 +68,6 @@ def image_content_type(head):
     return "image/webp"
 
 
-# --------------------------------------------------------------------------- #
-# Office Open XML plumbing
-# --------------------------------------------------------------------------- #
 def _open_zip(data):
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
@@ -102,10 +80,8 @@ def _open_zip(data):
 
 
 def _read_xml(zf, member):
-    """Parse one part, bounded twice: the bytes are read in chunks up to a
-    ceiling the zip header cannot override, and a part with an absurd number
-    of tags is refused before ElementTree builds a tree out of it, because a
-    few megabytes of ``<w:p/>`` expand to a tree many times their size."""
+    """Parse one part with two bounds: bytes are read up to a ceiling the zip header cannot override, and a part with an
+    absurd tag count is refused before ElementTree builds a tree out of it."""
     try:
         with zf.open(member) as fh:
             raw = fh.read(MAX_PART_BYTES + 1)
@@ -118,18 +94,12 @@ def _read_xml(zf, member):
     if raw.count(b"<") > MAX_ELEMENTS:
         raise PreviewError("The document is too complex to preview. Download it instead.")
     try:
-        # A part with a DOCTYPE is refused outright (see safe_fromstring); a
-        # malformed part is a preview failure, not a crash.
         return safe_fromstring(raw)
     except (ET.ParseError, XmlRefused):
         raise PreviewError("The document's contents could not be read.")
 
 
-# --------------------------------------------------------------------------- #
-# Word
-# --------------------------------------------------------------------------- #
 def _runs(paragraph):
-    """Text runs with bold/italic flags. Hyperlinks flatten to their text."""
     out = []
     for run in paragraph.iter(f"{W}r"):
         props = run.find(f"{W}rPr")
@@ -216,9 +186,6 @@ def render_docx(data):
     return {"kind": "docx", "blocks": blocks}
 
 
-# --------------------------------------------------------------------------- #
-# Excel
-# --------------------------------------------------------------------------- #
 def _shared_strings(zf):
     root = _read_xml(zf, "xl/sharedStrings.xml")
     if root is None:
@@ -238,7 +205,6 @@ def _col_index(ref):
 
 
 def _sheet_parts(zf):
-    """Sheet names in workbook order, mapped to their zip members."""
     wb = _read_xml(zf, "xl/workbook.xml")
     rels = _read_xml(zf, "xl/_rels/workbook.xml.rels")
     if wb is None:
@@ -302,9 +268,6 @@ def render_xlsx(data):
     return {"kind": "xlsx", "sheets": sheets_out}
 
 
-# --------------------------------------------------------------------------- #
-# Plain text
-# --------------------------------------------------------------------------- #
 def render_text(data, name=""):
     raw = data[:MAX_TEXT_BYTES]
     text = raw.decode("utf-8", "replace")
@@ -318,12 +281,8 @@ def render_text(data, name=""):
 
 
 def render(file_field, name):
-    """Structured preview for an Office/text file, or a marker for streamable
-    kinds. Returns ``{"kind": ..., ...}``; raises PreviewError otherwise.
-
-    ``name`` is the document's title, which people usually type without an
-    extension ("Access Control Policy"); the stored file keeps the real one,
-    so that is what decides the kind when the title gives nothing away."""
+    """Preview of an Office/text file, or ``{"kind": "pdf"|"image"}`` for streamable ones; raises PreviewError.
+    ``name`` is the document title, often typed without an extension; the stored file's name decides the kind then."""
     if not posixpath.splitext(name or "")[1]:
         name = posixpath.basename(str(getattr(file_field, "name", "") or "")) or name
     with file_field.open("rb") as fh:

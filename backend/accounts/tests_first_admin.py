@@ -1,16 +1,5 @@
-"""The first administrator, made the way every install guide says to.
-
-``manage.py createsuperuser`` must produce an account that can sign in to
-/admin/. The command runs with no workspace active, and the session's user
-lookup inside a request is pinned to the workspace that request resolves to,
-which a row with no workspace never matches, so the account must be attached
-to a workspace. The command's "Bypass password validation" answer must not
-let that account keep a password the installation refuses everywhere else,
-and the users list must paginate in a defined order.
-
-The test runner keeps the Default workspace active for the whole suite, so
-here the command runs with nothing active, as it does on a real installation.
-"""
+"""``createsuperuser`` must produce an account that can sign in to /admin/ and holds a policy-compliant password. The
+suite keeps the Default workspace active, so here the command runs with nothing active, as on a real installation."""
 import io
 import os
 import shlex
@@ -39,8 +28,7 @@ class _TTY:
 
 
 def _createsuperuser(username="root", password=PASSWORD, **options):
-    """``createsuperuser --noinput`` as the entrypoint and the guides run it:
-    nothing active, the password from the environment."""
+    """``createsuperuser --noinput`` as the entrypoint runs it: nothing active, the password from the environment."""
     env = {"DJANGO_SUPERUSER_PASSWORD": password} if password is not None else {}
     with tenancy.unscoped(), mock.patch.dict(os.environ, env):
         call_command("createsuperuser", interactive=False, username=username,
@@ -69,7 +57,6 @@ class FirstAdministratorTests(APITestBase):
         r = client.get("/admin/")
         self.assertEqual(r.status_code, 200, r.get("Location"))
         self.assertContains(r, "Site administration")
-        # A changelist of the user model and one of a tenant model.
         r = client.get("/admin/accounts/user/")
         self.assertEqual(r.status_code, 200, r.get("Location"))
         self.assertContains(r, "root")
@@ -77,8 +64,7 @@ class FirstAdministratorTests(APITestBase):
         self.assertEqual(r.status_code, 200, r.get("Location"))
         self.assertContains(r, "Administrator")
 
-        # And the application, in the same browser: the admin's session
-        # cookie travels with every API request.
+        # The application in the same browser: the admin's session cookie travels with every API request.
         r = client.post("/api/auth/token/", {"username": "root", "password": PASSWORD}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         bearer = f"Bearer {r.data['access']}"
@@ -90,8 +76,6 @@ class FirstAdministratorTests(APITestBase):
         self.assertEqual(r.data["slug"], tenancy.DEFAULT_SLUG)
 
     def test_a_workspace_that_is_active_still_wins(self):
-        """A command run inside a workspace files the account there, as it
-        always has."""
         from accounts.models import Workspace
 
         beta = Workspace.objects.create(name="Beta Ltd", slug="beta-first")
@@ -115,10 +99,7 @@ class FirstAdministratorPasswordTests(APITestBase):
             self.assertFalse(User.objects.get(username="root").has_usable_password())
 
     def test_the_interactive_path_offers_no_bypass_and_asks_again(self):
-        """Stock Django asks "Bypass password validation and create user
-        anyway?", and the policy would then refuse a yes and discard the
-        username and email already typed. The command says the policy has no
-        bypass and asks for another password, keeping what was typed."""
+        """No bypass is offered: the command says the policy has none and asks again, keeping the username and email."""
         err = io.StringIO()
         asked = []
 
@@ -146,8 +127,7 @@ class FirstAdministratorPasswordTests(APITestBase):
         self.assertTrue(user.check_password(PASSWORD))
 
     def test_the_command_is_ours_not_djangos(self):
-        """Django finds a command in the first installed app that has it, so
-        the override only runs while accounts comes before django.contrib.auth."""
+        """Django takes the first installed app's command, so accounts must stay before django.contrib.auth."""
         from django.core.management import get_commands
 
         self.assertEqual(get_commands()["createsuperuser"], "accounts")
@@ -176,7 +156,6 @@ class UserListOrderTests(APITestBase):
 
 
 def _run_migration_0013():
-    """accounts migration 0013's data step, against the live registry."""
     import importlib
     from types import SimpleNamespace
 
@@ -188,7 +167,6 @@ def _run_migration_0013():
 
 
 def _workspaceless(username, superuser=True):
-    """An account the way an older release's createsuperuser left it."""
     with tenancy.unscoped():
         user = make_user(username, superuser=superuser)
         User.objects.filter(pk=user.pk).update(workspace=None)
@@ -210,9 +188,7 @@ def _admin_home(username):
 
 
 class WorkspacelessSuperuserMigrationTests(APITestBase):
-    """Accounts older releases' createsuperuser made with no workspace. The
-    command no longer does that, but installations upgrading keep theirs, and
-    each one still loops at /admin/ until migration 0013 attaches it."""
+    """An account left without a workspace loops at /admin/ until migration 0013 attaches it."""
 
     def test_an_old_account_is_attached_and_can_use_the_admin(self):
         legacy = _workspaceless("legacy")
@@ -250,8 +226,7 @@ class WorkspacelessSuperuserMigrationTests(APITestBase):
         default = tenancy.default_workspace().pk
         self.assertEqual(_workspace_of(legacy), default)
 
-        # Run again after the first workspace is archived: nothing has none
-        # any more, so nothing moves.
+        # A second run, after the first workspace is archived, moves nothing: no account is left without one.
         Workspace.objects.filter(pk=default).update(is_active=False)
         _run_migration_0013()
         self.assertEqual(_workspace_of(legacy), default)
@@ -259,7 +234,6 @@ class WorkspacelessSuperuserMigrationTests(APITestBase):
 
 
 def _run_migration_0014():
-    """accounts migration 0014's data step, against the live registry."""
     import importlib
     from types import SimpleNamespace
 
@@ -271,9 +245,7 @@ def _run_migration_0014():
 
 
 def _legacy_admin(username="admin", **extra):
-    """The administrator the entrypoint made before 0.9.5l when no address was
-    set: no name, the demo administrator's address. Migration 0013 has filed
-    it in a workspace, which is where the demo checks look."""
+    """An administrator with the old fallback address and no name, which reads as the demo administrator."""
     extra.setdefault("email", "admin@example.com")
     extra.setdefault("first_name", "")
     extra.setdefault("last_name", "")
@@ -287,16 +259,12 @@ def _email_of(user):
 
 
 class FallbackAdministratorAddressTests(APITestBase):
-    """An administrator made before 0.9.5l with the old fallback address
-    looks like the demo administrator once migration 0013 files it in a
-    workspace. The boot banner would then tell the operator to run
-    remove_demo_data, which deactivates that account, takes the owner off its
-    controls and deletes the readiness history from before today."""
+    """An administrator with the old fallback address reads as the demo administrator, so the banner would send the
+    operator to remove_demo_data, which deactivates it, strips its control ownership and deletes readiness history."""
 
     def test_the_old_fallback_address_is_replaced_and_the_demo_no_longer_claims_it(self):
         from datetime import timedelta
 
-        from django.core.management import call_command
         from django.utils import timezone
 
         from analytics.models import ReadinessSnapshot
@@ -372,11 +340,8 @@ def _posix_bash():
 
 @skipUnless(_posix_bash(), "needs bash")
 class EntrypointSuperuserTests(SimpleTestCase):
-    """The DJANGO_SUPERUSER_* step of backend/entrypoint.sh, run in bash with
-    ``python`` (and so createsuperuser) replaced by a stub. The step must log
-    the command's stderr and say "already exists" only when that is the
-    cause, so a password the policy refuses is not reported as an existing
-    administrator."""
+    """The DJANGO_SUPERUSER_* step of entrypoint.sh in bash, ``python`` stubbed: it logs the command's stderr and says
+    "already exists" only when that is the cause, never for a password the policy refuses."""
 
     source = (Path(__file__).resolve().parent.parent / "entrypoint.sh").read_text(encoding="utf-8")
     start = 'if [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ]'
@@ -436,10 +401,8 @@ class EntrypointSuperuserTests(SimpleTestCase):
 
 
 class EntrypointEmailFallbackTests(TestCase):
-    """With DJANGO_SUPERUSER_EMAIL unset, the entrypoint's fallback address
-    must not be the demo administrator's admin@example.com, or a real
-    administrator named admin would count as the demo administrator to
-    /api/health/, the banner and remove_demo_data."""
+    """With DJANGO_SUPERUSER_EMAIL unset, the entrypoint's fallback must not be the demo administrator's address, or a
+    real administrator named admin would count as the demo one to /api/health/, the banner and remove_demo_data."""
 
     def test_an_admin_made_with_the_fallback_is_no_demo_account(self):
         import re
@@ -459,8 +422,6 @@ class EntrypointEmailFallbackTests(TestCase):
 
 
 class WorkspacelessSuperuserMigrationEmptyDatabaseTests(TestCase):
-    """The same step on a database with no workspace at all."""
-
     def setUp(self):
         from accounts.models import Workspace
 

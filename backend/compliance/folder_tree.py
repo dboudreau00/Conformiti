@@ -1,37 +1,11 @@
-"""
-folder_tree.py
---------------
-Builds the on-disk compliance folder tree, segregated by control.
-
-Structure produced:
-
-    <root>/
-        SOC2/
-            CC1 - Control Environment/
-                CC1.1 - Integrity and ethical values/
-                    _control.md         <- objective, owner, review cadence
-                    policies/
-                    procedures/
-                    evidence/
-                    forms/
-                ...
-        ISO27001/
-        PCI-DSS-v4.0.1/
-
-Both the Django management command and the standalone tools/generate_tree.py
-call build_tree(). Folder names are filesystem-safe versions of the control
-IDs and titles so the tree stays human-navigable.
-"""
 from __future__ import annotations
 
 import json
 import os
 import re
 
-# Standard evidence sub-folders created inside every control folder.
 CONTROL_SUBFOLDERS = ["policies", "procedures", "evidence", "forms"]
 
-# Map framework key -> top-level folder name.
 FRAMEWORK_DIR = {
     "soc2": "SOC2",
     "iso27001": "ISO27001",
@@ -48,15 +22,13 @@ _SAFE = re.compile(r'[<>:"/\\|?*]+')
 
 
 def safe(name: str) -> str:
-    """Return a filesystem-safe folder name."""
     name = _SAFE.sub("-", name).strip().rstrip(".")
     return re.sub(r"\s+", " ", name)
 
 
 def load_frameworks(data_dir: str) -> list[dict]:
-    """Load every framework JSON found in data_dir."""
     frameworks = []
-    for key, fname in DATA_FILES.items():
+    for fname in DATA_FILES.values():
         path = os.path.join(data_dir, fname)
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
@@ -84,13 +56,18 @@ def _control_readme(fw: dict, category: dict, control: dict) -> str:
     )
 
 
-def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
-    """
-    Create the folder tree under ``root`` from the framework JSON in ``data_dir``.
+def _write_control_md(ctrl_dir: str, fw: dict, category: dict, control: dict) -> None:
+    # Create only: the operator fills in owner and review cadence, and a rewrite on every run would discard it.
+    readme_path = os.path.join(ctrl_dir, "_control.md")
+    if os.path.exists(readme_path):
+        return
+    with open(readme_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(_control_readme(fw, category, control))
 
-    Returns a summary dict: {"frameworks": n, "categories": n, "controls": n,
-    "folders": n}.
-    """
+
+def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
+    """Write the tree under ``root`` from the JSON in ``data_dir``; returns the counts of frameworks, categories,
+    controls and folders."""
     frameworks = load_frameworks(data_dir)
     counts = {"frameworks": 0, "categories": 0, "controls": 0, "folders": 0}
     manifest = []
@@ -117,33 +94,20 @@ def build_tree(root: str, data_dir: str, write_readmes: bool = True) -> dict:
                 for sub in CONTROL_SUBFOLDERS:
                     os.makedirs(os.path.join(ctrl_dir, sub), exist_ok=True)
                     counts["folders"] += 1
-                    # .gitkeep so empty evidence folders survive version control
                     open(os.path.join(ctrl_dir, sub, ".gitkeep"), "a").close()
 
                 if write_readmes:
-                    # Create only. _control.md asks the operator to fill in the
-                    # owner and review cadence, so rewriting it on every run
-                    # (the normal way to pick up a new control) would discard
-                    # their edits.
-                    readme_path = os.path.join(ctrl_dir, "_control.md")
-                    if not os.path.exists(readme_path):
-                        with open(readme_path, "w", encoding="utf-8", newline="\n") as f:
-                            f.write(_control_readme(fw, category, control))
+                    _write_control_md(ctrl_dir, fw, category, control)
 
                 manifest.append({
                     "framework": fw["key"],
                     "category": category["key"],
                     "control_id": control["control_id"],
-                    # Always forward slashes: os.path.relpath yields backslashes
-                    # on Windows, which would make the manifest (a portable,
-                    # machine-readable index) depend on the OS that built it.
+                    # Forward slashes: the manifest must not depend on the OS (relpath gives backslashes on Windows).
                     "path": os.path.relpath(ctrl_dir, root).replace(os.sep, "/"),
                 })
 
-    # Top-level index and machine-readable manifest. LF on every OS: the
-    # generated files are tracked and .gitattributes pins *.md and *.json to
-    # eol=lf, so a CRLF rewrite on Windows would show both as modified after
-    # every install that runs generate_folder_tree.
+    # LF on every OS: .gitattributes pins *.md and *.json to eol=lf, and CRLF would show them modified.
     if write_readmes:
         with open(os.path.join(root, "README.md"), "w", encoding="utf-8", newline="\n") as f:
             f.write(

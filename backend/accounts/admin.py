@@ -9,14 +9,8 @@ from .models import Role, User, WebAuthnCredential, Workspace
 
 
 class MfaAdminAuthenticationForm(AdminAuthenticationForm):
-    """The admin sign-in, held to the same bar as the application's.
-
-    Django's own form checks a password and nothing else, so an account with
-    an authenticator enrolled could be signed in with the password alone, and
-    the resulting session authenticates the whole API. This form asks for the
-    second factor, refuses archived workspaces, and rate-limits attempts per
-    client the way /api/auth/token/ does.
-    """
+    """The admin sign-in held to the application's bar: Django's form checks a password only, and the resulting session
+    authenticates the whole API. Adds the second factor, the archived-workspace refusal and a per-client rate limit."""
 
     otp = forms.CharField(
         label="Authentication code", required=False, strip=True,
@@ -33,8 +27,7 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
         return f"admin-login:{_client_ip(self.request) if self.request else 'unknown'}"
 
     def clean(self):
-        # Every outcome reaches the audit trail, as an API sign-in does; a
-        # rate-limit refusal is recorded once per client and window.
+        # Every outcome reaches the audit trail; a rate-limit refusal is recorded once per client and window.
         from audit.events import record_admin_sign_in
 
         key = self._throttle_key()
@@ -76,8 +69,6 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
         return cleaned
 
 
-# The admin site is part of the product's attack surface, so it gets the
-# product's login rules.
 admin.site.login_form = MfaAdminAuthenticationForm
 admin.site.login_template = None
 
@@ -88,8 +79,7 @@ admin.site.register(Role)
 class WorkspaceAdmin(admin.ModelAdmin):
     list_display = ("name", "slug", "is_active", "created_at")
 
-    # A workspace is archived, never deleted (the API has no delete either):
-    # deleting one takes every row it owns with it, its audit trail included.
+    # A workspace is archived, never deleted: deleting one takes every row it owns with it, its audit trail included.
     def has_delete_permission(self, request, obj=None):
         return False
 
@@ -107,16 +97,8 @@ class CustomUserAdmin(UserAdmin):
     list_display = ("username", "email", "first_name", "last_name", "role", "is_staff")
 
     def user_change_password(self, request, id, form_url=""):
-        """A password set here ends the account's sessions, as it does
-        everywhere else, and is written to the trail.
-
-        The admin sets a password on this page only: the change form shows the
-        hash read-only, and this view saves through its own form without
-        calling ``save_model``, so the session-ending hook lives here. Without
-        it, resetting the password of a compromised account would leave
-        whoever held it signed in. A saved form answers with a redirect; a
-        refused one re-renders.
-        """
+        """A password set here ends the account's sessions and is audited. This view saves through its own form without
+        ``save_model``, so the session-ending hook lives here; it acts only on a saved form (a 302)."""
         from django.contrib.admin.utils import unquote
 
         response = super().user_change_password(request, id, form_url)

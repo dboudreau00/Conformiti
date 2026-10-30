@@ -1,10 +1,5 @@
-"""Explicit audit events that the request middleware cannot derive on its own.
-
-The middleware records every successful mutating API call. Authentication
-events are different: a failed login has no authenticated user, and the login
-endpoint is deliberately excluded from body capture so credentials never reach
-the log. These helpers write those events with the same fields.
-"""
+"""Explicit audit events the request middleware cannot derive: a failed sign-in has no authenticated user, and
+/api/auth/ is excluded from body capture so credentials never reach the log."""
 import logging
 
 from django.contrib.auth import get_user_model
@@ -28,12 +23,10 @@ def _username_from(request):
 
 
 def record_login_attempt(request, response):
-    """Write a login / login_failed entry for a token-obtain call."""
     try:
         username = _username_from(request)
         ip = _client_ip(request)
-        # The sign-in request has no workspace of its own; the entry belongs
-        # to the account's workspace so its administrators can see it.
+        # No workspace is active at sign-in: file the entry under the account's, so its administrators can see it.
         user = get_user_model().objects.filter(username=username).first()
         workspace_id = user.workspace_id if user else None
         if response.status_code == 200:
@@ -64,9 +57,7 @@ def record_login_attempt(request, response):
 
 
 def record_admin_sign_in(request, username, reason=None):
-    """A sign-in to the Django admin: succeeded when ``reason`` is None,
-    otherwise refused for that reason. Written with the same fields as an API
-    sign-in, and never with the password or a code."""
+    """Admin sign-in; ``reason`` is None on success, else why it was refused. Never records a password or code."""
     try:
         username = str(username or "")[:150]
         user = get_user_model().objects.filter(username=username).first() if username else None
@@ -95,10 +86,8 @@ def record_logout(request):
 
 
 def record_auth_event(request, user, action, detail):
-    """An authentication-related fact that is neither a login nor a logout:
-    a factor enrolled or removed, a passkey refused, an MFA reset. The
-    ``/api/auth/`` prefix is excluded from the request middleware (it carries
-    credentials), so these are written explicitly, never with a value."""
+    """An authentication fact that is neither login nor logout (factor added or removed, passkey refused, MFA reset).
+    /api/auth/ is skipped by the middleware, so callers write these explicitly and never pass a value in ``detail``."""
     try:
         known = user is not None and getattr(user, "pk", None)
         AuditLog.objects.create(
@@ -106,8 +95,7 @@ def record_auth_event(request, user, action, detail):
             action=str(action)[:20], object_type="auth",
             object_id=str(user.pk) if known else "",
             detail=str(detail)[:255], ip_address=_client_ip(request) if request is not None else None,
-            # /api/auth/ runs before a workspace is resolved, so the entry is
-            # filed under the account it is about.
+            # /api/auth/ runs before a workspace is resolved: file the entry under the account it is about.
             workspace_id=(user.workspace_id if known else None),
         )
     except Exception:
@@ -118,12 +106,7 @@ EVIDENCE_READ = "read"
 
 
 def record_evidence_read(request, document, version=None):
-    """Record that someone read the bytes of a stored document.
-
-    Reading evidence is the act an auditor most needs to be able to reconstruct
-    afterwards ("who saw this file, and when"). Failures are swallowed: a
-    logging problem must not stop an authorised download.
-    """
+    """Record a read of a stored document's bytes. A failed write is logged and never blocks the download."""
     try:
         label = f"v{version}" if version is not None else f"v{document.version}"
         AuditLog.objects.create(
@@ -141,14 +124,8 @@ PACKAGE_ACTIONS = {"create", "update", "delete", "seal", "withdraw", "export", "
 
 
 def record_package_event(request, package, action, detail):
-    """Record an act on an evidence package.
-
-    Disclosure is what this feature exists to make accountable, so the export
-    and read events are written before the bytes leave. Failures are swallowed
-    for reads and exports, because a logging problem must not deny an
-    authorised auditor their evidence, but the row is written first, so a
-    successful download always has a matching entry.
-    """
+    """Record an act on an evidence package. Callers write export and read events before the bytes leave;
+    a failed write is logged, not raised, so an authorised auditor is never denied their evidence."""
     try:
         AuditLog.objects.create(
             user=request.user if request.user.is_authenticated else None,

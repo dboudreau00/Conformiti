@@ -1,15 +1,5 @@
-"""
-The evidence-package API.
-
-Two rules run through everything here:
-
-* every read of a package, its rows or its bytes goes through
-  ``access.readable_packages``; there is no second path;
-* every write is refused unless the package is still a draft, checked at the
-  *view*, not in a serializer. ``@action`` endpoints skip serializer
-  ``validate()``, so a rule kept there (as ``AccessReviewItemSerializer`` keeps
-  its read-only rule) does not cover them.
-"""
+"""The evidence-package API. Every read goes through ``access.readable_packages``; every write is refused unless the
+package is a draft, checked in the view because ``@action`` endpoints skip serializer ``validate()``."""
 import tempfile
 
 from django.db import transaction
@@ -46,9 +36,8 @@ MIN_ASSERTION = 40
 
 
 class CanAssemble(BasePermission):
-    """Write access to packages. Reads are filtered by the queryset instead, so
-    a user with no packages gets an empty 200 rather than a 403, because the
-    sidebar shows the nav item to everyone."""
+    """Write access to packages. Reads are filtered by the queryset: a user with no packages gets an empty 200, not a
+    403, because the sidebar shows the nav item to everyone."""
 
     def has_permission(self, request, view):
         if request.method in ("GET", "HEAD", "OPTIONS"):
@@ -65,40 +54,22 @@ def assert_open(package):
 
 
 def lock_open(package):
-    """Take the package row for update, then re-check that it is still open.
-
-    Sealing snapshots what is pinned at that instant; pinning changes it.
-    Checking `is_open` and then acting on the answer is a race: evidence
-    pinned between the seal's check and its snapshot lands inside the package
-    but outside the manifest the auditor verifies, which is what a signed
-    manifest exists to rule out. Every write that changes what the manifest
-    would say goes through here, so they queue behind each other instead of
-    interleaving.
-
-    Returns the locked row. Call inside ``transaction.atomic()``.
-    """
+    """Lock the package row and re-check it is open; call inside ``transaction.atomic()``, returns the locked row.
+    Every write that changes what the manifest says queues here, so none lands between a seal's check and snapshot."""
     row = EvidencePackage.objects.select_for_update().get(pk=package.pk)
     assert_open(row)
     return row
 
 
 class PackageWorkThrottle(UserRateThrottle):
-    """THROTTLE_PACKAGE_WORK, per account, for the routes that hash every
-    pinned file (seal and export).
-
-    A UserRateThrottle so ``scope`` binds directly to the rate. A
-    ScopedRateThrottle reads its scope from a view ``throttle_scope``
-    attribute and lets every request through without one, so the limit would
-    never apply (see the note in config/urls.py on the login throttle)."""
+    """THROTTLE_PACKAGE_WORK per account, for the routes that hash every pinned file (seal, export). A UserRateThrottle,
+    not a ScopedRateThrottle, which lets every request through when the view sets no ``throttle_scope``."""
     scope = "package_work"
 
 
 class PackageVerifyThrottle(UserRateThrottle):
-    """THROTTLE_PACKAGE_VERIFY, per account, for the integrity check. It
-    re-hashes every pinned file for anyone who can read the package, an external
-    auditor with a grant included, so it is bounded; but the Packages page runs
-    it whenever a package is opened, so the bucket is larger than the one for
-    sealing and exporting."""
+    """THROTTLE_PACKAGE_VERIFY per account, for the integrity check, which re-hashes every pinned file for any reader.
+    A larger bucket than seal and export: the Packages page runs it whenever a package is opened."""
     scope = "package_verify"
 
 
@@ -111,11 +82,8 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from django.db.models import Count
 
-        # Counts annotated here, once, rather than two queries per package in
-        # the serializer; the successors and PBC rows are prefetched for the
-        # same reason. The counts make it a GROUP BY query, which Django runs
-        # without Meta.ordering, so the order is explicit (Meta.ordering, then
-        # the id as a unique tie-break) or pages may repeat or skip a package.
+        # Counts annotated once, not two queries per package. The GROUP BY ignores Meta.ordering, so the order is
+        # explicit with an id tie-break, or pages may repeat or skip a package.
         return (access.readable_packages(self.request.user)
                 .select_related("framework", "prior_package")
                 .prefetch_related("grants", "scope", "successors", "pbc_requests")
@@ -124,8 +92,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                 .order_by("-created_at", "-id"))
 
     def _check_prior(self, prior, package=None):
-        """A predecessor must be one the caller can read, no longer a draft,
-        and not lead back to this package."""
+        """A predecessor must be readable by the caller, no longer a draft, and not lead back to this package."""
         if prior is None:
             return
         if prior not in access.readable_packages(self.request.user):
@@ -146,9 +113,8 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                              f"opened evidence package {package.pk}: {package.name}")
 
     def perform_update(self, serializer):
-        # Locked and read again. DRF loaded the instance before this lock, and a
-        # seal that committed in between would otherwise be written back as a
-        # draft with an empty manifest, digest and signature.
+        # Lock and re-read: DRF loaded the instance before this lock, and a seal that committed meanwhile would be
+        # written back as a draft with an empty manifest, digest and signature.
         with transaction.atomic():
             package = lock_open(serializer.instance)
             if "prior_package" in serializer.validated_data:
@@ -156,12 +122,8 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             serializer.instance = package
             serializer.save()
 
-    # ------------------------------------------------------------ roll-forward
     @action(detail=True, methods=["post"])
     def roll_forward(self, request, pk=None):
-        """Open next year's draft from this sealed package: the same controls
-        re-snapshotted today, today's visible evidence pinned, and this package
-        recorded as the predecessor. Conclusions and samples are not copied."""
         prior = self.get_object()
         if not access.can_assemble(request.user):
             raise PermissionDenied("You need the frameworks capability to roll a package forward.")
@@ -182,8 +144,6 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def diff(self, request, pk=None):
-        """The year-over-year comparison with the predecessor, from the two
-        packages' own snapshots."""
         package = self.get_object()
         result = rollforward.diff(package)
         if result is None:
@@ -200,15 +160,10 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                                  f"deleted draft evidence package {package.pk}: {package.name}")
             package.delete()
 
-    # ---------------------------------------------------------------- assemble
     @action(detail=True, methods=["post"])
     def add_controls(self, request, pk=None):
-        """Add controls to a draft, optionally pinning the evidence already
-        linked to each one.
-
-        Evidence the caller cannot see is skipped and reported, never silently
-        dropped and never pinned.
-        """
+        """Add controls to a draft, optionally pinning the evidence already linked to each. Evidence the caller cannot
+        see is skipped and reported, never silently dropped and never pinned."""
         package = self.get_object()
         assert_open(package)
         if not access.can_assemble(request.user):
@@ -217,8 +172,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         ids = request.data.get("controls") or []
         if not isinstance(ids, list) or not ids:
             raise ValidationError({"controls": "Give a list of control ids."})
-        # Whole numbers that fit the database's integer, as the bulk attach
-        # insists: anything else reached the query and raised a 500.
+        # Whole numbers that fit the database's integer, as the bulk attach insists.
         try:
             if any(isinstance(i, (bool, float)) or abs(int(i)) >= 2 ** 63 for i in ids):
                 raise ValueError
@@ -262,7 +216,6 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], throttle_classes=[PackageWorkThrottle])
     def seal(self, request, pk=None):
-        """Freeze the package and compute its manifest digest."""
         package = self.get_object()
         assert_open(package)
         if not access.can_assemble(request.user):
@@ -275,9 +228,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                 "It is the statement the auditor relies on."
             )})
         with transaction.atomic():
-            # From here the package is held for update, so a pin arriving at
-            # the same moment waits for the snapshot rather than landing
-            # between the drift check and the manifest.
+            # Held from here: a concurrent pin waits rather than landing between the drift check and the manifest.
             package = lock_open(package)
             if not package.controls.exists():
                 raise ValidationError({"detail": "Add at least one control before sealing."})
@@ -308,11 +259,9 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             package.save(update_fields=[
                 "manifest_json", "manifest_sha256", "manifest_version", "manifest_algorithm",
             ])
-            # The detached signature, when the installation has a key.
             signed_by = signing.sign_package(package)
 
-        # Digest first: AuditLog.detail is capped at 255 characters and the
-        # digest is the only thing in the row that binds it to these bytes.
+        # Digest first: AuditLog.detail is capped at 255 characters and the digest binds the row to these bytes.
         record_package_event(
             request, package, "seal",
             f"sha256={package.manifest_sha256} sealed package {package.pk} "
@@ -330,9 +279,6 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def signature(self, request, pk=None):
-        """The detached signature and the key that made it, for anyone who
-        can read the package. The auditor fetches this to compare with the
-        bundle they hold."""
         package = self.get_object()
         if not package.manifest_signature:
             return Response({"signed": False, "algorithm": signing.ALGORITHM,
@@ -349,15 +295,13 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def withdraw(self, request, pk=None):
-        """Revoke every grant and close the package. The record remains."""
         package = self.get_object()
         if not access.can_assemble(request.user):
             raise PermissionDenied("You need the frameworks capability to withdraw a package.")
 
         with transaction.atomic():
-            # Held for update and read again: a seal in progress finishes first,
-            # so the withdrawn row carries its manifest instead of being written
-            # over by a copy read before it.
+            # Held for update and re-read: a seal in progress finishes first, so the withdrawn row carries its manifest
+            # rather than being written over by a copy read before it.
             package = EvidencePackage.objects.select_for_update().get(pk=package.pk)
             if package.status == EvidencePackage.Status.WITHDRAWN:
                 raise ValidationError({"detail": "Already withdrawn."})
@@ -372,15 +316,13 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                              f"withdrew package {package.pk}, revoking {revoked} grant(s)")
         webhooks.post_event(
             "package.withdrawn", f"Package withdrawn: {package.name}",
-            f"{revoked} grant(s) revoked by {package.withdrawn_by_name if hasattr(package, 'withdrawn_by_name') else request.user.get_username()}."
+            f"{revoked} grant(s) revoked by {package.withdrawn_by_name}."
             f"{' Reason: ' + package.withdrawn_reason if package.withdrawn_reason else ''}",
             path="/packages", severity="medium")
         return Response(EvidencePackageSerializer(package).data)
 
-    # ------------------------------------------------------------------ verify
     @action(detail=True, methods=["get"], throttle_classes=[PackageVerifyThrottle])
     def verify(self, request, pk=None):
-        """Re-hash the live files and compare with what was sealed."""
         package = self.get_object()
         drifted = verify_pins(package)
         sig = signing.signature_status(package) if package.manifest_json else "unsigned"
@@ -397,7 +339,6 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def manifest(self, request, pk=None):
-        """The sealed manifest, byte-for-byte."""
         package = self.get_object()
         if not package.manifest_json:
             raise ValidationError({"detail": "This package has not been sealed."})
@@ -408,7 +349,6 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], throttle_classes=[PackageWorkThrottle])
     def export(self, request, pk=None):
-        """The whole package as one self-verifying ZIP."""
         package = self.get_object()
         if package.status == EvidencePackage.Status.DRAFT:
             raise ValidationError({"detail": "Seal the package before exporting it."})
@@ -437,9 +377,8 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
 
 class SigningKeysView(APIView):
-    """The installation's package-signing public keys: the current one and
-    every retired one. Public on purpose: an auditor compares a bundle's key
-    with this list, so it must be readable without an account."""
+    """The package-signing public keys, current and retired. Public on purpose: an auditor compares a bundle's key with
+    this list and must be able to read it without an account."""
     authentication_classes = []
     permission_classes = [AllowAny]
 
@@ -449,15 +388,11 @@ class SigningKeysView(APIView):
 
         from .models import SigningKey
 
-        # Unauthenticated, so no workspace resolves from the caller. A named
-        # organisation is asked for by slug; without one this answers for the
-        # installation, which is what a single-workspace deployment wants.
+        # Unauthenticated, so no workspace resolves from the caller: a named organisation is asked for by slug.
         slug = (request.query_params.get("workspace") or "").strip()
 
-        # A public key is for publishing; a list of the tenants on a server is
-        # not. On an installation serving more than one, the caller names the
-        # organisation whose key they are checking, which an auditor holding a
-        # bundle always knows (REVIEWS.md (0.9.5 review), S-8).
+        # With several organisations the caller names the one whose key they check: a list of the tenants on a server
+        # is not for publishing (REVIEWS.md (0.9.5 review), S-8).
         active = Workspace.objects.filter(is_active=True)
         if not slug:
             if active.count() > 1:
@@ -465,25 +400,14 @@ class SigningKeysView(APIView):
                     {"detail": "This installation serves several organisations. "
                                "Name the one whose keys you want: ?workspace=<slug>."},
                     status=status.HTTP_400_BAD_REQUEST)
-            # Resolve to the one organisation rather than leaving None:
-            # scoping to None is unscoped, so the query below would return
-            # every key on the server, including the slugs of archived
-            # organisations, to an unauthenticated caller (0.9.5f).
+            # Resolve to the one organisation: scoping to None is unscoped, so the query below would return every key on
+            # the server, archived organisations' slugs included.
             workspace = active.first()
         else:
             workspace = Workspace.objects.filter(slug=slug).first()
 
-        # A slug nobody recognises is answered exactly as one that exists but
-        # has never signed anything: the same status, the same shape, an empty
-        # list. A 400 for the unknown slug and a 200 for a known one would let
-        # an unauthenticated caller read which organisations exist, one
-        # request at a time (S-8).
-        #
-        # This narrows that oracle without closing it: an organisation that
-        # has published a key still answers differently from one that has not.
-        # Closing it would mean authenticating the endpoint, and then an
-        # auditor could not check a bundle's signature without an account on
-        # the server it came from, which defeats the scheme (0.9.5f).
+        # An unknown slug answers like an organisation that never signed: a 400 would let an unauthenticated caller
+        # read which organisations exist. Narrows the oracle without closing it; closing it needs authentication.
         if slug and workspace is None:
             return Response({"algorithm": signing.ALGORITHM, "enabled": False,
                              "workspace": slug, "current": None, "keys": []})
@@ -504,12 +428,8 @@ class SigningKeysView(APIView):
 
 
 class CurrentSigningKeyView(APIView):
-    """The key that signs this workspace's packages, for the settings screen.
-
-    /api/health/ answers with no workspace, so on an installation serving
-    several organisations it cannot say which key signs yours; this answers
-    as the signed-in person, in their workspace. The default permissions
-    apply: an external auditor is given the fingerprint out of band."""
+    """The key that signs the signed-in person's workspace, for the settings screen: /api/health/ has no workspace, so
+    it cannot say which key signs yours. Default permissions; an external auditor gets the fingerprint out of band."""
 
     def get(self, request):
         info = signing.current_key_info(create=True)
@@ -520,8 +440,7 @@ class CurrentSigningKeyView(APIView):
 
 
 class PackageControlViewSet(viewsets.ModelViewSet):
-    """The workpaper rows. Conclusions are writable only by a live grantee;
-    the management response only by the organisation."""
+    """Workpaper rows: conclusions are writable only by a live grantee, the management response by the organisation."""
     serializer_class = PackageControlSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ["package", "design_conclusion", "operating_conclusion"]
@@ -548,13 +467,11 @@ class PackageControlViewSet(viewsets.ModelViewSet):
         touching_conclusions = bool(auditor_fields & set(data))
         touching_response = "management_response" in data
 
-        # Anything that is neither a conclusion nor the management response is
-        # snapshot data (control text, status, owner) in the signed manifest.
+        # Anything that is neither a conclusion nor the management response is snapshot data in the signed manifest.
         snapshot_fields = set(data) - auditor_fields - {"management_response"}
 
-        # Authorise the WHOLE request before writing any of it, so a PATCH
-        # cannot commit one field and then be refused for another, and a
-        # snapshot field sent alongside a conclusion still meets assert_open.
+        # Authorise the WHOLE request before writing any of it: a PATCH must not commit one field and then be refused
+        # for another, and a snapshot field sent with a conclusion must still meet assert_open.
         if touching_conclusions and access.live_grant(user, row.package) is None:
             raise PermissionDenied(
                 "Only the auditor this package was issued to can record a conclusion."
@@ -580,9 +497,8 @@ class PackageControlViewSet(viewsets.ModelViewSet):
                          responded_by_name=row.responded_by_name,
                          responded_at=row.responded_at)
         if snapshot_fields:
-            # Snapshot data is in the signed manifest, so the write queues behind
-            # a seal like every other write that changes it, and goes against the
-            # row as it is now, not as it was before the lock.
+            # Snapshot data is in the signed manifest: queue behind a seal like every write that changes it, and write
+            # against the row as it is now, not as it was before the lock.
             with transaction.atomic():
                 lock_open(row.package)
                 serializer.instance = type(row).objects.select_for_update().get(pk=row.pk)
@@ -593,8 +509,7 @@ class PackageControlViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You cannot change this package.")
-        # Same lock as sealing: a control removed while the manifest is being
-        # built would leave the bundle listing a row it no longer contains.
+        # Same lock as sealing: a control removed mid-build would leave the bundle listing a row it no longer contains.
         with transaction.atomic():
             lock_open(instance.package)
             instance.delete()
@@ -631,13 +546,8 @@ class PackageControlViewSet(viewsets.ModelViewSet):
 
 
 class PackageSampleViewSet(viewsets.ModelViewSet):
-    """Sampled items on a workpaper row.
-
-    Two writers, never at the same time: the organisation lists items while
-    the package is a draft (they are sealed into the manifest); the issued
-    auditor adds their own selections and records every result after sealing.
-    Results are the auditor's alone, like conclusions.
-    """
+    """Two writers, never together: the organisation lists items while the package is a draft (they are sealed into the
+    manifest); the issued auditor adds selections and records every result after sealing, as with conclusions."""
     serializer_class = PackageSampleSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ["package_control", "result", "sealed_in"]
@@ -682,7 +592,6 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
             assert_open(package)
         with transaction.atomic():
             if package.is_open:
-                # A sample item listed on an open package is in the manifest.
                 lock_open(package)
             sample = serializer.save(
                 selected_by=user, selected_at=timezone.now(),
@@ -697,20 +606,16 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         row = sample.package_control
         package = row.package
         data = serializer.validated_data
-        # A sample stays on the row it was listed on. Accepting a new
-        # package_control here would let anyone who can read one package move
-        # a sample into another (the related field is scoped to the workspace,
-        # not to the caller's packages), and a moved sample is written into
-        # that package's manifest at seal. Evidence rows refuse the same move.
+        # A sample stays on the control it was listed on: moving it would write it into another package's manifest at
+        # seal. Evidence rows refuse the same move.
         if "package_control" in data and data["package_control"].pk != row.pk:
             raise ValidationError({"package_control": "A sample cannot be moved to another control."})
         touching_result = bool(self.RESULT_FIELDS & set(data))
         touching_item = bool(self.ITEM_FIELDS & set(data))
         if package.status == EvidencePackage.Status.WITHDRAWN:
             assert_open(package)
-        # A body carrying neither a result nor an item field would reach save()
-        # unchecked, letting anyone who can read the package rewrite its
-        # sampling rows.
+        # A body with neither a result nor an item field would reach save() unchecked, letting any reader of the package
+        # rewrite its sampling rows.
         if not (touching_result or touching_item) and not access.can_assemble(user):
             raise PermissionDenied("You cannot change this package.")
         extra = {}
@@ -726,8 +631,7 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
                 if not access.can_assemble(user):
                     raise PermissionDenied("You cannot change this package.")
             else:
-                # Sealed: the manifest's items are fixed; an auditor may still
-                # correct the selections they added themselves.
+                # Sealed: the manifest's items are fixed; an auditor may still correct their own selections.
                 if sample.sealed_in or access.live_grant(user, package) is None:
                     raise PermissionDenied("Sample items in the sealed manifest cannot be changed.")
             if "evidence" in data:
@@ -792,9 +696,8 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You cannot change this package.")
         assert_open(row.package_control.package)
-        # What a row points AT is fixed once pinned. Re-pointing would skip the
-        # folder-permission check that pinning performs, and moving a row to
-        # another control could add evidence to an already-sealed package.
+        # What a row points AT is fixed once pinned: re-pointing would skip pinning's folder-permission check, and
+        # moving a row could add evidence to an already-sealed package.
         data = serializer.validated_data
         moved = data.get("package_control")
         if moved is not None and moved.pk != row.package_control_id:
@@ -818,8 +721,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _sealed_bytes(row):
-        """What /file/ and /preview/ serve: the bytes the row pinned
-        (snapshot.pinned_file), never a later version in their place."""
+        """What /file/ and /preview/ serve: the bytes the row pinned (``pinned_file``), never a later version's."""
         if row.document is None or not row.document.file:
             raise ValidationError({"detail": "This evidence file is no longer available."})
         monitor.refuse_if_quarantined(row.document)
@@ -829,18 +731,20 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
                                              "and no other file is served in its place."})
         return source, version
 
+    def _touch_grant(self, request, package):
+        grant = access.live_grant(request.user, package)
+        if grant is not None:
+            PackageGrant.objects.filter(pk=grant.pk).update(
+                last_accessed_at=timezone.now(), access_count=F("access_count") + 1)
+
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
-        """Preview a pinned artefact under the same grant rule as /file/."""
         from documents.views import preview_response
 
         row = self.get_object()
         source, version = self._sealed_bytes(row)
         package = row.package_control.package
-        grant = access.live_grant(request.user, package)
-        if grant is not None:
-            PackageGrant.objects.filter(pk=grant.pk).update(
-                last_accessed_at=timezone.now(), access_count=F("access_count") + 1)
+        self._touch_grant(request, package)
         record_package_event(
             request, package, "read",
             f"previewed evidence '{row.document_name}' from package {package.pk}",
@@ -850,19 +754,12 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
-        """The pinned bytes.
-
-        This is the folder-permission bypass, and the only one. get_queryset()
-        has already established that the caller may read this package, which
-        for an external auditor means a live grant on a sealed package.
-        """
+        """The pinned bytes, a folder-permission bypass: ``get_queryset()`` has already limited the caller to readable
+        packages (for an external auditor, a live grant on a sealed package)."""
         row = self.get_object()
         source, _ = self._sealed_bytes(row)
         package = row.package_control.package
-        grant = access.live_grant(request.user, package)
-        if grant is not None:
-            PackageGrant.objects.filter(pk=grant.pk).update(
-                last_accessed_at=timezone.now(), access_count=F("access_count") + 1)
+        self._touch_grant(request, package)
         record_package_event(
             request, package, "read",
             f"read evidence '{row.document_name}' from package {package.pk}",
@@ -942,8 +839,7 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
         if not access.can_assemble(self.request.user):
             raise PermissionDenied("You need the frameworks capability to revoke access.")
         if instance.revoked_at is not None:
-            # A second revoke (a stale tab, or a grant Withdraw already closed)
-            # must not overwrite who revoked it and when, or log it twice.
+            # A second revoke (stale tab, or after Withdraw) must not overwrite who revoked it, or log it twice.
             raise ValidationError({"detail": "This access was already revoked."})
         instance.revoked_at = timezone.now()
         instance.revoked_by = self.request.user

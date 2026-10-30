@@ -1,11 +1,5 @@
-"""
-Passkeys (WebAuthn) as a second factor, fully offline: a fake authenticator
-built on ``cryptography`` answers the browser's side of both ceremonies.
-
-The counter tests are the most important. A cloned key must be refused without
-dropping the account to password-only, and ``CloneTests`` pins that: the key is
-refused and the factor stays required.
-"""
+"""Passkeys (WebAuthn) as a second factor, offline: a fake authenticator answers the browser's side of both ceremonies.
+``CloneTests`` pins the rule that matters: a cloned key is refused and the factor stays required."""
 import hashlib
 import json
 import secrets
@@ -45,7 +39,6 @@ class FakeAuthenticator:
         self.rp_id = RP_ID
         self.origin = ORIGIN
 
-    # --- pieces --------------------------------------------------------------
     def cose(self):
         pub = self.key.public_key()
         if self.algorithm == wa.ES256:
@@ -85,7 +78,6 @@ class FakeAuthenticator:
             return self.key.sign(data, padding.PKCS1v15(), hashes.SHA256())
         return self.key.sign(data)
 
-    # --- ceremonies ----------------------------------------------------------
     def create(self, options, origin=None, rp_id=None, fmt="none"):
         client = self.client_data("webauthn.create", options["challenge"], origin)
         att = wa.cbor_dumps({"fmt": fmt, "attStmt": {}, "authData": self.auth_data(True, 0, rp_id)})
@@ -114,8 +106,6 @@ class PasskeyTestBase(APITestBase):
     def enrol(self, user, authenticator=None, name="Laptop", **create_kw):
         auth = authenticator or FakeAuthenticator()
         c = self.client_for(user)
-        # Enrolment is a change to the account's factors, so it takes the
-        # password, the same proof removing a key takes.
         opts = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json")
         self.assertEqual(opts.status_code, 200, opts.data)
         r = c.post("/api/auth/webauthn/register/", {
@@ -142,9 +132,6 @@ class PasskeyTestBase(APITestBase):
         }, format="json")
 
 
-# --------------------------------------------------------------------------- #
-# The protocol module on its own
-# --------------------------------------------------------------------------- #
 class ProtocolTests(APITestBase):
     def test_cbor_round_trips_and_refuses_what_authenticators_never_send(self):
         value = {1: 2, 3: -7, -1: 1, -2: b"\x01" * 32, "fmt": "none", "list": [1, -2, "x", True, None]}
@@ -181,7 +168,6 @@ class ProtocolTests(APITestBase):
         with self.assertRaises(wa.WebAuthnError) as cm:
             wa.verify_registration(auth.create(opts), challenge="xyz", rp_id=RP_ID, origins=[ORIGIN])
         self.assertEqual(cm.exception.code, "challenge")
-        # An attestation statement, if one arrives, is ignored rather than trusted.
         packed = wa.verify_registration(auth.create(opts, fmt="packed"), challenge="abc",
                                         rp_id=RP_ID, origins=[ORIGIN])
         self.assertEqual(packed.credential_id, ok.credential_id)
@@ -196,7 +182,6 @@ class ProtocolTests(APITestBase):
                                            origins=[ORIGIN], public_key_der=reg.public_key_der,
                                            algorithm=alg)
             self.assertEqual(got.sign_count, 1)
-            # A signature from a different key of the same kind does not verify.
             other = FakeAuthenticator(alg)
             other.credential_id = auth.credential_id
             with self.assertRaises(wa.WebAuthnError) as cm:
@@ -216,9 +201,6 @@ class ProtocolTests(APITestBase):
             wa.cose_to_public_key(cose)
 
 
-# --------------------------------------------------------------------------- #
-# Enrolment and sign-in through the API
-# --------------------------------------------------------------------------- #
 class EnrolAndLoginTests(PasskeyTestBase):
     def test_enrol_then_the_password_alone_is_a_challenge_and_the_passkey_completes_it(self):
         auth, r = self.enrol(self.manager)
@@ -227,7 +209,6 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertEqual(r.data["algorithm"], "ES256")
         self.assertTrue(r.data["factors"]["passkey"])
         self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="passkey enrolled: Laptop").exists())
-        # The account now has a second factor, and says so.
         me = self.client_for(self.manager).get("/api/users/me/").data
         self.assertTrue(me["mfa_enabled"])
         status = self.client_for(self.manager).get("/api/auth/mfa/status/").data
@@ -241,7 +222,6 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertEqual(options["allowCredentials"][0]["id"], wa.b64url_encode(auth.credential_id))
         self.assertEqual(options["allowCredentials"][0]["transports"], ["internal"])
         self.assertNotIn("access", r.data)
-        # No cookies and no tokens on the challenge step.
         self.assertEqual(r.cookies, {})
 
         ok = self.login_with("mia", auth)
@@ -253,9 +233,7 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertTrue(AuditLog.objects.filter(action="login", detail="signed in: mia").exists())
 
     def test_the_challenge_carries_integers_intact(self):
-        """The login response must not go through DRF's error-detail
-        stringification: the browser needs real numbers in pubKeyCredParams
-        and timeout."""
+        """The login response must not go through DRF's error-detail stringification: the browser needs real numbers."""
         self.enrol(self.owner)
         r = self.challenge("owen")
         self.assertIs(r.data["mfa_required"], True)
@@ -280,14 +258,13 @@ class EnrolAndLoginTests(PasskeyTestBase):
         cred = auth.create(opts["options"])
         self.assertEqual(c.post("/api/auth/webauthn/register/",
                                 {"state": opts["state"], "credential": cred}, format="json").status_code, 201)
-        # Replay of the same state: the row is gone.
         r = c.post("/api/auth/webauthn/register/", {"state": opts["state"], "credential": cred}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data["code"], "state")
-        # A wrong state is the same refusal, and an expired one is swept.
         opts = c.post("/api/auth/webauthn/register/options/", {"password": PASSWORD}, format="json").data
         WebAuthnChallenge.objects.update(expires_at=WebAuthnChallenge.objects.first().expires_at - mfa_lib_delta(600))
-        r = c.post("/api/auth/webauthn/register/", {"state": opts["state"], "credential": auth.create(opts["options"])}, format="json")
+        r = c.post("/api/auth/webauthn/register/",
+                   {"state": opts["state"], "credential": auth.create(opts["options"])}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data["code"], "state")
 
@@ -303,7 +280,8 @@ class EnrolAndLoginTests(PasskeyTestBase):
         }, format="json")
         self.assertEqual(bad.status_code, 401)
         self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="passkey refused (unknown)").exists())
-        self.assertTrue(AuditLog.objects.filter(action="login_failed", detail__contains="invalid second factor").exists())
+        self.assertTrue(AuditLog.objects.filter(
+            action="login_failed", detail__contains="invalid second factor").exists())
 
     def test_a_wrong_origin_is_refused_at_sign_in(self):
         auth, _ = self.enrol(self.owner)
@@ -353,9 +331,7 @@ class EnrolAndLoginTests(PasskeyTestBase):
                 self.assertEqual(r.data["code"], "limit")
 
     def test_enrolling_a_passkey_takes_the_account_password(self):
-        """Adding a factor takes the same proof as removing one. Otherwise a
-        hijacked session could add the attacker's own key and keep the
-        account for good."""
+        """Adding a factor takes the same proof as removing one, or a hijacked session could add its own key."""
         c = self.client_for(self.owner)
         r = c.post("/api/auth/webauthn/register/options/")
         self.assertEqual(r.status_code, 403, r.data)
@@ -369,11 +345,7 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertEqual(r.status_code, 200, r.data)
 
     def test_a_code_from_an_enrolled_factor_stands_in_for_the_password(self):
-        """An account signed in through an identity provider has no local
-        password to confirm with, but does have a factor."""
-        from accounts.models import MfaDevice
-        from accounts import mfa as mfa_lib
-
+        """An account signed in through an identity provider has no local password to confirm with, but has a factor."""
         user = self.owner
         secret = mfa_lib.generate_secret()
         MfaDevice.objects.create(user=user, secret=secret, enabled=True)
@@ -408,9 +380,6 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertEqual(self.login_with("owen", auth, origin=ORIGIN).status_code, 401)
 
 
-# --------------------------------------------------------------------------- #
-# Management: rename, remove, admin reset
-# --------------------------------------------------------------------------- #
 class ManagementTests(PasskeyTestBase):
     def test_list_rename_and_remove_with_password(self):
         auth, r = self.enrol(self.owner)
@@ -423,11 +392,9 @@ class ManagementTests(PasskeyTestBase):
         self.assertEqual(c.delete(f"/api/auth/webauthn/{pk}/", {"password": "wrong"}, format="json").status_code, 403)
         self.assertEqual(c.delete(f"/api/auth/webauthn/{pk}/", {"password": PASSWORD}, format="json").status_code, 200)
         self.assertFalse(WebAuthnCredential.objects.filter(pk=pk).exists())
-        # Nobody else's key is reachable through the same route.
         _, other = self.enrol(self.viewer)
         self.assertEqual(c.delete(f"/api/auth/webauthn/{other.data['id']}/", {"password": PASSWORD},
                                   format="json").status_code, 404)
-        # And with the last factor gone, the password alone signs in again.
         r = APIClient().post("/api/auth/token/", {"username": "owen", "password": PASSWORD}, format="json")
         self.assertEqual(r.status_code, 200)
 
@@ -439,15 +406,12 @@ class ManagementTests(PasskeyTestBase):
         self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="1 passkey(s) removed").exists())
 
 
-# --------------------------------------------------------------------------- #
-# The clone detector fails closed
-# --------------------------------------------------------------------------- #
 class CloneTests(PasskeyTestBase):
     def test_a_counter_that_does_not_advance_disables_the_key_but_not_the_requirement(self):
         auth, _ = self.enrol(self.owner)
-        self.assertEqual(self.login_with("owen", auth).status_code, 200)      # counter 1
-        self.assertEqual(self.login_with("owen", auth).status_code, 200)      # counter 2
-        # A clone signs with the counter it captured.
+        self.assertEqual(self.login_with("owen", auth).status_code, 200)
+        self.assertEqual(self.login_with("owen", auth).status_code, 200)
+        # A clone signs with the counter it captured (the second sign-in's).
         r = self.login_with("owen", auth, count=2)
         self.assertEqual(r.status_code, 401)
         row = WebAuthnCredential.objects.get(user=self.owner)
@@ -455,8 +419,7 @@ class CloneTests(PasskeyTestBase):
         self.assertIn("2 to 2", row.suspect_reason)
         self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="passkey refused (clone)").exists())
 
-        # The account still demands a second factor: the password alone is
-        # a challenge with nothing usable on offer, never a sign-in.
+        # The account still demands a second factor: the password alone is a challenge, never a sign-in.
         r = self.challenge("owen")
         # The codes issued with the key are the way back in; the key is not.
         self.assertEqual(r.data["factors"],
@@ -472,7 +435,6 @@ class CloneTests(PasskeyTestBase):
                                                   "passkey": {"state": "x", "credential": stale}}, format="json")
         self.assertEqual(r.status_code, 401)
 
-        # Recovery: another factor (here, the administrator) and re-enrolment.
         me = self.client_for(self.owner).get("/api/auth/webauthn/").data
         self.assertFalse(me["results"][0]["usable"])
         self.assertEqual(me["factors"]["passkey_suspect"], 1)
@@ -505,22 +467,17 @@ class CloneTests(PasskeyTestBase):
         self.assertEqual(self.login_with("owen", fresh).status_code, 200)
 
 
-# --------------------------------------------------------------------------- #
-# Backup codes belong to the account, so a passkey-only person has them
-# --------------------------------------------------------------------------- #
 class BackupCodeTests(PasskeyTestBase):
     def test_the_first_passkey_comes_with_backup_codes_that_sign_in(self):
         auth, r = self.enrol(self.owner)
         codes = r.data["backup_codes"]
         self.assertEqual(len(codes), 10)
         self.assertTrue(r.data["factors"]["backup_codes"])
-        # A second key does not reissue them.
         _, again = self.enrol(self.owner, name="Second")
         self.assertIsNone(again.data["backup_codes"])
         challenge = self.challenge("owen")
         self.assertEqual((challenge.data["factors"]["totp"], challenge.data["factors"]["backup_codes"]),
                          (False, True))
-        # A backup code is accepted as the `otp`, once.
         from django.core.cache import cache
         cache.clear()
         ok = APIClient().post("/api/auth/token/", {"username": "owen", "password": PASSWORD,
@@ -556,7 +513,6 @@ class BackupCodeTests(PasskeyTestBase):
         self.assertEqual(verify.status_code, 200, verify.data)
         self.assertIsNone(verify.data["backup_codes"])
         self.assertEqual(verify.data["backup_codes_remaining"], 10)
-        # And the passkey's codes still sign in beside the app.
         from django.core.cache import cache
         cache.clear()
         ok = APIClient().post("/api/auth/token/", {"username": "owen", "password": PASSWORD,
@@ -564,9 +520,6 @@ class BackupCodeTests(PasskeyTestBase):
         self.assertEqual(ok.status_code, 200)
 
 
-# --------------------------------------------------------------------------- #
-# Step-up on single sign-on accepts a passkey
-# --------------------------------------------------------------------------- #
 class SsoStepUpTests(PasskeyTestBase):
     def _ticket(self, client, user):
         ticket = secrets.token_urlsafe(32)
@@ -620,9 +573,6 @@ class SsoStepUpTests(PasskeyTestBase):
         self.assertFalse(step_up_needed(self.viewer, asserted=True))
 
 
-# --------------------------------------------------------------------------- #
-# helpers
-# --------------------------------------------------------------------------- #
 def mfa_lib_delta(seconds):
     from datetime import timedelta
     return timedelta(seconds=seconds)

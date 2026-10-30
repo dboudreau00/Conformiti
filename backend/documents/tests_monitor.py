@@ -1,5 +1,3 @@
-"""Scanner monitoring: the probe, the re-scan sweep, quarantine on every byte
-route, the health endpoint, the tray, and the outage email."""
 import threading
 from io import StringIO
 
@@ -91,7 +89,6 @@ class MonitorTests(ClamdMixin, APITestBase):
             self.assertEqual(monitor.scan_document(doc), "clean")
             doc.refresh_from_db()
             self.assertIsNotNone(doc.scanned_at)
-            # New definitions: the same bytes now match.
             self.clamd.forced = b"stream: Win.Test.EICAR_HDB-1 FOUND\0"
             self.assertEqual(monitor.scan_document(doc), "infected")
             doc.refresh_from_db()
@@ -106,10 +103,8 @@ class MonitorTests(ClamdMixin, APITestBase):
         self.assertEqual(c.get(f"/api/documents/{doc.pk}/preview/").status_code, 403)
         listed = c.get(f"/api/documents/{doc.pk}/").data
         self.assertEqual((listed["quarantined"], listed["scan_status"]), (True, "infected"))
-        # Managers and admins are told in the tray.
         self.assertIn("digest-quarantined", [i["key"] for i in build_feed(self.manager)])
         self.assertNotIn("digest-quarantined", [i["key"] for i in build_feed(self.viewer)])
-        # A later clean re-scan releases it, and that is recorded too.
         with self.scanning():
             self.clamd.forced = None
             self.assertEqual(monitor.scan_document(doc), "clean")
@@ -164,7 +159,6 @@ class MonitorTests(ClamdMixin, APITestBase):
             call_command("scan_evidence", "--all", stdout=StringIO())
             doc.refresh_from_db()
             self.assertEqual(doc.scan_status, "clean")
-            # Recently scanned files are skipped by the stale window.
             out = StringIO()
             call_command("scan_evidence", "--stale", "30", "--dry-run", stdout=out)
             self.assertIn("would be scanned: 0", out.getvalue())
@@ -190,16 +184,13 @@ class MonitorTests(ClamdMixin, APITestBase):
             self.assertEqual(len(mail.outbox), 2)
             self.assertIn("[Recovered]", mail.outbox[1].subject)
             self.assertNotIn("scanner-down", [i["key"] for i in build_feed(self.admin)])
-            # A second outage is a second alert.
             with self.scanning(CLAMAV_PORT=1):
                 self.assertEqual(run_scanner_watch(), "down")
             self.assertEqual(len(mail.outbox), 3)
 
     def test_a_sweep_counts_what_the_scanner_flags(self):
-        # Benign bytes and a forced verdict: writing a real EICAR file into
-        # MEDIA_ROOT gets it deleted by on-access antivirus on a developer
-        # box, and the sweep would then count an unreadable file instead of an
-        # infection.
+        # Benign bytes and a forced verdict: a real EICAR file in MEDIA_ROOT is deleted by on-access antivirus on a
+        # developer machine, and the count would then be an unreadable file instead of an infection.
         doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Test file", content=b"plain")
         with self.scanning():
             self.clamd.forced = b"stream: Win.Test.EICAR_HDB-1 FOUND\0"
@@ -219,7 +210,6 @@ class PackageQuarantineTests(ClamdMixin, PackageTestBase):
         c = self.client_for(self.auditor)
         self.assertEqual(c.get(f"/api/package-evidence/{item.pk}/file/").status_code, 403)
         self.assertEqual(c.get(f"/api/package-evidence/{item.pk}/preview/").status_code, 403)
-        # A PBC line's attached file is refused the same way.
         line = self.manager_client.post("/api/pbc-requests/", {"package": self.package.pk, "title": "x"},
                                         format="json").data
         pbc = self.manager_client.post("/api/pbc-items/", {"request": line["id"], "document": self.doc.pk},

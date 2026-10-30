@@ -1,18 +1,3 @@
-"""
-Governance models.
-
-Three related compliance rituals live here:
-
-* **Access reviews**: a point-in-time audit of every user account. Creating a
-  review snapshots each user's role, activity and folder grants into grid rows;
-  a reviewer records keep / modify / revoke per row and exports the evidence
-  as CSV.
-* **Meeting minutes**: recurring governance meetings (steering committees,
-  risk reviews) with a required number of occurrences per year, so the platform
-  can show whether the cadence is being met.
-* **Champion groups**: cross-departmental groups (e.g. security champions)
-  with an accountable owner and members tagged by the department they champion.
-"""
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -20,9 +5,6 @@ from django.utils import timezone
 from accounts.tenancy import TenantModel
 
 
-# --------------------------------------------------------------------------- #
-# User access reviews
-# --------------------------------------------------------------------------- #
 class AccessReview(TenantModel):
     class Status(models.TextChoices):
         OPEN = "open", "Open"
@@ -46,8 +28,7 @@ class AccessReview(TenantModel):
 
 
 class AccessReviewItem(TenantModel):
-    """One user's row in a review. Fields are snapshotted at creation so the
-    audit evidence stays stable even if the account changes later."""
+    """One user's row in a review; the snapshot fields keep the evidence stable if the account changes later."""
     tenant_parent = "review"
 
     class Decision(models.TextChoices):
@@ -61,7 +42,6 @@ class AccessReviewItem(TenantModel):
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="access_review_items",
     )
-    # --- snapshot ---
     username = models.CharField(max_length=150)
     full_name = models.CharField(max_length=200, blank=True)
     email = models.EmailField(blank=True)
@@ -71,7 +51,6 @@ class AccessReviewItem(TenantModel):
     last_login = models.DateTimeField(null=True, blank=True)
     folder_grants = models.PositiveIntegerField(default=0)
     capabilities = models.CharField(max_length=200, blank=True)
-    # --- decision ---
     decision = models.CharField(max_length=10, choices=Decision.choices, default=Decision.PENDING)
     decision_notes = models.CharField(max_length=300, blank=True)
     decided_by = models.ForeignKey(
@@ -87,9 +66,6 @@ class AccessReviewItem(TenantModel):
         return f"{self.review_id} · {self.username}"
 
 
-# --------------------------------------------------------------------------- #
-# Meeting minutes with a required yearly cadence
-# --------------------------------------------------------------------------- #
 class MeetingSeries(TenantModel):
     name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
@@ -136,9 +112,6 @@ class MeetingMinute(TenantModel):
         return f"{self.series.name}: {self.date}"
 
 
-# --------------------------------------------------------------------------- #
-# Champion groups (inter-departmental owners)
-# --------------------------------------------------------------------------- #
 class ChampionGroup(TenantModel):
     name = models.CharField(max_length=160)
     purpose = models.TextField(blank=True)
@@ -179,12 +152,6 @@ class GroupMember(TenantModel):
 
 
 class Risk(TenantModel):
-    """
-    A risk-register entry: a gap, finding, or exposure with an owner, a
-    5x5 likelihood/impact assessment, a treatment decision, and a due date.
-    Remediation progress lives in the linked notes and the optional Jira key.
-    """
-
     class Status(models.TextChoices):
         OPEN = "open", "Open"
         MITIGATING = "mitigating", "Mitigating"
@@ -220,7 +187,6 @@ class Risk(TenantModel):
         "compliance.Control", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="risks",
     )
-    # A vendor risk names the vendor, so the register can roll up per party.
     vendor = models.ForeignKey(
         "vendors.Vendor", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="risks",
@@ -250,7 +216,6 @@ class Risk(TenantModel):
 
     @property
     def rating(self):
-        """Standard 5x5 banding: 1-4 low, 5-9 moderate, 10-15 high, 16-25 critical."""
         s = self.score
         if s >= 16:
             return "critical"
@@ -270,7 +235,6 @@ class Risk(TenantModel):
 
 
 class RiskNote(TenantModel):
-    """A progress / discussion note on a risk (the remediation trail)."""
     tenant_parent = "risk"
     risk = models.ForeignKey(Risk, on_delete=models.CASCADE, related_name="notes")
     author = models.ForeignKey(

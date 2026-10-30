@@ -1,8 +1,4 @@
-"""Regression tests for the 0.9.0 adversarial review.
-
-Each test names the defect it locks shut. See REVIEWS.md (0.9.0 review) for the
-full set of findings.
-"""
+"""Write rules on sealed packages, bundle signature coverage, grant-list disclosure and per-workspace signing keys."""
 from django.core.files.base import ContentFile
 
 from accounts.models import Workspace
@@ -13,11 +9,9 @@ from .tests import PackageTestBase
 
 
 class SealedManifestTests(PackageTestBase):
-    """A sealed package's snapshotted fields are what the signature covers."""
-
     def setUp(self):
         super().setUp()
-        self.add_control()  # pins today's visible evidence for the control
+        self.add_control()
         self.row = PackageControl.objects.get(package=self.package)
         self.evidence = PackageEvidence.objects.get(package_control=self.row)
         self.seal()
@@ -25,8 +19,6 @@ class SealedManifestTests(PackageTestBase):
         self.auditor_client = self.client_for(self.auditor)
 
     def test_a_snapshot_field_cannot_ride_along_with_a_conclusion(self):
-        """The auditor's conclusion and a manifest field in one PATCH must not
-        save the manifest field without reaching assert_open."""
         before = self.row.population_size
         r = self.auditor_client.patch(
             f"/api/package-controls/{self.row.pk}/",
@@ -38,9 +30,6 @@ class SealedManifestTests(PackageTestBase):
         self.assertEqual(self.row.design_conclusion, "pending")
 
     def test_a_refused_mixed_write_commits_nothing(self):
-        """The management response is the organisation's. An auditor sending
-        it alongside their own conclusion must not have the conclusion
-        committed before the 403 fires."""
         r = self.auditor_client.patch(
             f"/api/package-controls/{self.row.pk}/",
             {"design_conclusion": "no_exceptions", "management_response": "Forged"},
@@ -51,8 +40,6 @@ class SealedManifestTests(PackageTestBase):
         self.assertEqual(self.row.design_conclusion, "pending")
 
     def test_a_pinned_artefact_cannot_be_repointed(self):
-        """Re-pointing would skip the folder-permission check that pinning
-        performs, exposing any document in the workspace."""
         secret = make_secret_doc(self)
         r = self.manager_client.patch(
             f"/api/package-evidence/{self.evidence.pk}/",
@@ -90,9 +77,6 @@ class EvidenceByteTests(PackageTestBase):
     """Replacing a document's bytes is `new_version`'s job, not PATCH's."""
 
     def test_patching_a_file_is_refused(self):
-        """A multipart PATCH must not replace the stored bytes, which would
-        bypass the folder-edit check, the malware scan, the archived version
-        and the version bump."""
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         before = self.doc.version
@@ -107,8 +91,6 @@ class EvidenceByteTests(PackageTestBase):
         self.assertEqual(self.doc.file.read(), b"policy bytes")
 
     def test_taking_folder_ownership_needs_manage(self):
-        """The owner IS a manager, so granting yourself ownership with only
-        edit access would be a self-service promotion."""
         from documents.models import EDIT, FolderPermission
 
         folder = self.tree.ctrl2
@@ -121,9 +103,6 @@ class EvidenceByteTests(PackageTestBase):
 
 
 class ManifestIdentityTests(PackageTestBase):
-    """One signing key serves the installation, so the signed bytes have to
-    say which organisation produced the bundle."""
-
     def test_the_sealed_manifest_names_the_workspace(self):
         import json
 
@@ -135,12 +114,7 @@ class ManifestIdentityTests(PackageTestBase):
 
 
 class BundleSignatureCoverageTests(PackageTestBase):
-    """The signature has to cover what the auditor reads.
-
-    manifest.sig is made at seal and covers manifest.json alone; the
-    conclusions land in controls.csv and samples.csv afterwards. Rewriting
-    those must not leave verify.py printing VALID.
-    """
+    """Rewriting the auditor's workpaper (controls.csv, samples.csv) must not leave verify.py printing VALID."""
 
     def export(self):
         import io as _io
@@ -162,8 +136,6 @@ class BundleSignatureCoverageTests(PackageTestBase):
         self.assertIn("SHA256SUMS", names)
         self.assertIn("SHA256SUMS.sig", names)
         self.assertIn("sums-key.pub", names)
-        # Everything the auditor reads is inside SHA256SUMS, so signing it
-        # covers them transitively.
         listed = {line.split("  ", 1)[1]
                   for line in zf.read("SHA256SUMS").decode().splitlines() if line.strip()}
         for member in ("manifest.json", "controls.csv", "samples.csv", "trail.csv"):
@@ -179,14 +151,12 @@ class BundleSignatureCoverageTests(PackageTestBase):
         with tempfile.TemporaryDirectory() as tmp:
             zf.extractall(tmp)
             root = Path(tmp)
-            # A clean bundle verifies.
             ok = subprocess.run([sys.executable, "verify.py", "."], cwd=root,
                                 capture_output=True, text=True, timeout=300)
             self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
             self.assertIn("over SHA256SUMS", ok.stdout)
 
-            # Rewrite the auditor's workpaper and regenerate the file list to
-            # match: the whole point of signing SHA256SUMS is that this fails.
+            # Rewrite the workpaper and regenerate the file list to match: only the SHA256SUMS signature can still fail.
             import hashlib
 
             controls = root / "controls.csv"
@@ -224,9 +194,7 @@ class BundleSignatureCoverageTests(PackageTestBase):
 
 
 class GrantListDisclosureTests(PackageTestBase):
-    """L-1, 0.9.5h. PackageGrantViewSet filters a grantee to their own row on
-    purpose; the package payload must match, or two audit firms issued the
-    same sealed package would see each other's people by name."""
+    """The package payload must match PackageGrantViewSet, which shows a grantee only their own row."""
 
     def _two_firms(self):
         import datetime as dt
@@ -237,8 +205,7 @@ class GrantListDisclosureTests(PackageTestBase):
         from attestations.models import PackageGrant
         from testutils import make_user
 
-        # A grant only reaches a sealed package, which is the state a package
-        # is in when anybody outside the organisation can see it at all.
+        # A grant only reaches a sealed package, the only state in which anybody outside the organisation can see it.
         from attestations.models import EvidencePackage
 
         self.package.status = EvidencePackage.Status.SEALED
@@ -269,12 +236,8 @@ class GrantListDisclosureTests(PackageTestBase):
 
 
 class PerWorkspaceKeyTests(PackageTestBase):
-    """Each organisation signs with its own key, so the fingerprint an auditor
-    is told to expect identifies the client, not the installation."""
-
     def test_two_workspaces_sign_with_different_keys(self):
         from accounts import tenancy
-        from accounts.models import Workspace
 
         from . import signing
 
@@ -289,8 +252,6 @@ class PerWorkspaceKeyTests(PackageTestBase):
         self.assertTrue(here and there)
         self.assertNotEqual(here, there, "each workspace needs its own key")
 
-        # Derivation is deterministic: the same workspace always gets the same
-        # key, so a published fingerprint stays valid across restarts.
         with tenancy.scoped(beta):
             self.assertEqual(signing.current_key_info(create=True)["key_id"], there)
 
@@ -315,10 +276,8 @@ class PerWorkspaceKeyTests(PackageTestBase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["workspace"], "default")
         self.assertTrue(any(k["current"] for k in r.data["keys"]))
-        # A name nobody recognises answers exactly as an organisation that
-        # exists and has never signed anything: same status, same shape, empty
-        # list. A 400 for the unknown slug would leave presence readable,
-        # because a slug that exists answers 200 (0.9.5f, L-2).
+        # An unknown name answers like an organisation that never signed (same status and shape, empty list): a 400
+        # would leave presence readable, because a slug that exists answers 200.
         unknown = self.client_for(self.manager).get("/api/signing-keys/", {"workspace": "nope"})
         self.assertEqual(unknown.status_code, 200, unknown.data)
         self.assertEqual(unknown.data["keys"], [])

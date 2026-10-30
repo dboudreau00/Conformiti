@@ -1,9 +1,5 @@
-"""A server whose clock steps back, as a virtual machine's does after a sleep or a time sync, must not sign out the person who
-has just signed in: the token it minted a moment ago is dated a second or two ahead of the clock that now checks it.
-
-Found on a clean Docker install under WSL: one sign-in in a few dozen was followed by a 401 from the session probe, whose
-response ``Date`` header was two seconds behind the sign-in's. PyJWT refuses a token whose ``iat`` is ahead of the checking
-clock, and the project set no leeway."""
+"""A clock that steps back (a VM after a sleep or time sync) must not sign out the person who just signed in: PyJWT
+refuses a token whose ``iat`` is ahead of the checking clock, so a small leeway is configured."""
 from datetime import timedelta
 
 from django.conf import settings

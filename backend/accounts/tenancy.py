@@ -1,37 +1,5 @@
-"""Workspaces: one installation serving several organisations, each seeing
-only its own.
-
-How it works
-------------
-* ``accounts.Workspace`` is the tenant. Every model an organisation owns
-  inherits :class:`TenantModel`, which adds a ``workspace`` foreign key and a
-  manager whose querysets carry ``WHERE workspace_id = <active>`` whenever a
-  workspace is *active* on the current thread of execution.
-* The active workspace lives in a context variable. For an API request,
-  :class:`WorkspaceMiddleware` installs a resolver that reads the workspace
-  off the authenticated person the first time a tenant query runs (DRF
-  authenticates inside the view, after middleware, so it has to be lazy);
-  a superuser may name another workspace in an ``X-Workspace`` header. The
-  variable is restored when the request ends, so nothing leaks between
-  requests on a reused worker. Tasks and commands activate one explicitly
-  with :func:`scoped` and walk them all with :func:`for_each_workspace`.
-* A row saved without a workspace takes it from its declared parent
-  (``tenant_parent = "folder"``) or from the active workspace, and refuses
-  otherwise: a background job cannot file something into the wrong
-  organisation by omission.
-* No active workspace means no filter. That is right for migrations,
-  ``createsuperuser`` and jobs that walk every workspace, and wrong for a
-  request, which is why a person with no workspace is refused (403) and why
-  the escape hatch is spelled :func:`unscoped` and used in three places.
-
-The filter is added the first time a queryset is chained with a workspace
-active, so a queryset built at import time (``queryset = Model.objects.all()``
-on a viewset, the ``queryset=`` of a serializer field) is scoped the moment
-DRF calls ``.all()`` on it inside a request. The condition compares against
-the workspace active *when the query runs* (:class:`ActiveWorkspace`), so a
-pinned queryset never shows another workspace's rows, and shows none when
-nothing is active.
-"""
+"""Tenant isolation: a TenantModel queryset is pinned to the active workspace. With none active it is unfiltered,
+right for migrations and jobs, wrong for a request, so a person with no workspace is refused (403)."""
 import contextvars
 import logging
 from contextlib import contextmanager
@@ -47,11 +15,7 @@ HEADER = "HTTP_X_WORKSPACE"
 
 
 class UnscopedRead(RuntimeError):
-    """A tenant queryset was about to run without its workspace condition.
-
-    Raised so the query fails instead of answering with every organisation's
-    rows.
-    """
+    """A queryset that cannot be scoped fails with this instead of returning every organisation's rows."""
 
 # Holds an int (workspace id), a _RequestResolver, or None.
 _active = contextvars.ContextVar("conformiti.workspace", default=None)
@@ -61,9 +25,6 @@ class NoActiveWorkspace(RuntimeError):
     """Saving a tenant row with nothing to tell which organisation owns it."""
 
 
-# --------------------------------------------------------------------------- #
-# The active workspace
-# --------------------------------------------------------------------------- #
 def current_id():
     """Id of the active workspace, or None when nothing is active."""
     value = _active.get()
@@ -73,7 +34,6 @@ def current_id():
 
 
 def current():
-    """The active :class:`Workspace`, or None."""
     wid = current_id()
     if wid is None:
         return None
@@ -83,8 +43,7 @@ def current():
 
 
 def activate(workspace):
-    """Make ``workspace`` (an instance or an id) active until further notice.
-    Prefer :func:`scoped` outside the test runner."""
+    """Make ``workspace`` (an instance or id) active until further notice. Outside the test runner use scoped()."""
     _active.set(_id_of(workspace))
 
 
@@ -103,8 +62,7 @@ def scoped(workspace):
 
 
 def unscoped():
-    """Run the block with no workspace active: every row of every organisation.
-    Only for the platform-level views that need it."""
+    """Run the block with no workspace active, so every organisation's rows show. Only for platform-level views."""
     return scoped(None)
 
 
@@ -121,8 +79,6 @@ def for_each_workspace(include_inactive=False):
 
 
 def default_workspace():
-    """The workspace an installation starts with, and the one single-tenant
-    deployments never leave. Created by the migration; recreated if lost."""
     from .models import Workspace
 
     ws, _ = Workspace.objects.get_or_create(slug=DEFAULT_SLUG, defaults={"name": "Default"})
@@ -130,8 +86,6 @@ def default_workspace():
 
 
 def organisation_name():
-    """What to call the organisation in outbound mail: the workspace's name
-    once there is more than one, else the installation-wide setting."""
     from django.conf import settings
 
     from .models import Workspace
@@ -148,19 +102,13 @@ def _id_of(workspace):
     return workspace if isinstance(workspace, int) else workspace.pk
 
 
-# --------------------------------------------------------------------------- #
-# Resolving the workspace of a request
-# --------------------------------------------------------------------------- #
 def workspace_id_for(user, wanted=None):
-    """Which workspace ``user`` works in. ``wanted`` is the X-Workspace header:
-    honoured for a superuser, ignored for everyone else (they are where they
-    are). Raises PermissionDenied when the account has nowhere to go."""
+    """Which workspace ``user`` works in. ``wanted`` (the X-Workspace header) is honoured for a superuser only.
+    Raises PermissionDenied when the account has nowhere to go."""
     from .models import Workspace
 
-    # Archived workspaces are refused at sign-in and by the authentication
-    # class, which loads the workspace in the same query as the user; here
-    # only a workspace already on the instance is consulted, so a request
-    # costs no extra query.
+    # Archived workspaces are also refused at sign-in and by the authentication class. Only a workspace already on the
+    # instance is read here, so a request costs no extra query.
     cached = user._state.fields_cache.get("workspace") if user.workspace_id else None
     if cached is not None and not cached.is_active and not user.is_superuser:
         raise PermissionDenied("This workspace is archived.")
@@ -183,9 +131,8 @@ def workspace_id_for(user, wanted=None):
 
 
 class _RequestResolver:
-    """Installed by the middleware; resolves and caches the request's
-    workspace the first time a tenant query needs it. Re-entrant: resolving
-    the user itself runs a User query, which must stay unscoped."""
+    """Resolves and caches the request's workspace on the first tenant query. Re-entrant: resolving the user runs a
+    User query, which must stay unscoped."""
 
     __slots__ = ("request", "_busy")
 
@@ -212,9 +159,8 @@ class _RequestResolver:
 
 
 class WorkspaceMiddleware:
-    """Give every request its own resolver and put things back afterwards.
-    Must sit inside AuthenticationMiddleware (so the admin's session user is
-    visible) and outside AuditLogMiddleware (which writes a tenant row)."""
+    """A resolver per request, put back afterwards; lazy because DRF authenticates after middleware. Must sit inside
+    AuthenticationMiddleware and outside AuditLogMiddleware, which writes a tenant row."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -235,15 +181,9 @@ def request_workspace(request):
     return Workspace.objects.filter(pk=wid).first() if wid else None
 
 
-# --------------------------------------------------------------------------- #
-# The scoped queryset, manager and model
-# --------------------------------------------------------------------------- #
 class ActiveWorkspace(models.Expression):
-    """A SQL parameter that is the active workspace id at the moment the
-    query is compiled. Pinning with this rather than a literal means a
-    queryset built under one workspace (or at import time in a test run,
-    where one is always active) evaluates in whichever is active when it
-    runs, and in none at all when nothing is."""
+    """The active workspace id, read when the query compiles rather than when it is built: a pinned queryset never
+    shows another workspace's rows, and shows none when nothing is active."""
 
     def __init__(self):
         super().__init__(output_field=models.IntegerField())
@@ -274,11 +214,8 @@ class TenantQuerySet(models.QuerySet):
         if current_id() is None:
             return self  # nothing active: migrations, createsuperuser, jobs that walk every workspace
         if self.query.is_sliced or self.query.combinator:
-            # A LIMIT or a UNION is already fixed, so the workspace condition
-            # can no longer be added, and returning the queryset as it is
-            # would hand back every organisation's rows. Managers pin before
-            # anything can be sliced, so getting here means the queryset was
-            # built with no workspace active and is being read inside one.
+            # A sliced or UNIONed query cannot take the condition, and returning it as it is would hand back every
+            # organisation's rows. Managers pin before any slice, so this queryset was built with nothing active.
             raise UnscopedRead(
                 "This queryset was built with no workspace active and cannot be "
                 "scoped now that one is. Build it inside the workspace, or read "
@@ -288,10 +225,8 @@ class TenantQuerySet(models.QuerySet):
         self.query.add_q(models.Q(workspace_id=ActiveWorkspace()))
         return self
 
-    # _chain() covers everything that derives a new queryset, but a queryset
-    # can also be built in one scope and read in another with nothing derived
-    # in between. These are the four ways a TenantQuerySet reaches the
-    # database, and each pins on the way past.
+    # _chain() pins derived querysets; these are the other ways one reaches the database, built in one scope and
+    # read in another with nothing derived in between.
     def _fetch_all(self):
         self._pin()
         super()._fetch_all()
@@ -320,28 +255,11 @@ class TenantManager(models.Manager.from_queryset(TenantQuerySet)):
 
 
 class TenantUserManager(UserManager.from_queryset(TenantQuerySet)):
-    """UserManager (createsuperuser and friends) with the workspace filter."""
-
     def get_queryset(self):
         return super().get_queryset()._pin()
 
     def create_superuser(self, username, email=None, password=None, **extra_fields):
-        """``createsuperuser`` (and ``--noinput`` with DJANGO_SUPERUSER_*)
-        ends here, normally with no workspace active.
-
-        The password is held to AUTH_PASSWORD_VALIDATORS. Stock Django skips
-        them for ``--noinput`` and offers to bypass them interactively, and
-        the first administrator of a security product is the last account
-        that should keep a password the product refuses everywhere else.
-
-        The account is attached to the workspace a superuser with none would
-        land in anyway: the first one not archived, else Default. With no
-        workspace it could sign in to /admin/ and then be treated as
-        anonymous, because the session's user lookup is pinned to the
-        workspace the request resolves to and a row with no workspace matches
-        none. A workspace given explicitly, or one active around the call,
-        takes precedence.
-        """
+        # Held to AUTH_PASSWORD_VALIDATORS even for --noinput, which stock Django exempts.
         if password is not None:
             from django.contrib.auth.password_validation import validate_password
             from django.core.exceptions import ValidationError
@@ -353,6 +271,8 @@ class TenantUserManager(UserManager.from_queryset(TenantQuerySet)):
                     "Superuser not created. The password must pass this installation's "
                     "password policy, with no bypass. " + " ".join(err.messages)
                 ) from err
+        # With no workspace the account could sign in to /admin/ and then be treated as anonymous: the session's user
+        # lookup is pinned to the request's workspace, which matches no row without one.
         if current_id() is None and "workspace" not in extra_fields and "workspace_id" not in extra_fields:
             from .models import Workspace
 
@@ -363,8 +283,7 @@ class TenantUserManager(UserManager.from_queryset(TenantQuerySet)):
 
 
 class TenantModel(models.Model):
-    """Inherit to make a model belong to a workspace. Set ``tenant_parent`` to
-    the name of the foreign key a new row inherits its workspace from."""
+    """Base of org-owned models. ``tenant_parent`` names the foreign key a new row inherits its workspace from."""
 
     tenant_parent = None
 
@@ -378,7 +297,6 @@ class TenantModel(models.Model):
         abstract = True
 
     def assign_workspace(self):
-        """Fill ``workspace`` from the parent row, else the active workspace."""
         if self.workspace_id is not None:
             return self.workspace_id
         wid = None
@@ -399,13 +317,9 @@ class TenantModel(models.Model):
         super().save(*args, **kwargs)
 
 
-# --------------------------------------------------------------------------- #
-# DRF helpers
-# --------------------------------------------------------------------------- #
 class CurrentWorkspaceDefault:
-    """``serializers.HiddenField(default=CurrentWorkspaceDefault())``: lets a
-    per-workspace unique constraint validate as 400 instead of failing as an
-    IntegrityError, and stamps the row on create."""
+    """For ``serializers.HiddenField(default=CurrentWorkspaceDefault())``: a per-workspace unique constraint then
+    validates as 400 instead of failing as an IntegrityError."""
 
     requires_context = True
 
@@ -420,7 +334,6 @@ class CurrentWorkspaceDefault:
 
 
 def workspace_option(parser):
-    """``--workspace SLUG`` for management commands that act on one."""
     parser.add_argument(
         "--workspace", default=DEFAULT_SLUG, metavar="SLUG",
         help=f"Which workspace to act on (default: {DEFAULT_SLUG}).",

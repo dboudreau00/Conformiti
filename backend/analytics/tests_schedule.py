@@ -1,5 +1,3 @@
-"""The lead schedule: one row per framework on the dashboard, from the same
-scoring pass as the headline, and a summary that scores the programme once."""
 from unittest import mock
 
 from django.db import connection
@@ -32,9 +30,7 @@ def add_framework(key, statuses):
 class ScheduleTests(APITestBase):
     def setUp(self):
         super().setUp()
-        # tfw: two controls. alpha: three, one of them not applicable and one
-        # linked as evidence. omega: nothing but a not applicable control that
-        # still has a document linked to it.
+        # tfw: 2 controls; alpha: 3 (one N/A, one with evidence); omega: one N/A control with a document linked.
         self.alpha, (self.a1, self.a2, self.a3) = add_framework(
             "alpha", ["implemented", "in_progress", "not_applicable"])
         self.omega, (self.o1,) = add_framework("omega", ["not_applicable"])
@@ -59,14 +55,12 @@ class ScheduleTests(APITestBase):
         self.assertEqual(alpha["applicable"], 2)
         self.assertEqual(set(alpha["bands"]), set(BANDS))
         self.assertEqual(sum(alpha["bands"].values()), 2)
-        # The row's score is the mean of its applicable controls' scores, the
-        # way the headline is for the programme.
         expected = [
-            scoring.score_control(scoring.annotate(Control.objects.filter(pk=c.pk), self.admin).get(), self.admin)["score"]
+            scoring.score_control(
+                scoring.annotate(Control.objects.filter(pk=c.pk), self.admin).get(), self.admin)["score"]
             for c in (self.a1, self.a2)
         ]
         self.assertEqual(alpha["score"], round(sum(expected) / 2))
-        # pct stays the implemented share, a different figure with a different name.
         self.assertEqual(alpha["pct"], 50)
 
     def test_a_framework_with_nothing_applicable_has_no_score_but_counts_its_evidence(self):
@@ -87,7 +81,6 @@ class ScheduleTests(APITestBase):
             self.assertEqual(sum(f["bands"][band] for f in rows), n, band)
 
     def test_a_viewer_sees_the_same_schedule_as_a_manager(self):
-        """Aggregates count every folder, like the controls block beside them."""
         self.assertEqual(self.summary(self.viewer)["frameworks"], self.summary(self.manager)["frameworks"])
 
     def test_rows_keep_the_order_by_name(self):

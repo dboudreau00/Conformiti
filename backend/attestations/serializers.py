@@ -1,5 +1,4 @@
-"""Serializers for evidence packages. Explicit field lists everywhere: a
-`__all__` here would publish the forensic storage path."""
+"""Explicit field lists only: ``__all__`` would publish the forensic storage path."""
 from rest_framework import serializers
 
 from .models import (
@@ -21,12 +20,7 @@ class PbcItemSerializer(serializers.ModelSerializer):
                             "attached_by_name", "attached_at"]
 
     def __init__(self, *args, **kwargs):
-        """A document or a request the caller cannot see is a missing id.
-
-        Both fields otherwise accept any row in the workspace, and the view
-        then answers 403. That 403 confirms the id. The 400 a missing id
-        already gets does not.
-        """
+        """Unreadable documents and requests count as missing ids: a 403 would confirm that they exist."""
         super().__init__(*args, **kwargs)
         from documents.access import accessible_folder_ids
         from documents.models import Document
@@ -66,18 +60,8 @@ class PbcRequestSerializer(serializers.ModelSerializer):
     can = serializers.SerializerMethodField()
 
     def __init__(self, *args, **kwargs):
-        """Narrow ``assignee`` to the people this caller may already name.
-
-        An external auditor may raise a request on a package they hold, but
-        the people are the organisation's. If the field accepted any account
-        in the workspace and answered with ``assignee_name``, an issued
-        auditor could read the staff directory that ``/api/users/`` refuses
-        them, one sequential pk at a time.
-
-        The queryset is emptied rather than checked with a permission: a pk
-        that exists and a pk that does not then produce the same 400, whereas
-        a 403 for one and a 400 for the other would still be an oracle.
-        """
+        """Empty ``assignee`` for an external auditor: the field would leak ``assignee_name``, the staff directory that
+        ``/api/users/`` refuses them. Emptied rather than refused, so a real pk and a missing one answer alike."""
         super().__init__(*args, **kwargs)
         from accounts.permissions import is_external_auditor
 
@@ -86,9 +70,6 @@ class PbcRequestSerializer(serializers.ModelSerializer):
             user = getattr(self.context.get("request"), "user", None)
             if is_external_auditor(user):
                 field.queryset = field.queryset.none()
-        # Same rule as a sample's control. An id in a package this caller
-        # cannot read has to be "does not exist", not a 400 that says the
-        # control is real and simply in some other package.
         self.fields["package_control"] = ReadablePackageControlField(allow_null=True, required=False)
 
     class Meta:
@@ -122,8 +103,7 @@ class PbcRequestSerializer(serializers.ModelSerializer):
         return (obj.due_date - timezone.localdate()).days
 
     def get_can(self, obj):
-        """What the caller may do to this line, so the screen shows only the
-        buttons that will work. Mirrors the checks in pbc_views."""
+        """What the caller may do to this line, for the screen; must mirror the checks in pbc_views."""
         from . import access
 
         request = self.context.get("request")
@@ -146,13 +126,8 @@ class PbcRequestSerializer(serializers.ModelSerializer):
 
 
 class ReadablePackageControlField(serializers.PrimaryKeyRelatedField):
-    """A control row of a package the caller can read.
-
-    Scoped per request, so an id that does not exist and an id in a package
-    the caller cannot read get the same "does not exist" answer. Checking
-    readability afterwards in the view answered 403 for the second, which
-    told anyone in the workspace which row ids belong to packages hidden
-    from them."""
+    """A control row of a package the caller can read. Scoped per request so an unreadable id answers "does not exist"
+    like a missing one: a 403 afterwards would reveal which row ids belong to hidden packages."""
 
     def get_queryset(self):
         from . import access
@@ -190,8 +165,6 @@ class PackageSampleSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        """An exception has to say what the exception was; a bare 'fail' is
-        useless to the person reading the workpaper next year."""
         merged = {
             "result": getattr(self.instance, "result", PackageSample.Result.PENDING),
             "exception_note": getattr(self.instance, "exception_note", ""),
@@ -203,8 +176,7 @@ class PackageSampleSerializer(serializers.ModelSerializer):
 
 
 class PackageEvidenceSerializer(serializers.ModelSerializer):
-    # `package_control` is chosen when the artefact is pinned and never moves:
-    # re-parenting a row would put evidence inside a sealed package.
+    # Chosen when the artefact is pinned and never moves: re-parenting would put evidence inside a sealed package.
     package_control = ReadablePackageControlField()
 
     download_url = serializers.SerializerMethodField()
@@ -212,8 +184,7 @@ class PackageEvidenceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PackageEvidence
-        # storage_name / storage_path are deliberately absent: they are the
-        # unauthenticated route to the bytes.
+        # storage_name and storage_path stay out: they are the unauthenticated route to the bytes.
         fields = [
             "id", "package_control", "document", "ordinal", "document_name",
             "pinned_version", "size_bytes", "hash_algorithm", "content_sha256",
@@ -233,11 +204,7 @@ class PackageEvidenceSerializer(serializers.ModelSerializer):
         return f"/package-evidence/{obj.pk}/file/"
 
     def get_integrity(self, obj):
-        """Cheap check: does the live document still carry the pinned version?
-
-        A full re-hash happens at seal and at export; doing it on every list
-        response would read every file on every page load.
-        """
+        """Version check only: a re-hash per list response would read every file on every page load."""
         if obj.document_id is None:
             return "detached"
         return "current" if obj.document.version == obj.pinned_version else "superseded"
@@ -279,8 +246,6 @@ class PackageControlSerializer(serializers.ModelSerializer):
         return counts
 
     def validate(self, attrs):
-        """A "not tested" conclusion has to say why. An auditor reading this
-        package next year cannot ask."""
         merged = {**{
             "design_conclusion": getattr(self.instance, "design_conclusion", ""),
             "operating_conclusion": getattr(self.instance, "operating_conclusion", ""),
@@ -346,8 +311,7 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
         ]
 
     def get_control_count(self, obj):
-        # Annotated by the viewset's queryset for the list; a lone instance
-        # (an action's response) falls back to the query.
+        # Annotated by the viewset's list queryset; a lone instance falls back to a query.
         counted = getattr(obj, "control_count_annotated", None)
         return counted if counted is not None else obj.controls.count()
 
@@ -358,13 +322,8 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
         return PackageEvidence.objects.filter(package_control__package=obj).count()
 
     def get_live_grants(self, obj):
-        """Who holds this package, to the party that issued it.
-
-        ``PackageGrantViewSet`` filters a grantee to their own row on purpose,
-        and this payload must match: otherwise two audit firms issued the same
-        sealed package would see each other's people by name (0.9.5h, L-1). An
-        issued auditor sees their own row; the organisation sees them all.
-        """
+        """Who holds this package, as the caller may see it: an issued auditor sees only their own row, as
+        ``PackageGrantViewSet`` does, so two firms issued the same package never see each other's people."""
         live = [g for g in obj.grants.all() if g.is_live]
         request = self.context.get("request")
         user = getattr(request, "user", None)

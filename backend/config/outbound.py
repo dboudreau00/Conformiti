@@ -1,58 +1,18 @@
-"""
-One safe way to make a server-side HTTPS request.
-
-Anything the application fetches or posts to at an address someone else chose
-is a server-side request forgery risk: the server sits inside the deployment
-network, where it can reach the database, Redis, the scanner and, on a cloud
-host, the instance metadata service. A URL that looks harmless from outside
-can point at any of them.
-
-This module is the single implementation of the defence. The Jira client, the
-per-workspace chat webhooks and the identity-provider requests all use it (see
-REVIEWS.md (0.9.5 review), S-2).
-
-What a caller gets
-------------------
-``assert_safe_url`` checks a URL and returns the IP address it validated.
-``opener`` builds a urllib opener that refuses redirects and connects to that
-exact address. Used together, there is no window between the check and the
-connection for the answer to change:
-
-* **https only**, because a credential travels on these requests.
-* **No credentials in the URL.** ``https://good.example@evil.example/`` is a
-  well-known way to make a host check read the wrong half of the string.
-* **The host must be on the caller's allow-list**, matched label by label.
-  A substring test accepts ``hooks.slack.com.attacker.example``.
-* **Every address the host resolves to must be public.** Refusing only
-  private IP *literals* misses ``internal.attacker.example``, an ordinary
-  name whose A record is 127.0.0.1.
-* **The connection is pinned to the validated address**, with TLS still
-  verifying the original hostname. Without this, urllib resolves the name a
-  second time when it connects, so DNS that answers differently on the second
-  ask defeats the check.
-* **Redirects are refused.** Following one hands the destination back to the
-  other end, after every check above has passed.
-
-Errors carry a ``code`` so a caller can phrase its own message for its own
-user without parsing English.
-"""
+"""The one SSRF defence for server-side requests: ``assert_safe_url`` returns the validated IP and ``opener`` must dial
+exactly that address, so nothing can change between the check and the connection (REVIEWS.md (0.9.5 review), S-2)."""
 import http.client
 import ipaddress
 import socket
 import urllib.parse
 import urllib.request
 
-# Names that are never public, whatever DNS says today. Checked before
-# resolving so an internal host is refused even where it does not resolve.
+# Never public whatever DNS says; checked before resolving, so refused even where the name does not resolve.
 INTERNAL_SUFFIXES = (".local", ".internal", ".localdomain", ".home.arpa")
 INTERNAL_NAMES = ("localhost", "localhost.localdomain")
 
 
 class OutboundError(Exception):
-    """A URL was refused. ``code`` says why, so callers can translate.
-
-    Codes: scheme, userinfo, port, host, dns, private, address, redirect.
-    """
+    """A URL was refused; ``code`` is one of scheme, userinfo, port, host, dns, private, address, redirect."""
 
     def __init__(self, code, message):
         super().__init__(message)
@@ -60,12 +20,7 @@ class OutboundError(Exception):
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Refuse every redirect.
-
-    The host and address checks happen before the request is sent. A redirect
-    is the other end choosing the next destination after those checks are
-    done, which is exactly the hole they exist to close.
-    """
+    """Refuse every redirect: the other end would pick the next destination after the checks have passed."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise OutboundError("redirect", "The endpoint attempted a redirect; refusing it.")
@@ -90,53 +45,34 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 
 
 class PinnedHTTPSHandler(urllib.request.HTTPSHandler):
-    """urllib HTTPS handler that connects via a pinned IP (see above)."""
-
     def __init__(self, pinned_ip):
         super().__init__()
         self._pinned_ip = pinned_ip
 
     def https_open(self, req):
-        # Pass only the handler's SSL context (context=None -> stdlib's secure
-        # default, which verifies the cert against the hostname). Mirrors
-        # HTTPSHandler.https_open on modern Python.
+        # Only the handler's SSL context (None is the stdlib default, which verifies the cert against the hostname).
         return self.do_open(
             lambda host, **kw: _PinnedHTTPSConnection(host, pinned_ip=self._pinned_ip, **kw),
             req, context=self._context,
         )
 
 
-# Ranges the standard library does not call private but a deployment can
-# still reach privately. Carrier-grade NAT is the one that matters: several
-# hosting providers address tenant networks out of 100.64.0.0/10, so a name
-# resolving there is inside somebody's network even though Python says the
-# address is a public one.
+# Python calls these public, but a deployment can reach them privately (100.64.0.0/10: hosting tenant networks).
 _ALSO_NOT_PUBLIC = tuple(ipaddress.ip_network(n) for n in (
     "100.64.0.0/10",      # RFC 6598, carrier-grade NAT
     "192.0.0.0/24",       # RFC 6890, IETF protocol assignments
     "198.18.0.0/15",      # RFC 2544, benchmarking
     "64:ff9b::/96",       # RFC 6052, IPv4/IPv6 translation
-    # Deprecated site-local unicast. Python reports it as global, so it needs
-    # an explicit rule, and it is still routed on plenty of internal networks
-    # (M-5). Listed here instead of using ip.is_site_local, which the standard
-    # library deprecates with it.
+    # Deprecated site-local: Python reports it as global and deprecates ip.is_site_local, so it needs an explicit rule.
     "fec0::/10",          # RFC 3879, site-local
 ))
 
 
-# NAT64's well-known prefix (RFC 6052): the last 32 bits are an IPv4 address a
-# gateway will connect to on the sender's behalf.
 _NAT64 = ipaddress.ip_network("64:ff9b::/96")
 
 
 def _embedded_ipv4(ip):
-    """The IPv4 address an IPv6 address wraps, or None.
-
-    ``::ffff:a.b.c.d`` (mapped), ``2002::/16`` (6to4: the address sits in bits
-    16 to 48) and ``64:ff9b::/96`` (NAT64) each carry one, and a gateway or a
-    host on the path may reach that address, so it is judged instead of the
-    wrapper.
-    """
+    """The IPv4 address an IPv6 address wraps (mapped, 6to4 or NAT64), or None."""
     if ip.version != 6:
         return None
     if ip.ipv4_mapped is not None:
@@ -149,25 +85,14 @@ def _embedded_ipv4(ip):
 
 
 def ip_is_public(ip_str):
-    """False for anything the deployment network can reach privately.
-
-    ``is_private`` covers RFC 1918 and, by way of link-local, the
-    169.254.169.254 metadata address. It does not cover every range that is
-    unreachable from the open internet, so the list above is checked too.
-    """
+    """False for anything the deployment network can reach privately, the metadata address included."""
     ip = ipaddress.ip_address(ip_str)
-    # ::ffff:100.64.0.1 is 100.64.0.1 as an IPv6 address. Python reports it
-    # as neither private nor in any v4 network (the version check below would
-    # compare a v6 address with a v4 range), so unwrap it first: 100.64.0.0/10
-    # is the range hosting providers put tenant networks in. The same goes for
-    # 6to4 (2002:a00:1:: is 10.0.0.1) and NAT64 (64:ff9b::a00:1 is 10.0.0.1).
+    # Judge the IPv4 address inside a mapped, 6to4 or NAT64 address: Python does not see through the wrapper.
     embedded = _embedded_ipv4(ip)
     if embedded is not None:
         ip = embedded
-    # Teredo (2001::/32) tunnels IPv6 over UDP through a server and hides the
-    # client's IPv4 address; there is no reason for a webhook to live there.
-    # Python's is_private covers 2001::/23 today, so this is the second lock on
-    # the same door, kept so a change to that list cannot reopen it.
+    # Teredo hides the client's IPv4 address behind a tunnel. is_private covers 2001::/23 today; this is the second
+    # lock on that door, kept so a change to Python's list cannot reopen it.
     elif ip.version == 6 and ip.teredo is not None:
         return False
     if (ip.is_private or ip.is_loopback or ip.is_link_local
@@ -178,12 +103,7 @@ def ip_is_public(ip_str):
 
 
 def host_matches(host, allowed):
-    """Label-wise match: the host is ``allowed`` itself or a subdomain of it.
-
-    ``"hooks.slack.com" in url`` is a substring test that lets
-    ``hooks.slack.com.attacker.example`` and ``https://x/?hooks.slack.com``
-    through (S-2).
-    """
+    """The host is an entry or a subdomain of one, never a substring match (hooks.slack.com.attacker.example)."""
     host = (host or "").lower().rstrip(".")
     for entry in allowed or ():
         entry = (entry or "").lower().strip().rstrip(".")
@@ -194,24 +114,14 @@ def host_matches(host, allowed):
 
 def check_shape(url, *, allowed_hosts=None, allowed_ports=(443,),
                 deny_internal_names=True, allowed_schemes=("https",), allow_userinfo=False):
-    """Everything that can be judged from the URL text alone, returning
-    ``(host, port)``.
-
-    Split out from ``assert_safe_url`` so a form can reject a wrong URL the
-    moment it is typed without depending on DNS. It is not a safety check on
-    its own: only the resolution in ``assert_safe_url`` can tell where a name
-    points, so that is what runs before a request is sent.
-    """
+    """Judge the URL text alone and return ``(host, port)``. Not a safety check by itself:
+    only the resolution in ``assert_safe_url`` can tell where a name points."""
     parsed = urllib.parse.urlparse(url or "")
-    # ``allowed_schemes`` is https everywhere except one case: a service the
-    # operator runs on their own network, where TLS to a loopback address is
-    # not the norm. Widening it is only safe together with the address rules
-    # below, never on its own.
+    # https everywhere except an operator's own-network service; widening it is safe only with the address rules below.
     if parsed.scheme not in allowed_schemes or not parsed.hostname:
         raise OutboundError(
             "scheme", f"The URL must start with {allowed_schemes[0]}:// and name a host.")
-    # A target must not carry credentials. The operator's own proxy may: an
-    # authenticated egress proxy is written http://user:password@host:port.
+    # A target carries no credentials; the operator's authenticated egress proxy may (http://user:password@host:port).
     if (parsed.username or parsed.password) and not allow_userinfo:
         raise OutboundError(
             "userinfo", "The URL must not carry a username or password before the host.")
@@ -231,12 +141,8 @@ def check_shape(url, *, allowed_hosts=None, allowed_ports=(443,),
 
 
 def legacy_ipv4(host):
-    """The IPv4 address a host spelled as one number, in hex or octal, or as a
-    short dotted form (``2852039166``, ``0x7f.1``, ``127.1``) denotes, or None.
-
-    ``ipaddress`` reads only the canonical four-part form. A proxy, like libc,
-    reads the older forms too, so on a URL it will resolve for us this is the
-    only place the real address can be read before the request is sent."""
+    """The IPv4 address denoted by a one-number or short dotted host (``2852039166``, ``0x7f.1``, ``127.1``), or None.
+    ``ipaddress`` reads only the canonical form; a proxy, like libc, reads these too."""
     if not host or not all(c in "0123456789abcdefx." for c in host):
         return None
     try:
@@ -246,14 +152,7 @@ def legacy_ipv4(host):
 
 
 def proxy_for(url, proxies=None):
-    """The proxy this URL would go through, or None.
-
-    An operator who routes egress through one proxy has made that proxy the
-    boundary: it is the thing that decides what may be reached, and it is
-    where their logging is. Honouring it is not optional, and neither is
-    knowing when it applies, because a pinned connection and a proxy are
-    mutually exclusive (see ``opener``).
-    """
+    """The proxy this URL would go through, or None; pinning and a proxy are mutually exclusive (see ``opener``)."""
     parsed = urllib.parse.urlparse(url or "")
     scheme, host = parsed.scheme, (parsed.hostname or "")
     if not scheme or not host:
@@ -262,8 +161,6 @@ def proxy_for(url, proxies=None):
     chosen = available.get(scheme)
     if not chosen:
         return None
-    # `no_proxy` names the hosts the operator excluded; a self-hosted model
-    # server on the LAN is the obvious one.
     if proxies is None and urllib.request.proxy_bypass(host):
         return None
     return chosen
@@ -272,27 +169,8 @@ def proxy_for(url, proxies=None):
 def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
                     deny_internal_names=True, require_public=True,
                     allowed_schemes=("https",)):
-    """Validate a URL for a server-side request and return the IP to pin to,
-    or None when the request will go through a proxy.
-
-    ``allowed_hosts`` of None means any public host, which is right for a
-    URL the operator typed about their own systems (Jira). Pass a list for a
-    URL that should only ever address one service (a chat webhook).
-    ``allowed_ports`` of None means any port.
-
-    ``require_public=False`` allows an address inside the deployment network.
-    It exists for one case: an operator who deliberately runs the service
-    being called on their own network, a self-hosted model server being the
-    example. It must never be reachable from a setting a tenant administrator
-    can change, or it reopens the hole this module closes. The connection is
-    still pinned and redirects are still refused.
-
-    **Through a proxy, nothing here is resolved or pinned.** The proxy does
-    the resolving, so a check made on this side would describe a connection
-    that is not the one being made. The URL's shape is still checked, the
-    proxy's own address still is, and redirects are still refused; beyond
-    that the operator's proxy is the control.
-    """
+    """Validate a URL for a server-side request; return the IP to pin to, or None when a proxy will resolve it.
+    ``require_public=False`` must never follow a setting a tenant administrator can change, or it reopens the hole."""
     host, port = check_shape(url, allowed_hosts=allowed_hosts, allowed_ports=allowed_ports,
                              deny_internal_names=deny_internal_names and require_public,
                              allowed_schemes=allowed_schemes)
@@ -302,10 +180,7 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
         check_shape(proxy, allowed_hosts=None, allowed_ports=None,
                     deny_internal_names=False, allowed_schemes=("http", "https"),
                     allow_userinfo=True)
-        # A proxy resolves names; it does not change what a literal address
-        # is. Returning here unconditionally would let https://169.254.169.254/
-        # through the proxy unexamined, on a URL a tenant administrator typed
-        # (M-5).
+        # A proxy resolves names, not literal addresses: https://169.254.169.254/ must not pass through it unexamined.
         if require_public:
             try:
                 literal = ipaddress.ip_address(host.strip("[]"))
@@ -325,9 +200,7 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
             public = ip_is_public(addr)
         except ValueError:
             raise OutboundError("address", "The host resolved to an invalid address.")
-        # Every answer must be public: a name that resolves to both a public
-        # and a private address would otherwise pass on one ordering and fail
-        # on another.
+        # Every answer must be public: a name with both a public and a private address must not pass on one ordering.
         if require_public and not public:
             raise OutboundError("private", "The host must resolve to a public address.")
         if pinned is None:
@@ -338,22 +211,12 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
 
 
 def opener(pinned_ip, proxy=None):
-    """A urllib opener that refuses redirects.
-
-    With ``pinned_ip``, it dials exactly the address ``assert_safe_url``
-    checked. With ``proxy`` (or ``pinned_ip`` of None, meaning a proxy applies
-    to this URL), it goes through the proxy instead and does **not** pin:
-    under a proxy the far end is reached by the proxy, and a handler that
-    dialled the target's address itself would step around the operator's
-    egress control instead of using it. The pinning handler replaces the
-    connection wholesale, so combining the two would send the request to the
-    target's address on the proxy's port.
-    """
+    """A redirect-refusing urllib opener that dials ``pinned_ip``. Under a proxy (``proxy`` set, or ``pinned_ip`` None)
+    it must not pin: pinning replaces the connection and would step around the operator's proxy."""
     if proxy:
         return urllib.request.build_opener(
             NoRedirect, urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
     if pinned_ip is None:
-        # A proxy from the environment applies; let urllib's default
-        # ProxyHandler find it, and add nothing that would bypass it.
+        # A proxy from the environment applies: add nothing that would bypass urllib's default ProxyHandler.
         return urllib.request.build_opener(NoRedirect)
     return urllib.request.build_opener(NoRedirect, PinnedHTTPSHandler(pinned_ip))

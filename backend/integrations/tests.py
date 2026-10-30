@@ -1,4 +1,3 @@
-"""Jira integration: configuration gating, token secrecy and the SSRF guard."""
 from unittest import mock
 
 from django.test import override_settings
@@ -21,7 +20,6 @@ class JiraConfigTests(APITestBase):
         self.assertEqual(r.status_code, 200)
         self.assertNotIn("api_token", r.data)
         self.assertTrue(r.data["has_token"])
-        # a blank token on a later save keeps the stored one
         r = a.patch("/api/integrations/jira/config/", {"api_token": ""}, format="json")
         self.assertTrue(r.data["has_token"])
 
@@ -31,10 +29,9 @@ class JiraConfigTests(APITestBase):
         self.assertEqual(r.status_code, 201)
         v = self.client_for(self.viewer)
         self.assertEqual(v.get("/api/integrations/jira/boards/").data["count"], 1)
-        self.assertEqual(v.post("/api/integrations/jira/boards/", {"board_id": 13, "name": "x"}, format="json").status_code, 403)
-        # issues proxy fails cleanly when the integration is off / unconfigured.
-        # Django logs every 5xx at ERROR; this one is on purpose, so it is
-        # asserted here rather than printed in the middle of the test gate.
+        self.assertEqual(
+            v.post("/api/integrations/jira/boards/", {"board_id": 13, "name": "x"}, format="json").status_code, 403)
+        # The unconfigured issues proxy answers 502; Django logs every 5xx at ERROR, so assert that log here.
         with self.assertLogs("django.request", "ERROR") as logged:
             r = v.get(f"/api/integrations/jira/boards/{r.data['id']}/issues/")
         self.assertIn("Bad Gateway", logged.output[0])
@@ -43,10 +40,6 @@ class JiraConfigTests(APITestBase):
 
 
 class JiraIssueRowTests(APITestBase):
-    """The issues proxy is the only place the browser learns where an issue
-    lives: base_url sits behind the manager-only configuration endpoint, so a
-    viewer can only open the issue in Jira if the row carries the link."""
-
     def setUp(self):
         super().setUp()
         a = self.client_for(self.admin)
@@ -85,8 +78,6 @@ class JiraIssueRowTests(APITestBase):
             self.assertTrue(issue["url"].endswith(issue["key"]))
 
     def test_a_row_without_a_key_gets_no_link_rather_than_the_wrong_one(self):
-        """`{base}/browse/` is the Jira home page, not an issue. An empty url
-        is what the page falls back to plain text on."""
         r = self._issues({"total": 1, "issues": [{"fields": {"summary": "No key at all"}}]})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["issues"][0]["url"], "")
@@ -100,7 +91,8 @@ class SsrfGuardTests(APITestBase):
                 _assert_safe_base_url(bad)
 
     def test_ip_classification(self):
-        for private in ("10.1.2.3", "192.168.0.1", "172.16.5.5", "127.0.0.1", "169.254.169.254", "::1", "fe80::1", "0.0.0.0"):
+        for private in ("10.1.2.3", "192.168.0.1", "172.16.5.5", "127.0.0.1", "169.254.169.254", "::1", "fe80::1",
+                        "0.0.0.0"):
             self.assertFalse(_ip_is_public(private), private)
         for public in ("8.8.8.8", "2606:4700::1111"):
             self.assertTrue(_ip_is_public(public), public)
@@ -119,11 +111,6 @@ class JiraTokenAtRestTests(APITestBase):
         self.assertEqual(JiraIntegration.get_solo().api_token, "s3cr3t-token")
 
     def test_a_blank_patch_keeps_the_stored_token(self):
-        """A later PATCH that does not carry a token keeps the saved one.
-
-        The stored bytes DO change, because every save re-encrypts under a
-        fresh nonce. What must not change is the value.
-        """
         a = self.client_for(self.admin)
         a.patch("/api/integrations/jira/config/", {"api_token": "keep-me"}, format="json")
         before = JiraIntegration.objects.order_by("pk").values_list("api_token", flat=True).first()
@@ -135,15 +122,13 @@ class JiraTokenAtRestTests(APITestBase):
         self.assertEqual(JiraIntegration.get_solo().api_token, "keep-me")
 
     def test_an_oversized_token_is_a_400_not_a_500(self):
-        """The column is sized for a 255-BYTE token; 255 multi-byte characters
-        would overflow it at write time."""
+        """The column is sized for 255 BYTES, so 200 two-byte characters must be refused."""
         a = self.client_for(self.admin)
         r = a.patch("/api/integrations/jira/config/", {"api_token": "\u00e9" * 200}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertIn("api_token", r.data)
 
     def test_config_patch_survives_an_unreadable_token(self):
-        """Editing the base URL under a wrong key must not shred the token."""
         a = self.client_for(self.admin)
         a.patch("/api/integrations/jira/config/", {"api_token": "recoverable"}, format="json")
         before = JiraIntegration.objects.order_by("pk").values_list("api_token", flat=True).first()
@@ -160,8 +145,6 @@ class JiraTokenAtRestTests(APITestBase):
 
 
 class JiraTransportTests(APITestBase):
-    """A slow or oversized answer from Jira is a clean JiraError, not a 500."""
-
     def config(self):
         return JiraIntegration(base_url="https://team.atlassian.net", email="a@b.co",
                                api_token="tok", enabled=True)
@@ -185,9 +168,6 @@ class JiraTransportTests(APITestBase):
                 jira.verify(self.config())
 
     def test_a_body_cut_short_or_a_garbled_one_is_a_jira_error(self):
-        """A chunked body that ends early (IncompleteRead), a garbled status line
-        and JSON nested past the parser's depth are not OSErrors; each used to
-        escape and answer 500."""
         import http.client
         from integrations import jira
         cases = (
@@ -197,7 +177,8 @@ class JiraTransportTests(APITestBase):
         )
         for kwargs, message in cases:
             with self.subTest(message=message, kind=type(kwargs.get("exc")).__name__):
-                with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"),                         self.opener_returning(**kwargs):
+                with mock.patch.object(jira, "_assert_safe_base_url", return_value="203.0.113.5"), \
+                        self.opener_returning(**kwargs):
                     with self.assertRaisesRegex(JiraError, message):
                         jira.verify(self.config())
 

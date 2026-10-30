@@ -1,11 +1,5 @@
-"""Provider-agnostic email sending.
-
-EMAIL_PROVIDER selects the transport:
-  * ``ses``     -> Amazon SES (boto3)
-  * ``mailbox`` -> a standard IMAP/POP3 + SMTP mailbox account (notifications.mailbox)
-  * ``smtp``    -> Django's SMTP backend
-  * ``console`` -> print to stdout (default in DEBUG)
-"""
+"""Provider-agnostic mail: ``ses`` and ``mailbox`` have their own senders; every other EMAIL_PROVIDER (smtp, console)
+goes through Django's email backend."""
 import logging
 
 from django.conf import settings
@@ -16,8 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def send_templated_email(subject, template, context, recipients):
-    """Render <template>.html/.txt from templates/emails and send to recipients."""
-    recipients = [r for r in dict.fromkeys(recipients) if r]  # dedupe, drop blanks
+    recipients = [r for r in dict.fromkeys(recipients) if r]
     if not recipients:
         logger.warning("No recipients for '%s'; skipping.", subject)
         return False

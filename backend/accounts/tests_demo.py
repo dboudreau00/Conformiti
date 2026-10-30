@@ -1,11 +1,5 @@
-"""bootstrap_demo and remove_demo_data across container boots.
-
-The Docker entrypoint runs bootstrap_demo on every boot while SEED_DEMO_DATA
-is true, and a container keeps that variable for life (restart:
-unless-stopped reruns it on every host reboot). Once remove_demo_data has
-retired the demo, those later boots must leave the workspace alone: no
-sample records back among the real ones, and no demo accounts recreated.
-"""
+"""bootstrap_demo and remove_demo_data across container boots: the entrypoint reruns the seed while SEED_DEMO_DATA
+stays true, so once the demo is retired those later boots must leave the workspace alone."""
 import contextlib
 import os
 import re
@@ -40,11 +34,9 @@ class DemoRetirementTests(TestCase):
 
         call_command("seed_frameworks", "--with-folders", verbosity=0, stdout=StringIO())
         self.first_boot = self.boot()
-        # remove_demo_data refuses to leave the workspace without an
-        # administrator of its own.
+        # remove_demo_data refuses to leave the workspace without an administrator of its own.
         make_user("realadmin", superuser=True)
 
-    # -- helpers -------------------------------------------------------------
     @staticmethod
     def boot(*args):
         """What the entrypoint's SEED_DEMO_DATA=true branch runs."""
@@ -76,13 +68,12 @@ class DemoRetirementTests(TestCase):
         self.assertEqual(self.sample_counts(),
                          {"documents": 0, "risks": 0, "vendors": 0, "events": 0})
 
-    # -- a later boot must not re-seed a retired workspace ---------------------
     def test_a_later_boot_does_not_seed_the_demo_back(self):
         self.remove()
         self.assert_nothing_seeded()
 
         out = self.boot()
-        self.boot()  # and the boot after that
+        self.boot()
 
         self.assertIn("not seeded", out)
         self.assert_nothing_seeded()
@@ -122,8 +113,6 @@ class DemoRetirementTests(TestCase):
         self.assertEqual(self.sample_counts(), before)
 
     def test_accounts_switched_off_before_the_record_existed_count_as_retired(self):
-        """A workspace retired by a release older than the record: the demo
-        accounts are there, and none of them can sign in."""
         from audit.models import AuditLog
 
         self.remove()
@@ -147,9 +136,6 @@ class DemoRetirementTests(TestCase):
         self.assertEqual(self.demo_accounts().filter(is_active=True).count(), 5)
 
     def test_after_force_later_boots_refresh_the_demo_instead_of_calling_it_removed(self):
-        """--force must lift the retirement. Otherwise every later boot says
-        the demo 'stays removed' while the banner says its accounts are live,
-        and the refresh never runs again."""
         from audit.models import AuditLog
 
         self.remove()
@@ -159,13 +145,11 @@ class DemoRetirementTests(TestCase):
         out = self.boot()
         self.assertNotIn("not seeded", out)
         self.assertIn("refreshed", out)
-        # The trail is immutable: the retirement stays, and the revival
-        # follows it.
+        # The trail is immutable: the retirement stays and the revival follows it.
         markers = list(AuditLog.objects.filter(object_type=RETIRED_OBJECT_TYPE)
                        .order_by("pk").values_list("action", flat=True))
         self.assertEqual(markers, ["delete", "create"])
 
-        # Retiring it again is recorded again, and holds.
         self.remove()
         self.remove()
         self.assertTrue(retired())
@@ -182,16 +166,12 @@ class DemoRetirementTests(TestCase):
             self.assertFalse(retired())
         self.assertTrue(retired())
 
-    # -- the wording ------------------------------------------------------------
     def test_the_seed_names_createsuperuser_first_until_an_own_administrator_exists(self):
-        """remove_demo_data refuses while the demo accounts are the only
-        administrators, so advice that names only remove_demo_data would fail
-        as printed."""
+        """remove_demo_data refuses while only demo administrators exist, so advice naming only it would fail."""
         out = self.first_boot  # before setUp made realadmin
         self.assertIn("manage.py createsuperuser", out)
         self.assertLess(out.index("manage.py createsuperuser"), out.index("manage.py remove_demo_data"))
 
-        # With an administrator of the operator's own, it is the one command.
         self.remove()
         out = self.boot("--force")
         self.assertIn("Sign in as  admin", out)
@@ -199,16 +179,13 @@ class DemoRetirementTests(TestCase):
         self.assertNotIn("createsuperuser", out)
 
     def test_no_output_calls_the_demo_password_published(self):
-        """The password is generated per installation and printed once; a
-        'published' password reads as a well-known credential."""
+        """A 'published' password reads as a well-known credential; this one is generated per installation."""
         out = self.remove()
         self.assertIn("Demo data removed.", out)
         self.assertNotIn("published", out)
         self.assertNotIn("published", self.boot())
 
     def test_a_real_run_reports_what_it_did_and_a_dry_run_what_it_would_do(self):
-        """A real run reports deletions in the past tense and a dry run in
-        the conditional, and both include the history count."""
         dry = self.remove("--dry-run")
         self.assertRegex(dry, r"Demo users that would be deactivated: .*\badmin\b")
         self.assertIn("Sample documents that would be deleted: 9", dry)
@@ -222,7 +199,6 @@ class DemoRetirementTests(TestCase):
         self.assertNotIn("will be", out)
         self.assertNotIn("would", out)
 
-    # -- the demo's control programme ------------------------------------------
     @staticmethod
     def statuses():
         from collections import Counter
@@ -244,9 +220,6 @@ class DemoRetirementTests(TestCase):
         self.assertEqual(self.demo_owned(), 0)
 
     def test_retiring_the_demo_resets_the_control_programme_it_set(self):
-        """The statuses the demo set (Implemented, In progress, Not applicable)
-        go back to Not started, and the controls owned by the demo accounts
-        lose their owner."""
         from compliance.models import Control
 
         seeded = Control.objects.exclude(status=Control.Status.NOT_STARTED).count()
@@ -261,9 +234,6 @@ class DemoRetirementTests(TestCase):
         self.assertIn(f"Controls owned by a demo account left with no owner: {owned}", out)
 
     def test_a_retired_workspace_scores_like_a_fresh_one(self):
-        """Today's readiness point must not count the links and risks the
-        retirement deletes, so the dashboard of a retired workspace matches a
-        fresh one."""
         from django.utils import timezone
 
         from analytics.models import ReadinessSnapshot
@@ -313,8 +283,6 @@ class DemoRetirementTests(TestCase):
             "not_started": Control.objects.count() - 2, "in_progress": 1, "implemented": 1})
 
     def test_a_later_run_leaves_work_done_since_the_retirement_alone(self):
-        """The run is idempotent. Once the programme is retired, a status the
-        operator sets afterwards is theirs, even one the demo had set too."""
         from compliance.models import Control
 
         self.remove()
@@ -357,9 +325,6 @@ class DemoRetirementTests(TestCase):
         self.assert_programme_gone()
 
     def test_force_after_real_work_leaves_that_work_and_its_history_alone(self):
-        """Once the operator has set statuses of their own, --force applies
-        no programme, so the next retirement has none to undo; and readiness
-        points from before the revival are theirs, not the demo's."""
         from datetime import timedelta
 
         from django.utils import timezone
@@ -386,9 +351,7 @@ class DemoRetirementTests(TestCase):
         self.assertTrue(ReadinessSnapshot.objects.filter(date=earlier).exists())
 
     def test_a_demo_seeded_by_an_older_release_is_reset_too(self):
-        """Older releases kept no record of the programme. The seeder's
-        pattern is read back instead, once the demo owners sit exactly where
-        it put them."""
+        """Deleting the programme record stands in for an older release that kept none."""
         from audit.models import AuditLog
 
         AuditLog.objects.filter(object_type="demo-controls").delete()
@@ -396,9 +359,6 @@ class DemoRetirementTests(TestCase):
         self.assert_programme_gone()
 
     def test_an_older_demo_on_a_changed_library_is_reported_not_guessed(self):
-        """Without the record, a control added since the seed moves every
-        position after it, so the pattern no longer says what the demo set:
-        no status changes, and the command says what to do instead."""
         from audit.models import AuditLog
         from compliance.models import Control
 
@@ -413,15 +373,10 @@ class DemoRetirementTests(TestCase):
         self.assertEqual(self.statuses(), before)
         self.assertEqual(self.demo_owned(), 0, "owners that cannot sign in still go")
         self.assertIn("Review the statuses on the Controls page", out)
-        # Without the record the command cannot tell an added control from
-        # owners changed by hand, so it names both and asserts neither.
+        # Without the record it cannot tell an added control from owners changed by hand, so it names both.
         self.assertIn("controls were added or removed, or owners changed", out)
 
     def test_a_demo_an_older_release_retired_is_reported_not_reset(self):
-        """Older releases retired the demo and left its programme in place.
-        The operator's own work since then cannot be told apart from it, so
-        the run names how many controls still hold the demo's status and
-        changes none of them."""
         from audit.models import AuditLog
         from compliance.models import Control
 
@@ -439,7 +394,6 @@ class DemoRetirementTests(TestCase):
         self.assertIn("Review the statuses on the Controls page", out)
         self.assertEqual(self.demo_owned(), 0)
 
-    # -- the warning when the statuses cannot be read back: its real cause ------
     @staticmethod
     def unrecorded():
         """A demo seeded by a release that kept no record of its programme."""
@@ -448,10 +402,7 @@ class DemoRetirementTests(TestCase):
         AuditLog.objects.filter(object_type="demo-controls").delete()
 
     def test_an_older_demo_whose_accounts_were_deleted_names_that_cause(self):
-        """The warning must not blame a control library change that did not
-        happen: here the library is as seeded, and the demo accounts, whose
-        controls show where the demo set its statuses, were deleted by
-        hand."""
+        """The warning must not blame a library change that did not happen."""
         self.unrecorded()
         self.demo_accounts().delete()
         before = self.statuses()
@@ -478,8 +429,6 @@ class DemoRetirementTests(TestCase):
         self.assertIn("no control is owned by a demo account any more", out)
 
     def test_a_changed_library_is_named_only_when_it_is_the_cause(self):
-        """With the demo's record, a control the programme walked that is
-        gone proves the library changed, and the warning says so."""
         from compliance.models import Control
         from accounts.management.commands.bootstrap_demo import PROGRAMME_ORDER
 
@@ -504,12 +453,8 @@ class DemoRetirementTests(TestCase):
         self.assertNotIn("library", out)
         self.assertIn("The demo's record of the statuses it set cannot be read.", out)
 
-    # -- the programme's record in the Audit log --------------------------------
     def test_the_programme_record_reads_as_plain_words_in_the_audit_log(self):
-        """The Detail is plain words, not an internal marker such as
-        '[programme last=217 order=852463c1ee835202]', and it stays in the
-        Audit log after the retirement. What remove_demo_data reads back sits
-        in the record reference."""
+        """The Detail is plain words; what remove_demo_data reads back sits in the record reference."""
         from rest_framework.test import APIClient
 
         self.remove()
@@ -526,12 +471,8 @@ class DemoRetirementTests(TestCase):
         self.assertRegex(rows[0]["object_id"], r"^\d+-[0-9a-f]{16}$")
         self.assert_programme_gone()
 
-    # -- the readiness history of a demo seeded again ---------------------------
     def test_retire_force_retire_on_one_day_leaves_no_demo_history(self):
-        """--force on the day of a retirement finds no readiness point dated
-        before today, but it must not back-fill five invented months into the
-        real installation's trend: the next retirement, bounded by the
-        revival, would never delete them."""
+        """--force on the day of a retirement must not back-fill invented months into the real trend."""
         from django.utils import timezone
 
         from analytics.models import ReadinessSnapshot
@@ -549,8 +490,6 @@ class DemoRetirementTests(TestCase):
         self.assert_programme_gone()
 
     def test_history_recorded_since_a_revival_goes_with_the_next_retirement(self):
-        """Points from before the revival are the operator's; the ones the
-        revived demo recorded are not."""
         from datetime import timedelta
 
         from django.utils import timezone
@@ -577,9 +516,7 @@ class DemoRetirementTests(TestCase):
 
 
 class DemoOnAWorkedRegisterTests(TestCase):
-    """bootstrap_demo run after the operator had set statuses of their own:
-    it applies no control programme, so retiring it has no status of the
-    demo's to reset and nothing to warn about."""
+    """bootstrap_demo after the operator set statuses applies no programme: retiring it resets and warns of nothing."""
 
     def setUp(self):
         env = mock.patch.dict(os.environ, {"DEMO_PASSWORD": DEMO_PASSWORD})
@@ -614,15 +551,12 @@ class DemoOnAWorkedRegisterTests(TestCase):
         self.assertEqual(Control.objects.exclude(status=Control.Status.NOT_STARTED).count(), 1)
         self.assertNotIn("Review the statuses", out.getvalue())
         self.assertIn("Seeded control statuses reset to Not started: 0", out.getvalue())
-        # The seed said so in the Audit log, in words.
         record = AuditLog.objects.get(object_type="demo-controls")
         self.assertIn("not applied", record.detail)
         self.assertNotRegex(record.detail, r"\[|[0-9a-f]{16}")
 
     def test_a_refresh_boot_writes_no_second_record(self):
-        """Only the seed that starts the demo says the programme was not
-        applied; the boots that refresh it add nothing, so a demo an older
-        release seeded is still read back from its pattern."""
+        """Only the seed that starts the demo records the programme as not applied; refresh boots add nothing."""
         from audit.models import AuditLog
         from compliance.models import Control
 
@@ -633,9 +567,7 @@ class DemoOnAWorkedRegisterTests(TestCase):
 
 
 class NoDemoRetirementTests(TestCase):
-    """remove_demo_data run where the demo was never seeded: nothing of the
-    operator's is the demo's, so no status changes and no readiness history
-    goes."""
+    """remove_demo_data where the demo was never seeded: none of the operator's statuses or history is the demo's."""
 
     def test_the_operators_statuses_and_history_stay(self):
         from datetime import timedelta
@@ -673,8 +605,7 @@ class EntrypointDemoBannerTests(SimpleTestCase):
     source = (Path(__file__).resolve().parent.parent / "entrypoint.sh").read_text(encoding="utf-8")
 
     def test_the_banner_reports_the_database_not_the_variable(self):
-        """SEED_DEMO_DATA stays set after remove_demo_data; the banner has to
-        agree with /api/health/, which asks the database."""
+        """SEED_DEMO_DATA stays set after remove_demo_data, so the banner must ask the database like /api/health/."""
         self.assertIn("demo_accounts_present()", self.source)
 
     def test_no_line_calls_the_demo_password_published(self):
@@ -685,8 +616,6 @@ class EntrypointDemoBannerTests(SimpleTestCase):
         self.assertIn(f"SEED_DEMO_DATA, default {default}", self.source)
 
     def test_the_demo_step_does_not_announce_a_seed_it_may_not_make(self):
-        """A retired workspace must not log "Seeding demo dataset" followed
-        by bootstrap_demo's "Demo data not seeded"."""
         self.assertFalse("Seeding demo dataset" in self.source, "the announcement is back")
         self.assertIn('log "SEED_DEMO_DATA=true: running bootstrap_demo', self.source)
 
@@ -698,14 +627,12 @@ class EntrypointDemoBannerTests(SimpleTestCase):
 
 
 def _demo_admin():
-    """The seeded administrator as /api/health/ and remove_demo_data know it:
-    named admin, with an @example.com address."""
+    """The seeded administrator as /api/health/ and remove_demo_data know it: admin, with an @example.com address."""
     return make_user("admin", superuser=True, email="admin@example.com")
 
 
 class OwnAdministratorTests(TestCase):
-    """own_administrator_present: remove_demo_data's guard, and the question
-    the seeder's advice and the boot banner ask before naming createsuperuser."""
+    """own_administrator_present: remove_demo_data's guard, shared with the seeder's advice and the boot banner."""
 
     def setUp(self):
         from accounts.management.commands.bootstrap_demo import own_administrator_present
@@ -738,7 +665,6 @@ class OwnAdministratorTests(TestCase):
         self.assertTrue(self.present())
 
     def test_an_administrator_of_another_workspace_is_not_this_one_s(self):
-        """remove_demo_data cleans one workspace and asks about that one."""
         from accounts.models import Role
 
         other = Workspace.objects.create(name="Beta Ltd", slug="beta-own-admin")
@@ -749,11 +675,8 @@ class OwnAdministratorTests(TestCase):
 
 
 class EntrypointDemoAdviceTests(TestCase):
-    """The boot banner's demo lines, run as the entrypoint runs them (the
-    Python between `python - <<'PY'` and `PY` at the end of entrypoint.sh),
-    against this test's database. It must not tell an operator to run
-    remove_demo_data when that would refuse because no administrator of their
-    own exists yet."""
+    """Runs the entrypoint's banner Python (between ``python - <<'PY'`` and ``PY``) against this test's database: it
+    must not tell an operator to run remove_demo_data when that would refuse."""
 
     source = (Path(__file__).resolve().parent.parent / "entrypoint.sh").read_text(encoding="utf-8")
 
@@ -762,8 +685,7 @@ class EntrypointDemoAdviceTests(TestCase):
         body = self.source[start:].split("\n", 1)[1]
         code = body[:body.index("\nPY\n")]
         out = StringIO()
-        # django.setup() has already run in this process; the banner's call
-        # would only configure logging again.
+        # django.setup() has already run in this process; the banner's call would only reconfigure logging.
         with mock.patch("django.setup"), mock.patch.dict(os.environ, {"DJANGO_DEBUG": "false"}), \
                 contextlib.redirect_stdout(out):
             exec(compile(code, "entrypoint.sh banner", "exec"), {"__name__": "__main__"})

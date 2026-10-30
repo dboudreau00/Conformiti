@@ -1,11 +1,6 @@
-"""
-Document management: folders, per-folder access control, documents with
-review scheduling, version history, and a shared form-template library.
-"""
 from datetime import timedelta
 
 try:
-    # python-dateutil ships as a dependency of boto3/celery; guard anyway.
     from dateutil.relativedelta import relativedelta
 except ImportError:  # pragma: no cover
     relativedelta = None
@@ -17,23 +12,18 @@ from django.utils import timezone
 
 from accounts.tenancy import TenantModel
 
-# --- access levels ----------------------------------------------------------
 VIEW, EDIT, MANAGE = "view", "edit", "manage"
 ACCESS_CHOICES = [(VIEW, "View"), (EDIT, "Edit"), (MANAGE, "Manage")]
 ACCESS_RANK = {None: 0, VIEW: 1, EDIT: 2, MANAGE: 3}
 
-# Hard ceiling on tree depth. Real trees are 3-5 levels; the bound turns an
-# accidental (or malicious) parent cycle into a clean error instead of an
-# infinite loop in every access check.
+# Ceiling on tree depth: turns a parent cycle into an error instead of an endless loop in every access check.
 MAX_FOLDER_DEPTH = 32
 
 _FORBIDDEN_NAME_CHARS = set('/\\:*?"<>|\x00')
 
 
 def validate_folder_name(value):
-    """A folder name is a single path segment: it becomes a directory under
-    MEDIA_ROOT, so separators, traversal and Windows-reserved characters are
-    rejected here rather than discovered as a storage error on upload."""
+    """A folder name becomes a directory under MEDIA_ROOT, so it must be a single path segment."""
     name = (value or "").strip()
     if not name:
         raise ValidationError("Folder name cannot be blank.")
@@ -46,7 +36,6 @@ def validate_folder_name(value):
 
 
 def _add_months(d, months):
-    """Add months to a date without a hard dependency on dateutil."""
     if relativedelta is not None:
         return d + relativedelta(months=months)
     # Fallback: approximate a month as 30 days.
@@ -54,7 +43,6 @@ def _add_months(d, months):
 
 
 class Folder(TenantModel):
-    """A node in the document tree. Access is granted per folder and inherited."""
     tenant_parent = "parent"
     name = models.CharField(max_length=255, validators=[validate_folder_name])
     parent = models.ForeignKey(
@@ -64,10 +52,7 @@ class Folder(TenantModel):
         "compliance.Control", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="folders",
     )
-    # Stable identity for the seeded tree. Without these, seed_frameworks has to
-    # match folders by their display name, so a framework version bump or a
-    # reworded control title creates a second tree and orphans every document
-    # filed under the old one.
+    # Stable identity for the seeded tree: seed_frameworks matches on these, not on display names.
     framework = models.ForeignKey(
         "compliance.Framework", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="folders",
@@ -91,15 +76,13 @@ class Folder(TenantModel):
     def __str__(self):
         return self.name
 
-    # -- hierarchy helpers --------------------------------------------------
     @property
     def is_seeded(self):
         """Part of the generated framework tree (root / category / control)."""
         return bool(self.is_framework_root or self.framework_id or self.category_id or self.control_id)
 
     def ancestors(self):
-        """Parent chain, nearest first. Bounded and cycle-safe: a corrupted
-        parent link raises instead of spinning forever."""
+        """Parent chain, nearest first. Raises on a cycle or an over-deep chain instead of looping forever."""
         node, chain, seen = self.parent, [], {self.id}
         while node is not None:
             if node.id in seen or len(chain) >= MAX_FOLDER_DEPTH:
@@ -110,7 +93,6 @@ class Folder(TenantModel):
         return chain
 
     def would_cycle(self, new_parent):
-        """True if setting ``new_parent`` would make this folder its own ancestor."""
         node, hops = new_parent, 0
         while node is not None:
             if node.id == self.id:
@@ -126,17 +108,9 @@ class Folder(TenantModel):
         parts = [f.name for f in reversed(self.ancestors())] + [self.name]
         return "/".join(parts)
 
-    # -- access control -----------------------------------------------------
     def effective_access(self, user):
-        """
-        Return the highest access level ('manage'/'edit'/'view') the user has
-        on this folder, or None. Resolution order:
-          * superuser / can_manage_folders -> manage
-          * can_view_all -> at least view
-          * folder owner -> manage
-          * explicit or inherited FolderPermission for the user or their role
-          * auditors are capped at view
-        """
+        """Highest of: manage for a superuser, folder manager or owner; view for view-all; grants on this folder or an
+        ancestor to the user or their role. Auditors are capped at view. ``bulk_effective_access`` must agree."""
         if not (user and user.is_authenticated):
             return None
         if user.is_superuser or user.can_manage_folders:
@@ -171,7 +145,6 @@ class Folder(TenantModel):
 
 
 class FolderPermission(TenantModel):
-    """Grants a role OR a specific user an access level on a folder (inherited)."""
     tenant_parent = "folder"
     folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="permissions")
     role = models.ForeignKey(
@@ -229,9 +202,7 @@ class Document(TenantModel):
     )
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    # max_length must comfortably exceed the deepest folder path
-    # (documents/<framework>/<category>/<control>/<file>) or Django's storage
-    # raises SuspiciousFileOperation when it can't fit the name in the default 100.
+    # max_length must exceed the deepest folder path, or storage raises SuspiciousFileOperation.
     file = models.FileField(upload_to=document_upload_path, max_length=500)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -249,13 +220,9 @@ class Document(TenantModel):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    # Tracks reminder lead-days already emailed so we don't send duplicates.
     reminders_sent = models.JSONField(default=list, blank=True)
 
-    # --- malware scanning (documents/monitor.py). "clean" means clean by the
-    # definitions in force at scanned_at; the sweep re-checks stored files
-    # because signatures arrive after files do. A quarantined document stays
-    # on disk for the investigation but no route serves its bytes.
+    # Malware scan state (documents/monitor.py): "clean" holds only for the definitions in force at scanned_at.
     class Scan(models.TextChoices):
         UNSCANNED = "unscanned", "Not scanned"
         CLEAN = "clean", "Clean"
@@ -278,7 +245,6 @@ class Document(TenantModel):
         return self.quarantined_at is not None
 
     def compute_next_review(self):
-        """Set next_review_date from last_reviewed + cadence."""
         months = self.CADENCE_MONTHS.get(self.review_cadence)
         base = self.last_reviewed or timezone.now().date()
         self.next_review_date = _add_months(base, months) if months else None
@@ -296,8 +262,7 @@ class Document(TenantModel):
 
 
 class ScannerStatus(models.Model):
-    """One row: what the malware scanner last said, and whether anyone has
-    been told. Shared by every worker, so an outage is announced once."""
+    """One row shared by every worker, so an outage is announced once."""
     reachable = models.BooleanField(default=True)
     checked_at = models.DateTimeField(null=True, blank=True)
     last_ok_at = models.DateTimeField(null=True, blank=True)
@@ -335,7 +300,6 @@ class DocumentVersion(TenantModel):
 
 
 class FormTemplate(TenantModel):
-    """A reusable blank form/policy template stored centrally for the org."""
     name = models.CharField(max_length=200)
     category = models.CharField(max_length=100, blank=True, help_text="e.g. Policy, Register, Log")
     description = models.TextField(blank=True)

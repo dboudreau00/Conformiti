@@ -1,13 +1,4 @@
-"""Re-scan stored evidence through the malware scanner, and report on it.
-
-    python manage.py scan_evidence --probe            # is clamd answering?
-    python manage.py scan_evidence --stale 30         # files not scanned in 30 days (default)
-    python manage.py scan_evidence --all              # every stored file
-    python manage.py scan_evidence --all --dry-run    # count only
-
-Exit code 1 when an infected file was found or the scanner is unreachable, so
-a cron job can alert on it.
-"""
+"""Re-scans stored evidence. Exits non-zero when a file is infected or the scanner is unreachable, so cron can alert."""
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 

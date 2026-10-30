@@ -1,7 +1,3 @@
-"""0.9.5: an edited review date starts the reminders again, and the folder
-tree costs a fixed number of queries however many folders it has. 0.9.5oa: a
-folder the caller cannot see answers as one that does not exist on every route
-that takes one, and a move names its folder by a whole number."""
 from django.utils import timezone
 
 from documents.models import EDIT, MANAGE, VIEW, Document, Folder
@@ -12,9 +8,8 @@ from testutils import APITestBase, assert_same_as_missing, grant, make_doc
 class ReviewClockTests(APITestBase):
     def setUp(self):
         super().setUp()
-        # An annual policy last reviewed thirteen months ago: the stored
-        # next_review_date is exactly what the cadence computes from that,
-        # so an edit that does not touch the clock recomputes the same date.
+        # last_reviewed makes the stored next_review_date what the cadence computes, so an edit that does not touch
+        # the clock recomputes the same date.
         self.doc = make_doc(self.tree.ctrl1, owner=self.owner, name="Policy", days=-3)
         self.doc.last_reviewed = timezone.localdate() - timezone.timedelta(days=395)
         self.doc.compute_next_review()
@@ -22,15 +17,11 @@ class ReviewClockTests(APITestBase):
         self.assertLess(self.doc.next_review_date, timezone.localdate())
 
     def test_editing_the_review_date_clears_the_reminders_sent(self):
-        # The overdue notice has gone out and the sentinel is recorded.
         self.assertEqual(run_review_scan(), 1)
         self.doc.refresh_from_db()
         self.assertEqual(self.doc.reminders_sent, [OVERDUE])
         self.assertEqual(self.doc.status, Document.Status.EXPIRED)
 
-        # The owner corrects the last-reviewed date through the ordinary
-        # PATCH. The clock moves, so the record of windows sent for the OLD
-        # clock must be cleared or nothing would fire for the new one.
         r = self.client_for(self.manager).patch(
             f"/api/documents/{self.doc.pk}/",
             {"last_reviewed": timezone.localdate().isoformat()}, format="json")
@@ -39,7 +30,6 @@ class ReviewClockTests(APITestBase):
         self.assertGreater(self.doc.next_review_date, timezone.localdate())
         self.assertEqual(self.doc.reminders_sent, [])
 
-        # And when that new date passes, the notice fires again.
         Document.objects.filter(pk=self.doc.pk).update(
             next_review_date=timezone.localdate() - timezone.timedelta(days=1))
         self.assertEqual(run_review_scan(), 1)
@@ -55,10 +45,6 @@ class ReviewClockTests(APITestBase):
 
 
 class FolderTreeQueryTests(APITestBase):
-    """The tree must not run an access walk and a count per node (fifty
-    folders would be a hundred queries); the bell and the package list are the
-    same class of problem."""
-
     def setUp(self):
         super().setUp()
         grant(self.tree.cat, role=self.roles["Viewer"], level=VIEW)
@@ -108,8 +94,7 @@ class FolderTreeQueryTests(APITestBase):
 
 
 class HiddenFolderIdTests(APITestBase):
-    """A 403 for a folder the caller cannot see and a 400 for an id that is not
-    there told a member which folder ids exist."""
+    """A hidden folder must be answered exactly as a missing one, or a member learns which folder ids exist."""
 
     def test_a_document_patched_into_a_hidden_folder(self):
         # The owner may PATCH their document with only view on its folder.
@@ -180,8 +165,7 @@ class HiddenFolderIdTests(APITestBase):
 
 
 class MoveTargetTypeTests(APITestBase):
-    """JSON true is 1 and 1.5 truncated to 1, so either moved a document into a
-    folder the caller never named."""
+    """JSON true is 1 and 1.5 truncated to 1, so either moved a document into a folder the caller never named."""
 
     def setUp(self):
         super().setUp()

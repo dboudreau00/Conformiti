@@ -1,4 +1,3 @@
-"""Calendar API: CRUD for events plus a merged feed for the dashboard."""
 from datetime import date
 
 from django.utils.dateparse import parse_date
@@ -17,13 +16,8 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 class ManageCalendarOrReadOnly(BasePermission):
-    """Any member of the organisation can read the calendar; only users who
-    manage documents may create, edit, or delete events (prevents read-only
-    Viewers from tampering with everyone's shared calendar).
-
-    An external auditor is not a member: the shared calendar names meetings,
-    people and dates that are none of their engagement.
-    """
+    """Members read, document managers write. An external auditor is refused: the shared calendar names meetings,
+    people and dates that are none of their engagement."""
 
     def has_permission(self, request, view):
         u = request.user
@@ -46,17 +40,13 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def feed(self, request):
-        """
-        Merge stored events with virtual 'review due' events derived from each
-        visible document's next_review_date, within an optional [start, end].
-        """
+        """Stored events plus 'review due' events from visible documents, within optional start and end dates."""
         start = parse_date(request.query_params.get("start", "")) or date.min
         end = parse_date(request.query_params.get("end", "")) or date.max
         items = []
         visible = accessible_folder_ids(request.user)
 
-        # stored events; a linked document in a folder the caller cannot open
-        # is not named, not even by id
+        # A linked document in a folder the caller cannot open is not named, not even by id.
         for e in self.get_queryset().filter(date__gte=start, date__lte=end):
             doc = e.document
             items.append({
@@ -68,7 +58,6 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
                 "assignee": person_name(e.assignee) or None,
             })
 
-        # virtual review-due events from visible documents
         docs = Document.objects.filter(
             folder_id__in=visible, next_review_date__isnull=False,
             next_review_date__gte=start, next_review_date__lte=end,

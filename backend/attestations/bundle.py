@@ -1,9 +1,4 @@
-"""
-Building the manifest and the export bundle.
-
-Django-aware, unlike ``manifest.py``: this is where model rows become the plain
-dictionaries the pure module hashes, and where bytes are streamed into a ZIP.
-"""
+"""Model rows to manifest dicts and the export ZIP; ``manifest.py`` holds the Django-free half."""
 import csv
 import io
 import zipfile
@@ -23,7 +18,6 @@ VERIFIER = Path(__file__).with_name("verifier.py")
 
 
 def _read_chunks(fh, size=64 * 1024):
-    """Yield ``fh`` in ``size`` pieces until it is exhausted."""
     while True:
         chunk = fh.read(size)
         if not chunk:
@@ -32,13 +26,7 @@ def _read_chunks(fh, size=64 * 1024):
 
 
 def _member_info(name, stamp, compressed=False):
-    """A ZipInfo that extracts as an ordinary readable file.
-
-    A member given no mode of its own is written by Python as 0600, owner
-    only. An auditor who unzips as themselves can read that, but a bundle
-    opened by a different account (a shared review host, a service user) cannot,
-    so every member is marked 0644 here.
-    """
+    """A ZipInfo marked 0644: Python writes a member with no mode as 0600, unreadable to another account."""
     info = zipfile.ZipInfo(name, date_time=stamp)
     info.external_attr = 0o644 << 16
     if compressed:
@@ -51,7 +39,6 @@ def _iso(value):
 
 
 def control_payload(row):
-    """One control row as the manifest sees it (snapshot values only)."""
     return {
         "ordinal": row.ordinal,
         "framework_key": row.framework_key,
@@ -85,9 +72,7 @@ def control_payload(row):
 
 
 def sample_payload(row):
-    """One sampled item as the manifest sees it. Results are workpaper data
-    written after sealing, so at seal they read 'pending', like the
-    conclusions beside them."""
+    """Results are workpaper data written after sealing, so at seal they read 'pending'."""
     return {
         "ordinal": row.ordinal,
         "identifier": row.identifier,
@@ -103,12 +88,7 @@ def sample_payload(row):
 
 
 def evidence_payload(row):
-    """One artefact as the manifest sees it.
-
-    Carries no folder path, no stored filename and no storage key: publishing
-    those would hand back the unauthenticated route to the bytes that the
-    authenticated-media work closed.
-    """
+    """No folder path, stored filename or storage key: they would hand back the unauthenticated route to the bytes."""
     return {
         "ordinal": row.ordinal,
         "document": row.document_name,
@@ -153,9 +133,6 @@ def package_payload(package):
         "created_by": package.created_by_name,
         "created_at": _iso(package.created_at),
         "generator": GENERATOR,
-        # Which organisation this package belongs to. One signing key serves
-        # the installation, so without this a bundle from one workspace
-        # verifies identically to a bundle from another.
         "workspace": ({
             "slug": package.workspace.slug,
             "name": package.workspace.name,
@@ -170,12 +147,8 @@ def package_payload(package):
 
 
 def assign_paths(package):
-    """Give every row its ordinal and bundle path. Called once, at seal.
-
-    Assigning at seal rather than at export lets the manifest name a file
-    before the bundle exists, and lets the bundle be regenerated later without
-    changing the digest.
-    """
+    """Give every row its ordinal and bundle path. Called once, at seal, so the manifest names each file before a bundle
+    exists and a regenerated bundle keeps the digest."""
     for c_index, control in enumerate(package.controls.all().order_by("control_ref", "pk"), start=1):
         control.ordinal = c_index
         control.save(update_fields=["ordinal"])
@@ -184,7 +157,6 @@ def assign_paths(package):
             row.ordinal = e_index
             row.member_path = f"{directory}/{mf.safe_member_name(row.document_name, row.storage_name, e_index)}"
             row.save(update_fields=["ordinal", "member_path"])
-        # Every item listed before the seal becomes part of the manifest.
         for s_index, sample in enumerate(control.samples.all().order_by("identifier", "pk"), start=1):
             sample.ordinal = s_index
             sample.sealed_in = True
@@ -242,8 +214,6 @@ def controls_csv(package):
 
 
 def samples_csv(package):
-    """One row per sampled item: what was tested, against which artefact,
-    with what result, by whom: the operating-effectiveness workpaper."""
     from .models import PackageSample
 
     header = [
@@ -298,23 +268,14 @@ def evidence_csv(package, actual):
     return _csv_bytes(header, rows)
 
 
-#: The most audit entries trail.csv carries, oldest first. A package that has
-#: more says so in the README and in the export summary instead of cutting
-#: quietly.
+#: The most entries trail.csv carries; a package with more says so in the README and the export summary.
 TRAIL_LIMIT = 50_000
 TRAIL_HEADER = ["Timestamp", "Actor", "Action", "Record type", "Record id", "Detail"]
 
 
 def trail_rows(package):
-    """``(rows, total)``: the audit entries for the package's documents from
-    the start of its period (all of them when it has none) up to now, oldest
-    first and at most TRAIL_LIMIT of them, and how many there were. Nothing
-    cuts it off at the period's end: what happened to the evidence afterwards
-    is part of what an auditor weighs.
-
-    No IP addresses: this file is designed to leave the building, and staff
-    network addresses have no business in it.
-    """
+    """``(rows, total)``: the package documents' audit entries from the period start (all when it has none) up to now,
+    oldest first, at most TRAIL_LIMIT, and how many there were. No IP addresses: this file leaves the building."""
     from audit.models import AuditLog
 
     document_ids = {
@@ -335,7 +296,6 @@ def trail_rows(package):
 
 
 def trail_csv(package):
-    """The audit-trail extract as CSV bytes."""
     return _csv_bytes(TRAIL_HEADER, trail_rows(package)[0])
 
 
@@ -477,12 +437,8 @@ def write_bundle(package, fh):
             zf.writestr(_member_info(name, stamp, compressed=True), data)
             members[name] = mf.sha256_hex(data)
 
-        # Evidence first: writing streams the bytes and gives the digests
-        # every later member reports on.
-        # Every byte route calls monitor.refuse_if_quarantined, so the export
-        # does too: a file the scanner matched after sealing must not reach the
-        # external auditor inside the ZIP. The whole export is refused and the
-        # file named, so the organisation deals with it before the bundle leaves.
+        # Like every byte route, refuse a file the scanner matched after sealing: it must not reach the auditor inside
+        # the ZIP, so the whole export is refused with the file named.
         from documents import monitor as _monitor
 
         for row in rows:
@@ -560,8 +516,7 @@ def write_bundle(package, fh):
         write("trail.csv", _csv_bytes(TRAIL_HEADER, trail))
         write("INTEGRITY.txt", (integrity_line + "\n").encode("utf-8"))
         write("README.txt", readme_text(package, digest, summary))
-        # Not optional: the README tells the reader to run it, so a bundle
-        # without it is not one to hand over. Failing here is loud on purpose.
+        # Failing here is deliberate: the README tells the reader to run verify.py.
         write("verify.py", VERIFIER.read_bytes())
 
         # Last, so it can describe everything else.
@@ -570,11 +525,8 @@ def write_bundle(package, fh):
         ).encode("utf-8")
         zf.writestr(_member_info("SHA256SUMS", stamp), checksums)
 
-        # Sign SHA256SUMS, which puts the rest of the bundle inside a
-        # signature. The manifest signature is made at seal and covers only
-        # manifest.json; the workpaper the auditor reads (controls.csv,
-        # samples.csv, trail.csv) is written now, after their conclusions were
-        # recorded, so it needs its own.
+        # manifest.sig covers manifest.json alone; this signature over SHA256SUMS covers the files written at export
+        # (controls.csv, samples.csv, trail.csv).
         from . import signing
 
         sums_signature = signing.sign_bytes(checksums)

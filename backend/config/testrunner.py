@@ -1,19 +1,10 @@
-"""Test runner that activates the Default workspace for the whole run.
-
-Every tenant row a test creates needs a workspace; activating the one the
-migrations create means the existing suite runs unchanged as a single-
-workspace installation. Requests made through the test client resolve their
-own workspace and restore this one afterwards (see accounts/tenancy.py);
-tests that need a second organisation use ``tenancy.scoped(other)``.
-"""
 from django.test.runner import DiscoverRunner
 
 
 class Runner(DiscoverRunner):
     def setup_databases(self, **kwargs):
         result = super().setup_databases(**kwargs)
-        # With only database-free tests selected there is no test database, and
-        # looking the Default workspace up would query the developer's own one.
+        # Without a test database (database-free tests only) the lookup would query the developer's own one.
         if result:
             from accounts import tenancy
 
