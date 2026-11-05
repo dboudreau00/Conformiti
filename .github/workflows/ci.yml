@@ -13,8 +13,8 @@ jobs:
     name: Static validator
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
       - run: python tools/validate.py
@@ -30,8 +30,8 @@ jobs:
       DJANGO_DEBUG: "true"
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -69,8 +69,8 @@ jobs:
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
           cache: pip
@@ -83,8 +83,8 @@ jobs:
     name: Frontend build + audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
           cache: npm
@@ -129,14 +129,14 @@ jobs:
           - shell: PowerShell 7
             installer: pwsh -NoProfile -File .\install.ps1
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.txt
       # "22" resolves to the newest 22.x, which is past the 22.12 Vite 8 needs.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
           cache: npm
@@ -244,13 +244,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.txt
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
           cache: npm
@@ -385,7 +385,7 @@ jobs:
     name: Docker images build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: docker compose config -q
       - run: docker build -t conformiti-backend:ci ./backend
       - run: docker build -t conformiti-frontend:ci ./frontend
@@ -452,13 +452,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.txt
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
           cache: npm
@@ -475,7 +475,7 @@ jobs:
       - id: pw
         working-directory: e2e
         run: echo "v=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: browsers
         with:
           path: ~/.cache/ms-playwright
@@ -496,7 +496,7 @@ jobs:
         working-directory: e2e
         env:
           E2E_TRANSPORT: cookie
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
           name: playwright-report
@@ -519,7 +519,7 @@ jobs:
       REDIS_PASSWORD: ciRedisSecret42
       PUBLIC_HOST: grc.example.test
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Start the stack (Redis password on, demo data seeded, a public host name)
         run: |
           # SEED_DEMO_DATA is off in the shipped compose file, so this job
@@ -541,6 +541,23 @@ jobs:
           cat /tmp/health.json; echo
           jq -e '.status == "ok" and .database == "ok"' /tmp/health.json > /dev/null
           docker compose ps
+      - name: The worker and the scheduler come up healthy
+        run: |
+          # /api/health/ is the backend's alone and never touches the broker, so a
+          # worker and a scheduler that cannot import their transport restart in a
+          # loop behind a stack that looks healthy (kombu 5.7.0 moved `packaging`
+          # into its redis extra, 0.9.5oc). A container that keeps restarting never
+          # reaches its first healthcheck, so waiting for `healthy` is the test.
+          for i in $(seq 1 60); do
+            worker=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -a -q worker)" 2>/dev/null)
+            beat=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -a -q beat)" 2>/dev/null)
+            if [ "$worker" = healthy ] && [ "$beat" = healthy ]; then docker compose ps; exit 0; fi
+            sleep 5
+          done
+          echo "worker is ${worker:-missing}, beat is ${beat:-missing}"
+          docker compose ps -a
+          docker compose logs --tail 40 worker beat
+          exit 1
       - name: The public host name is served, and a name nobody listed is refused
         run: |
           set -euo pipefail
@@ -639,6 +656,35 @@ jobs:
           cmp /tmp/evidence.bin /tmp/dl2.bin
           curl -fsS -b "$jar" http://localhost:8080/api/signing-keys/ > /tmp/keys-after.json
           cmp /tmp/keys-before.json /tmp/keys-after.json
+      - name: A restore whose dump the server rejects leaves the installation as it was
+        run: |
+          set -euo pipefail
+          # A dump that decompresses (so the archive check passes) but holds a
+          # statement the database refuses. The load is one transaction, so the
+          # old database must still be there, and the stack must be running.
+          mkdir /tmp/bad-backup
+          cp /tmp/backup/media.tgz /tmp/backup/secrets.tgz /tmp/backup/tree.tgz /tmp/bad-backup/
+          { gunzip -c /tmp/backup/db.sql.gz; echo "INSERT INTO public.ci_no_such_table VALUES (1);"; } \
+            | gzip > /tmp/bad-backup/db.sql.gz
+          rc=0
+          scripts/restore.sh /tmp/bad-backup > /tmp/bad.out 2> /tmp/bad.err || rc=$?
+          cat /tmp/bad.err >&2
+          test "$rc" -ne 0 || { echo "a restore of a rejected dump reported success"; exit 1; }
+          grep -q 'Nothing was replaced' /tmp/bad.err
+          for i in $(seq 1 120); do
+            if curl -fsS http://localhost:8080/api/health/ > /dev/null 2>&1; then break; fi
+            sleep 3
+          done
+          jar=/tmp/cookies3.txt
+          curl -fsS -c "$jar" http://localhost:8080/api/auth/config/ > /dev/null
+          login_csrf=$(awk '$6 ~ /csrftoken$/ {print $7}' "$jar" | tail -1)
+          test -n "$login_csrf"
+          curl -fsS -b "$jar" -c "$jar" -H "X-CSRFToken: $login_csrf" \
+            -H 'Content-Type: application/json' \
+            -d "{\"username\":\"admin\",\"password\":\"$DEMO_PASSWORD\"}" \
+            http://localhost:8080/api/auth/token/ > /dev/null
+          curl -fsS -b "$jar" -o /tmp/dl3.bin "http://localhost:8080/api/documents/$doc/download/"
+          cmp /tmp/evidence.bin /tmp/dl3.bin
       - name: Logs
         if: failure()
         run: docker compose logs --no-color | tail -n 400

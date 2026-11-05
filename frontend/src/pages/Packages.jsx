@@ -710,7 +710,7 @@ export default function Packages({ me }) {
       open={ask?.kind === "revoke"}
       onClose={() => setAsk(null)}
       title={`Revoke ${ask?.grant?.full_name || ask?.grant?.username || "this auditor"}'s access?`}
-      description="They lose this package at once and it cannot be issued to them again."
+      description="They lose this package at once. Issuing it to them again restores it."
       confirmLabel="Revoke"
       onConfirm={submitRevoke}
     />

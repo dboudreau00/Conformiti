@@ -1,5 +1,6 @@
 import csv
 
+from django.db import transaction
 from django.db.models import Prefetch
 from django.http import HttpResponse
 from rest_framework import serializers, viewsets
@@ -50,6 +51,10 @@ class ResponsibilitySerializer(serializers.ModelSerializer):
         if bool(user) == bool(vendor):
             raise ValidationError({"party": "Name exactly one of user or vendor "
                                             "(clear the other when switching)."})
+        self.check_single_accountable(attrs)
+        return attrs
+
+    def check_single_accountable(self, attrs):
         control = attrs.get("control") or getattr(self.instance, "control", None)
         role = attrs.get("role") or getattr(self.instance, "role", None)
         if role == Responsibility.Role.ACCOUNTABLE and control is not None:
@@ -62,7 +67,6 @@ class ResponsibilitySerializer(serializers.ModelSerializer):
                     "This control already has an Accountable party. RACI allows exactly "
                     "one; reassign it rather than adding a second."
                 )})
-        return attrs
 
 
 class ResponsibilityViewSet(viewsets.ModelViewSet):
@@ -72,8 +76,23 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
     permission_classes = [CanManageFrameworks]
     filterset_fields = ["control", "user", "vendor", "role", "control__category__framework__key"]
 
+    def _save_one_accountable(self, serializer, **extra):
+        """Validation checked before the write; two requests can both pass it. Lock the control row and check again
+        before saving, so the second one waits and then refuses."""
+        data = serializer.validated_data
+        control = data.get("control") or getattr(serializer.instance, "control", None)
+        with transaction.atomic():
+            if control is not None:
+                # get() drops the default ordering, whose joins would lock the category and framework rows too.
+                Control.objects.select_for_update().get(pk=control.pk)
+                serializer.check_single_accountable(data)
+            serializer.save(**extra)
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        self._save_one_accountable(serializer, created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        self._save_one_accountable(serializer)
 
     @action(detail=False, methods=["get"])
     def matrix(self, request):

@@ -89,6 +89,19 @@ def pinned_file(row):
     return archived.file, archived.version
 
 
+def refuse_if_pin_quarantined(row):
+    """Refuse a row's sealed bytes when the scanner quarantined them: the document's, or the archived version the row
+    pinned, which the sweep scans and quarantines on its own."""
+    from documents import monitor
+
+    document = row.document
+    if document is None:
+        return
+    monitor.refuse_if_quarantined(document)
+    if row.storage_path and document.file and document.file.name != row.storage_path:
+        monitor.refuse_if_quarantined(document.versions.filter(file=row.storage_path).first())
+
+
 def verify_pins(package):
     """Re-hash every pinned artefact; return the drifted ones as ``{"item", "control_ref", "document", "expected",
     "actual"}`` (None when the file is gone). A draft compares the live document, a sealed package ``pinned_file``."""

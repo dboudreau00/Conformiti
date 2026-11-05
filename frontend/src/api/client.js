@@ -64,11 +64,25 @@ export async function redeemSso(ticket, second) {
     headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {},
   });
   if (data?.mfa_required) return data;
-  if (!cookieMode()) {
-    localStorage.setItem("access", data.access);
-    localStorage.setItem("refresh", data.refresh);
-  }
+  startSession(data);
   return data;
+}
+
+/** A new principal has been accepted by the server: only now drop the previous one's workspace choice and tokens,
+ * so a refused attempt (a wrong password, a second factor still owed) leaves another tab's session alone. */
+function startSession(data) {
+  const previous = cookieMode() ? null : localStorage.getItem("refresh");
+  clearSession();
+  if (cookieMode()) return;
+  localStorage.setItem("access", data.access);
+  localStorage.setItem("refresh", data.refresh);
+  // Nobody holds the replaced refresh token any more: revoke it rather than leave it live for its 7 days.
+  if (previous && previous !== data.refresh) revokeQuietly(previous);
+}
+
+function revokeQuietly(refresh) {
+  // No Authorization header: the access token that went with it may be gone, and a dead one is refused before the view.
+  axios.post("/api/auth/token/clear/", { refresh }, { withCredentials: true }).catch(() => {});
 }
 
 function readCookie(name) {
@@ -128,6 +142,45 @@ api.interceptors.request.use((config) => {
 // On a 401: one silent refresh, then the login screen. Refresh tokens rotate (the old one is blacklisted), so the
 // refresh token in the response must replace the stored one.
 let refreshing = null;
+
+// "renewed", "refused" (the server rejected the token: 400, 401 or 403) or "unreachable" (no answer, a 5xx, a throttle).
+async function renewTokens() {
+  refreshing = refreshing || axios.post(
+    "/api/auth/token/refresh/",
+    cookieMode() ? {} : { refresh: localStorage.getItem("refresh") },
+    { withCredentials: true,
+      headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {} }
+  );
+  const attempt = refreshing;
+  try {
+    const { data } = await attempt;
+    if (!cookieMode()) {
+      localStorage.setItem("access", data.access);
+      if (data.refresh) localStorage.setItem("refresh", data.refresh);
+    }
+    return "renewed";
+  } catch (ex) {
+    const status = ex?.response?.status;
+    return status === 400 || status === 401 || status === 403 ? "refused" : "unreachable";
+  } finally {
+    // Only the setter clears it: a later refresh must not be wiped by an earlier waiter.
+    if (refreshing === attempt) refreshing = null;
+  }
+}
+
+// Another tab may have won the race to rotate the token this one sent: the browser then already holds the new one.
+async function renewedElsewhere(sent) {
+  if (cookieMode()) {
+    try {
+      return !!(await session()).authenticated;
+    } catch {
+      return false;
+    }
+  }
+  const stored = localStorage.getItem("refresh");
+  return !!stored && stored !== sent && !!localStorage.getItem("access");
+}
+
 api.interceptors.response.use(
   (r) => {
     const unserved = unservedFileError(r);
@@ -138,34 +191,18 @@ api.interceptors.response.use(
     const { response, config } = error;
     if (response?.status === 401 && config && !config._retry && !config.url?.includes("/auth/")) {
       config._retry = true;
-      const refresh = cookieMode() ? true : localStorage.getItem("refresh");
-      if (refresh) {
-        try {
-          refreshing = refreshing || axios.post(
-            "/api/auth/token/refresh/",
-            cookieMode() ? {} : { refresh },
-            { withCredentials: true,
-              headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {} }
-          );
-          const attempt = refreshing;
-          let data;
-          try {
-            ({ data } = await attempt);
-          } finally {
-            // Only the setter clears it: a later refresh must not be wiped by an earlier waiter.
-            if (refreshing === attempt) refreshing = null;
-          }
-          if (!cookieMode()) {
-            localStorage.setItem("access", data.access);
-            if (data.refresh) localStorage.setItem("refresh", data.refresh);
-            config.headers.Authorization = `Bearer ${data.access}`;
-          }
+      const sent = cookieMode() ? true : localStorage.getItem("refresh");
+      if (sent) {
+        const outcome = await renewTokens();
+        // Not a verdict on the session: a dropped connection or a busy server must not sign the person out.
+        if (outcome === "unreachable") return Promise.reject(error);
+        if (outcome === "renewed" || await renewedElsewhere(sent)) {
+          if (!cookieMode()) config.headers.Authorization = `Bearer ${localStorage.getItem("access")}`;
           return api(config);
-        } catch {
-          /* refresh refused or offline: fall through to sign-out */
         }
       }
-      clearSession();
+      // Tokens only: the workspace choice goes with an explicit sign-out or a new principal (startSession).
+      clearTokens();
       if (window.location.pathname !== "/login") window.location.href = "/login";
     }
     return Promise.reject(error);
@@ -173,23 +210,23 @@ api.interceptors.response.use(
 );
 
 export async function login(username, password, second) {
-  // Another person may be signing in: drop the previous principal's tokens and workspace first.
-  clearSession();
   const body = withSecondFactor({ username, password }, second);
   const { data } = await axios.post("/api/auth/token/", body, {
     withCredentials: true,
     headers: cookieMode() ? { "X-CSRFToken": csrfToken() } : {},
   });
-  if (!cookieMode()) {
-    localStorage.setItem("access", data.access);
-    localStorage.setItem("refresh", data.refresh);
-  }
+  // Another person may be signing in, but only an accepted sign-in replaces the previous principal.
+  startSession(data);
   return data;
 }
 
-function clearSession() {
+function clearTokens() {
   localStorage.removeItem("access");
   localStorage.removeItem("refresh");
+}
+
+function clearSession() {
+  clearTokens();
   chooseWorkspace("");
 }
 
@@ -207,7 +244,16 @@ export async function logout() {
       }
     } else {
       const refresh = localStorage.getItem("refresh");
-      if (refresh) await api.post("/auth/logout/", { refresh });
+      if (refresh) {
+        try {
+          await api.post("/auth/logout/", { refresh });
+        } catch (err) {
+          // The access token has expired, so the authenticated route refused before it read the body. The refresh
+          // token must still be revoked: send it alone to the route that needs no access token.
+          if (err?.response?.status !== 401) throw err;
+          await axios.post("/api/auth/token/clear/", { refresh }, { withCredentials: true });
+        }
+      }
     }
   } catch {
     /* already expired, or offline */
@@ -225,6 +271,21 @@ export async function session() {
   return data;
 }
 
+let renewing = null;
+
+/** Cookie mode, cold load: the access cookie has lapsed but the 7-day refresh cookie may not have. The probe above
+ * cannot see that cookie (its path is narrower), so this asks the one endpoint it travels to. Resolves true once the
+ * session is renewed, false for "sign in"; never rejects. One request at a time, so a double mount shares it. */
+export function renewSession() {
+  renewing = renewing || axios.post("/api/auth/token/renew/", {}, {
+    withCredentials: true,
+    headers: { "X-CSRFToken": csrfToken() },
+  }).then(({ data }) => !!data?.renewed, () => false).finally(() => { renewing = null; });
+  return renewing;
+}
+
+/** Every page of a list. When `maxPages` ran out first the array carries `truncated: true` (see isTruncated), so a
+ * screen can say the list is incomplete instead of presenting it as everything. */
 export async function fetchAll(url, maxPages = 50) {
   const all = [];
   let next = url;
@@ -234,7 +295,14 @@ export async function fetchAll(url, maxPages = 50) {
     all.push(...page);
     next = r.data.next ? r.data.next.replace(/^.*\/api/, "") : null;
   }
+  if (next) all.truncated = true;
   return all;
+}
+
+/** True when fetchAll stopped before the last page. A copy made with filter, map or spread loses the flag: ask the
+ * array fetchAll returned. */
+export function isTruncated(rows) {
+  return !!rows?.truncated;
 }
 
 // filename* (RFC 5987, the exact UTF-8 name) wins over the plain filename=, the server's ASCII fallback.

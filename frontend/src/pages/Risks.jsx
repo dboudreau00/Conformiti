@@ -17,6 +17,7 @@ import { Chip } from "../components/ui/SegmentedControl.jsx";
 import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
+import { useDeepLink } from "../utils/deepLink.js";
 import { displayName } from "../utils/format.js";
 
 // Named so onAnimationComplete can tell the entrance ("shown") from the exit.
@@ -85,6 +86,23 @@ export default function Risks({ me }) {
     fetchAll("/users/").then(setUsers).catch((e) => setUsersErr(errorText(e, "Owner directory unavailable.")));
     api.get("/control-evidence/choices/").then((r) => setControls(r.data.controls || [])).catch(() => setControls([]));
   }, [loadRisks]);
+
+  // A link from a note arrives as ?risk=<id>: select that risk once the register is loaded, and widen the filter when
+  // the one in force would hide it.
+  const [wantedRisk, setWantedRisk] = useState(null);
+  useDeepLink((params) => {
+    const id = Number(params.get("risk"));
+    setWantedRisk(Number.isInteger(id) && id > 0 ? id : null);
+  });
+  useEffect(() => {
+    if (wantedRisk === null || loading) return;
+    const risk = risks.find((r) => r.id === wantedRisk);
+    if (risk) {
+      if (filterRisks([risk], filter).length === 0) setFilter("all");
+      setSelectedId(risk.id);
+    }
+    setWantedRisk(null);
+  }, [wantedRisk, risks, loading, filter]);
 
   // Waits for the panel to finish entering: a target measured at selection still counts the height of the New risk form
   // collapsing above it. The panel's scroll-mt keeps its heading clear of the sticky top bar.
@@ -208,7 +226,8 @@ export default function Risks({ me }) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    // Revoking in the same tick can cancel the download in Firefox.
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
   async function exportCsv() {
@@ -335,7 +354,7 @@ export default function Risks({ me }) {
                       {importResult.warnings?.length ? (
                         <div className="notice notice-warn mt-3">
                           {importResult.warnings.slice(0, 10).map((w, i) => (
-                            <p key={`w${i}`} className="text-xs">Row {w.row}: {w.message}</p>
+                            <p key={`w${i}`} className="text-xs">{w.row > 0 ? `Row ${w.row}: ` : ""}{w.message}</p>
                           ))}
                           {importResult.warnings.length > 10 ? (
                             <p className="mt-1 text-2xs">+{importResult.warnings.length - 10} more</p>

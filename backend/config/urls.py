@@ -2,7 +2,8 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
-from rest_framework.exceptions import APIException
+from django.core.exceptions import ObjectDoesNotExist
+from rest_framework.exceptions import APIException, AuthenticationFailed, ValidationError
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -89,11 +90,46 @@ class ThrottledTokenRefreshView(TokenRefreshView):
         return response
 
 
+class RenewRateThrottle(RefreshRateThrottle):
+    """The refresh limit, counted only for requests that carry a refresh cookie: an anonymous cold load has nothing to
+    guess at, and must not use up the allowance of everyone behind the same address."""
+
+    def allow_request(self, request, view):
+        if not request.COOKIES.get(cookie_auth.refresh_cookie_name()):
+            return True
+        return super().allow_request(request, view)
+
+
+class TokenRenewView(ThrottledTokenRefreshView):
+    """The cold-load renewal. The refresh cookie's path covers this URL and not ``/api/auth/session/``, so it is where
+    a reload with a lapsed access cookie can trade the live refresh cookie for a new one. 200 for every outcome but a
+    CSRF failure or the throttle: 'no session to renew' is the ordinary answer for a visitor, not an error for the
+    console. A dead token leaves the cookies alone,
+    because a second tab may have just rotated them."""
+    throttle_classes = [RenewRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        if not cookie_auth.cookie_mode():
+            return Response({"renewed": False})
+        refused = cookie_auth.csrf_required(request)
+        if refused:
+            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
+        if not request.COOKIES.get(cookie_auth.refresh_cookie_name()):
+            return Response({"renewed": False})
+        try:
+            return super().post(request, *args, **kwargs)
+        except (AuthenticationFailed, ValidationError, ObjectDoesNotExist):
+            # A dead token (InvalidToken is an AuthenticationFailed), or an account deleted or switched off since the
+            # cookie was issued: there is no session to renew either way.
+            return Response({"renewed": False})
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", HealthView.as_view(), name="health"),
     path("api/auth/token/", ThrottledTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/token/refresh/", ThrottledTokenRefreshView.as_view(), name="token_refresh"),
+    path("api/auth/token/renew/", TokenRenewView.as_view(), name="token_renew"),
     path("api/auth/logout/", LogoutView.as_view(), name="logout"),
     path("api/auth/session/", SessionView.as_view(), name="session"),
     path("api/auth/session/clear/", SessionClearView.as_view(), name="session_clear"),

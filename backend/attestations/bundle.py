@@ -10,7 +10,7 @@ from config.csvsafe import csv_safe
 
 from . import manifest as mf
 from .models import PackageEvidence
-from .snapshot import pinned_file
+from .snapshot import pinned_file, refuse_if_pin_quarantined
 
 GENERATOR = "Conformiti"
 
@@ -391,6 +391,22 @@ def readme_text(package, digest, summary):
     return ("\n".join(lines)).encode("utf-8")
 
 
+def _rotated_key_lines(package):
+    """Said when the signing key has changed since the seal: this export is then signed by a key other than the
+    manifest's, and verify.py will ask for it to be trusted."""
+    from . import signing
+
+    now = signing.current_key_info(create=False)
+    if not now.get("fingerprint") or now["fingerprint"] == signing.fingerprint(package.signing_public_key):
+        return []
+    return [
+        "The organisation's key changed after this package was sealed, so SHA256SUMS",
+        "was signed by the newer key (its fingerprint, to confirm with them):",
+        f"  {now['fingerprint']}",
+        "Run verify.py with both:  --trust <fingerprint above> --trust <fingerprint of manifest.json>",
+    ]
+
+
 def _signature_lines(package):
     if not package.manifest_signature:
         return []
@@ -407,7 +423,12 @@ def _signature_lines(package):
         "sums-key.pub) made when this bundle was exported. That one covers",
         "every file listed in it, including controls.csv and samples.csv,",
         "which hold the conclusions recorded after the seal.",
-        "verify.py checks it with nothing installed; openssl agrees:",
+        "verify.py checks it with nothing installed, and fails when the two",
+        "signatures were made by different keys, because a key that travels",
+        "inside a bundle can be swapped. To have it check against the key the",
+        "organisation gave you:  python3 verify.py --trust <fingerprint> .",
+        *_rotated_key_lines(package),
+        "openssl agrees:",
         "     base64 -d manifest.sig > manifest.sig.bin",
         "     openssl pkeyutl -verify -pubin -inkey signing-key.pub -rawin \\",
         "        -in manifest.json -sigfile manifest.sig.bin",
@@ -437,13 +458,11 @@ def write_bundle(package, fh):
             zf.writestr(_member_info(name, stamp, compressed=True), data)
             members[name] = mf.sha256_hex(data)
 
-        # Like every byte route, refuse a file the scanner matched after sealing: it must not reach the auditor inside
-        # the ZIP, so the whole export is refused with the file named.
-        from documents import monitor as _monitor
-
+        # Like every byte route, refuse a file the scanner matched after sealing (the document's, or the archived
+        # version a row pinned): it must not reach the auditor inside the ZIP, so the whole export is refused with the
+        # file named.
         for row in rows:
-            if row.document is not None:
-                _monitor.refuse_if_quarantined(row.document)
+            refuse_if_pin_quarantined(row)
 
         for row in rows:
             if not row.member_path:

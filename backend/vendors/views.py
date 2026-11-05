@@ -138,7 +138,11 @@ class VendorViewSet(viewsets.ModelViewSet):
         clean, clear = [], []
         for i, row in enumerate(rows):
             try:
-                control_id = int(row.get("control"))
+                raw = row.get("control")
+                # True is 1 and 12.9 truncates to 12: neither names a control, as in Document move.
+                if isinstance(raw, (bool, float)):
+                    raise ValueError(raw)
+                control_id = int(raw)
             except (TypeError, ValueError, AttributeError):
                 raise ValidationError({"rows": f"row {i}: control id is required"})
             if control_id not in valid_ids:

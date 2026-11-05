@@ -7,6 +7,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.utils import timezone
 
 from accounts import tenancy
@@ -61,6 +62,12 @@ DEMO_VENDOR_NAMES = ["Amazon Web Services", "Okta", "Stripe", "Brightline Securi
 RETIRED_OBJECT_TYPE = "demo-data"
 RETIRED_ACTION = "delete"
 REVIVED_ACTION = "create"
+
+# The rows this seeder created, as audit entries of this type: object_id is the kind, detail ends in ": <pk>, <pk>".
+# remove_demo_data deletes by these (newer than the last retirement) rather than by a demo name alone, which a real
+# row can share. ip_address stays empty, so its seeded-row match never deletes them.
+SEEDED_OBJECT_TYPE = "demo-seeded"
+SEEDED_SEED_MARK = "seed"
 
 # The programme at position i of PROGRAMME_ORDER gets programme_values(i). Each run is recorded as a
 # PROGRAMME_OBJECT_TYPE audit entry with object_id "<last pk>-<fingerprint>" (PROGRAMME_MARK), so remove_demo_data
@@ -300,23 +307,28 @@ class Command(BaseCommand):
                     ))
                     return
                 self._revive = True
-            self._fresh = not self._demo_present()
-            self._users()
-            self._permissions()
-            self._control_program()
-            self._documents()
-            self._evidence()
-            self._risks()
-            self._vendors()
-            self._events()
-            self._governance()
-            self._access_review()
-            self._evidence_package()
-            self._audit()
-            self._history()
-            self._record_programme()
-            if self._revive:
-                self._record_revival()
+            self._refuse_usernames_taken_elsewhere(workspace)
+            # All or nothing: a refusal halfway must not leave the first accounts behind.
+            with transaction.atomic():
+                self._fresh = not self._demo_present()
+                self._made = {}
+                self._users()
+                self._permissions()
+                self._control_program()
+                self._documents()
+                self._evidence()
+                self._risks()
+                self._vendors()
+                self._events()
+                self._governance()
+                self._access_review()
+                self._evidence_package()
+                self._audit()
+                self._history()
+                self._record_programme()
+                self._record_seeded()
+                if self._revive:
+                    self._record_revival()
         if self._password_shown:
             # remove_demo_data refuses while the demo accounts are the only administrators, so the advice starts with
             # making one.
@@ -342,6 +354,20 @@ class Command(BaseCommand):
                 f"Demo data refreshed in workspace {workspace.slug!r}; "
                 f"existing accounts kept their password."
             ))
+
+    @staticmethod
+    def _refuse_usernames_taken_elsewhere(workspace):
+        """Usernames are unique across the installation, so a demo account name another workspace holds cannot be made
+        here: the insert would fail after the accounts before it were created."""
+        with tenancy.unscoped():
+            taken = list(User.objects.filter(username__in=[u[0] for u in DEMO_USERS])
+                         .exclude(workspace=workspace).values_list("username", flat=True))
+        if taken:
+            raise CommandError(
+                f"Nothing was seeded in workspace {workspace.slug!r}: the username(s) {', '.join(sorted(taken))} "
+                f"belong to another workspace, and a username is unique across the installation. Seed the demo "
+                f"in the workspace that holds those accounts, or rename them first."
+            )
 
     def demo_password(self):
         """DEMO_PASSWORD when set (held to the password policy), else a fresh random one per installation, printed
@@ -371,6 +397,13 @@ class Command(BaseCommand):
     _programme_record = None
     # No part of the demo was here before this run.
     _fresh = False
+    # This run made every demo account: the demo starts here, whatever else already shares its names.
+    _accounts_made = False
+    # {kind: [pk, ...]} of the rows this run created, for _record_seeded.
+    _made = {}
+
+    def _created(self, kind, row):
+        self._made.setdefault(kind, []).append(row.pk)
 
     @staticmethod
     def _demo_present():
@@ -386,6 +419,7 @@ class Command(BaseCommand):
         if self._revive or User.objects.filter(username__in=names).count() < len(names):
             # Resolved before any account is created, so a refused DEMO_PASSWORD leaves no account without a password.
             self.demo_password()
+        made = 0
         for username, first, last, role_name, is_super in DEMO_USERS:
             role = Role.objects.filter(name=role_name).first()
             user, created = User.objects.get_or_create(
@@ -398,11 +432,13 @@ class Command(BaseCommand):
             )
             retired_account = (self._revive and user.email.endswith("@example.com")
                                and not (user.is_active and user.has_usable_password()))
+            made += created
             if created or retired_account:
                 user.is_active = True
                 user.set_password(self.demo_password())
                 user.save()
                 self._password_shown = True
+        self._accounts_made = made == len(DEMO_USERS)
         self.stdout.write(f"  Users: {User.objects.count()}")
 
     def _permissions(self):
@@ -413,15 +449,19 @@ class Command(BaseCommand):
 
         cc6 = Folder.objects.filter(name__startswith="CC6 -").first()
         if cc6 and owner_role:
-            FolderPermission.objects.get_or_create(
+            grant, created = FolderPermission.objects.get_or_create(
                 folder=cc6, role=owner_role, user=None, access_level=EDIT
             )
+            if created:
+                self._created("grants", grant)
         iso_root = Folder.objects.filter(is_framework_root=True,
                                          name__icontains="27001").first()
         if iso_root and auditor_role:
-            FolderPermission.objects.get_or_create(
+            grant, created = FolderPermission.objects.get_or_create(
                 folder=iso_root, role=auditor_role, user=None, access_level=VIEW
             )
+            if created:
+                self._created("grants", grant)
         self.stdout.write(f"  Folder permissions: {FolderPermission.objects.count()}")
 
     def _documents(self):
@@ -450,6 +490,7 @@ class Command(BaseCommand):
             doc.file.save(f"{name}{ext}", ContentFile(payload), save=False)
             doc.next_review_date = review_date
             doc.save()
+            self._created("documents", doc)
             made += 1
         self.stdout.write(f"  Sample documents created: {made}")
 
@@ -543,6 +584,7 @@ class Command(BaseCommand):
             )
             if created:
                 made += 1
+                self._created("risks", risk)
                 if note:
                     author = User.objects.filter(username=note[0]).first()
                     RiskNote.objects.create(risk=risk, author=author, text=note[1])
@@ -570,6 +612,7 @@ class Command(BaseCommand):
             if not created:
                 continue
             made += 1
+            self._created("vendors", vendor)
             vendor.compute_next_review()
             vendor.save(update_fields=["next_review_date"])
             for kind, title, issued, expires, result in assessments:
@@ -604,8 +647,10 @@ class Command(BaseCommand):
             if control is None or party is None:
                 continue
             key = {"vendor": party} if isinstance(party, Vendor) else {"user": party}
-            Responsibility.objects.get_or_create(control=control, role=role, **key,
-                                                 defaults={"note": note, "created_by": mia})
+            row, created = Responsibility.objects.get_or_create(control=control, role=role, **key,
+                                                                defaults={"note": note, "created_by": mia})
+            if created:
+                self._created("responsibilities", row)
         self.stdout.write(f"  Vendors created: {made} (register now {Vendor.objects.count()})")
 
     def _events(self):
@@ -616,9 +661,11 @@ class Command(BaseCommand):
             ("Quarterly access review", 14, CalendarEvent.Type.TASK),
         ]:
             # Keyed by title only: the date moves, so keying on it would add a copy on every later run.
-            CalendarEvent.objects.get_or_create(
+            event, created = CalendarEvent.objects.get_or_create(
                 title=title, defaults=dict(event_type=etype, date=today + timedelta(days=offset)),
             )
+            if created:
+                self._created("events", event)
         self.stdout.write(f"  Calendar events: {CalendarEvent.objects.count()}")
 
     def _governance(self):
@@ -631,7 +678,7 @@ class Command(BaseCommand):
         val = User.objects.filter(username="val").first()
         year = date.today().year
 
-        steering, _ = MeetingSeries.objects.get_or_create(
+        steering, made_steering = MeetingSeries.objects.get_or_create(
             name="Security Steering Committee",
             defaults={
                 "description": "Quarterly leadership review of the security program.",
@@ -639,6 +686,8 @@ class Command(BaseCommand):
                 "owner": mia,
             },
         )
+        if made_steering:
+            self._created("series", steering)
         for month, title in [(1, "Q1 security steering"), (4, "Q2 security steering"),
                              (6, "Pre-audit steering session")]:
             MeetingMinute.objects.get_or_create(
@@ -650,7 +699,7 @@ class Command(BaseCommand):
                 },
             )
 
-        risk, _ = MeetingSeries.objects.get_or_create(
+        risk, made_risk_series = MeetingSeries.objects.get_or_create(
             name="Risk Review",
             defaults={
                 "description": "Semi-annual review of the risk register.",
@@ -667,7 +716,10 @@ class Command(BaseCommand):
             },
         )
 
-        champs, _ = ChampionGroup.objects.get_or_create(
+        if made_risk_series:
+            self._created("series", risk)
+
+        champs, made_champs = ChampionGroup.objects.get_or_create(
             name="Security Champions",
             defaults={
                 "purpose": "Inter-departmental champions who carry security practices "
@@ -675,6 +727,8 @@ class Command(BaseCommand):
                 "owner": mia,
             },
         )
+        if made_champs:
+            self._created("groups", champs)
         if owen:
             GroupMember.objects.get_or_create(
                 group=champs, user=owen, defaults={"department": "Engineering"},
@@ -940,6 +994,22 @@ class Command(BaseCommand):
         mark, detail = self._programme_record
         AuditLog.objects.create(user=None, action="update", object_type=PROGRAMME_OBJECT_TYPE,
                                 object_id=mark, detail=detail)
+
+    def _record_seeded(self):
+        """The rows this run created, left for remove_demo_data to delete by. A run that started the demo (none of it
+        here, every demo account made now, or a revival) also leaves the mark that tells it from a demo seeded before
+        these records existed: remove_demo_data goes by the mark, not by any record, so a refresh of an older demo
+        that records only what it re-creates leaves that demo's own fallback in place."""
+        from audit.models import AuditLog
+
+        if self._fresh or self._revive or self._accounts_made:
+            AuditLog.objects.create(
+                user=None, action="create", object_type=SEEDED_OBJECT_TYPE, object_id=SEEDED_SEED_MARK,
+                detail="The demo dataset was seeded here; remove_demo_data deletes only the rows recorded after this.")
+        for kind, pks in self._made.items():
+            AuditLog.objects.create(
+                user=None, action="create", object_type=SEEDED_OBJECT_TYPE, object_id=kind,
+                detail=f"Rows the demo seed created (remove_demo_data deletes these): {', '.join(map(str, pks))}")
 
     def _history(self):
         """Record today's readiness point and, on a first seed, back-fill five monthly ones. Never into a trend that has

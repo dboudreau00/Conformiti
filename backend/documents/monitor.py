@@ -5,10 +5,11 @@ import time
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 
 from . import clamav
-from .models import Document, ScannerStatus
+from .models import Document, DocumentVersion, FormTemplate, ScannerStatus
 
 logger = logging.getLogger(__name__)
 
@@ -56,30 +57,40 @@ def probe(force=False):
     return result
 
 
-def _record(document, action, detail, user=None):
+def _record(subject, action, detail, user=None):
     from audit.models import AuditLog
 
+    # An archived version is audited under its document, a template under its own route.
+    if isinstance(subject, DocumentVersion):
+        object_type, object_id = "documents", subject.document_id
+    elif isinstance(subject, FormTemplate):
+        object_type, object_id = "form-templates", subject.pk
+    else:
+        object_type, object_id = "documents", subject.pk
     try:
-        # A rescan runs with no workspace active, so the document names the tenant.
+        # A rescan runs with no workspace active, so the row names the tenant.
         AuditLog.objects.create(
-            user=user, action=action, object_type="documents", object_id=str(document.pk),
-            detail=str(detail)[:255], workspace_id=document.workspace_id,
+            user=user, action=action, object_type=object_type, object_id=str(object_id),
+            detail=str(detail)[:255], workspace_id=subject.workspace_id,
         )
     except Exception:  # pragma: no cover - never block the scan on bookkeeping
         logger.exception("Failed to record a scan event")
 
 
-def scan_document(document, user=None):
-    """Re-scan one stored document; returns the new ``scan_status``. Never raises for a scanner problem (the sweep must
-    reach every file): a file the scanner could not inspect is recorded as ``error``, which is not clean."""
-    if not enabled():
-        return document.scan_status
-    if not document.file:
-        return document.scan_status
+def _label(subject):
+    """How the audit row and the notice name a stored file: its name, and which stored file of it is meant."""
+    if isinstance(subject, DocumentVersion):
+        return subject.document.name, f"archived v{subject.version}"
+    if isinstance(subject, FormTemplate):
+        return subject.name, "form template"
+    return subject.name, f"v{subject.version}"
+
+
+def _verdict(subject):
+    """Opens the stored file and returns ``(status, signature, infected_exc)``; never raises for a scanner problem."""
     host, port = _endpoint()
-    now = timezone.now()
     try:
-        with document.file.open("rb") as fh:
+        with subject.file.open("rb") as fh:
             clamav.scan_stream(
                 fh, host, port,
                 timeout=float(getattr(settings, "CLAMAV_TIMEOUT", 10)),
@@ -87,50 +98,75 @@ def scan_document(document, user=None):
                 max_bytes=int(getattr(settings, "CLAMAV_MAX_BYTES", 0)) or None,
             )
     except clamav.InfectedError as exc:
-        document.scan_status = Document.Scan.INFECTED
-        document.scan_signature = str(exc.signature)[:200]
-        document.scanned_at = now
-        newly = document.quarantined_at is None
-        document.quarantined_at = document.quarantined_at or now
-        document.save(update_fields=["scan_status", "scan_signature", "scanned_at", "quarantined_at"])
-        if newly:
-            _record(document, "delete",
-                    f"QUARANTINED '{document.name}' v{document.version}: scanner matched {exc.signature}", user)
-            from accounts import tenancy
-            from notifications import webhooks
-            # A rescan has no workspace active, so a bare post would go to the installation's own channel and name one
-            # organisation's document to whoever reads it: post from inside the document's workspace.
-            with tenancy.scoped(document.workspace_id):
-                webhooks.post_event(
-                    "document.quarantined", f"File quarantined: {document.name}",
-                    f"The malware scanner matched {exc.signature} on a stored file (v{document.version}). "
-                    "It is kept for investigation and refused on every route.",
-                    facts=[("Folder", document.folder.path if document.folder_id else "-")],
-                    path="/documents", severity="critical")
-        return document.scan_status
+        return Document.Scan.INFECTED, str(exc.signature)[:200], exc
     except clamav.LimitsExceededError as exc:
-        document.scan_status = Document.Scan.ERROR
-        document.scan_signature = f"not fully inspected: {exc.reason}"[:200]
+        return Document.Scan.ERROR, f"not fully inspected: {exc.reason}"[:200], None
     except clamav.ScanError as exc:
-        logger.error("Re-scan of document %s failed: %s", document.pk, exc)
-        document.scan_status = Document.Scan.ERROR
-        document.scan_signature = str(exc)[:200]
+        logger.error("Re-scan of %s %s failed: %s", type(subject).__name__.lower(), subject.pk, exc)
+        return Document.Scan.ERROR, str(exc)[:200], None
     except (OSError, ValueError) as exc:
-        document.scan_status = Document.Scan.ERROR
-        document.scan_signature = f"file unreadable: {exc}"[:200]
-    else:
-        document.scan_status = Document.Scan.CLEAN
-        document.scan_signature = ""
-        if document.quarantined_at is not None:
-            _record(document, "update", f"released '{document.name}' from quarantine: rescan clean", user)
-            document.quarantined_at = None
-    document.scanned_at = now
-    document.save(update_fields=["scan_status", "scan_signature", "scanned_at", "quarantined_at"])
+        return Document.Scan.ERROR, f"file unreadable: {exc}"[:200], None
+    return Document.Scan.CLEAN, "", None
+
+
+def scan_document(document, user=None):
+    """Re-scan one stored file (a document, an archived version or a form template); returns the new ``scan_status``.
+    Never raises for a scanner problem (the sweep must reach every file): a file the scanner could not inspect is
+    recorded as ``error``, which is not clean. The verdict is written to the row as it stands when the scan ends, and
+    only if it still holds the bytes that were scanned."""
+    if not enabled():
+        return document.scan_status
+    if not document.file:
+        return document.scan_status
+    scanned_file = document.file.name
+    scanned_version = getattr(document, "version", None)
+    loaded_quarantine = document.quarantined_at
+    status, signature, infected = _verdict(document)
+    now = timezone.now()
+    newly = released = False
+    with transaction.atomic():
+        row = type(document).objects.select_for_update().filter(pk=document.pk).first()
+        # Replaced or deleted while the scanner was reading: the verdict belongs to bytes this row no longer holds.
+        if row is None or row.file.name != scanned_file or getattr(row, "version", None) != scanned_version:
+            return row.scan_status if row is not None else document.scan_status
+        if status == Document.Scan.CLEAN and row.quarantined_at != loaded_quarantine:
+            # Another sweep quarantined it after this one began: a clean answer must not undo that.
+            return row.scan_status
+        row.scan_status = status
+        row.scan_signature = signature
+        row.scanned_at = now
+        if status == Document.Scan.INFECTED:
+            newly = row.quarantined_at is None
+            row.quarantined_at = row.quarantined_at or now
+        elif status == Document.Scan.CLEAN and row.quarantined_at is not None:
+            released = True
+            row.quarantined_at = None
+        row.save(update_fields=["scan_status", "scan_signature", "scanned_at", "quarantined_at"])
+    for field in ("scan_status", "scan_signature", "scanned_at", "quarantined_at"):
+        setattr(document, field, getattr(row, field))
+    name, which = _label(document)
+    if released:
+        _record(document, "update", f"released '{name}' ({which}) from quarantine: rescan clean", user)
+    if newly:
+        _record(document, "delete", f"QUARANTINED '{name}' ({which}): scanner matched {infected.signature}", user)
+        from accounts import tenancy
+        from notifications import webhooks
+        owner_doc = document if isinstance(document, Document) else getattr(document, "document", None)
+        folder_path = owner_doc.folder.path if owner_doc is not None and owner_doc.folder_id else "-"
+        # A rescan has no workspace active, so a bare post would go to the installation's own channel and name one
+        # organisation's document to whoever reads it: post from inside the file's workspace.
+        with tenancy.scoped(document.workspace_id):
+            webhooks.post_event(
+                "document.quarantined", f"File quarantined: {name}",
+                f"The malware scanner matched {infected.signature} on a stored file ({which}). "
+                "It is kept for investigation and refused on every route.",
+                facts=[("Folder", folder_path)],
+                path="/documents", severity="critical")
     return document.scan_status
 
 
 def mark_clean(document):
-    """Marks a document clean without scanning it: call only after an upload passed the scanner."""
+    """Marks a stored file clean without scanning it: call only after an upload passed the scanner."""
     if not enabled():
         return
     document.scan_status = Document.Scan.CLEAN
@@ -140,6 +176,7 @@ def mark_clean(document):
 
 
 def rescan(queryset=None, dry_run=False, limit=None, user=None):
+    """Sweeps a queryset of documents, archived versions or form templates and returns the counts."""
     qs = queryset if queryset is not None else Document.objects.all()
     qs = qs.order_by("scanned_at", "pk")
     if limit:
@@ -163,13 +200,16 @@ def quarantined():
 
 
 def refuse_if_quarantined(document):
-    """Called first by every route that serves a document's bytes: quarantined means 403 with the signature, not 404."""
+    """Called first by every route that serves a stored file's bytes: quarantined means 403 with the signature, not 404.
+    Takes a document, an archived version or a form template."""
     from rest_framework.exceptions import PermissionDenied
 
     if document is not None and document.quarantined_at is not None:
+        quarantined_on = timezone.localtime(document.quarantined_at).date().isoformat()
+        name, which = _label(document)
         raise PermissionDenied(
-            f"'{document.name}' is quarantined: the malware scanner matched "
-            f"{document.scan_signature or 'a signature'} on {document.quarantined_at.date().isoformat()}. "
+            f"'{name}' ({which}) is quarantined: the malware scanner matched "
+            f"{document.scan_signature or 'a signature'} on {quarantined_on}. "
             "It is kept for investigation and cannot be opened or downloaded."
         )
     return document

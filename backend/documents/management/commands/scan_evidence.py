@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from documents import monitor
-from documents.models import Document
+from documents.models import Document, DocumentVersion, FormTemplate
 
 
 class Command(BaseCommand):
@@ -27,18 +27,30 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"Scanner answered in {state['latency_ms']} ms."))
         if options["probe"]:
             return
-        if options["all"]:
-            qs = Document.objects.all()
-        else:
-            cutoff = timezone.now() - timezone.timedelta(days=max(0, options["stale"]))
-            qs = Document.objects.filter(scanned_at__isnull=True) | Document.objects.filter(scanned_at__lt=cutoff)
-        counts = monitor.rescan(qs, dry_run=options["dry_run"], limit=options["limit"] or None)
+        cutoff = timezone.now() - timezone.timedelta(days=max(0, options["stale"]))
+        counts = {"scanned": 0, "clean": 0, "infected": 0, "error": 0, "skipped": 0}
+        left = options["limit"] or None
+        # Archived versions and form templates are files the product serves too, so the sweep opens them as well.
+        for model in (Document, DocumentVersion, FormTemplate):
+            if left is not None and left <= 0:
+                break
+            if options["all"]:
+                qs = model.objects.all()
+            else:
+                qs = model.objects.filter(scanned_at__isnull=True) | model.objects.filter(scanned_at__lt=cutoff)
+            part = monitor.rescan(qs, dry_run=options["dry_run"], limit=left)
+            for key, value in part.items():
+                counts[key] += value
+            if left is not None:
+                left -= part["scanned"] + part["skipped"]
         verb = "would be scanned" if options["dry_run"] else "scanned"
-        self.stdout.write(f"Documents {verb}: {counts['scanned']} "
+        self.stdout.write(f"Files {verb}: {counts['scanned']} "
                           f"(clean {counts['clean']}, infected {counts['infected']}, "
                           f"error {counts['error']}, no file {counts['skipped']})")
-        held = monitor.quarantined().count()
+        held = (monitor.quarantined().count()
+                + DocumentVersion.objects.filter(quarantined_at__isnull=False).count()
+                + FormTemplate.objects.filter(quarantined_at__isnull=False).count())
         if held:
-            self.stdout.write(self.style.WARNING(f"Quarantined documents now: {held}"))
+            self.stdout.write(self.style.WARNING(f"Quarantined files now: {held}"))
         if counts["infected"]:
             raise CommandError(f"{counts['infected']} infected file(s) quarantined; see the audit log.")

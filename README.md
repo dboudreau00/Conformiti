@@ -74,8 +74,8 @@
 <a id="sixty-second-install"></a>
 
 You need git, Docker Engine 24 or newer with Docker Compose 2.24.0 or newer,
-and free host ports 8080 and 8000, or others named in `CONFORMITI_PORT` and
-`CONFORMITI_API_PORT` ([Requirements](#requirements)).
+and free host port 8080, or another named in `CONFORMITI_PORT`
+([Requirements](#requirements)).
 
 ```bash
 git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
@@ -108,8 +108,8 @@ Open **http://localhost:8080** and sign in with it.
 That is the whole install. PostgreSQL, Redis, the API, the reminder worker, its
 scheduler and nginx come up with safe defaults for a trial on a trusted
 network: `DEBUG` off, a unique secret key generated and persisted on first
-boot, rate limits in Redis shared across workers, and the API published only
-on the host's loopback so the network sees nothing but nginx. **No `.env` is
+boot, rate limits in Redis shared across workers, and the API published on no
+host port at all, so the only way in is nginx. **No `.env` is
 required.** It is not a production deployment as it stands. nginx serves plain
 HTTP on port 8080, so the session cookies are not marked `Secure` and carry no
 `__Host-` prefix, and email is printed to the backend log rather than sent.
@@ -304,9 +304,9 @@ uses it.
   once when clamd stops answering and once when it answers again. Stored
   files are re-scanned by `manage.py scan_evidence`, which you schedule
   yourself ([INSTALL.md](INSTALL.md#watching-the-malware-scanner) gives a cron
-  line). It re-checks the current file of each document (by default those not
-  scanned in the last 30 days) and quarantines one that newer definitions
-  match. Archived versions, form templates and meeting minutes are scanned on
+  line). It re-checks documents, their archived versions and form templates
+  (by default those not scanned in the last 30 days) and quarantines each one
+  that newer definitions match on its own. Meeting minutes are scanned on
   upload only.
 
 #### Open in browser
@@ -372,8 +372,8 @@ or `localhost`, so over plain HTTP the digest is not offered.
   grid, so it cannot shift under you while you work through it. The API refuses
   to complete a review while any row is pending. Completing it deactivates
   every account marked revoke and ends its sessions, except your own account,
-  superusers, accounts already inactive and accounts since deleted, which are
-  listed for you instead. A completed review is read-only evidence from that
+  superusers, accounts already inactive, accounts since deleted and the last
+  active administrator, which are listed for you instead. A completed review is read-only evidence from that
   moment.
 - **Meeting cadences** with required-per-year tracking, where the status badge
   compares minutes recorded against what the calendar demands *so far*, so a
@@ -551,7 +551,9 @@ the audit trail, and the key fingerprint is published under *Settings › About*
 and at `/api/signing-keys/`.
 
 **3 · Issue.** The package is issued to named auditors, each for a fixed period
-(45 days unless you choose another date, 180 at most, both settings). They
+(45 days unless you choose another date, 180 at most, both settings); issuing
+again to the same auditor renews that grant, with a new expiry, after a revoke
+or an expiry or to extend a live one. They
 sign in with an account holding the Auditor role. Pinned evidence is one of two
 deliberate, audited bypasses of the folder-permission model: a live grant
 reads every artefact pinned into the package, whatever folder it sits in. The
@@ -589,6 +591,7 @@ package row links to it.
 ```bash
 sha256sum -c SHA256SUMS
 python3 verify.py
+python3 verify.py --trust <fingerprint or signing-key.pub from the organisation>
 ```
 
 The manifest signature covers what was sealed. The auditor's conclusions are
@@ -596,6 +599,10 @@ recorded after the seal, so `controls.csv` and `samples.csv` are covered by
 `SHA256SUMS.sig`, which the organisation's key makes when the bundle is
 exported. The signature files are present only when the installation has a
 signing key, which is the default (`SIGNING_ENABLED=false` turns it off).
+The key that signed `SHA256SUMS` travels in the bundle, so `verify.py` fails
+when it differs from the manifest key unless you pass `--trust` with the
+fingerprint the organisation gave you; after a key rotation an honest export
+carries two keys, and both go to `--trust`.
 `trail.csv` holds at most the first 5000 matching entries, and no IP addresses.
 
 Access to the package expires, or is withdrawn in one click. That ends the
@@ -673,7 +680,7 @@ access still sees and answers the lines assigned to them.**
 
 | Path | Needs |
 |---|---|
-| **Docker** (recommended) | git, and Docker Engine 24+ with Docker Compose 2.24.0 or newer (older Compose rejects the compose file's optional `.env` entry); curl too for `install.sh --docker`. 2 vCPU / 4 GB RAM / 20 GB disk is comfortable. Host port 8080 free, and 8000 on 127.0.0.1 |
+| **Docker** (recommended) | git, and Docker Engine 24+ with Docker Compose 2.24.0 or newer (older Compose rejects the compose file's optional `.env` entry); curl too for `install.sh --docker`. 2 vCPU / 4 GB RAM / 20 GB disk is comfortable. Host port 8080 free |
 | **Local** (trial, development) | git, Python 3.11 to 3.14 with `venv` and `pip` (Debian/Ubuntu: `sudo apt install python3-venv python3-pip`), Node 20.19+ or 22.12+ (the `nodejs` package of Debian 12 and Ubuntu 22.04 or 24.04 is older: install 22 LTS from NodeSource or nvm). SQLite, console email, nothing to run. Local ports 8000 and 5173 free, or others named in `CONFORMITI_DEV_API_PORT` and `CONFORMITI_DEV_PORT` |
 | **Production** | PostgreSQL 16, Redis 7, a TLS-terminating proxy, an SMTP/SES sender, a backup target |
 | **Optional** | Amazon S3, ClamAV, an OIDC or SAML IdP, a Slack/Teams webhook, Jira Cloud |
@@ -721,24 +728,25 @@ pulls what it pushed and boots it before the run is allowed to pass.
 
 Six containers (`db`, `redis`, `backend`, `worker`, `beat` and `frontend`) and
 five volumes. ClamAV joins them, with a `clamdb` volume of its own, only when
-the `scanning` profile is started. Two host ports are published:
+the `scanning` profile is started. One host port is published:
 
 | Host port | Bound to | What answers | Move it with |
 |---|---|---|---|
 | 8080 | every interface | nginx: the interface, and the API behind it | `CONFORMITI_PORT` |
-| 8000 | 127.0.0.1 only | gunicorn directly, for debugging from the host | `CONFORMITI_API_PORT` |
 
 nginx is the only way in from the network, and it carries the CSP, the
 security headers and the 32 MB body cap. Inside its container gunicorn listens
-on 0.0.0.0:8000 so that nginx can reach it over the compose network; the host
-publish of that port is loopback only, and a request sent to it skips nginx's
-headers and body cap, so keep it for debugging.
+on 0.0.0.0:8000 so that nginx can reach it over the compose network. It is not
+published on the host: a request sent to it directly skips nginx's headers and
+body cap, and chooses its own sign-in throttle key through `X-Forwarded-For`.
+[INSTALL.md, Debugging the API](INSTALL.md#debugging-the-api) shows how to
+publish it on the loopback for a debugging session.
 
 ```
 browser ─▶ nginx (frontend, :8080) ─┬─▶ gunicorn (backend, :8000) ─┬─▶ PostgreSQL
                                     │        ▲                     └─▶ Redis (cache + broker)
-                                    │        healthcheck /api/health/, and the host's
-                                    │        127.0.0.1:8000 for debugging (skips nginx)
+                                    │        healthcheck /api/health/;
+                                    │        no host port (INSTALL.md, Debugging the API)
                                     ├─ /static from a shared volume; evidence only through the
                                     │  internal /protected-media/ location, after the API has
                                     │  checked access
@@ -782,8 +790,8 @@ documented in [`.env.example`](.env.example). The ones that matter most:
 | `PUBLIC_URL` | The address links mailed outside the organisation point at. **Required off DEBUG:** a questionnaire link carries a bearer token, so rather than guess the host from the request, sending is refused until this is set |
 | `ORGANISATION_NAME` | Your name in outbound email and on the page a vendor sees |
 | `SEED_DEMO_DATA` | `true` to boot with the demo dataset. Off by default: an installation carrying it says so on its own sign-in page |
-| `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` / `_EMAIL` | Docker only: create your first account on first boot. The password must pass the password policy, or no account is created and the backend log says why. Give it a real email address, and remove the password from `.env` once the account exists: it stays in the backend container's environment until you do and recreate the containers |
-| `CONFORMITI_PORT`, `CONFORMITI_API_PORT` | Compose only: the host ports for nginx (default 8080, every interface) and for the API (default 8000, 127.0.0.1 only) |
+| `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` / `_EMAIL` | Docker only: create your first account on first boot. The password must pass the password policy, or no account is created and the backend log says why. Give it a real email address, and remove the password from `.env` once the account exists: it stays in the backend container's environment until you do and recreate the containers (the worker and beat blank it, and the single sign-on client secret too; they still load the rest of `.env`) |
+| `CONFORMITI_PORT`, `CONFORMITI_API_PORT` | Compose only: the host port for nginx (default 8080, every interface), and the host port the API takes when you publish it for debugging with the override in INSTALL.md (default 8000, 127.0.0.1 only; nothing is published without it) |
 | `CONFORMITI_DEV_PORT`, `CONFORMITI_DEV_API_PORT` | Local development only, read from the shell: the Vite dev server's port (default 5173), and the port `runserver` listens on and Vite proxies the API to (default 8000) |
 
 ### Data, storage and mail
@@ -957,10 +965,16 @@ terminal (a script, CI), goes straight on. On the same machine or a fresh one
 not in the backup, so on a fresh machine write it back from your own records
 before the restore: the database and Redis passwords, the host names and
 origin lists, `PUBLIC_URL`, the mail settings, and `COMPOSE_PROJECT_NAME` or
-the ports if you set them. The application containers are stopped, the
-database is emptied and reloaded, the three volumes are replaced from the
-archives and the stack is started again. Check `docker compose ps` and `/api/health/` afterwards; the signing
-key reported there should be the one you had.
+the ports if you set them. The application containers are stopped and the
+three volumes are unpacked beside their current files (each needs room for a
+second copy). The database is then emptied and reloaded in a single
+transaction, so a dump the server rejects, or an interrupted run, rolls back to
+the database you had. Only after that commits are the volumes swapped for the
+unpacked copies and the stack started again. If the run fails before the swap
+nothing has been replaced, and a stack that was running is started again. If it
+stops during the swap, run it again with the same backup. Check
+`docker compose ps` and `/api/health/` afterwards; the signing key reported
+there should be the one you had.
 
 On the published images, the restore stays on them only with `COMPOSE_FILE`
 and `CONFORMITI_VERSION` in `.env`
@@ -1394,7 +1408,8 @@ access token from `localStorage`, refreshes once on a 401 (storing the rotated
 refresh token) and revokes it on sign-out. In cookie mode, the default, it
 stores no token: the browser sends the HttpOnly cookies, the client adds
 Django's CSRF token to every unsafe request, a 401 triggers one refresh
-through the refresh cookie, and sign-out goes through `/api/auth/token/clear/`.
+through the refresh cookie, a reload after the access cookie has lapsed renews through
+`/api/auth/token/renew/` before it shows sign-in, and sign-out goes through `/api/auth/token/clear/`.
 
 ---
 
@@ -1424,8 +1439,8 @@ Every other route needs a signed-in account. These answer without one:
 `/api/health/` (not rate limited; it reports the exact version, whether demo
 accounts or a first administrator are pending, the scanner state and the
 signing key's id and fingerprint), `/api/signing-keys/`, `/api/auth/config/`,
-`/api/auth/session/` and the two sign-out routes, the sign-in and refresh
-endpoints, the OIDC and SAML endpoints under `/api/auth/`, and
+`/api/auth/session/` and the two sign-out routes, the sign-in, refresh and
+renew endpoints, the OIDC and SAML endpoints under `/api/auth/`, and
 `/api/questionnaire/<token>/`.
 
 Every list is scoped to the caller's workspace at the queryset level, so a view

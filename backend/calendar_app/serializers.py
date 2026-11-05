@@ -18,6 +18,13 @@ class CalendarEventSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["created_by"]
 
+    def validate(self, attrs):
+        start = attrs.get("date", getattr(self.instance, "date", None))
+        end = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start and end and end < start:
+            raise serializers.ValidationError({"end_date": "The end date is before the start date."})
+        return attrs
+
     def to_representation(self, instance):
         """Withhold a linked document the reader cannot open, as the feed does. Writes still accept the id."""
         data = super().to_representation(instance)

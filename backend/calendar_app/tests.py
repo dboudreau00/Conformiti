@@ -1,3 +1,5 @@
+from django.utils import timezone
+
 from documents.models import VIEW
 from testutils import APITestBase, grant, make_doc
 
@@ -17,11 +19,12 @@ class CalendarTests(APITestBase):
         make_doc(self.tree.ctrl2, self.owner, name="Shown", days=10)
         grant(self.tree.ctrl2, user=self.viewer, level=VIEW)
         self.client_for(self.manager).post("/api/calendar/", {"title": "Board", "date": "2099-01-01"}, format="json")
+        # No window is a bounded default, so the 2099 event is only in a window that holds it.
         feed = self.client_for(self.viewer).get("/api/calendar/feed/").data
         titles = [i["title"] for i in feed]
         self.assertIn("Review due: Shown", titles)
         self.assertNotIn("Review due: Hidden", titles)
-        self.assertIn("Board", titles)
+        self.assertNotIn("Board", titles)
         window = self.client_for(self.viewer).get("/api/calendar/feed/?start=2099-01-01&end=2099-12-31").data
         self.assertEqual([i["title"] for i in window], ["Board"])
 
@@ -61,13 +64,14 @@ class CalendarTests(APITestBase):
     def test_a_nameless_assignee_is_named_by_username(self):
         from testutils import make_user
 
+        soon = (timezone.localdate() + timezone.timedelta(days=3)).isoformat()
         root = make_user("rootadmin", self.roles["Administrator"], first_name="", last_name="")
         m = self.client_for(self.manager)
-        r = m.post("/api/calendar/", {"title": "Fieldwork", "date": "2099-03-01", "assignee": root.pk},
+        r = m.post("/api/calendar/", {"title": "Fieldwork", "date": soon, "assignee": root.pk},
                    format="json")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["assignee_name"], "rootadmin")
-        m.post("/api/calendar/", {"title": "Unassigned", "date": "2099-03-02"}, format="json")
+        m.post("/api/calendar/", {"title": "Unassigned", "date": soon}, format="json")
         make_doc(self.tree.ctrl1, root, name="Root policy", days=10)
         feed = {i["title"]: i["assignee"] for i in m.get("/api/calendar/feed/").data}
         self.assertEqual(feed["Fieldwork"], "rootadmin")

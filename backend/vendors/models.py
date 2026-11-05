@@ -1,6 +1,7 @@
 """Assurance is ``VendorAssessment`` rows; the register's risk view is derived from them, never typed in."""
 from datetime import timedelta
 
+from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -53,7 +54,9 @@ class Vendor(TenantModel):
         ANNUAL = "annual", "Annual"
         BIENNIAL = "biennial", "Every 2 years"
 
-    CADENCE_DAYS = {"quarterly": 91, "semiannual": 182, "annual": 365, "biennial": 730}
+    CADENCE_DAYS = {"quarterly": 91, "semiannual": 182}
+    # Calendar years, so an annual review lands on the anniversary across 29 February.
+    CADENCE_YEARS = {"annual": 1, "biennial": 2}
 
     name = models.CharField(max_length=160)
     # The last matrix file's column layout, so the matrix can go back in their own shape:
@@ -102,8 +105,12 @@ class Vendor(TenantModel):
 
     def compute_next_review(self):
         """Counts from the last review or onboarding, never from now, or an edited vendor would never become overdue."""
-        base = self.last_reviewed or (self.created_at.date() if self.created_at else timezone.localdate())
-        self.next_review_date = base + timedelta(days=self.CADENCE_DAYS[self.review_cadence])
+        base = self.last_reviewed or (
+            timezone.localtime(self.created_at).date() if self.created_at else timezone.localdate())
+        if self.review_cadence in self.CADENCE_YEARS:
+            self.next_review_date = base + relativedelta(years=self.CADENCE_YEARS[self.review_cadence])
+        else:
+            self.next_review_date = base + timedelta(days=self.CADENCE_DAYS[self.review_cadence])
         return self.next_review_date
 
     @property

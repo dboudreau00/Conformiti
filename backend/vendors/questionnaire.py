@@ -224,6 +224,7 @@ def save_draft(invite, answers, request=None):
     invite.draft = clean
     invite.saved_at = timezone.now()
     invite.save(update_fields=["draft", "saved_at"])
+    _audit(request, invite, "update", f"questionnaire draft for {invite.vendor.name} saved")
     return invite
 
 

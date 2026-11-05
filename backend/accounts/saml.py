@@ -299,6 +299,7 @@ def complete(request, flow):
     name_id = ((name_el.text if name_el is not None else "") or "").strip()
     transient = name_el is not None and name_el.get("Format") == TRANSIENT_FORMAT
     confirmed = False
+    confirmed_until = None
     for sc in subject.findall("saml:SubjectConfirmation", NS):
         if sc.get("Method") != BEARER:
             continue
@@ -317,6 +318,7 @@ def complete(request, flow):
         if expiry is None or now - skew >= expiry:
             continue
         confirmed = True
+        confirmed_until = expiry
         break
     if not confirmed:
         raise OidcError("state", "no bearer confirmation answers our request")
@@ -324,7 +326,9 @@ def complete(request, flow):
     assertion_id = assertion.get("ID") or ""
     if not assertion_id:
         raise OidcError("token", "assertion has no ID")
-    _refuse_replay(assertion_id, not_after or now + dt.timedelta(hours=1))
+    # The row outlives every moment this assertion would still be accepted: the later of its two limits plus the clock
+    # skew allowed above. Pruned sooner, the same response could be posted again inside the skew.
+    _refuse_replay(assertion_id, max(t for t in (not_after, confirmed_until) if t is not None) + skew)
 
     attrs = _attributes(assertion)
     email = ""

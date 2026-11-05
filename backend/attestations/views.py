@@ -2,7 +2,7 @@
 package is a draft, checked in the view because ``@action`` endpoints skip serializer ``validate()``."""
 import tempfile
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.http import FileResponse
 from django.utils import timezone
@@ -16,7 +16,6 @@ from rest_framework.views import APIView
 
 from audit.events import record_package_event
 from compliance.models import Control
-from documents import monitor
 from notifications import webhooks
 from documents.downloads import serve_stored_file
 
@@ -30,7 +29,7 @@ from .serializers import (
     PackageGrantSerializer,
     PackageSampleSerializer,
 )
-from .snapshot import pin_document, pinned_file, snapshot_control, stamp, verify_pins
+from .snapshot import pin_document, pinned_file, refuse_if_pin_quarantined, snapshot_control, stamp, verify_pins
 
 MIN_ASSERTION = 40
 
@@ -58,6 +57,15 @@ def lock_open(package):
     Every write that changes what the manifest says queues here, so none lands between a seal's check and snapshot."""
     row = EvidencePackage.objects.select_for_update().get(pk=package.pk)
     assert_open(row)
+    return row
+
+
+def lock_not_withdrawn(package):
+    """Lock the package row and refuse once it is withdrawn, for the writes a sealed package still takes (the management
+    response, a finding raised as a risk); call inside ``transaction.atomic()``. A withdrawal queues behind it."""
+    row = EvidencePackage.objects.select_for_update().get(pk=package.pk)
+    if row.status == EvidencePackage.Status.WITHDRAWN:
+        raise ValidationError({"detail": "This package is withdrawn and is now read-only."})
     return row
 
 
@@ -260,7 +268,10 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             package.save(update_fields=[
                 "manifest_json", "manifest_sha256", "manifest_version", "manifest_algorithm",
             ])
-            signed_by = signing.sign_package(package)
+            try:
+                signed_by = signing.sign_package(package)
+            except signing.KeyBelongsToAnotherWorkspace as exc:
+                raise ValidationError({"detail": str(exc)})
 
         # Digest first: AuditLog.detail is capped at 255 characters and the digest binds the row to these bytes.
         record_package_event(
@@ -276,7 +287,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             facts=[("Manifest sha256", package.manifest_sha256[:16] + "…"),
                    ("Signing key", signed_by or "unsigned")],
             path="/packages", severity="info")
-        return Response(EvidencePackageSerializer(package).data)
+        return Response(EvidencePackageSerializer(package, context={"request": request}).data)
 
     @action(detail=True, methods=["get"])
     def signature(self, request, pk=None):
@@ -320,7 +331,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             f"{revoked} grant(s) revoked by {package.withdrawn_by_name}."
             f"{' Reason: ' + package.withdrawn_reason if package.withdrawn_reason else ''}",
             path="/packages", severity="medium")
-        return Response(EvidencePackageSerializer(package).data)
+        return Response(EvidencePackageSerializer(package, context={"request": request}).data)
 
     @action(detail=True, methods=["get"], throttle_classes=[PackageVerifyThrottle])
     def verify(self, request, pk=None):
@@ -412,6 +423,13 @@ class SigningKeysView(APIView):
         if slug and workspace is None:
             return Response({"algorithm": signing.ALGORITHM, "enabled": False,
                              "workspace": slug, "current": None, "keys": []})
+
+        # Nothing registered is the answer for a slug that never signed too, so the derived key of an organisation that
+        # has sealed nothing is not handed out and a real slug looks like an unknown one.
+        if not SigningKey.objects.filter(workspace=workspace).exists():
+            return Response({"algorithm": signing.ALGORITHM, "enabled": False,
+                             "workspace": slug or (workspace.slug if workspace else None),
+                             "current": None, "keys": []})
 
         with tenancy.scoped(workspace):
             current = signing.current_key_info(create=False)
@@ -505,7 +523,10 @@ class PackageControlViewSet(viewsets.ModelViewSet):
                 serializer.instance = type(row).objects.select_for_update().get(pk=row.pk)
                 serializer.save(**extra)
         else:
-            serializer.save(**extra)
+            with transaction.atomic():
+                if touching_response:
+                    lock_not_withdrawn(row.package)
+                serializer.save(**extra)
 
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
@@ -523,24 +544,28 @@ class PackageControlViewSet(viewsets.ModelViewSet):
         row = self.get_object()
         if not access.can_assemble(request.user):
             raise PermissionDenied("You need the frameworks capability to raise a risk.")
-        if row.risk_id:
-            raise ValidationError({"detail": "This finding is already tracked as a risk."})
         if PackageControl.Conclusion.EXCEPTIONS not in (
             row.design_conclusion, row.operating_conclusion
         ):
             raise ValidationError(
                 {"detail": "Only a control with exceptions noted can be raised as a finding."}
             )
-        risk = Risk.objects.create(
-            title=f"Audit finding: {row.control_ref} {row.title}"[:200],
-            description=(row.auditor_note or "Exception noted during the audit.")[:2000],
-            risk_type=Risk.Type.AUDIT_FINDING,
-            control=row.control,
-            owner=row.package.created_by,
-            created_by=request.user,
-        )
-        row.risk = risk
-        row.save(update_fields=["risk"])
+        with transaction.atomic():
+            lock_not_withdrawn(row.package)
+            # Read again under the lock: two requests that both found no risk must not both make one.
+            row = type(row).objects.select_for_update().get(pk=row.pk)
+            if row.risk_id:
+                raise ValidationError({"detail": "This finding is already tracked as a risk."})
+            risk = Risk.objects.create(
+                title=f"Audit finding: {row.control_ref} {row.title}"[:200],
+                description=(row.auditor_note or "Exception noted during the audit.")[:2000],
+                risk_type=Risk.Type.AUDIT_FINDING,
+                control=row.control,
+                owner=row.package.created_by,
+                created_by=request.user,
+            )
+            row.risk = risk
+            row.save(update_fields=["risk"])
         record_package_event(request, row.package, "update",
                              f"raised risk {risk.pk} from finding on {row.control_ref}")
         return Response(PackageControlSerializer(row).data, status=status.HTTP_201_CREATED)
@@ -725,7 +750,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         """What /file/ and /preview/ serve: the bytes the row pinned (``pinned_file``), never a later version's."""
         if row.document is None or not row.document.file:
             raise ValidationError({"detail": "This evidence file is no longer available."})
-        monitor.refuse_if_quarantined(row.document)
+        refuse_if_pin_quarantined(row)
         source, version = pinned_file(row)
         if source is None:
             raise ValidationError({"detail": "The file pinned here is no longer stored, "
@@ -817,7 +842,7 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
             raise ValidationError(
                 {"expires_at": f"Access cannot be granted for more than {max_days} days."}
             )
-        grant = serializer.save(
+        fields = dict(
             expires_at=expires,
             username=recipient.get_username(),
             full_name=(recipient.get_full_name() or recipient.get_username())[:200],
@@ -826,14 +851,39 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
             granted_by_name=(self.request.user.get_full_name()
                              or self.request.user.get_username())[:200],
         )
-        record_package_event(self.request, package, "create",
-                             f"issued package {package.pk} to {grant.username} "
-                             f"until {expires.date().isoformat()}")
+        grant, renewed = self._issue_or_renew(serializer, package, recipient, fields)
+        until = timezone.localtime(expires).date().isoformat()
+        record_package_event(self.request, package, "update" if renewed else "create",
+                             f"{'renewed' if renewed else 'issued'} package {package.pk} to {grant.username} "
+                             f"until {until}")
         webhooks.post_event(
             "package.issued", f"Package issued: {package.name}",
-            f"Issued to {grant.full_name or grant.username} by {grant.granted_by_name} "
-            f"until {expires.date().isoformat()}.",
+            f"{'Renewed for' if renewed else 'Issued to'} {grant.full_name or grant.username} "
+            f"by {grant.granted_by_name} until {until}.",
             path="/packages", severity="info")
+
+    @staticmethod
+    def _issue_or_renew(serializer, package, recipient, fields):
+        """One grant per (package, user): issuing again to the same person renews their row with the new expiry and
+        clears a revocation, so access is neither lost for good after a revoke or expiry nor impossible to extend.
+        Returns ``(grant, renewed)``; two requests racing to issue the first grant end as an issue and a renewal."""
+        with transaction.atomic():
+            existing = PackageGrant.objects.select_for_update().filter(package=package, user=recipient).first()
+            if existing is None:
+                try:
+                    with transaction.atomic():
+                        return serializer.save(**fields), False
+                except IntegrityError:
+                    existing = PackageGrant.objects.select_for_update().get(package=package, user=recipient)
+            for name, value in fields.items():
+                setattr(existing, name, value)
+            existing.revoked_at = None
+            existing.revoked_by = None
+            if "note" in serializer.validated_data:
+                existing.note = serializer.validated_data["note"]
+            existing.save()
+            serializer.instance = existing
+            return existing, True
 
     def perform_destroy(self, instance):
         """Revoke by marking the row; it is kept as the record of the grant."""

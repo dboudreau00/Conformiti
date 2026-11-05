@@ -288,6 +288,9 @@ class PackageGrantSerializer(serializers.ModelSerializer):
             "username", "full_name", "email", "granted_by_name", "granted_at",
             "revoked_at", "last_accessed_at", "access_count",
         ]
+        # Issuing again to the same person renews their grant (PackageGrantViewSet), so the (package, user) pair is not
+        # refused as a duplicate here.
+        validators = []
 
 
 class EvidencePackageSerializer(serializers.ModelSerializer):
@@ -350,7 +353,20 @@ class EvidencePackageSerializer(serializers.ModelSerializer):
         ]
 
     def get_successors(self, obj):
-        return [{"id": s.pk, "name": s.name, "status": s.status} for s in obj.successors.all()]
+        """The follow-on packages the caller may read: a draft successor's name and status are not for a grantee who
+        cannot open it."""
+        successors = list(obj.successors.all())
+        if not successors:
+            return []
+        # context is the root serializer's, so a list computes the readable ids once.
+        readable = self.context.get("_readable_package_ids")
+        if readable is None:
+            from . import access
+
+            user = getattr(self.context.get("request"), "user", None)
+            readable = set(access.readable_packages(user).values_list("pk", flat=True))
+            self.context["_readable_package_ids"] = readable
+        return [{"id": s.pk, "name": s.name, "status": s.status} for s in successors if s.pk in readable]
 
     def get_pbc_summary(self, obj):
         counts = {"total": 0, "open": 0, "provided": 0, "accepted": 0, "returned": 0,

@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from . import scoring
 from accounts.tenancy import CurrentWorkspaceDefault
-from documents.serializers import PersonNameField
+from documents.serializers import PersonNameField, visible_folder_path
 
 from .models import Control, ControlCategory, ControlEvidence, ControlMapping, Framework
 
@@ -116,7 +116,7 @@ class ControlRefSerializer(serializers.ModelSerializer):
 class ControlEvidenceSerializer(serializers.ModelSerializer):
     document_name = serializers.CharField(source="document.name", read_only=True)
     document_status = serializers.CharField(source="document.status", read_only=True)
-    folder_path = serializers.CharField(source="document.folder.path", read_only=True)
+    folder_path = serializers.SerializerMethodField()
     control_label = serializers.CharField(source="control.control_id", read_only=True)
     control_title = serializers.CharField(source="control.title", read_only=True)
     framework_key = serializers.CharField(source="control.category.framework.key", read_only=True)
@@ -133,6 +133,10 @@ class ControlEvidenceSerializer(serializers.ModelSerializer):
             "linked_by_name", "can_unlink",
         ]
         read_only_fields = ["created_at"]
+
+    def get_folder_path(self, obj):
+        # Clipped like the documents' own paths, so a parent folder the caller cannot see is never named.
+        return visible_folder_path(obj.document.folder, self.context)
 
     def get_can_unlink(self, obj):
         request = self.context.get("request")
@@ -162,6 +166,12 @@ class FrameworkSerializer(serializers.ModelSerializer):
             "id", "key", "name", "version", "authority", "description",
             "categories", "control_count", "implemented_count", "workspace",
         ]
+
+    def validate_key(self, value):
+        # Seeding finds a framework by its key: a renamed one is seeded again beside it at the next boot.
+        if self.instance is not None and value != self.instance.key:
+            raise serializers.ValidationError("A framework's key cannot be changed.")
+        return value
 
     def get_control_count(self, obj):
         return Control.objects.filter(category__framework=obj).count()

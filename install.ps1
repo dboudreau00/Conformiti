@@ -346,14 +346,10 @@ if ($Docker) {
   # A host port something else holds would stop Compose part way, with the
   # database up and the API left without a network. Ports this project's own
   # containers publish are fine: that is a re-run, and Compose recreates them.
-  # The API port is read the way Compose reads it: the environment, then .env.
-  $apiText = if ($env:CONFORMITI_API_PORT) { $env:CONFORMITI_API_PORT } else { Get-EnvValue "CONFORMITI_API_PORT" }
-  $apiPort = if ($apiText -match '^\d{1,5}$') { [int]$apiText } else { 8000 }
+  # The stack publishes no API port unless the operator adds one (INSTALL.md,
+  # Debugging the API), so only nginx's port is checked.
   if ((Test-PortBusy $Port) -and -not (Test-StackHolds frontend 80 $Port)) {
     Fail "port $Port is already in use on this machine. Choose another with -Port N (it is saved as CONFORMITI_PORT in .env)."
-  }
-  if ((Test-PortBusy $apiPort) -and -not (Test-StackHolds backend 8000 $apiPort)) {
-    Fail "port $apiPort on 127.0.0.1, where the stack publishes its API, is already in use (a local 'manage.py runserver' is the usual holder). Set CONFORMITI_API_PORT to a free port in .env and run this again."
   }
 
   Say "Building images and starting the stack (first build takes a few minutes)..."
@@ -554,7 +550,8 @@ print(settings.MEDIA_ROOT)
 '@
   Push-Location -LiteralPath "backend"
   try { $resetInfo = @(& $pyexe -c $resetCode) } finally { Pop-Location }
-  if ($LASTEXITCODE -ne 0 -or $resetInfo.Count -lt 3) {
+  # Exactly three lines: a path holding a line break would split into more, and be read as something else.
+  if ($LASTEXITCODE -ne 0 -or $resetInfo.Count -ne 3) {
     Fail "Could not read the database settings, so -Reset does not know what it would delete."
   }
   $resetEngine, $resetDb, $resetMedia = $resetInfo[0], $resetInfo[1], $resetInfo[2]
@@ -566,6 +563,16 @@ print(settings.MEDIA_ROOT)
     $full = [System.IO.Path]::GetFullPath($target)
     if (-not $full.StartsWith($here, [System.StringComparison]::OrdinalIgnoreCase) -or $full.Length -le $here.Length) {
       Fail "-Reset will not delete ${target}: it is outside this checkout. Remove it yourself if you mean to."
+    }
+    # A junction or link on the way can point anywhere, and Windows PowerShell 5.1 deletes through one, so the text
+    # test above is not enough: refuse it, as install.sh does.
+    $walk = $full.TrimEnd('\')
+    while ($walk.Length -ge $here.Length) {
+      $item = Get-Item -LiteralPath $walk -Force -ErrorAction SilentlyContinue
+      if ($item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        Fail "-Reset will not delete ${target}: $walk is a link or a junction, so what it removes could be outside this checkout. Remove it yourself if you mean to."
+      }
+      $walk = [System.IO.Path]::GetDirectoryName($walk)
     }
   }
   if (-not $Yes) {
@@ -722,7 +729,7 @@ if ($SetupOnly) {
 }
 
 if (Test-PortListened $devApiPort) {
-  Warn "port $devApiPort is already in use (the Docker stack's API, or another runserver, is the usual holder): the API window will close at once and the web app would talk to whatever answers there. Stop it, or set CONFORMITI_DEV_API_PORT to a free port."
+  Warn "port $devApiPort is already in use (another runserver, or the Docker stack with the debugging override, is the usual holder): the API window will close at once and the web app would talk to whatever answers there. Stop it, or set CONFORMITI_DEV_API_PORT to a free port."
 }
 Say "Starting servers: API on :$devApiPort (CONFORMITI_DEV_API_PORT), web app on :$devPort (CONFORMITI_DEV_PORT)."
 Say "Open http://localhost:$devPort in your browser. Close the two windows to stop."

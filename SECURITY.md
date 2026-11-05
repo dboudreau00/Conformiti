@@ -24,14 +24,15 @@ then recorded in CHANGELOG.md.
 
 ## Reviews
 
-Twelve in total, of which **seven were independent**. Each had its findings
+Thirteen in total, of which **eight were independent**. Each had its findings
 fixed before the release that followed, apart from those its record accepts or
 defers with the reasoning: two informational findings of the 0.2.0 review (S-17
 and S-18, accepted), one of the 0.9.5h review (L-8, a passkey as proof when
 changing a factor, deferred), and two findings of the 0.9.0 review that were
 fixed only in part (H-14, where the throttle key was fixed but no per-account
 lockout was added, and H-16, where a new upload version still clears
-quarantine). [REVIEWS.md](REVIEWS.md) holds the method, every finding and its
+quarantine), and two of the 0.9.5ob review (the application half of OPS-05 and
+ROB-09, deferred). [REVIEWS.md](REVIEWS.md) holds the method, every finding and its
 status today, and a section on what was deliberately left alone.
 
 Here each review is named by the release it reviewed. In REVIEWS.md a review
@@ -52,6 +53,7 @@ is named by the release that closed it, as the code comments cite it, so the
 | 0.9.5l, post-release install check | internal, run with automated agents | 2 | [CHANGELOG.md](CHANGELOG.md) | 0.9.5m |
 | 0.9.5m, release review | **independent** | 3 (one bug, two suggestions), all closed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5ma |
 | 0.9.5ma, documentation audit | internal, run with automated agents | every document held to the code; 19 code defects fixed | [CHANGELOG.md](CHANGELOG.md) | 0.9.5mb (11), 0.9.5mc (8) |
+| 0.9.5ob, source review | **independent** | 70: 62 fixed, 6 not defects as reported, 2 deferred | [REVIEWS.md](REVIEWS.md), 0.9.5oc review | 0.9.5oc |
 
 The independent reviews up to 0.9.5h are the substantial ones. The 0.9.0
 review attacked tenancy, authentication, single sign-on, file ingest,
@@ -298,17 +300,25 @@ point of view.
   built app ships; findings in the build tools (Tailwind, Vite and their
   dependencies) are reported without failing. CI runs no vulnerability
   scan of the Python dependencies or the images; Dependabot proposes updates
-  for both. Base images are referenced by tag, not by digest. CI runs on
-  every push to main and on every pull request.
+  for both. Base images are referenced by tag, not by digest. Every GitHub
+  Action in the workflows, the publish job that holds `packages: write` among
+  them, is pinned to a full commit SHA. CI runs on every push to main and on
+  every pull request.
 - **Containers:** the API, worker and beat run as an unprivileged `app` user
   (uid 10001), which owns the application code as well as the paths it
   writes. The web container is the stock nginx image, whose master process
   runs as root and whose workers run as `nginx`. The shipped compose file
   sets no read-only root filesystem, dropped capabilities,
   `no-new-privileges` or resource limits on any service; add them in an
-  override if your baseline requires them. Healthchecks, API bound to
-  loopback and fronted by nginx, secret key generated and persisted on first
-  boot, DEBUG off by default, demo data removable with one command.
+  override if your baseline requires them. Healthchecks, the API published on
+  no host port and fronted by nginx, secret key generated and persisted on
+  first boot, DEBUG off by default, demo data removable with one command. The
+  worker and beat load the whole `.env` but have the first administrator's
+  account, `DEMO_PASSWORD` and `OIDC_CLIENT_SECRET` blanked (beat also the mail
+  and S3 credentials), so those stay on the backend service. Residual: a
+  container on the compose network reaches `backend:8000` without nginx, where
+  nothing sets `X-Forwarded-For`, so the sign-in throttle there keys on
+  whatever address the caller writes.
 
 ## Findings fixed in the 0.2.0 review
 
@@ -406,7 +416,19 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   behaviour (tokens in `localStorage`); switching signs everyone out once, and
   both modes accept a Bearer header, so API clients are unaffected. The
   end-to-end suite runs against both transports in CI.
-- **Quarantine keeps the bytes.** A stored document the re-scan flags is
+- **An access token minted in the same second as a password change survives
+  it.** A password change, reset or MFA reset revokes every refresh token and
+  refuses every access token issued before that moment, but the moment is
+  stored to the whole second and a token's issue time is whole seconds, so an
+  access token minted in that same second keeps working until it expires
+  (60 minutes by default, `JWT_ACCESS_MINUTES`). It cannot be renewed: its
+  refresh token is revoked. Refusing it by comparison alone would also refuse
+  the person who signs in again within that second, so the fix is a
+  session-epoch claim carried by the token, which is planned for a later
+  release. Until then only an access token minted in that one second can
+  outlive a recovery.
+- **Quarantine keeps the bytes.** A stored file the re-scan flags (a document,
+  an archived version or a form template, each with its own verdict) is
   refused on every route that serves it (download, preview, versions, pinned
   package evidence, PBC attachments) but stays on disk for the investigation;
   deleting it is a person's decision. `manage.py scan_evidence` is only as
@@ -476,13 +498,21 @@ audit IPs. See the 0.1.x entries in [CHANGELOG.md](CHANGELOG.md).
   installation key and the workspace's slug, so that one file protects every
   organisation's signatures and whoever holds it can sign for any of them;
   a rotation changes every workspace's key, and changing a workspace's slug
-  changes its signing identity. The public keys are published
+  changes its signing identity, so a slug another workspace has signed
+  under cannot be given to a second one (the API refuses it, and a seal
+  refuses a key registered to another workspace). The public keys are published
   (`/api/signing-keys/`, Settings › About), the bundle carries its own, and
   the shipped `verify.py` checks the signature with the standard library
-  alone. `/api/signing-keys/` is unauthenticated on purpose, so a bundle can
+  alone. The key inside a bundle proves nothing about who made it, so
+  `verify.py` fails a bundle whose file list was signed by a different key
+  than its manifest, and `--trust <fingerprint or key file>` makes it accept
+  only keys the organisation gave you (after a rotation an honest export
+  carries two, and both are named). It also refuses symbolic links and files
+  that are not regular files. `/api/signing-keys/` is unauthenticated on purpose, so a bundle can
   be checked without an account; with several organisations it asks for
   `?workspace=<slug>`, and it still tells an organisation that has signed
-  something apart from one that has not. The `signing` block of
+  something apart from one that has not (a workspace that has sealed
+  nothing answers like an unknown slug). The `signing` block of
   `/api/health/` names the key that signs an organisation's packages when the
   installation serves one, and none (`per_workspace`) when it serves several;
   Settings › About shows the key of the workspace you are signed in to. Until

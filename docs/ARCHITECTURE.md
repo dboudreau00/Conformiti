@@ -138,7 +138,10 @@ its numeric id, because a control reference is not unique across frameworks.
   the tokens in the body for the client to send as `Authorization: Bearer`,
   which both modes accept.
 - `POST /api/auth/token/refresh/` rotates the refresh token and blacklists the
-  old one.
+  old one. `POST /api/auth/token/renew/` does the same for a page load whose
+  access cookie has lapsed: the refresh cookie's path covers it and not
+  `/api/auth/session/`. It answers 200 (`renewed` true or false) for every
+  outcome but a CSRF failure or the throttle.
 - The SPA signs out with `POST /api/auth/token/clear/`, which revokes every
   refresh token the account holds and expires the cookies; `POST
   /api/auth/logout/` blacklists the refresh token in its body. An access
@@ -175,7 +178,10 @@ Document.last_reviewed + cadence ─▶ next_review_date
 `audit.middleware.AuditLogMiddleware` reads the top-level field names of a
 JSON/form body *before* the view runs (values are never recorded; the names
 password, current_password, new_password, api_token, otp, code and secret are
-dropped), then, after an authenticated mutating request under `/api/` answers
+dropped). A JSON body over 64 KB is not parsed ahead of the view: its names
+are read from what the view parsed. Role, is_active and the other privilege
+fields are listed first, and names that do not fit the 255-character detail
+are counted as `+N more`. Then, after an authenticated mutating request under `/api/` answers
 below 400, writes `{user, action, object_type, object_id,
 "METHOD /path fields=a,b", ip}`. `/api/auth/*`, `/api/notifications/*` and
 `/api/health/` are excluded; sign-in, failed sign-in and sign-out, passkey
@@ -243,8 +249,8 @@ storing the rotated refresh token) and revokes on sign-out.
 ```
 browser ─▶ nginx (frontend, :8080) ─┬─▶ gunicorn (backend, :8000) ─┬─▶ PostgreSQL
                                     │        ▲                     └─▶ Redis (cache + broker)
-                                    │        healthcheck /api/health/, and the host's
-                                    │        127.0.0.1:8000 for debugging (skips nginx)
+                                    │        healthcheck /api/health/;
+                                    │        no host port (INSTALL.md, Debugging the API)
                                     ├─ /static from the shared volume; evidence only
                                     │   by X-Accel-Redirect from the API (internal
                                     │   /protected-media/), never by URL
@@ -262,6 +268,6 @@ The API alone calls Jira and the single sign-on provider. Webhook, Jira and
 provider calls are HTTPS through `config/outbound.py`; mail and clamd are not.
 
 Inside its container gunicorn listens on 0.0.0.0:8000 so nginx can reach it
-over the compose network; the host publishes that port on 127.0.0.1 only
-(`CONFORMITI_API_PORT` moves it), and a request sent there skips nginx's
-headers and body cap.
+over the compose network. The host publishes no port for it: a request sent
+there would skip nginx's headers and body cap, and choose its own throttle key
+(INSTALL.md, Debugging the API, for a debugging session).

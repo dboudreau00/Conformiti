@@ -2,6 +2,7 @@
 standalone. Bytes in; normalized row dicts and per-row issues out. The view resolves owners and controls."""
 import csv
 import io
+import posixpath
 import re
 import zipfile
 import xml.etree.ElementTree as ET
@@ -80,15 +81,35 @@ TREATMENT_ALIASES = {
 _XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 
+class Rows(list):
+    """Parsed rows, plus the encoding a CSV was decoded with so the view can say when it was not UTF-8."""
+
+    encoding = "utf-8"
+
+
+def _decode_csv(data):
+    """UTF-8 first, then Windows-1252 (what Excel's plain "CSV" writes). Never substitutes characters: a file that
+    is neither is refused."""
+    try:
+        return data.decode("utf-8-sig"), "utf-8"
+    except UnicodeDecodeError:
+        pass
+    try:
+        return data.decode("cp1252"), "windows-1252"
+    except UnicodeDecodeError:
+        raise ValueError("The CSV file is not UTF-8 or Windows-1252 text. Save it as CSV UTF-8 and import it again.")
+
+
 def _read_csv(data):
-    text = data.decode("utf-8-sig", errors="replace")
+    text, encoding = _decode_csv(data)
     sample = text[:4096]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
     # csv.Error (an oversized cell, say) is not a ValueError: it is converted below so the view answers 400, not 500.
-    rows = []
+    rows = Rows()
+    rows.encoding = encoding
     try:
         for row in csv.reader(io.StringIO(text), dialect):
             rows.append([(cell or "").strip() for cell in row])
@@ -142,6 +163,33 @@ def _cell_text(cell, shared):
     return unescape_xstring(text) if t == "str" else text
 
 
+_REL_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_PKG_REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def _sheet_number(name):
+    return int(re.search(r"(\d+)\.xml$", name).group(1))
+
+
+def _first_sheet_member(zf):
+    """The archive member of the workbook's first sheet, in the order xl/workbook.xml lists them. A package with no
+    usable workbook part falls back to the lowest-numbered sheet file."""
+    names = set(zf.namelist())
+    if "xl/workbook.xml" in names and "xl/_rels/workbook.xml.rels" in names:
+        workbook = safe_fromstring(_bounded_read(zf, "xl/workbook.xml"))
+        first = next(workbook.iter(f"{_XLSX_NS}sheet"), None)
+        rid = first.get(f"{_REL_NS}id") if first is not None else None
+        if rid:
+            rels = safe_fromstring(_bounded_read(zf, "xl/_rels/workbook.xml.rels"))
+            for rel in rels.iter(f"{_PKG_REL_NS}Relationship"):
+                if rel.get("Id") == rid:
+                    target = rel.get("Target") or ""
+                    member = target[1:] if target.startswith("/") else posixpath.normpath(f"xl/{target}")
+                    return member if member in names else None
+    sheets = [n for n in names if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n)]
+    return min(sheets, key=_sheet_number) if sheets else None
+
+
 def _read_xlsx(data):
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
@@ -151,21 +199,18 @@ def _read_xlsx(data):
     if sum(i.file_size for i in zf.infolist()) > MAX_UNZIPPED_BYTES:
         raise ValueError("Spreadsheet is too large to import.")
 
-    sheet_names = sorted(
-        n for n in zf.namelist() if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n)
-    )
-    if not sheet_names:
-        raise ValueError("No worksheet found in the .xlsx file.")
-
     # ET.ParseError is a SyntaxError, not a ValueError: it is converted below so the view answers 400, not 500.
     try:
+        sheet_member = _first_sheet_member(zf)
+        if sheet_member is None:
+            raise ValueError("No worksheet found in the .xlsx file.")
         shared = []
         if "xl/sharedStrings.xml" in zf.namelist():
             root = safe_fromstring(_bounded_read(zf, "xl/sharedStrings.xml"))
             for si in root.iter(f"{_XLSX_NS}si"):
                 shared.append(unescape_xstring("".join(node.text or "" for node in si.iter(f"{_XLSX_NS}t"))))
 
-        root = safe_fromstring(_bounded_read(zf, sheet_names[0]))
+        root = safe_fromstring(_bounded_read(zf, sheet_member))
     except (ET.ParseError, XmlRefused):
         # XmlRefused: a DOCTYPE, which a spreadsheet never needs and an entity-expansion attack depends on.
         raise ValueError("The .xlsx file is corrupt or unreadable.")
@@ -263,9 +308,20 @@ def _norm_date(value, field, row_n, issues):
             if fmt is None:
                 return date.fromisoformat(v[:10])
             from datetime import datetime as _dt
-            return _dt.strptime(v, fmt).date()
+            parsed = _dt.strptime(v, fmt).date()
         except ValueError:
             continue
+        if fmt == "%m/%d/%Y":
+            # Month first is kept for compatibility, but a string that is also a real day/month date is not guessed
+            # in silence.
+            try:
+                other = _dt.strptime(v, "%d/%m/%Y").date()
+            except ValueError:
+                other = parsed
+            if other != parsed:
+                issues.append({"row": row_n, "field": field,
+                               "message": f"Date {value!r} is read as month/day; use YYYY-MM-DD to be sure"})
+        return parsed
     issues.append({"row": row_n, "field": field,
                    "message": f"Could not parse date {value!r} (use YYYY-MM-DD)"})
     return None

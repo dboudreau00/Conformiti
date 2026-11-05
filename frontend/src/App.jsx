@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
-import api, { cookieMode, isAuthed, loadAuthConfig, logout, session } from "./api/client.js";
+import api, { cookieMode, isAuthed, loadAuthConfig, logout, renewSession, session } from "./api/client.js";
 import ErrorBoundary, { ChromeFallback } from "./components/ErrorBoundary.jsx";
 import { NotForAuditors } from "./components/layout/NotForAuditors.jsx";
+import { PanelTransition } from "./components/layout/PanelTransition.jsx";
 import { SideMenu } from "./components/layout/SideMenu.jsx";
 import { SkipLink } from "./components/layout/SkipLink.jsx";
 import { TopBar } from "./components/layout/TopBar.jsx";
+import { LoadError } from "./components/ui/Panel.jsx";
 import { openToAuditor } from "./nav.js";
 import { ShellContext } from "./shell.js";
 import Login from "./pages/Login.jsx";
@@ -41,6 +43,8 @@ function Protected({ me, setMe }) {
   // Whether /users/me/ has answered, or failed. Who is signed in decides what
   // a page may ask for, so no routed page is drawn before then.
   const [meKnown, setMeKnown] = useState(!!me);
+  // Bumped to ask /users/me/ again after it failed.
+  const [meTry, setMeTry] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -48,8 +52,15 @@ function Protected({ me, setMe }) {
       if (cookieMode() && signedIn === null) {
         const state = await session().catch(() => ({ authenticated: false }));
         if (!alive) return;
-        setSignedIn(!!state.authenticated);
-        if (!state.authenticated) return;
+        let authenticated = !!state.authenticated;
+        // The 60-minute access cookie lapses long before the 7-day refresh cookie. The probe cannot see that cookie,
+        // so a reload would show sign-in; trade it for a new session first.
+        if (!authenticated) {
+          authenticated = await renewSession();
+          if (!alive) return;
+        }
+        setSignedIn(authenticated);
+        if (!authenticated) return;
       } else if (!cookieMode() && !isAuthed()) {
         setSignedIn(false);
         return;
@@ -68,7 +79,7 @@ function Protected({ me, setMe }) {
       }
     })();
     return () => { alive = false; };
-  }, [me, signedIn]);
+  }, [me, signedIn, meTry]);
 
   // Everything below waits for `me`. Firing before the session is confirmed
   // would put three 401s on the console for anyone opening a protected route
@@ -96,6 +107,11 @@ function Protected({ me, setMe }) {
   }, [me]);
 
   useEffect(() => { refreshCounts(); }, [refreshCounts, location.pathname]);
+
+  const retryMe = () => {
+    setMeKnown(false);
+    setMeTry((n) => n + 1);
+  };
 
   async function signOut() {
     await logout();
@@ -139,7 +155,9 @@ function Protected({ me, setMe }) {
                       them to the packages issued to them instead. */}
                   <Route path="/" element={me?.capabilities?.auditor
                     ? <Navigate to="/packages" replace />
-                    : <Dashboard me={me} />} />
+                    : !me && meKnown
+                      ? <PanelTransition><LoadError what="Your account" onRetry={retryMe} /></PanelTransition>
+                      : <Dashboard me={me} />} />
                   <Route path="/analytics" element={page("/analytics", <Analytics me={me} />)} />
                   <Route path="/controls" element={page("/controls", <Controls me={me} />)} />
                   <Route path="/documents" element={page("/documents", <Documents me={me} />)} />

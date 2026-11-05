@@ -11,6 +11,8 @@ import { Button } from "../ui/Button.jsx";
 import { Empty, Label, Panel } from "../ui/Panel.jsx";
 
 const PAGE = 8;
+// Mirrors REVIEWS_CAP in backend/documents/views.py: a full list means more are due than the queue shows.
+const REVIEWS_CAP = 500;
 
 /** `reviews`: rows of GET /documents/reviews/?days=120. The API refuses Mark reviewed without edit access to the
  * folder, so it is offered only to those who can manage documents or folders, and a refusal is shown. */
@@ -48,7 +50,7 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
           <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Reviews coming up</h2>
           <Label>Next 120 days</Label>
         </div>
-        <Label className="tabular">{sorted.length} open</Label>
+        <Label className="tabular">{sorted.length}{sorted.length >= REVIEWS_CAP ? "+" : ""} open</Label>
       </header>
 
       {error ? (

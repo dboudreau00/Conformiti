@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from accounts.permissions import CanManageFrameworks
 from documents.access import accessible_folder_ids
 from documents.models import Document
-from documents.serializers import person_name
+from documents.serializers import person_name, visible_folder_path
 from . import scoring
 from .models import Control, ControlCategory, ControlEvidence, ControlMapping, Framework
 from .serializers import (
@@ -49,6 +49,8 @@ class FrameworkViewSet(viewsets.ModelViewSet):
     serializer_class = FrameworkSerializer
     permission_classes = [CanManageFrameworks]
     lookup_field = "key"
+    # DELETE would take the seeded catalog and every evidence link on it; PUT is PATCH with a rename allowed.
+    http_method_names = ["get", "post", "patch", "head", "options"]
 
     @action(detail=True, methods=["get"])
     def controls(self, request, key=None):
@@ -269,7 +271,7 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             skipped.append({"document": missing, "reason": "not found or not visible"})
 
         return Response({
-            "created": ControlEvidenceSerializer(created, many=True).data,
+            "created": ControlEvidenceSerializer(created, many=True, context={"request": request}).data,
             "skipped": skipped,
         })
 
@@ -288,9 +290,10 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
             "category", "category__framework"
         ).order_by("category__framework__name", "category__order", "category__key", "order", "control_id")
         listed = list(docs[:CHOICES_DOCUMENT_CAP + 1])
+        paths = {"request": request}
         return Response({
             "documents": [
-                {"id": d.id, "name": d.name, "path": d.folder.path, "status": d.status}
+                {"id": d.id, "name": d.name, "path": visible_folder_path(d.folder, paths), "status": d.status}
                 for d in listed[:CHOICES_DOCUMENT_CAP]
             ],
             "documents_truncated": len(listed) > CHOICES_DOCUMENT_CAP,

@@ -37,7 +37,8 @@ def bulk_effective_access(user, folders):
 
 
 def accessible_folder_ids(user):
-    """Ids of the folders the user may at least view: grants and owned folders, expanded to all descendants."""
+    """Ids of the folders the user may at least view: grants expanded to all descendants, plus each folder they own.
+    Ownership is manage on that folder only (``Folder.effective_access``), so it is not expanded."""
     if not (user and user.is_authenticated):
         return set()
     if user.is_superuser or user.can_view_all or user.can_manage_folders:
@@ -48,12 +49,12 @@ def accessible_folder_ids(user):
         seed |= set(
             FolderPermission.objects.filter(role_id=user.role_id).values_list("folder_id", flat=True)
         )
-    seed |= set(Folder.objects.filter(owner=user).values_list("id", flat=True))
+    owned = set(Folder.objects.filter(owner=user).values_list("id", flat=True))
 
-    accessible, frontier = set(seed), set(seed)
+    expanded, frontier = set(seed), set(seed)
     while frontier:
         children = set(Folder.objects.filter(parent_id__in=frontier).values_list("id", flat=True))
-        children -= accessible
-        accessible |= children
+        children -= expanded
+        expanded |= children
         frontier = children
-    return accessible
+    return expanded | owned

@@ -13,8 +13,13 @@ SKIP_PREFIXES = ("/api/auth/", "/api/notifications/", "/api/health/")
 # Field names that must never appear in the trail, even without their values.
 SENSITIVE_KEYS = {"password", "current_password", "new_password", "api_token", "otp", "code", "secret"}
 
-MAX_BODY_CAPTURE = 64 * 1024   # bytes: bigger bodies (uploads) are not inspected
+MAX_BODY_CAPTURE = 64 * 1024   # bytes: a bigger JSON body is not parsed ahead of the view; the view's parse is read
 MAX_DETAIL = 255               # AuditLog.detail column width
+MAX_NAME = 40                  # a field name longer than this is cut, so one key cannot use up the width
+
+# Named first when the list is too long for the column: a change to who may do what must not be the name that is
+# left out.
+PRIVILEGED_KEYS = ("role", "is_active", "is_superuser", "is_staff", "workspace", "access_level", "user", "group")
 
 # Admin saves are recorded like API writes; sign-in and the password page have their own events.
 ADMIN_PREFIX = "/admin/"
@@ -79,8 +84,49 @@ def _summarise_body(request, form=False):
             keys = list(request.POST.keys()) + list(request.FILES.keys())
     except Exception:  # malformed body: the view will reject it, so there is nothing to record
         return ""
-    keys = [k for k in keys if k not in SENSITIVE_KEYS][:20]
-    return ",".join(keys)
+    return _names(keys)
+
+
+def _names(keys):
+    """The field names as one comma-separated string: no sensitive name, privileged ones first, each cut to MAX_NAME."""
+    keys = [str(k) for k in keys if k not in SENSITIVE_KEYS]
+    keys.sort(key=lambda k: k not in PRIVILEGED_KEYS)   # stable: the rest keep the order they were sent in
+    return ",".join(k.replace(",", " ")[:MAX_NAME] for k in keys)
+
+
+def _applied_names(response):
+    """The names of a JSON body too big to read ahead of the view, through DRF's parse. Called only for an entry that is
+    written (a signed-in call that succeeded), so a refused or anonymous body is still never parsed for the trail."""
+    request = (getattr(response, "renderer_context", None) or {}).get("request")
+    if request is None:
+        return ""
+    # The media type alone: a parameter such as "; charset=utf-8" must not hide the names.
+    if (request.content_type or "").split(";")[0].strip().lower() != "application/json":
+        return ""
+    try:
+        data = request.data
+    except Exception:
+        return ""
+    return _names(data.keys()) if isinstance(data, dict) else ""
+
+
+def _detail(base, fields):
+    """``base`` plus the field names, within MAX_DETAIL. Names that do not fit are counted, never dropped silently."""
+    names = [n for n in fields.split(",") if n]
+    if not names:
+        return base[:MAX_DETAIL]
+    head = f"{base} fields="
+    kept = []
+    for i, name in enumerate(names):
+        more = len(names) - i - 1
+        tail = f",+{more} more" if more else ""
+        if len(head) + len(",".join(kept + [name])) + len(tail) > MAX_DETAIL:
+            break
+        kept.append(name)
+    left = len(names) - len(kept)
+    if left:
+        kept.append(f"+{left} more")
+    return (head + ",".join(kept))[:MAX_DETAIL]
 
 
 class AuditLogMiddleware:
@@ -123,11 +169,9 @@ class AuditLogMiddleware:
         selected = request.POST.getlist("_selected_action")
         if selected:
             detail += f" {request.POST.get('action', '')} rows={len(selected)}"
-        if names:
-            detail += f" fields={','.join(names)}"
         AuditLog.objects.create(
             user=user, action=action, object_type=object_type[:80],
-            object_id=object_id[:80], detail=detail[:MAX_DETAIL], ip_address=_client_ip(request),
+            object_id=object_id[:80], detail=_detail(detail, ",".join(names)), ip_address=_client_ip(request),
         )
 
     def _maybe_log(self, request, response, fields):
@@ -139,7 +183,7 @@ class AuditLogMiddleware:
             return
         if not (user and user.is_authenticated) or response.status_code >= 400:
             return
-        fields = fields or _summarise_body(request, form=True)
+        fields = fields or _summarise_body(request, form=True) or _applied_names(response)
 
         from .models import AuditLog
         ip = _client_ip(request)
@@ -151,10 +195,7 @@ class AuditLogMiddleware:
             data = getattr(response, "data", None)
             if isinstance(data, dict) and isinstance(data.get("id"), int):
                 object_id = str(data["id"])
-        detail = f"{request.method} {request.path}"
-        if fields:
-            detail += f" fields={fields}"
         AuditLog.objects.create(
             user=user, action=action, object_type=object_type[:80],
-            object_id=object_id[:80], detail=detail[:MAX_DETAIL], ip_address=ip,
+            object_id=object_id[:80], detail=_detail(f"{request.method} {request.path}", fields), ip_address=ip,
         )

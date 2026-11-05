@@ -15,8 +15,17 @@ import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
-import { fmtDate } from "../utils/format.js";
+import { fmtDate, localDay } from "../utils/format.js";
 import { QUESTIONNAIRE_ANSWERS } from "../utils/tone.js";
+
+const INSTANT_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+/** An instant (created_at, expires_at ...) as the viewer's local calendar day. fmtDate reads a date-only value and
+ * would show the UTC day. */
+const fmtInstant = (iso) => {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : INSTANT_FMT.format(d);
+};
 
 const TIERS = [["critical", "Critical"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]];
 const TIER_TONE = { critical: "danger", high: "warning", medium: "info", low: "muted" };
@@ -237,7 +246,7 @@ function OverviewTab({ vendor, users, canManage, busy, onSave, onReviewed }) {
               ["Category", vendor.category], ["Website", vendor.website], ["Data handled", vendor.data_handled],
               ["Services", vendor.services], ["Contact", [vendor.contact_name, vendor.contact_email].filter(Boolean).join(" · ")],
               ["Relationship owner", vendor.owner_name], ["Review cadence", CADENCES.find(([k]) => k === vendor.review_cadence)?.[1]],
-              ["Onboarded", fmtDate(vendor.created_at)],
+              ["Onboarded", fmtInstant(vendor.created_at)],
             ].map(([k, v]) => (
               <div key={k}>
                 <Label as="dt">{k}</Label>
@@ -392,7 +401,7 @@ const OUTCOMES = [["satisfactory", "Satisfactory"], ["exceptions", "Exceptions n
 const answeredBy = (inv) => {
   if (!inv.respondent_name) return "-";
   const title = inv.respondent_title ? ` (${inv.respondent_title})` : "";
-  return `${inv.respondent_name}${title} · ${fmtDate(inv.submitted_at)}`;
+  return `${inv.respondent_name}${title} · ${fmtInstant(inv.submitted_at)}`;
 };
 
 function SendToVendor({ vendor, busy, act, refresh }) {
@@ -487,12 +496,12 @@ function SendToVendor({ vendor, busy, act, refresh }) {
                     {inv.sent_to}
                     <span className="block text-faint">by {inv.sent_by_name}{inv.email_sent ? "" : " · email not sent"}</span>
                   </td>
-                  <td className="py-2 pr-3 text-muted">{fmtDate(inv.sent_at)}</td>
-                  <td className="py-2 pr-3 text-muted">{fmtDate(inv.expires_at)}</td>
+                  <td className="py-2 pr-3 text-muted">{fmtInstant(inv.sent_at)}</td>
+                  <td className="py-2 pr-3 text-muted">{fmtInstant(inv.expires_at)}</td>
                   <td className="py-2 pr-3">
                     <Badge tone={INVITE_TONE[inv.status] || "muted"} dot>{inv.status}</Badge>
                     {inv.status === "open" && inv.opened_at ? (
-                      <span className="block text-faint">opened {fmtDate(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span>
+                      <span className="block text-faint">opened {fmtInstant(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span>
                     ) : null}
                   </td>
                   <td className="py-2 pr-3 text-muted">{answeredBy(inv)}</td>
@@ -536,8 +545,8 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
   const suggested = Object.values(answers).some((x) => x?.answer === "no") ? "exceptions" : "satisfactory";
 
   const lastMeta = !latest ? "Not yet completed"
-    : returned ? `Returned by ${returned.respondent_name || returned.sent_to} on ${fmtDate(latest.created_at)} · pending review`
-    : `Last submitted ${fmtDate(latest.created_at)} by ${latest.reviewed_by_name || "the vendor"}`;
+    : returned ? `Returned by ${returned.respondent_name || returned.sent_to} on ${fmtInstant(latest.created_at)} · pending review`
+    : `Last submitted ${fmtInstant(latest.created_at)} by ${latest.reviewed_by_name || "the vendor"}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -546,7 +555,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
         <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
           <span className="font-medium">
             Returned by {returned.respondent_name || returned.sent_to}
-            {returned.respondent_title ? ` (${returned.respondent_title})` : ""} on {fmtDate(latest.created_at)}.
+            {returned.respondent_title ? ` (${returned.respondent_title})` : ""} on {fmtInstant(latest.created_at)}.
           </span>
           {canManage ? (
             <span className="flex flex-wrap gap-2">
@@ -621,7 +630,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
                 onSubmit({
                   vendor: vendor.id,
                   kind: "questionnaire",
-                  title: `Questionnaire ${new Date().toISOString().slice(0, 10)}`,
+                  title: `Questionnaire ${localDay()}`,
                   result: suggested,
                   answers,
                 })

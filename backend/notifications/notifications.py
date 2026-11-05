@@ -80,14 +80,14 @@ def _vendor_items(user, today):
     for v in prompt_vendors.select_related("owner"):
         stated = SharedResponsibility.objects.filter(vendor=v).count()
         if stated == 0:
-            age = (today - v.created_at.date()).days
+            age = (today - timezone.localtime(v.created_at).date()).days
             severity = "high" if v.tier in ("critical", "high") else "medium"
             items.append(_n(
                 f"vendor-onboard:{v.id}", "vendor", severity,
                 f"New vendor: state responsibilities for {v.name}",
                 f"No shared responsibility matrix yet ({age}d since onboarding). "
                 "Record which controls they cover, or import their matrix.",
-                f"/vendors?vendor={v.id}&tab=matrix", v.created_at.date(),
+                f"/vendors?vendor={v.id}&tab=matrix", timezone.localtime(v.created_at).date(),
             ))
         elif total_controls and stated < total_controls * 0.5 and v.tier in ("critical", "high"):
             items.append(_n(
@@ -134,16 +134,16 @@ def _vendor_items(user, today):
             f"vendor-questionnaire:{inv.assessment_id}", "vendor", "medium",
             f"Questionnaire returned by {inv.vendor.name}",
             f"{inv.respondent_name or inv.sent_to} answered {count_of(answered, 'question')} on "
-            f"{inv.submitted_at.date().isoformat()}. Review the answers and record the outcome.",
-            f"/vendors?vendor={inv.vendor_id}&tab=questionnaire", inv.submitted_at.date(),
+            f"{timezone.localtime(inv.submitted_at).date().isoformat()}. Review the answers and record the outcome.",
+            f"/vendors?vendor={inv.vendor_id}&tab=questionnaire", timezone.localtime(inv.submitted_at).date(),
         ))
     for inv in lapsed:
         items.append(_n(
             f"vendor-questionnaire-lapsed:{inv.id}", "vendor", "low",
             f"Questionnaire unanswered by {inv.vendor.name}",
-            f"The link sent to {inv.sent_to} expired on {inv.expires_at.date().isoformat()} "
+            f"The link sent to {inv.sent_to} expired on {timezone.localtime(inv.expires_at).date().isoformat()} "
             f"{'after being opened' if inv.opened_at else 'without being opened'}. Send it again or chase them.",
-            f"/vendors?vendor={inv.vendor_id}&tab=questionnaire", inv.expires_at.date(),
+            f"/vendors?vendor={inv.vendor_id}&tab=questionnaire", timezone.localtime(inv.expires_at).date(),
         ))
     return items
 
@@ -284,6 +284,8 @@ def _document_backlog_items(user, today):
 
 
 def _pbc_items(user, today):
+    from django.utils import timezone
+
     from attestations import access as package_access
     from attestations.models import EvidencePackage, PbcRequest
 
@@ -297,7 +299,7 @@ def _pbc_items(user, today):
                 f"pbc-returned:{r.id}", "pbc", "high",
                 f"Returned by the auditor: {r.reference} {r.title}",
                 (r.returned_note or "Needs more")[:160] + f" · {r.package.name}",
-                "/packages", r.returned_at.date() if r.returned_at else today,
+                "/packages", timezone.localtime(r.returned_at).date() if r.returned_at else today,
             ))
             continue
         if r.due_date and r.due_date < today:

@@ -103,10 +103,32 @@ class Folder(TenantModel):
             node = node.parent
         return False
 
+    def chain_length(self):
+        """How many folders sit above this one, or None when the chain is cyclic or deeper than the ceiling."""
+        try:
+            return len(self.ancestors())
+        except ValidationError:
+            return None
+
+    def subtree_height(self):
+        """How many levels of folders sit below this one (stops counting once past the ceiling)."""
+        height, frontier = 0, [self.id]
+        while True:
+            frontier = list(Folder.objects.filter(parent_id__in=frontier).values_list("id", flat=True))
+            if not frontier:
+                return height
+            height += 1
+            if height > MAX_FOLDER_DEPTH:
+                return height
+
     @property
     def path(self):
-        parts = [f.name for f in reversed(self.ancestors())] + [self.name]
-        return "/".join(parts)
+        try:
+            above = [f.name for f in reversed(self.ancestors())]
+        except ValidationError:
+            # Made before the depth guard: show the folder by its own name rather than fail every list it is in.
+            above = []
+        return "/".join(above + [self.name])
 
     def effective_access(self, user):
         """Highest of: manage for a superuser, folder manager or owner; view for view-all; grants on this folder or an
@@ -246,19 +268,19 @@ class Document(TenantModel):
 
     def compute_next_review(self):
         months = self.CADENCE_MONTHS.get(self.review_cadence)
-        base = self.last_reviewed or timezone.now().date()
+        base = self.last_reviewed or timezone.localdate()
         self.next_review_date = _add_months(base, months) if months else None
         return self.next_review_date
 
     @property
     def is_overdue(self):
-        return bool(self.next_review_date and self.next_review_date < timezone.now().date())
+        return bool(self.next_review_date and self.next_review_date < timezone.localdate())
 
     @property
     def days_until_review(self):
         if not self.next_review_date:
             return None
-        return (self.next_review_date - timezone.now().date()).days
+        return (self.next_review_date - timezone.localdate()).days
 
 
 class ScannerStatus(models.Model):
@@ -293,10 +315,19 @@ class DocumentVersion(TenantModel):
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Own scan verdict, written by the re-scan sweep: a flagged file is refused on its own download route.
+    scan_status = models.CharField(max_length=10, choices=Document.Scan.choices, default=Document.Scan.UNSCANNED)
+    scan_signature = models.CharField(max_length=200, blank=True)
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    quarantined_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-version"]
         unique_together = ("document", "version")
+
+    @property
+    def is_quarantined(self):
+        return self.quarantined_at is not None
 
 
 class FormTemplate(TenantModel):
@@ -305,9 +336,18 @@ class FormTemplate(TenantModel):
     description = models.TextField(blank=True)
     file = models.FileField(upload_to="form_templates/", max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Own scan verdict, written by the re-scan sweep: a flagged file is refused on its own download route.
+    scan_status = models.CharField(max_length=10, choices=Document.Scan.choices, default=Document.Scan.UNSCANNED)
+    scan_signature = models.CharField(max_length=200, blank=True)
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    quarantined_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["category", "name"]
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_quarantined(self):
+        return self.quarantined_at is not None

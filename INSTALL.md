@@ -88,9 +88,34 @@ What happens on first boot:
    `X-Accel-Redirect` after checking the caller's permission; the media volume
    has no public location.
 
-The API is also published on the host's loopback, `127.0.0.1:8000`, for
-debugging (`CONFORMITI_API_PORT` to move it); the LAN only sees nginx on port
-8080 (`CONFORMITI_PORT` to change it). Both host ports must be free.
+The API publishes no host port: everything reaches it through nginx on port
+8080 (`CONFORMITI_PORT` to change it), which must be free. To call the API
+from the host while debugging, see *Debugging the API* below.
+
+### Debugging the API
+
+A request that reaches gunicorn without passing nginx has no real client
+address. The sign-in throttle takes the last `X-Forwarded-For` entry as the
+client (`NUM_PROXIES=1`), so on a directly published port a caller who writes
+that header chooses its own throttle key, and the 8 a minute limit stops
+holding. For that reason the stack does not publish the API port. When you
+need it on the host, add a `docker-compose.override.yml` beside
+`docker-compose.yml` (Compose reads it by itself; if `.env` sets
+`COMPOSE_FILE`, add the file to that list):
+
+```yaml
+services:
+  backend:
+    ports:
+      - "127.0.0.1:${CONFORMITI_API_PORT:-8000}:8000"
+```
+
+`CONFORMITI_API_PORT` moves the host side when something else holds 8000 (a
+local `manage.py runserver`, another stack). Delete the file and run
+`docker compose up -d` when you are done. Other containers on the compose
+network can still reach `backend:8000` without nginx: that is a residual, not a
+published port, and the throttle and the audit trail see whatever address they
+write in the header.
 
 ### The scripted variant
 
@@ -318,7 +343,13 @@ pulls what it pushed and boots it before the run is allowed to pass.
    reactivates the demo accounts, and from then on a boot with
    `SEED_DEMO_DATA=true` refreshes the demo until `remove_demo_data`
    retires it once more; the audit log keeps both the retirement and the
-   revival). The dataset is off by default.
+   revival). The command removes only the rows the demo seeded, which the seed
+   records in the audit log: a vendor, series or grant of yours that shares a
+   demo name stays, and where the demo was never loaded it deletes nothing and
+   leaves the readiness history alone. A demo first seeded by an older release
+   kept no such records, so its first retirement still goes by the demo's
+   names and by rows with no creator. A second run changes none of the rows
+   made since the first. The dataset is off by default.
 
    To have an account to sign in with from the first boot instead, put
    `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_PASSWORD` and
@@ -532,13 +563,15 @@ administrators. Signatures arrive after files do, so re-scan what is stored:
 ```bash
 docker compose exec backend python manage.py scan_evidence --probe      # is clamd answering?
 docker compose exec backend python manage.py scan_evidence              # files not scanned in 30 days
-docker compose exec backend python manage.py scan_evidence --all        # the current file of every document
+docker compose exec backend python manage.py scan_evidence --all        # every stored file: documents, archived versions, form templates
 ```
 
 A document whose current file now matches is quarantined: kept on disk,
 refused on every route (its archived versions included), badged in the
-document list, and in the audit trail. Archived versions, form templates and
-meeting minutes are scanned when they are uploaded and are not re-scanned.
+document list, and in the audit trail. An archived version or a form
+template that matches is quarantined on its own, and refused wherever it is
+served, a sealed package and a request-list attachment included. Meeting
+minutes are scanned when they are uploaded and are not re-scanned.
 Exit code 1 on an infection or an unreachable scanner, so cron can alert on
 it. A monthly
 line in the host's crontab is enough (use your checkout's path; `-T`
@@ -1171,19 +1204,19 @@ Move the ring to a file before you ever rotate it:
 | Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser` (the password must pass the policy in §1), or seed the sample data with `manage.py bootstrap_demo`. Or the web app runs on a port or host name missing from `CSRF_TRUSTED_ORIGINS` in `.env` (see *Moving the ports*). |
 | `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
 | Uploads rejected as too large | Raise `MAX_UPLOAD_MB` in `.env` **and** `client_max_body_size` in `frontend/nginx.conf`. With malware scanning on, a file larger than `CLAMAV_MAX_MB` (40 by default) is refused as not fully inspected whatever `MAX_UPLOAD_MB` says; raise it too, and clamd's `StreamMaxLength` and `MaxFileSize` with it (`docker/clamd.conf` in the Docker stack). nginx's configuration is built into the frontend image: after the edit, a source build needs `docker compose up -d --build`, and the published images need the edited file mounted (*Without a build*, above). `frontend/nginx.conf` is a tracked file, so the edit has to be set aside for each upgrade's `git checkout` ([README, Upgrading](README.md#upgrading)). Bare metal: edit your own copy and reload nginx. |
-| Port in use | Docker needs host ports 8080 (`CONFORMITI_PORT`) and `127.0.0.1:8000` (`CONFORMITI_API_PORT`); the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move: see *Moving the ports* below. |
+| Port in use | Docker needs host port 8080 (`CONFORMITI_PORT`), and `127.0.0.1:8000` (`CONFORMITI_API_PORT`) only if you published the API for debugging; the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move: see *Moving the ports* below. |
 
 <details>
 <summary><strong>Moving the ports</strong></summary>
 
-**Docker.** nginx publishes host port 8080 (`CONFORMITI_PORT`), and the API
-publishes `127.0.0.1:8000` for debugging (`CONFORMITI_API_PORT`). Both must be
-free, and `CONFORMITI_PORT` does not move the API. Set whichever clashes in
-`.env`:
+**Docker.** nginx publishes host port 8080 (`CONFORMITI_PORT`), which must be
+free. The API publishes nothing unless you add the override in *Debugging the
+API*, whose host side is `CONFORMITI_API_PORT`, and `CONFORMITI_PORT` does not
+move it. Set whichever clashes in `.env`:
 
 ```ini
 CONFORMITI_PORT=8081
-CONFORMITI_API_PORT=8001
+CONFORMITI_API_PORT=8001   # only with the debugging override
 ```
 
 That is enough to sign in at `http://localhost:8081`. nginx hands the API the

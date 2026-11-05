@@ -21,7 +21,8 @@ class SessionView(APIView):
     def get(self, request):
         user = request.user
         authenticated = bool(user and user.is_authenticated)
-        # Dead access cookie plus live refresh cookie: the SPA should refresh before showing the login screen.
+        # Dead access cookie plus live refresh cookie. A browser never sends that cookie here (its path is narrower),
+        # so the SPA renews through POST /api/auth/token/renew/; this reports it to a client that does send it.
         renewable = bool(
             cookie_auth.cookie_mode()
             and not authenticated
@@ -56,23 +57,42 @@ class SessionClearView(APIView):
             return Response({"detail": f"CSRF failed: {refused}"}, status=403)
 
         revoked = 0
+        token = None
         raw = (request.data.get("refresh")
                or request.COOKIES.get(cookie_auth.refresh_cookie_name()))
         if raw:
             try:
-                RefreshToken(raw).blacklist()
+                token = RefreshToken(raw)
+                token.blacklist()
                 revoked = 1
             except TokenError:
-                pass
+                token = None
         # Also revoke the user's other outstanding tokens, so siblings do not outlive an expired access cookie.
         if request.user and request.user.is_authenticated:
             revoked += _blacklist_all(request.user)
             record_logout(request)
+        elif token is not None:
+            # Only the refresh token arrived (the access token had expired): still leave the sign-out in the trail.
+            _record_logout_of(request, token)
 
         response = Response({"revoked": revoked, "detail": "Session cleared."})
         cookie_auth.clear_auth_cookies(response)
         cookie_auth.rotate_csrf(request)
         return response
+
+
+def _record_logout_of(request, token):
+    from django.contrib.auth import get_user_model
+    from rest_framework_simplejwt.settings import api_settings
+
+    from audit.events import LOGOUT, record_auth_event
+    from . import tenancy
+
+    with tenancy.unscoped():
+        owner = get_user_model().objects.filter(
+            **{api_settings.USER_ID_FIELD: token.payload.get(api_settings.USER_ID_CLAIM)}).first()
+    if owner is not None:
+        record_auth_event(request, owner, LOGOUT, "signed out")
 
 
 def end_all_sessions(user):

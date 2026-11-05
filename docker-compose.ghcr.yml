@@ -4,10 +4,9 @@
 #   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 #
 # Everything else comes from docker-compose.yml: the environment, the volumes,
-# the healthchecks and the published ports (nginx on CONFORMITI_PORT, default
-# 8080, and the API on 127.0.0.1 at CONFORMITI_API_PORT, default 8000). An
-# installation started this way is the same installation, assembled from
-# artefacts rather than from a build.
+# the healthchecks and the published port (nginx on CONFORMITI_PORT, default
+# 8080; the API publishes none). An installation started this way is the same
+# installation, assembled from artefacts rather than from a build.
 #
 # nginx's configuration is the exception: it is baked into the frontend image,
 # so editing frontend/nginx.conf (to raise client_max_body_size, say) changes

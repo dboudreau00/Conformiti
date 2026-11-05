@@ -8,4 +8,9 @@ export function fmtDate(iso) {
   return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
 }
 
+/** Today as YYYY-MM-DD on the reader's own calendar; toISOString() gives the UTC day, which can be a day off. */
+export function localDay(d = new Date()) {
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
+}
+
 export const displayName = (u) => u.full_name || u.username || `User ${u.id}`;

@@ -1,10 +1,11 @@
 import re
 
 import django_filters as filters
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ErrorDetail, PermissionDenied, ValidationError
+from rest_framework.exceptions import APIException, ErrorDetail, PermissionDenied, ValidationError
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,6 +17,7 @@ from .models import (
     DocumentVersion,
     Folder,
     FolderPermission,
+    MANAGE,
     FormTemplate,
 )
 from config.personfilters import person
@@ -35,6 +37,15 @@ from .serializers import (
     person_name,
 )
 from .uploads import validate_upload
+
+
+REVIEWS_CAP = 500
+
+
+class Conflict(APIException):
+    status_code = 409
+    default_detail = "Someone else changed this at the same moment. Reload and try again."
+    default_code = "conflict"
 
 
 def _natural_key(name):
@@ -86,7 +97,13 @@ class FolderViewSet(viewsets.ModelViewSet):
         allowed = user.can_manage_folders or (parent and parent.can_edit(user))
         if not allowed:
             raise PermissionDenied("You cannot create a folder here.")
-        serializer.save()
+        # Ownership does not reach below the folder it is set on: whoever manages the parent owns what they make in it,
+        # or they would create a folder they cannot see. Manage on the parent already implies manage below it.
+        extra = {}
+        if parent is not None and not user.can_manage_folders and not serializer.validated_data.get("owner") \
+                and parent.can_manage(user):
+            extra["owner"] = user
+        serializer.save(**extra)
 
     def perform_update(self, serializer):
         """A move exposes the subtree to the destination's grants: manage on the folder, edit on the destination."""
@@ -178,11 +195,10 @@ class FolderPermissionViewSet(viewsets.ModelViewSet):
         qs = FolderPermission.objects.select_related("folder", "role", "user").order_by("id")
         if user.can_manage_folders or user.can_view_all or user.is_superuser:
             return qs
-        manageable = [
-            f.id for f in Folder.objects.select_related("parent", "owner")
-            if f.can_manage(user)
-        ]
-        return qs.filter(folder_id__in=manageable)
+        from .access import bulk_effective_access
+
+        levels = bulk_effective_access(user, Folder.objects.only("id", "owner"))
+        return qs.filter(folder_id__in=[fid for fid, level in levels.items() if level == MANAGE])
 
     def _check_manage(self, folder):
         if not folder.can_manage(self.request.user):
@@ -330,22 +346,31 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             raise ValidationError({"file": exc.detail})
         scan_or_raise(new_file, request)
-        # Never archive quarantined bytes: archived versions are a download route of their own and are not re-scanned.
-        if doc.file and not doc.quarantined_at:
-            DocumentVersion.objects.create(
-                document=doc, version=doc.version, file=doc.file,
-                note=str(request.data.get("note", ""))[:255], uploaded_by=request.user,
-            )
-        doc.file = new_file
-        doc.version += 1
-        doc.status = Document.Status.DRAFT
-        doc.reminders_sent = []
-        # A new file is a new scan subject: the old version's quarantine and verdict are cleared.
-        doc.quarantined_at = None
-        doc.scan_status = Document.Scan.UNSCANNED
-        doc.scan_signature = ""
-        doc.save()
-        monitor.mark_clean(doc)
+        try:
+            with transaction.atomic():
+                # The next number comes from the locked row, and the archive row and the new file commit together.
+                # NO KEY: rows that point at the document (their foreign-key check) need not wait for the file write.
+                doc = Document.objects.select_for_update(no_key=True).get(pk=doc.pk)
+                # Never archive quarantined bytes: an archived version is a download route of its own.
+                if doc.file and not doc.quarantined_at:
+                    # An archive row for this number left by a crashed earlier request holds the bytes still on the
+                    # document: keep it rather than fail every later upload on the unique pair.
+                    DocumentVersion.objects.get_or_create(
+                        document=doc, version=doc.version,
+                        defaults=dict(file=doc.file, note=str(request.data.get("note", ""))[:255],
+                                      uploaded_by=request.user))
+                doc.file = new_file
+                doc.version += 1
+                doc.status = Document.Status.DRAFT
+                doc.reminders_sent = []
+                # A new file is a new scan subject: the old version's quarantine and verdict are cleared.
+                doc.quarantined_at = None
+                doc.scan_status = Document.Scan.UNSCANNED
+                doc.scan_signature = ""
+                doc.save()
+                monitor.mark_clean(doc)
+        except IntegrityError:
+            raise Conflict()
         return Response(DocumentSerializer(doc, context={"request": request}).data)
 
     @action(detail=True, methods=["get"])
@@ -368,6 +393,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except (DocumentVersion.DoesNotExist, ValueError):
             # ValueError: the URL pattern accepts any text, so a non-numeric id reaches the query.
             raise ValidationError({"version": "Not found."})
+        # The parent can be clean while this archived file matched newer definitions.
+        monitor.refuse_if_quarantined(version)
         record_evidence_read(request, doc, version=version.version)
         # The tag goes before the archived file's own extension, which need not be the current file's.
         return serve_stored_file(
@@ -382,11 +409,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def mark_reviewed(self, request, pk=None):
         doc = self.get_object()
         self._require_folder_edit(doc.folder)
-        doc.last_reviewed = timezone.now().date()
+        doc.last_reviewed = timezone.localdate()
         doc.status = Document.Status.APPROVED
         doc.reminders_sent = []
         doc.compute_next_review()
-        doc.save()
+        # Only the review fields: a full save would put back a title or description edited a moment ago.
+        doc.save(update_fields=["last_reviewed", "status", "reminders_sent", "next_review_date", "updated_at"])
         return Response(DocumentSerializer(doc, context={"request": request}).data)
 
     @action(detail=False, methods=["get"])
@@ -396,11 +424,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except (TypeError, ValueError):
             horizon = 90
         horizon = max(0, min(horizon, 3650))
-        today = timezone.now().date()
-        docs = [d for d in self.get_queryset().exclude(next_review_date=None)
-                if d.next_review_date is not None
-                and (d.next_review_date - today).days <= horizon]
-        docs.sort(key=lambda d: d.next_review_date)
+        today = timezone.localdate()
+        # Earliest first, capped: the dashboard shows the next few, and the library may hold thousands of dated files.
+        docs = list(self.get_queryset().filter(next_review_date__lte=today + timezone.timedelta(days=horizon))
+                    .order_by("next_review_date", "id")[:REVIEWS_CAP])
         return Response(DocumentSerializer(docs, many=True, context={"request": request}).data)
 
 
@@ -418,16 +445,23 @@ class FormTemplateViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         scan_or_raise(serializer.validated_data.get("file"), self.request)
-        serializer.save()
+        monitor.mark_clean(serializer.save())
 
     def perform_update(self, serializer):
-        scan_or_raise(serializer.validated_data.get("file"), self.request)
-        serializer.save()
+        uploaded = serializer.validated_data.get("file")
+        scan_or_raise(uploaded, self.request)
+        template = serializer.save()
+        if uploaded is not None:
+            # A new file is a new scan subject: the old file's quarantine and verdict do not carry over.
+            template.quarantined_at = None
+            template.save(update_fields=["quarantined_at"])
+            monitor.mark_clean(template)
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         """Not audited (templates are not evidence), but served through the API so no storage path is published."""
-        return serve_stored_file(self.get_object().file, self.get_object().name)
+        template = monitor.refuse_if_quarantined(self.get_object())
+        return serve_stored_file(template.file, template.name)
 
 
 def preview_response(request, file_field, name, document, version=None):

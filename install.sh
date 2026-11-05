@@ -294,13 +294,10 @@ ENV
   # A host port something else holds would stop Compose part way, with the
   # database up and the API left without a network. Ports this project's own
   # containers publish are fine: that is a re-run, and Compose recreates them.
-  # The API port is read the way Compose reads it: the shell first, then .env.
-  API_PORT="${CONFORMITI_API_PORT:-$(env_get CONFORMITI_API_PORT | tr -cd '0-9')}"; API_PORT="${API_PORT:-8000}"
+  # The stack publishes no API port unless the operator adds one (INSTALL.md,
+  # Debugging the API), so only nginx's port is checked.
   if port_busy "$PORT" && ! stack_holds frontend 80 "$PORT"; then
     die "port ${PORT} is already in use on this machine. Choose another with --port N (it is saved as CONFORMITI_PORT in .env)."
-  fi
-  if port_busy "$API_PORT" && ! stack_holds backend 8000 "$API_PORT"; then
-    die "port ${API_PORT} on 127.0.0.1, where the stack publishes its API, is already in use (a local 'manage.py runserver' is the usual holder). Set CONFORMITI_API_PORT to a free port in .env and run this again."
   fi
 
   say "Building images and starting the stack (first build takes a few minutes)…"
@@ -483,6 +480,11 @@ ok "backend dependencies installed"
 if [ "$MODE" = "reset" ]; then
   # What is wiped is what the application is set to use, which is not always
   # backend/db.sqlite3 (SQLITE_PATH, MEDIA_ROOT) and not always SQLite.
+  # The paths are printed resolved ("..", "." and symlinked directories
+  # followed), because the inside-the-checkout test below is a string compare
+  # and `rm` walks ".." in the middle of a path. A final component that is a
+  # symlink stays as it is: rm removes the link and not what it points at. A
+  # value with a line break is refused, as it would be read as a second path.
   RESET_INFO=$(cd backend && "../$VPY" -c '
 import os
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
@@ -490,9 +492,21 @@ import django
 django.setup()
 from django.conf import settings
 db = settings.DATABASES["default"]
-print(db["ENGINE"].rsplit(".", 1)[-1])
-print(db["NAME"])
-print(settings.MEDIA_ROOT)') || die "Could not read the database settings, so --reset does not know what it would delete."
+engine = db["ENGINE"].rsplit(".", 1)[-1]
+
+
+def resolved(value):
+    path = str(value)
+    if "\n" in path or "\r" in path:
+        raise SystemExit("--reset will not run: the database or media path contains a line break.")
+    if os.path.islink(path):
+        return os.path.join(os.path.realpath(os.path.dirname(path)), os.path.basename(path))
+    return os.path.realpath(path)
+
+
+print(engine)
+print(resolved(db["NAME"]) if engine == "sqlite3" else db["NAME"])
+print(resolved(settings.MEDIA_ROOT))') || die "Could not read the database settings, so --reset does not know what it would delete."
   RESET_ENGINE=$(printf '%s\n' "$RESET_INFO" | sed -n 1p)
   RESET_DB=$(printf '%s\n' "$RESET_INFO" | sed -n 2p)
   RESET_MEDIA=$(printf '%s\n' "$RESET_INFO" | sed -n 3p)

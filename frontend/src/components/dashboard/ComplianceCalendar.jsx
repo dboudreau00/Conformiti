@@ -45,6 +45,8 @@ function monthGrid(cursor) {
   return Array.from({ length: lead + last.getDate() + trail }, (_, i) => new Date(y, m, 1 - lead + i));
 }
 const longDate = (d) => `${DAYS_LONG[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+// The last day an event runs through: its end date when that is later than its start, else the start.
+const lastDay = (e) => (e.end_date && e.end_date > e.date ? e.end_date : e.date);
 
 export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
@@ -97,20 +99,26 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
 
   const visibleEvents = useMemo(() => (filter ? events.filter((e) => e.type === filter) : events), [events, filter]);
 
+  // An event with an end date sits on every visible day it runs through, not only on the day it starts.
   const byDate = useMemo(() => {
     const map = new Map();
+    const keys = days.map(localKey);
     for (const e of visibleEvents) {
       if (!e?.date) continue;
-      const list = map.get(e.date) || [];
-      list.push(e);
-      map.set(e.date, list);
+      const last = lastDay(e);
+      for (const key of keys) {
+        if (key < e.date || key > last) continue;
+        const list = map.get(key) || [];
+        list.push(e);
+        map.set(key, list);
+      }
     }
     return map;
-  }, [visibleEvents]);
+  }, [visibleEvents, days]);
 
   const cursorMonth = monthKey(cursor);
   const monthCount = useMemo(
-    () => visibleEvents.filter((e) => (e.date || "").startsWith(cursorMonth)).length,
+    () => visibleEvents.filter((e) => e.date && e.date <= `${cursorMonth}-31` && lastDay(e) >= `${cursorMonth}-01`).length,
     [visibleEvents, cursorMonth]
   );
   const onCurrentMonth = cursorMonth === todayKey.slice(0, 7);

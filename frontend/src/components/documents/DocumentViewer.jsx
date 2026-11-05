@@ -11,6 +11,8 @@ import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
 import { DOC_STATUS } from "../../utils/tone.js";
 
+const FOCUSABLE = 'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])';
+
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 const PDF_PAGE_BATCH = 20;
 
@@ -312,6 +314,7 @@ export default function DocumentViewer({
   const [aside, setAside] = useState(true);
   const [downloadError, setDownloadError] = useState("");
   const closeRef = useRef(null);
+  const frameRef = useRef(null);
   // Read through a ref: a fresh inline onClose in the effect deps would re-run it and pull focus back to Close.
   const onCloseRef = useRef(onClose);
   useLayoutEffect(() => {
@@ -369,7 +372,18 @@ export default function DocumentViewer({
     const opener = document.activeElement;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e) => { if (e.key === "Escape") onCloseRef.current?.(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { onCloseRef.current?.(); return; }
+      if (e.key !== "Tab" || !frameRef.current) return;
+      // Same Tab handling as ui/Dialog.jsx: the page behind is not inert, so focus outside the viewer is pulled back in.
+      let nodes = Array.from(frameRef.current.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled);
+      if (!nodes.length) nodes = [frameRef.current];
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const within = nodes.includes(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || !within)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !within)) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener("keydown", onKey);
     const t = setTimeout(() => closeRef.current?.focus(), 30);
     return () => {
@@ -452,10 +466,12 @@ export default function DocumentViewer({
       {open ? (
         <motion.div
           key="viewer"
+          ref={frameRef}
+          tabIndex={-1}
           role="dialog"
           aria-modal="true"
           aria-label={`Viewing ${title}`}
-          className="fixed inset-0 z-50 flex flex-col bg-black/70 p-2 backdrop-blur-sm sm:p-5"
+          className="fixed inset-0 z-50 flex flex-col bg-black/70 p-2 outline-none backdrop-blur-sm sm:p-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

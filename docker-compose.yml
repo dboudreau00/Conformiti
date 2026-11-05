@@ -5,12 +5,11 @@
 # No .env is required: the defaults below suit a trial on a network you trust
 # (DEBUG off, a strong secret key generated on first boot and persisted in the
 # `secrets` volume, Redis-backed rate limits, API/admin reachable from the
-# network only through nginx; the API is also published on the host's own
-# loopback, 127.0.0.1:8000 or CONFORMITI_API_PORT, for debugging on that
-# machine). They are not production settings: the stack serves plain HTTP,
-# prints email to its log, and uses the database password `compliance` and a
-# Redis with no password until .env says otherwise (INSTALL.md, Going to
-# production).
+# network only through nginx; the API publishes no host port, see the note on
+# the backend service). They are not production settings: the stack serves
+# plain HTTP, prints email to its log, and uses the database password
+# `compliance` and a Redis with no password until .env says otherwise
+# (INSTALL.md, Going to production).
 # Most keys in .env override these defaults (see .env.example), but DEBUG, the
 # secret key, the field-encryption key and malware scanning are set here with
 # CONFORMITI_* names instead of their DJANGO_ and CLAMAV_ ones, on purpose (see
@@ -87,6 +86,33 @@ x-backend-env: &backend-env
   SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
   EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
 
+# worker and beat load ./.env whole (env_file below), because the settings they
+# read from it are open-ended and compose has no way to pass "this key, only
+# when it is set". What they do not need is blanked here instead: an
+# `environment:` entry wins over the same key in the file. Secrets only the web
+# process uses stay on the backend service alone:
+#   worker: the first administrator's account details, the demo password and the
+#           single sign-on client secret;
+#   beat:   those too, and the mail and S3 credentials, because it only queues
+#           tasks and sends nothing.
+# A new web-only secret belongs in this block (tools/validate.py checks the keys listed here).
+x-worker-env: &worker-env
+  <<: *backend-env
+  DJANGO_SUPERUSER_USERNAME: ""
+  DJANGO_SUPERUSER_PASSWORD: ""
+  DJANGO_SUPERUSER_EMAIL: ""
+  DEMO_PASSWORD: ""
+  OIDC_CLIENT_SECRET: ""
+
+x-beat-env: &beat-env
+  <<: *worker-env
+  EMAIL_HOST_PASSWORD: ""
+  MAILBOX_PASSWORD: ""
+  MAILBOX_SMTP_PASSWORD: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_SESSION_TOKEN: ""
+
 services:
   db:
     image: postgres:16-alpine
@@ -140,7 +166,7 @@ services:
       # password are both set, and left alone once it exists. Listed here
       # rather than only read from ./.env so they also work set in the shell,
       # the way SEED_DEMO_DATA does. Only this service runs the entrypoint
-      # that uses them, so they are not added to the worker or beat.
+      # that uses them, so the worker and beat blank them (x-worker-env).
       DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-}
       DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
       DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-}
@@ -154,13 +180,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Bound to the loopback interface: the API and admin are reachable from
-    # the host for debugging, but the LAN only sees nginx on CONFORMITI_PORT.
-    # CONFORMITI_API_PORT moves the host side when something else already
-    # holds 8000 (a local `manage.py runserver`, another stack); the
-    # container side stays 8000.
-    ports:
-      - "127.0.0.1:${CONFORMITI_API_PORT:-8000}:8000"
+    # No host port: the API and admin are reached through nginx on
+    # CONFORMITI_PORT, which appends the real client address to
+    # X-Forwarded-For. A published gunicorn port skips nginx, so any client
+    # on it chooses its own throttle key (NUM_PROXIES=1 trusts that header's
+    # last entry), and the 8 a minute sign-in limit stops meaning anything.
+    # To reach the API from the host while debugging, publish it from a
+    # docker-compose.override.yml of your own (INSTALL.md, Debugging the API).
 
   worker:
     build: ./backend
@@ -176,7 +202,7 @@ services:
       - path: .env
         required: false
     environment:
-      <<: *backend-env
+      <<: *worker-env
     volumes:
       - media:/app/media
       - secrets:/app/secrets:ro
@@ -202,7 +228,7 @@ services:
       - path: .env
         required: false
     environment:
-      <<: *backend-env
+      <<: *beat-env
     volumes:
       - secrets:/app/secrets:ro
     depends_on:
@@ -211,9 +237,12 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "kill -0 $$(cat /tmp/celerybeat.pid) 2>/dev/null || exit 1"]
+      # Alive, and able to reach the broker it publishes to: a beat that lost
+      # Redis stays up, queues nothing, and `kill -0` alone would call it healthy.
+      # Opening the connection pings Redis (kombu does it when it creates the channel).
+      test: ["CMD-SHELL", "kill -0 $$(cat /tmp/celerybeat.pid) 2>/dev/null && python -c \"import os; from kombu import Connection; Connection(os.environ['CELERY_BROKER_URL']).ensure_connection(max_retries=1, interval_start=0, timeout=5)\" 2>/dev/null || exit 1"]
       interval: 60s
-      timeout: 5s
+      timeout: 15s
       start_period: 30s
       retries: 3
 

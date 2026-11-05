@@ -131,8 +131,11 @@ python manage.py collectstatic --noinput >/dev/null
 
 # Say at boot whether the scanner is reachable, rather than at the first upload.
 # Defaulted: `set -euo pipefail` above would kill the container on a bare
-# ${CLAMAV_ENABLED} for every default `docker compose up`.
-if [ "${CLAMAV_ENABLED:-false}" = "true" ]; then
+# ${CLAMAV_ENABLED} for every default `docker compose up`. The spellings are
+# env_bool's in settings.py, so a scanner switched on with "yes" or "1" is
+# checked here too.
+scanner_on="${CLAMAV_ENABLED:-false}"
+if [[ "${scanner_on,,}" =~ ^(1|true|yes|on)$ ]]; then
   if python -c "
 import os, sys
 sys.path.insert(0, '.')

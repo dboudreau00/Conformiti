@@ -17,6 +17,10 @@ ALGORITHM = "Ed25519"
 _cache = {"path": None, "mtime": None, "key": None}
 
 
+class KeyBelongsToAnotherWorkspace(ImproperlyConfigured):
+    """A workspace derived a key that is registered to a different workspace: its slug was reused."""
+
+
 def enabled():
     return bool(getattr(settings, "SIGNING_ENABLED", True))
 
@@ -188,9 +192,27 @@ def verify_bytes(raw, signature_b64, public_key_b64):
     return True
 
 
+def slug_reuses_a_registered_key(slug, workspace_id):
+    """True when ``slug`` derives a key that is registered to a workspace other than ``workspace_id``. A key follows the
+    slug alone, so giving one workspace the slug another used would hand it that workspace's signing identity."""
+    from .models import SigningKey
+
+    try:
+        root = load_private_key(create=False)
+    except ImproperlyConfigured:
+        return False
+    if root is None:
+        return False
+    public = public_b64(derive_workspace_key(root, slug).public_key())
+    others = SigningKey.objects.filter(public_key=public, workspace__isnull=False)
+    if workspace_id is not None:
+        others = others.exclude(workspace_id=workspace_id)
+    return others.exists()
+
+
 def register_key(public_key_b64):
     """Record the key that just signed as current and retire this workspace's other current keys (a rotation made
-    without the command)."""
+    without the command). A key already registered to another workspace stays with it."""
     from django.db import IntegrityError, transaction
 
     from .models import SigningKey
@@ -209,6 +231,10 @@ def register_key(public_key_b64):
         raise ImproperlyConfigured(
             f"Signing key id {kid} is already registered for a different public key; "
             "rotate the signing key.")
+    if row.workspace_id is not None and row.workspace_id != workspace_id:
+        raise KeyBelongsToAnotherWorkspace(
+            f"Signing key {kid} is registered to another workspace, so this one cannot sign with it. "
+            "Its slug was probably used by that workspace before: give this workspace a different slug.")
     if row.retired_at is not None or row.workspace_id != workspace_id:
         row.retired_at = None
         row.workspace_id = workspace_id

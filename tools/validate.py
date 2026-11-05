@@ -414,6 +414,13 @@ def check_deploy():
             err("deploy", "scripts/backup.sh must set the mode inside the container that "
                           "writes the archive (umask 077 && tar ... && chmod 600), because "
                           "the file lands root-owned and the host cannot change it")
+    # The publish job holds packages: write, so a movable action tag there is a way to push an image under a release
+    # tag. Every `uses:` in packages.yml is a full commit SHA; the tag it came from is a trailing comment.
+    packages = read(os.path.join(ROOT, ".github", "workflows", "packages.yml"))
+    for ref in re.findall(r"^\s*-?\s*uses:\s*(\S+)", packages, re.M):
+        if not ref.startswith("./") and not re.search(r"@[0-9a-f]{40}$", ref):
+            err("deploy", f"packages.yml uses {ref}, which is not pinned to a full commit SHA: "
+                          f"the job that publishes the images must not run a movable tag")
     print(f" 10. deploy artifacts: compose/entrypoint present, DEBUG pinned off in the "
           f"image, {len(used)} env keys cross-checked")
 
@@ -564,6 +571,38 @@ def check_compose_debug_isolation():
     for key in ("CONFORMITI_DEBUG", "CONFORMITI_SECRET_KEY", "CONFORMITI_FIELD_ENCRYPTION_KEY"):
         if key not in envex:
             err("compose", f"{key} is not documented in .env.example")
+    # worker and beat load .env whole, so the secrets only the web process uses are blanked there. The first
+    # administrator's account stays on the backend service alone; beat also holds no mail or S3 credential.
+    def service_block(name):
+        m = re.search(rf"^  {name}:\n(.*?)(?=^  \S|^\S|\Z)", dc, re.M | re.S)
+        return m.group(1) if m else ""
+
+    def anchor_block(name):
+        m = re.search(rf"^x-{name}-env: &{name}-env\n(.*?)(?=^\S|\Z)", dc, re.M | re.S)
+        return m.group(1) if m else ""
+
+    for service, anchor in (("worker", "worker"), ("beat", "beat")):
+        if f"<<: *{anchor}-env" not in service_block(service):
+            err("compose", f"the {service} service must take its environment from x-{anchor}-env, which blanks "
+                           "the secrets only the web process uses")
+    worker_env = anchor_block("worker")
+    beat_env = anchor_block("beat")
+    for key in ("DJANGO_SUPERUSER_USERNAME", "DJANGO_SUPERUSER_PASSWORD", "DJANGO_SUPERUSER_EMAIL",
+                "DEMO_PASSWORD", "OIDC_CLIENT_SECRET"):
+        if not re.search(rf'^  {key}: ""$', worker_env, re.M):
+            err("compose", f"x-worker-env must blank {key}: it is read from .env, and only the backend service uses it")
+    # Beat's own blanks are on top of the worker's, which it has only by merging the worker's anchor.
+    if not re.search(r"^  <<: \*worker-env$", beat_env, re.M):
+        err("compose", "x-beat-env must merge *worker-env, which blanks the administrator, demo and single sign-on "
+                       "secrets for beat too")
+    for key in ("EMAIL_HOST_PASSWORD", "MAILBOX_PASSWORD", "MAILBOX_SMTP_PASSWORD", "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        if not re.search(rf'^  {key}: ""$', beat_env, re.M):
+            err("compose", f"x-beat-env must blank {key}: beat queues tasks and sends nothing")
+    for service in ("worker", "beat"):
+        if "DJANGO_SUPERUSER" in service_block(service):
+            err("compose", f"the {service} service must not be given DJANGO_SUPERUSER_* beyond the blanks in "
+                           "its environment block")
     print(" 16. compose isolation: no secret can leak from a local .env into a container")
 
 

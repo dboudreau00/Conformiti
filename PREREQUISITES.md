@@ -8,11 +8,10 @@
   (`env_file` with `required: false`). On Windows, Docker Desktop or Docker
   inside WSL 2 both work.
 - 2 vCPU / 4 GB RAM / 20 GB disk is comfortable for tens of users.
-- Free host ports: **8080** for nginx on every interface (`CONFORMITI_PORT` to
-  change) and **8000** on 127.0.0.1 for the API (`CONFORMITI_API_PORT` to
-  change). The local development path below uses 8000 as well, so stop one
-  before starting the other, or move one of them (the local API moves with
-  `CONFORMITI_DEV_API_PORT`, which is separate from `CONFORMITI_API_PORT`).
+- Free host port: **8080** for nginx on every interface (`CONFORMITI_PORT` to
+  change). The API publishes none; the local development path below uses 8000
+  for its own server (`CONFORMITI_DEV_API_PORT` to change), which is separate
+  from `CONFORMITI_API_PORT`, the port INSTALL.md's debugging override takes.
 - Outbound internet to pull base images and build, and again wherever the
   installation uses it: `scripts/backup.sh` and `scripts/restore.sh` run an
   `alpine:3.20` container (pulled on first use), the optional malware scanner

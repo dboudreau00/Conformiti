@@ -249,8 +249,9 @@ administrator.
 capabilities). Record a decision and a note per row, **Export CSV**, then
 **Complete review**, which is refused while any row is pending. Completing
 deactivates every account marked Revoke and signs it out of its sessions. It
-skips your own account, superusers, accounts already inactive and accounts
-since deleted, and lists each skipped row on screen with the reason. Completed
+skips your own account, superusers, accounts already inactive, accounts
+since deleted and the last active administrator, and lists each skipped row
+on screen with the reason. Completed
 reviews are read-only evidence.
 
 ### Audit log *(administrators, auditors, view-all managers)*
@@ -298,7 +299,8 @@ framework managers (Administrator, Compliance Manager) edit it.
 
 ### Audit packages
 Assemble the controls and evidence for an engagement, seal the package and
-issue it to the auditor's account for a fixed period. The **Request list**
+issue it to the auditor's account for a fixed period; issue it again to renew or
+extend that access. The **Request list**
 on each package is what the auditor has asked for: raise lines (or let the
 auditor raise them), assign and date each one, attach the documents and mark
 it *provided*; the auditor accepts or returns it. Lines assigned to you are
@@ -352,7 +354,7 @@ Amazon SES (see `.env.example`). With `DJANGO_DEBUG=false` and no
 
 ```bash
 manage.py createsuperuser              # first real administrator (the password policy applies)
-manage.py remove_demo_data [--delete]  # retire the demo accounts, sample data and demo control statuses (after createsuperuser)
+manage.py remove_demo_data [--delete]  # retire the demo accounts, sample data and demo control statuses (after createsuperuser); it removes only the rows the demo seeded, and nothing where the demo was never loaded
 manage.py send_review_reminders [--dry-run]
 manage.py record_readiness             # today's readiness snapshot (cron)
 manage.py flushexpiredtokens           # prune the JWT blacklist (cron)

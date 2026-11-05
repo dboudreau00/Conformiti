@@ -7,18 +7,38 @@ import { cn } from "../../utils/cn.js";
 export const EASE = [0.23, 1, 0.32, 1];
 
 const PRODUCT = "Conformiti";
+const SEP = " · ";
+
+// What an add-on that renamed the product (white label) put in the tab, learned the first time it is seen after a page
+// of ours, and the page name this component last wrote. Together they let a later page keep following the brand.
+let brand = null;
+let lastPage = null;
+
+/** The product name in the current tab title, or null when the title is not ours to change. */
+function productInTab() {
+  const now = document.title;
+  const carries = (name) => now === name || now.endsWith(SEP + name);
+  if (carries(PRODUCT)) return PRODUCT;
+  if (brand && carries(brand)) return brand;
+  if (lastPage && now.startsWith(lastPage + SEP)) {
+    brand = now.slice(lastPage.length + SEP.length);
+    return brand;
+  }
+  return null;
+}
 
 export function PanelTransition({ children, className }) {
   const meta = NAV_LOOKUP[useLocation().pathname];
   const title = meta?.title;
   useEffect(() => {
     if (!title) return undefined;
-    // An add-on that renamed the product (white label) keeps its own tab title.
-    const stock = document.title === PRODUCT || document.title.endsWith(` · ${PRODUCT}`);
-    if (!stock) return undefined;
-    const named = `${title} · ${PRODUCT}`;
+    // A title that is neither the stock one nor an add-on's rename of it belongs to someone else: leave it.
+    const product = productInTab();
+    if (product === null) return undefined;
+    const named = `${title}${SEP}${product}`;
     document.title = named;
-    return () => { if (document.title === named) document.title = PRODUCT; };
+    lastPage = title;
+    return () => { if (document.title === named) document.title = product; };
   }, [title]);
   return (
     <motion.main

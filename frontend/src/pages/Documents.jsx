@@ -11,7 +11,7 @@ import {
   UploadIcon,
   XIcon,
 } from "lucide-react";
-import api, { downloadFile, fetchAll } from "../api/client.js";
+import api, { downloadFile, fetchAll, isTruncated } from "../api/client.js";
 import DocumentViewer, { documentViewerProps } from "../components/documents/DocumentViewer.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Badge, Dot } from "../components/ui/Badge.jsx";
@@ -874,7 +874,7 @@ export default function Documents({ me }) {
               </div>
               {hits !== null ? (
                 <Label>
-                  {searching ? "Searching…" : searchErr ? "- matches" : `${hits.length} ${hits.length === 1 ? "match" : "matches"}`}
+                  {searching ? "Searching…" : searchErr ? "- matches" : `${isTruncated(hits) ? "First " : ""}${hits.length} ${hits.length === 1 ? "match" : "matches"}`}
                 </Label>
               ) : null}
               {query ? (
@@ -883,6 +883,11 @@ export default function Documents({ me }) {
             </div>
             {hits !== null ? (
               <section aria-label="Search results">
+                {isTruncated(hits) && !searching && !searchErr ? (
+                  <p className="notice notice-warn mx-5 my-3" role="status">
+                    Showing the first {hits.length} matches. Narrow the search to see the rest.
+                  </p>
+                ) : null}
                 {searching && hits.length === 0 ? (
                   <Loading>Searching…</Loading>
                 ) : searchErr ? (
@@ -970,7 +975,7 @@ export default function Documents({ me }) {
                         Upload document
                       </Button>
                     ) : null}
-                    <Label>{countsKnown ? `${docs.length} ${docs.length === 1 ? "document" : "documents"}` : "- documents"}</Label>
+                    <Label>{countsKnown ? `${isTruncated(docs) ? "First " : ""}${docs.length} ${docs.length === 1 ? "document" : "documents"}` : "- documents"}</Label>
                     <Badge tone={ACCESS_TONE[folder.my_access] || "faint"} mono>{folder.my_access || "no access"}</Badge>
                     {folder.is_seeded ? <Badge tone="faint" mono>framework</Badge> : null}
                     {canManage ? (
@@ -1116,6 +1121,11 @@ export default function Documents({ me }) {
                       {/* sr-only: the column is one button wide, narrower than the word. */}
                       {canEdit ? <span className="sr-only">Actions</span> : null}
                     </div>
+                    {isTruncated(docs) && !docsLoading && !docsErr ? (
+                      <p className="notice notice-warn mx-5 my-3" role="status">
+                        Showing the first {docs.length} documents in this folder. Search to find the others.
+                      </p>
+                    ) : null}
                     {docsLoading ? (
                       <Loading />
                     ) : docsErr ? (

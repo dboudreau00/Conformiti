@@ -70,7 +70,9 @@ class VendorAssessmentSerializer(serializers.ModelSerializer):
         if doc is None:
             return doc
         if doc.folder_id not in self._visible_folders():
-            raise serializers.ValidationError("You cannot see that document.")
+            # Word it exactly as the field does for a missing id, so a hidden id is not told apart from an absent one.
+            message = self.fields["document"].error_messages["does_not_exist"].format(pk_value=doc.pk)
+            raise serializers.ValidationError(message, code="does_not_exist")
         return doc
 
     def _visible_folders(self):

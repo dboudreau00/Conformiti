@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import (
+    MAX_FOLDER_DEPTH,
     Document,
     DocumentVersion,
     Folder,
@@ -9,6 +10,7 @@ from .models import (
     FormTemplate,
     validate_folder_name,
 )
+from .access import accessible_folder_ids
 from .downloads import download_filename
 from .uploads import validate_upload
 
@@ -16,6 +18,38 @@ from .uploads import validate_upload
 def person_name(user):
     """Full name, else the username (createsuperuser sets no name); "" for nobody."""
     return (user.get_full_name() or user.get_username()) if user else ""
+
+
+class _FolderPaths:
+    """Folder paths for one response: the whole tree in one query, names clipped to the folders the caller may view,
+    so a path never carries the name of a parent they cannot see."""
+
+    def __init__(self, user):
+        self.visible = accessible_folder_ids(user)
+        self.nodes = {fid: (name, parent_id) for fid, name, parent_id in Folder.objects.values_list(
+            "id", "name", "parent_id")}
+
+    def path(self, folder_id):
+        names, node, hops = [], folder_id, 0
+        while node in self.nodes and hops <= MAX_FOLDER_DEPTH:
+            name, parent_id = self.nodes[node]
+            names.append(name)
+            if parent_id is None or parent_id not in self.visible:
+                return "/".join(reversed(names))
+            node, hops = parent_id, hops + 1
+        # Cyclic or deeper than the ceiling (made before the guard): the folder by its own name, as Folder.path does.
+        return self.nodes[folder_id][0] if folder_id in self.nodes else ""
+
+
+def visible_folder_path(folder, context):
+    """``folder.path`` clipped to what the caller may view; the full path when there is no request to judge by."""
+    request = (context or {}).get("request")
+    if folder is None or request is None or not getattr(request, "user", None):
+        return folder.path if folder is not None else ""
+    paths = context.get("_folder_paths")
+    if paths is None:
+        paths = context["_folder_paths"] = _FolderPaths(request.user)
+    return paths.path(folder.id) or folder.path
 
 
 class PersonNameField(serializers.ReadOnlyField):
@@ -52,7 +86,7 @@ class FolderPermissionSerializer(serializers.ModelSerializer):
 
 
 class FolderSerializer(serializers.ModelSerializer):
-    path = serializers.CharField(read_only=True)
+    path = serializers.SerializerMethodField()
     owner_name = serializers.SerializerMethodField()
     control_id = serializers.CharField(source="control.control_id", read_only=True, default=None)
     child_count = serializers.IntegerField(source="children.count", read_only=True)
@@ -68,6 +102,9 @@ class FolderSerializer(serializers.ModelSerializer):
             "my_access", "created_at", "updated_at",
         ]
         read_only_fields = ["is_framework_root", "control"]
+
+    def get_path(self, obj):
+        return visible_folder_path(obj, self.context)
 
     def get_owner_name(self, obj):
         return person_name(obj.owner)
@@ -90,17 +127,26 @@ class FolderSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "A folder cannot be moved inside itself or one of its subfolders."
                 )
+        # The deepest folder this makes must still have a chain the access checks can walk.
+        if parent is not None and (self.instance is None or parent.pk != self.instance.parent_id):
+            above = parent.chain_length()
+            below = self.instance.subtree_height() if self.instance is not None else 0
+            if above is None or above + 1 + below > MAX_FOLDER_DEPTH:
+                raise serializers.ValidationError(
+                    f"Folders can be nested at most {MAX_FOLDER_DEPTH} levels deep."
+                )
         return parent
 
 
 class DocumentVersionSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
+    quarantined = serializers.BooleanField(source="is_quarantined", read_only=True)
 
     class Meta:
         model = DocumentVersion
         fields = ["id", "version", "note", "uploaded_by", "uploaded_by_name",
-                  "created_at", "download_url"]
+                  "created_at", "download_url", "quarantined"]
 
     def get_uploaded_by_name(self, obj):
         return person_name(obj.uploaded_by)
@@ -111,7 +157,7 @@ class DocumentVersionSerializer(serializers.ModelSerializer):
 
 class DocumentSerializer(serializers.ModelSerializer):
     owner_name = serializers.SerializerMethodField()
-    folder_path = serializers.CharField(source="folder.path", read_only=True)
+    folder_path = serializers.SerializerMethodField()
     control_id = serializers.CharField(source="control.control_id", read_only=True, default=None)
     is_overdue = serializers.BooleanField(read_only=True)
     days_until_review = serializers.IntegerField(read_only=True)
@@ -135,6 +181,9 @@ class DocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["version", "created_by", "next_review_date",
                             "scan_status", "scan_signature", "scanned_at"]
+
+    def get_folder_path(self, obj):
+        return visible_folder_path(obj.folder, self.context)
 
     def get_download_url(self, obj):
         return f"/documents/{obj.pk}/download/" if obj.file else None

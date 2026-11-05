@@ -111,9 +111,15 @@ class CookieJWTAuthentication(JWTAuthentication):
             user_id = validated_token[api_settings.USER_ID_CLAIM]
         except KeyError as exc:
             raise InvalidToken("Token contained no recognizable user identification") from exc
+        from . import tenancy
+
+        # Unscoped: the request's workspace is resolved from whoever Django's session middleware put on it (the admin
+        # session), which is not necessarily the token's user. The signed token names the account; its workspace, or
+        # the superuser's X-Workspace, is resolved from that account afterwards.
         try:
-            user = (self.user_model.objects.select_related("workspace", "role")
-                    .get(**{api_settings.USER_ID_FIELD: user_id}))
+            with tenancy.unscoped():
+                user = (self.user_model.objects.select_related("workspace", "role")
+                        .get(**{api_settings.USER_ID_FIELD: user_id}))
         except self.user_model.DoesNotExist as exc:
             raise AuthenticationFailed("User not found", code="user_not_found") from exc
         if api_settings.CHECK_USER_IS_ACTIVE and not user.is_active:

@@ -105,6 +105,14 @@ e2e/
   tests/
     auth.setup.js         signs in once; the other projects reuse the session
     auth.spec.js          sign-in, sign-out, token revocation, every persona
+    auth-session.spec.js  a reload after the access cookie lapsed renews through the refresh cookie
+                          (cookie mode), and a refused sign-in in a second tab changes nothing (both modes)
+    auth-client.spec.js   the SPA's token client run in Node against a scripted server: a second
+                          tab, a dropped connection, an expired access token (no browser)
+    account-lookup.spec.js  the dashboard says so and offers Try again when the account lookup fails
+    calendar-span.spec.js a multi-day event sits on every visible day it runs through
+    risk-link.spec.js     /risks?risk=<id> opens that risk, widening the live filter when it hides it
+    tab-title.spec.js     the tab names the page and keeps following pages after an add-on renames the product
     shell.spec.js         every route renders; the top bar, its Governance, account and
                           Appearance menus; the auditor's bar; the notification tray
     search.spec.js        the Ctrl K palette: results by role, Enter lands on the record

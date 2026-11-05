@@ -76,11 +76,14 @@ def run_review_scan(dry_run=False):
             continue
 
         # Claim the window before sending, with a conditional UPDATE that only matches while the row still holds what
-        # this worker read: of two concurrent scans only one wins, so the document is not emailed twice.
+        # this worker read: of two concurrent scans only one wins, so the document is not emailed twice. The review
+        # date is part of it: a review marked done meanwhile clears the windows to the same empty list, but moves
+        # the date, and must not be expired.
         fields = {"reminders_sent": sent}
         if overdue:
             fields["status"] = Document.Status.EXPIRED
-        claimed = Document.objects.filter(pk=doc.pk, reminders_sent=before).update(**fields)
+        claimed = Document.objects.filter(
+            pk=doc.pk, reminders_sent=before, next_review_date=doc.next_review_date).update(**fields)
         if not claimed:
             continue
 
@@ -116,13 +119,18 @@ def _notify_bridge(vendor, report):
 def run_vendor_scan(dry_run=False):
     """Email the owner and the compliance team once per lapsed SOC report with no newer report or bridge letter; the
     report remembers it was chased. Returns the number chased."""
-    from vendors.assurance import bridge_letter_gaps
+    from vendors.assurance import bridge_letter_gaps, lapsed_soc_report
 
     chased = 0
     for vendor, report in bridge_letter_gaps():
         if report.bridge_reminded_at:
             continue
         if not dry_run:
+            # The gaps were listed before the first email went out: a bridge letter or a newer report filed since closes
+            # this one, so ask again from the database.
+            current = lapsed_soc_report(type(vendor).objects.get(pk=vendor.pk))
+            if current is None or current.pk != report.pk:
+                continue
             # Claim, then send: two concurrent runs would both see "not yet chased" and both email.
             now = timezone.now()
             model = type(report)
@@ -187,9 +195,11 @@ def run_pbc_scan(dry_run=False):
         notified += 1
         if dry_run:
             continue
-        # Claim before sending, as in run_review_scan: the conditional UPDATE stops two concurrent runs sending twice.
-        claimed = PbcRequest.objects.filter(pk=req.pk, reminders_sent=before).update(
-            reminders_sent=sent)
+        # Claim before sending, as in run_review_scan: the conditional UPDATE stops two concurrent runs sending twice,
+        # and a line answered or given a new date since it was read is left alone.
+        claimed = PbcRequest.objects.filter(
+            pk=req.pk, reminders_sent=before, due_date=req.due_date, status__in=PbcRequest.ACTIONABLE,
+        ).update(reminders_sent=sent)
         if not claimed:
             continue
         try:
@@ -264,7 +274,8 @@ def digest_items(user):
 
 def run_digests(dry_run=False, today=None):
     """Email each person who asked for a digest the items in their tray: daily people every day, weekly people on
-    Mondays, at most one a day and none for an empty tray. Returns the number sent."""
+    Mondays (or when the last one is over six days old), at most one a day and none for an empty tray. Returns the
+    number sent."""
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -276,7 +287,9 @@ def run_digests(dry_run=False, today=None):
         people = list(User.objects.filter(is_active=True, workspace__isnull=False, workspace__is_active=True)
                       .exclude(email="").exclude(digest=User.Digest.OFF))
     for user in people:
-        if user.digest == User.Digest.WEEKLY and today.weekday() != 0:
+        if user.digest == User.Digest.WEEKLY and today.weekday() != 0 and not (
+                user.digest_sent_at and (today - timezone.localtime(user.digest_sent_at).date()).days > 6):
+            # Not Monday, and the last weekly mail is recent or there never was one: a missed Monday catches up.
             continue
         if user.digest_sent_at and timezone.localtime(user.digest_sent_at).date() >= today:
             continue

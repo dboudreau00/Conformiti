@@ -1,9 +1,9 @@
 # Security and code reviews
 
-This document consolidates six review records of Conformiti core: one
-internal line-by-line review (0.2.0) and five independent reviews (an
-adversarial review of 0.9.0, a source review of 0.9.5, and three further
-source reviews closed in 0.9.5f, 0.9.5h and 0.9.5i). For each review it gives
+This document consolidates seven review records of Conformiti core: one
+internal line-by-line review (0.2.0) and six independent reviews (an
+adversarial review of 0.9.0, a source review of 0.9.5, and four further
+source reviews closed in 0.9.5f, 0.9.5h, 0.9.5i and 0.9.5oc). For each review it gives
 the method, every finding, and where the finding stands today.
 
 The finding identifiers (S-1, M-4, L-8 and so on) are the ones the code, the
@@ -16,7 +16,8 @@ do, with the release reviewed given in the heading. SECURITY.md lists the same
 reviews by the release each one reviewed, so its 0.9.5e review is the "0.9.5f
 review" here.
 
-**Status means status at v0.9.5ma (HEAD b580826).** How a status was set:
+**Status means status at v0.9.5ma (HEAD b580826)**, except in the 0.9.5oc
+section, which gives it at 0.9.5oc. How a status was set:
 
 - *Fixed*: the named function, setting or file was read at that commit and
   the fix is there, and the backend test modules that lock it pass.
@@ -44,6 +45,7 @@ so.
 | 0.9.5f, fourth independent | independent | 0.9.5e | 14, plus 3 raised in passing | 17 | 0 | 0 | 0.9.5f (0.9.5g for one follow-up) |
 | 0.9.5h, fifth independent | independent | 0.9.5g | 14 | 13 | 1 | 0 | 0.9.5h |
 | 0.9.5i, sixth independent | independent | 0.9.5h | 3 | 3 | 0 | 0 | 0.9.5i |
+| 0.9.5oc, seventh independent | independent | 0.9.5ob | 70 (6 not defects as reported) | 62 | 2 deferred | 0 | 0.9.5oc |
 
 Notes on the counts:
 
@@ -89,7 +91,7 @@ noted limit.
 | S-06 | Med | No upload size or type limit | Fixed. `validate_upload` in `documents/uploads.py` on every upload path, `MAX_UPLOAD_MB`, nginx `/media/` sandbox CSP; `test_upload_size_ceiling`, `test_active_content_extensions_are_refused`. Extended by 0.9.5 S-4 and 0.9.5f M-2 |
 | S-07 | Med | Auth events absent from the audit trail, mutation entries recorded the path only | Fixed. `audit/events.py`, `audit/middleware.py` (`SENSITIVE_KEYS` excluded); `AuditMiddlewareTests`, `LoginTests` |
 | S-08 | Med | Docker path ran DEBUG on with the published placeholder key | Fixed. Compose sets `DJANGO_DEBUG: ${CONFORMITI_DEBUG:-false}`, key generated into a volume. Two follow-ups: S-19 and 0.9.5f H-3 |
-| S-09 | Med | API and admin published on all interfaces, browsable API on | Fixed. Compose publishes `127.0.0.1:${CONFORMITI_API_PORT:-8000}`; `DEFAULT_RENDERER_CLASSES` is JSON only off DEBUG |
+| S-09 | Med | API and admin published on all interfaces, browsable API on | Fixed. Compose publishes `127.0.0.1:${CONFORMITI_API_PORT:-8000}`; `DEFAULT_RENDERER_CLASSES` is JSON only off DEBUG. Since 0.9.5oc compose publishes no API port at all (INSTALL.md, Debugging the API) |
 | S-10 | Low | Built-in role flags editable through the API | Fixed. `RoleViewSet.perform_update`; `test_builtin_role_flags_are_locked_but_custom_roles_work` |
 | S-11 | Low | Non-superuser admin could reset a superuser's MFA | Fixed. `UserViewSet.reset_mfa` |
 | S-12 | Low | Folder names unvalidated | Fixed. `validate_folder_name` (`documents/models.py`), migration 0002; `test_folder_names_are_single_path_segments` |
@@ -328,6 +330,92 @@ fixes rather than the code they replaced. Each has a test. Tests are in
 
 ---
 
+## 0.9.5oc review: source review of 0.9.5ob, closed in 0.9.5oc
+
+Seventh independent review, of 0.9.5ob, closed in 0.9.5oc. Seventy findings in
+eight areas (authentication, files, sealed packages, tenancy, the programme,
+background jobs and dates, the SPA, operations): 62 fixed, 56 with a test or a
+check and 6 with none; 6 not defects as reported, with the reason; 2 deferred,
+below. Two findings are the same defect seen twice and keep both identifiers
+(WEB-01 is AUTH-01, ROB-01 is TEN-01). Tests are in each app's
+`tests_review_095oc*.py`, `attestations/tests_seals_095oc.py`,
+`compliance/tests_responsibility_095oc.py` and the new specs in `e2e/tests/`.
+
+| ID | Sev | Finding | Status at 0.9.5oc |
+|---|---|---|---|
+| AUTH-01 | Med | cookie-mode cold load never renews (= WEB-01) | Fixed; `accounts.tests_review_095oc_sessions.CookieModeRenewalTests` |
+| AUTH-02 | High | SimpleJWT outstands the rotated token | Not a defect as reported: SimpleJWT 5.5.1 calls refresh.outstand() after set_iat(), so the rotated token has an OutstandingToken row and _blacklist_all revokes it. |
+| AUTH-03 | Med | SAML assertion replay for 180 s after NotOnOrAfter (replay row expires with the assertion, acceptance allows the skew) | Fixed; `accounts.tests_saml.SamlFlowTests.test_an_assertion_cannot_be_replayed_inside_the_clock_skew_after_it_expires` |
+| AUTH-04 | Low | passkey counter check is read then write | Fixed; `accounts.tests_review_095oc_demo_and_admins.PasskeyCounterRaceTests` |
+| FIL-01 | Med | folder ownership inconsistency | Fixed; `documents.tests_review_095oc_folders_and_scans.FolderOwnershipTests` |
+| FIL-02 | Low | hidden ancestor's name in `path` | Fixed; `documents.tests_review_095oc_folders_and_scans.FolderPathVisibilityTests` |
+| FIL-03 | Med | re-scan skips versions, templates, minutes | Fixed; `documents.tests_review_095oc_folders_and_scans.ScanVersionsAndTemplatesTests` |
+| FIL-04 | Med | re-scan saves a stale verdict | Fixed; `documents.tests_review_095oc_folders_and_scans.StaleVerdictTests` |
+| FIL-05 | Low | xlsx preview column letters | Fixed; `documents.tests_review_095oc.PreviewColumnReferenceTests` |
+| FIL-06 | Low | public questionnaire draft writes no audit row | Fixed; `vendors.tests_review_095oc.QuestionnaireDraftAuditTests` |
+| FIL-07 | Low | attach-assessment id oracle | Fixed; `vendors.tests_review_095oc.HiddenReportIdTests` |
+| FIL-08 | Low | over-deep folder chain | Fixed; `documents.tests_review_095oc.FolderDepthTests` |
+| OPS-01 | Med | install.sh --reset prefix test on an unresolved path | Fixed; no automated test (`install.sh` has no test harness; checked by hand) |
+| OPS-02 | Med | worker and beat load the whole .env | Fixed; `tools/validate.py` check 16 |
+| OPS-03 | Med | restore is not transactional | Fixed; the compose job in `.github/workflows/ci.yml` (a restore whose dump the server rejects) |
+| OPS-04 | Low | beat healthcheck is `kill -0` | Fixed; the compose job waits for the scheduler's healthcheck |
+| OPS-05 | Low | loopback API port trusts a client X-Forwarded-For | Deferred, see below |
+| OPS-06 | Low | scanner warning only for the string `true` | Fixed; `accounts.tests_review_095oc.ScannerBootWarningTests` |
+| OPS-07 | Med | release workflow actions pinned by tag | Fixed; `tools/validate.py` check 10 |
+| PRG-01 | High | DELETE framework destroys the library | Fixed; `compliance.tests_review_095oc.FrameworkWriteTests` |
+| PRG-02 | Med | PATCH key forks the library at next boot | Fixed; `compliance.tests_review_095oc.FrameworkWriteTests` |
+| PRG-03 | Med | stale item save overwrites a concurrent decision | Fixed; `governance.tests_review_095oc.StaleItemSaveTests` |
+| PRG-04 | Med | access review can deactivate the last administrator | Fixed; `governance.tests_review_095oc.LastAdministratorTests` |
+| PRG-05 | Med | risk import picks one of two same-named users silently | Fixed; `governance.tests_review_095oc.RiskImportTests.test_two_people_with_one_name_are_not_picked_between` |
+| PRG-06 | Med | `%m/%d/%Y` before `%d/%m/%Y` (tidy list) | Fixed; `governance.tests_review_095oc.RiskImportTests.test_a_date_valid_in_both_orders_is_reported` |
+| PRG-07 | Low | non-UTF-8 CSV imported with U+FFFD | Fixed; `governance.tests_review_095oc.RiskImportTests` |
+| PRG-08 | Low | see above | Not a defect as reported: DRF 3.18 OrderingFilter ignores a non-column ordering field: all seven URLs answer 200 (reproduced). |
+| PRG-09 | Med | multi-day event dropped when its start leaves the grid (tidy list) | Fixed; `calendar_app.tests_review_095oc.FeedWindowTests` |
+| PRG-10 | Low | xlsx import reads the first sheet file by name | Fixed; `governance.tests_review_095oc.RiskImportTests` |
+| PRG-11 | Low | two Accountable parties by a race | Fixed; `compliance.tests_responsibility_095oc.SingleAccountableTests` |
+| ROB-01 | High | = TEN-01 | Not a defect as reported: Same bug as TEN-01. |
+| ROB-02 | High | review scan claim ignores the review date | Fixed; `notifications.tests_review_095oc.ReviewScanRaceTests` |
+| ROB-03 | Med | PBC and bridge-letter claims, same shape | Fixed; `attestations.tests_review_095oc.PbcScanRaceTests` |
+| ROB-04 | Med | UTC `.date()` vs `localdate()` when TIME_ZONE is not UTC | Fixed; `notifications.tests_review_095oc.LocalCalendarDayTests` |
+| ROB-05 | Med | new_version and mark_reviewed read-modify-write | Fixed; `documents.tests_review_095oc_folders_and_scans.VersioningAndReviewTests` |
+| ROB-06 | Med | weekly digest skipped if Monday's run is missed | Fixed; `notifications.tests_review_095oc.WeeklyDigestCatchUpTests` |
+| ROB-07 | Med | lists scale with the library | Fixed; `documents.tests_review_095oc_folders_and_scans.ListCostTests` |
+| ROB-08 | Low | the row is loaded after the ping; no race window | Not a defect as reported: monitor.probe pings first and loads the status row after, so the described race (load, 3 s ping, save) has no window. |
+| ROB-09 | Low | end_all_sessions floors to the second | Deferred, see below |
+| ROB-10 | Low | annual is 365 days | Fixed; `vendors.tests_review_095oc.VendorCadenceCalendarTests` |
+| ROB-11 | Low | matrix_save accepts `true` and 12.9 as control ids | Fixed; `vendors.tests_review_095oc.MatrixControlIdTests` |
+| ROB-12 | Low | two simultaneous imports duplicate a title | Fixed; `governance.tests_review_095oc.RiskImportTests.test_an_import_skips_a_title_that_landed_while_it_waited_for_the_lock` |
+| SEA-01 | High | verifier accepts a substituted sums key | Fixed; `attestations.tests_seals_095oc.SubstitutedSumsKeyTests` |
+| SEA-02 | High | reused slug inherits the old key | Fixed; `attestations.tests_seals_095oc.ReusedSlugTests` |
+| SEA-03 | Med | withdrawn package still takes edits | Fixed; `attestations.tests_review_095oc.WithdrawnPackageTests` |
+| SEA-04 | Med | reminder claim ignores the date | Fixed; `notifications.tests_review_095oc.ReviewScanRaceTests` |
+| SEA-05 | Med | cannot reissue or extend a grant | Fixed; `attestations.tests_seals_095oc.ReissueGrantTests` |
+| SEA-06 | Low | signing-keys answers differ for a real slug | Fixed; `attestations.tests_seals_095oc.UnsealedKeyDirectoryTests` |
+| SEA-07 | Low | grantee sees name and status of a draft successor | Fixed; `attestations.tests_seals_095oc.SuccessorDisclosureTests` |
+| SEA-08 | Low | first two concurrent seals can 500 | Not a defect as reported: Django's get_or_create already handles this: when the insert hits the unique key_id it re-reads by the lookup (public_key) and returns the row the winner committed (django/db/models/query.py get_or_create), so the loser... |
+| SEA-09 | Low | standalone verifier follows symlinks | Fixed; `attestations.tests_seals_095oc.SymlinkTests` |
+| TEN-01 | High | remove_demo_data (= ROB-01) | Fixed; `accounts.tests_review_095oc_demo_and_admins.RemoveDemoDataRealRowsTests` |
+| TEN-02 | Med | session cookie plus X-Workspace gives 401 | Fixed; `accounts.tests_review_095oc_sessions.AdminSessionDoesNotPinTheTokenUserTests` |
+| TEN-03 | Med | Django admin can archive Default or rename its slug | Fixed; `accounts.tests_review_095oc_demo_and_admins.WorkspaceAdminDefaultRulesTests` |
+| TEN-04 | Med | padded body keeps field names out of the audit row | Fixed; `audit.tests_review_095oc.PaddedBodyFieldNamesTests` |
+| TEN-05 | Med | bootstrap_demo on a second workspace collides on username | Fixed; `accounts.tests_review_095oc_demo_and_admins.BootstrapDemoSecondWorkspaceTests` |
+| TEN-06 | Low | two administrators can demote each other at once | Fixed; `accounts.tests_review_095oc_demo_and_admins.LastAdministratorLockTests` |
+| WEB-01 | Med | = AUTH-01 | Not a defect as reported: Same finding as AUTH-01 seen from the SPA side; fixed there. |
+| WEB-02 | Med | header-mode sign-out with an expired access token does not revoke | Fixed; `e2e/tests/auth-client.spec.js` |
+| WEB-03 | Med | SSO keeps the previous superuser's workspace | Fixed; `e2e/tests/auth-client.spec.js` |
+| WEB-04 | Med | failed password on /login clears the other tab's session | Fixed; `e2e/tests/auth-client.spec.js` |
+| WEB-05 | Med | one tab's failed refresh signs every tab out | Fixed; `e2e/tests/auth-client.spec.js` |
+| WEB-06 | Med | switcher lists 50 organisations | Fixed; `e2e/tests/account-lookup.spec.js` |
+| WEB-07 | Med | dashboard spinner never ends when /users/me/ fails | Fixed; `e2e/tests/account-lookup.spec.js` |
+| WEB-08 | Low | last-tested max uses the UTC date | Fixed; no automated test (a front-end change no spec reaches) |
+| WEB-09 | Low | blob URL revoked in the same turn | Fixed; no automated test (a front-end change no spec reaches) |
+| WEB-10 | Low | fetchAll stops at 2,500 rows silently | Fixed; `e2e/tests/auth-client.spec.js` |
+| WEB-11 | Low | instants shown as the UTC calendar day | Fixed; no automated test (a front-end change no spec reaches) |
+| WEB-12 | Low | DocumentViewer has no Tab trap | Fixed; no automated test (a front-end change no spec reaches) |
+| WEB-13 | Med | a failed document list looks like an empty library | Fixed; no automated test (a front-end change no spec reaches) |
+
+---
+
 ## Deferred and accepted
 
 Every finding that is not fixed, and every decision the reviews name as
@@ -504,6 +592,21 @@ Confirmed and not reopened by that review, status today:
   reach it and the fingerprint is already published.
 - L-8 of the fifth review remains deferred, for the reason above.
 
+### From the 0.9.5oc review
+
+- OPS-05, the application half: the compose stack no longer publishes the API
+  port, so nothing reaches gunicorn except through nginx, which appends the
+  peer address. Trusting proxy addresses in the application itself (a list of
+  trusted proxies) waits for a rehearsal of the whole compose stack.
+- ROB-09: an access token minted in the same second as a password change, a
+  reset or an MFA reset stays valid until it expires, because
+  `sessions_valid_from` and the token's `iat` are whole seconds. SECURITY.md
+  lists it under the residual risks; a session claim that every change bumps
+  is the planned fix.
+- SEA-01, kept strict on purpose: after an honest key rotation, `verify.py`
+  asks for both keys on `--trust`, because the key that signed the file list
+  travels inside the bundle. The failure names both keys and the command.
+
 ---
 
 ## Re-verifying
@@ -528,6 +631,7 @@ The test modules that lock each review:
 | 0.9.5f | `accounts/tests_review_095f.py`, `accounts/tests_auditor_surface.py`, `documents/tests.py`, `accounts/tests_saml.py`, `attestations/tests_release_095.py`, `tools/validate.py`, both workflows |
 | 0.9.5h | `accounts/tests_review_095h.py`, `attestations/tests_pbc.py`, `attestations/tests_review_fixes.py`, `documents/tests.py`, `vendors/tests_questionnaire.py` |
 | 0.9.5i | `accounts/tests_review_095i.py`, `tools/validate.py` (backup script rule) |
+| 0.9.5oc | each app's `tests_review_095oc*.py`, `attestations/tests_seals_095oc.py`, `compliance/tests_responsibility_095oc.py`, `accounts/tests_saml.py`, `calendar_app/tests.py`, `e2e/tests/` (account-lookup, auth-client, auth-session, calendar-span, risk-link, tab-title), `tools/validate.py` (pinned actions, worker and beat secrets), the compose job in `.github/workflows/ci.yml` |
 
 Rows that no test in the tree locks, for a reader who wants to add one: 0.9.0
 H-6 and H-14 (a rotating `X-Forwarded-For` against a throttle), H-8

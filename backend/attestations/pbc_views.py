@@ -42,6 +42,12 @@ def _side(user, package):
     return None
 
 
+def _require_list_open(package):
+    """A withdrawn package closes its request list: nothing on it changes again, whoever asks."""
+    if package.status == EvidencePackage.Status.WITHDRAWN:
+        raise ValidationError({"detail": "This package is withdrawn; its request list is closed."})
+
+
 class PbcRequestFilter(filters.FilterSet):
     """``assignee`` as a number, not a ModelChoiceFilter, which answers 400 for an id that is nobody and 200 for one
     that is somebody: an auditor may GET this collection and would learn who exists."""
@@ -91,8 +97,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         package = data["package"]
         if package not in access.readable_packages(user):
             raise PermissionDenied("Unknown package.")
-        if package.status == EvidencePackage.Status.WITHDRAWN:
-            raise ValidationError({"detail": "This package is withdrawn; its request list is closed."})
+        _require_list_open(package)
         side = _side(user, package)
         if side is None:
             raise PermissionDenied("You need the frameworks capability, or a live grant on this "
@@ -140,8 +145,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Only the line itself can be edited here "
                                              f"({', '.join(sorted(stray))} cannot be set); use the "
                                              "actions to provide, accept, return or withdraw."})
-        if req.package.status == EvidencePackage.Status.WITHDRAWN:
-            raise ValidationError({"detail": "This package is withdrawn; its request list is closed."})
+        _require_list_open(req.package)
         if not self._may_edit(user, req):
             raise PermissionDenied("You cannot change this request.")
         extra = {}
@@ -179,6 +183,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         if not (access.can_assemble(user) or req.assignee_id == user.pk):
             raise PermissionDenied("Only the organisation, or the person this request is assigned to, "
                                    "can answer it.")
+        _require_list_open(req.package)
         if not req.is_actionable:
             raise ValidationError({"detail": f"This request is {req.get_status_display().lower()}."})
         note = str(request.data.get("response_note") or "").strip()[:4000]
@@ -199,6 +204,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         if not self._may_judge(request.user, req):
             raise PermissionDenied("Only the issued auditor, or the organisation closing a transcribed "
                                    "request, can accept an answer.")
+        _require_list_open(req.package)
         if req.status != PbcRequest.Status.PROVIDED:
             raise ValidationError({"detail": "Only a provided request can be accepted."})
         req.status = PbcRequest.Status.ACCEPTED
@@ -215,6 +221,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         if not self._may_judge(request.user, req):
             raise PermissionDenied("Only the issued auditor, or the organisation closing a transcribed "
                                    "request, can return an answer.")
+        _require_list_open(req.package)
         if req.status != PbcRequest.Status.PROVIDED:
             raise ValidationError({"detail": "Only a provided request can be returned."})
         note = str(request.data.get("returned_note") or "").strip()[:4000]
@@ -242,6 +249,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         own = access.live_grant(user, req.package) is not None and req.requested_by_id == user.pk
         if not (access.can_assemble(user) or own):
             raise PermissionDenied("Only the organisation, or the auditor who raised it, can withdraw a request.")
+        _require_list_open(req.package)
         if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
             raise ValidationError({"detail": f"This request is already {req.get_status_display().lower()}."})
         req.status = PbcRequest.Status.WITHDRAWN
@@ -273,9 +281,9 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
             writer.writerow(csv_safe([
                 r.package.name, r.reference, r.title, r.control_ref, r.get_priority_display(),
                 r.get_status_display(), r.due_date or "", r.assignee_name, r.requested_by_name,
-                r.get_requested_by_side_display(), r.provided_at.date() if r.provided_at else "",
+                r.get_requested_by_side_display(), timezone.localtime(r.provided_at).date() if r.provided_at else "",
                 "; ".join(i.document_name for i in r.items.all()),
-                r.accepted_at.date() if r.accepted_at else "",
+                timezone.localtime(r.accepted_at).date() if r.accepted_at else "",
                 r.returned_note if r.status == "returned" else r.response_note,
             ]))
         return response
@@ -305,8 +313,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
         if not self._may_answer(user, req):
             raise PermissionDenied("Only the organisation, or the person this request is assigned to, "
                                    "can attach documents to it.")
-        if req.package.status == EvidencePackage.Status.WITHDRAWN:
-            raise ValidationError({"detail": "This package is withdrawn; its request list is closed."})
+        _require_list_open(req.package)
         if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
             raise ValidationError({"detail": f"This request is {req.get_status_display().lower()}."})
         if document is None:
@@ -332,6 +339,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
                    .select_related("package").get(pk=instance.request_id))
             if not self._may_answer(self.request.user, req):
                 raise PermissionDenied("You cannot change this request's answer.")
+            _require_list_open(req.package)
             if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
                 raise ValidationError({"detail": f"This request is {req.get_status_display().lower()}."})
             record_package_event(self.request, req.package, "update",
@@ -369,6 +377,9 @@ class PbcItemViewSet(viewsets.ModelViewSet):
         if stored is None:
             raise ValidationError({"detail": "This file is no longer available."})
         monitor.refuse_if_quarantined(item.document)
+        if item.document.version != item.version:
+            # The bytes served are an archived version, which the sweep quarantines on its own.
+            monitor.refuse_if_quarantined(item.document.versions.filter(version=item.version).first())
         package = item.request.package
         self._touch_grant(request, package)
         return stored, package

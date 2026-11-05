@@ -1,5 +1,7 @@
-"""Retire the demo dataset. Idempotent: a later run resets no status and deletes no readiness history, because what
-changed since the retirement is the operator's. The retirement record stops ``bootstrap_demo`` seeding it back."""
+"""Retire the demo dataset. Idempotent: a later run resets no status, deletes no readiness history and no sample row,
+because what changed since the retirement is the operator's. The retirement record stops ``bootstrap_demo`` seeding it
+back. A row is the demo's only when the seeder recorded it or a demo account made it: a real row that shares a demo
+name, or has no creator, stays, and a workspace that never held the demo loses nothing."""
 from functools import reduce
 from operator import or_
 
@@ -13,7 +15,8 @@ from accounts import tenancy
 from accounts.management.commands.bootstrap_demo import (
     ACCESS_REVIEW_PATTERN, DEMO_PACKAGE_NAME, DEMO_USERS, DEMO_VENDOR_NAMES, PROGRAMME_MARK,
     PROGRAMME_OBJECT_TYPE, PROGRAMME_ORDER, RETIRED_ACTION, RETIRED_OBJECT_TYPE, REVIVED_ACTION,
-    SAMPLE_DOCS, own_administrator_present, programme_fingerprint, programme_values,
+    SAMPLE_DOCS, SEEDED_OBJECT_TYPE, SEEDED_SEED_MARK, own_administrator_present, programme_fingerprint,
+    programme_values,
     retirement_recorded,
 )
 
@@ -89,6 +92,23 @@ def _still_as_seeded(walk):
     return pks
 
 
+def _seeded_records():
+    """``(pks by kind, whether any record exists)`` for the rows the seeder recorded since the last retirement. Older
+    ones name rows the retirement deleted, whose numbers a database may hand out again."""
+    from audit.models import AuditLog
+
+    since = (AuditLog.objects.filter(object_type=RETIRED_OBJECT_TYPE, action=RETIRED_ACTION)
+             .order_by("-pk").values_list("pk", flat=True).first()) or 0
+    pks = {}
+    found = False
+    for kind, detail in (AuditLog.objects.filter(object_type=SEEDED_OBJECT_TYPE, pk__gt=since)
+                         .values_list("object_id", "detail")):
+        found = True
+        listed = detail.rpartition(":")[2].split(",")
+        pks.setdefault(kind, set()).update(int(n) for n in listed if n.strip().isdigit())
+    return pks, found
+
+
 class Command(BaseCommand):
     help = ("Deactivate/delete the demo accounts, remove the sample content and undo the "
             "control statuses and owners the demo set.")
@@ -131,34 +151,61 @@ class Command(BaseCommand):
         # Only the run that retires the demo resets statuses and readiness history: afterwards they are the operator's.
         retiring = not retirement_recorded()
 
-        # Also match rows whose creator an earlier --delete run removed (SET_NULL), or a second run finds nothing.
-        demo_or_gone = Q(created_by__username__in=DEMO_USERNAMES) | Q(created_by__isnull=True)
-        docs = Document.objects.filter(name__in=[d[1] for d in SAMPLE_DOCS]).filter(
-            Q(owner__username="owen") | Q(owner__isnull=True))
-        risks = Risk.objects.filter(title__in=DEMO_RISKS)
-        series = MeetingSeries.objects.filter(name__in=DEMO_SERIES)
-        groups = ChampionGroup.objects.filter(name__in=DEMO_GROUPS)
-        events = CalendarEvent.objects.filter(title__in=DEMO_EVENTS)
+        demo_pks = [u.pk for u in demo_users]
+        recorded, seed_recorded = _seeded_records()
         audit_rows = AuditLog.objects.filter(
             reduce(or_, (Q(ip_address=ip, object_type=otype, detail=detail) for ip, otype, detail in DEMO_AUDIT_ROWS)))
-        # Only while a demo account owns it: a real review started in the same quarter must survive.
-        reviews = AccessReview.objects.filter(
-            name__regex=ACCESS_REVIEW_PATTERN, created_by__username__in=DEMO_USERNAMES
-        )
-        packages = EvidencePackage.objects.filter(
-            name=DEMO_PACKAGE_NAME, created_by__username__in=DEMO_USERNAMES
-        )
+        # Proof that the demo was seeded in this workspace. Without it nothing below is the demo's, whatever it is
+        # called or whoever made it.
+        seeded_here = (bool(demo_pks) or seed_recorded or audit_rows.exists()
+                       or AuditLog.objects.filter(object_type=PROGRAMME_OBJECT_TYPE).exists()
+                       or AuditLog.objects.filter(object_type=RETIRED_OBJECT_TYPE, action=REVIVED_ACTION).exists())
+        # A demo seeded before the seeder recorded its rows (no seed mark since the last retirement; a later refresh may
+        # have recorded what it re-created): rows whose creator was since deleted still count, as long as the demo is
+        # proven to have been here.
+        unrecorded_demo = retiring and seeded_here and SEEDED_SEED_MARK not in recorded
+
+        def sample(model, kind, names=None, name_field=None, creator="created_by", also=Q()):
+            """The rows the seeder recorded or a demo account made, narrowed to the demo's names. None once the demo
+            was retired: what an operator made since is theirs."""
+            if not retiring:
+                return model.objects.none()
+            marks = Q(pk__in=recorded.get(kind, ())) | Q(**{f"{creator}__in": demo_pks}) | also
+            if unrecorded_demo:
+                marks |= Q(**{f"{creator}__isnull": True})
+            rows = model.objects.filter(marks)
+            return rows.filter(**{f"{name_field}__in": names}) if name_field else rows
+
+        # Older releases set only the owner of a sample document.
+        docs = sample(Document, "documents", [d[1] for d in SAMPLE_DOCS], "name",
+                      also=Q(created_by__isnull=True, owner__in=demo_pks))
+        risks = sample(Risk, "risks", DEMO_RISKS, "title")
+        series = sample(MeetingSeries, "series", DEMO_SERIES, "name", creator="owner")
+        groups = sample(ChampionGroup, "groups", DEMO_GROUPS, "name", creator="owner")
+        # The seeder sets no creator on events, so before it kept records only the title and a missing creator told
+        # them apart.
+        events = sample(CalendarEvent, "events", DEMO_EVENTS, "title")
+        # Only while a demo account made it: a real review started in the same quarter must survive.
+        in_scope = AccessReview.objects.all() if retiring else AccessReview.objects.none()
+        reviews = in_scope.filter(name__regex=ACCESS_REVIEW_PATTERN, created_by__in=demo_pks)
+        in_scope = EvidencePackage.objects.all() if retiring else EvidencePackage.objects.none()
+        packages = in_scope.filter(name=DEMO_PACKAGE_NAME, created_by__in=demo_pks)
         # Vendors cascade to their assessments and RACI rows; a risk that named one is kept and loses the link.
         from compliance.models import Responsibility
         from documents.models import FolderPermission
         from vendors.models import Vendor
-        vendors = Vendor.objects.filter(name__in=DEMO_VENDOR_NAMES).filter(demo_or_gone)
-        raci = Responsibility.objects.filter(demo_or_gone)
-        # The seeder's two role-wide RBAC grants: left behind they would be standing access nobody asked for.
-        seeded_grants = FolderPermission.objects.filter(user__isnull=True).filter(
-            Q(role__name="Control Owner", folder__name__startswith="CC6 -", access_level="edit")
-            | Q(role__name="Auditor", folder__is_framework_root=True, folder__name__icontains="27001",
-                access_level="view"))
+        vendors = sample(Vendor, "vendors", DEMO_VENDOR_NAMES, "name")
+        raci = sample(Responsibility, "responsibilities")
+        # The seeder's two role-wide RBAC grants: left behind they would be standing access nobody asked for. They
+        # carry no creator, so the seeder's record is the mark; without one the shape alone is.
+        seeded_grants = FolderPermission.objects.none()
+        if retiring:
+            seeded_grants = FolderPermission.objects.filter(user__isnull=True).filter(
+                Q(role__name="Control Owner", folder__name__startswith="CC6 -", access_level="edit")
+                | Q(role__name="Auditor", folder__is_framework_root=True, folder__name__icontains="27001",
+                    access_level="view"))
+            if not unrecorded_demo:
+                seeded_grants = seeded_grants.filter(pk__in=recorded.get("grants", ()))
         # Counted before anything is deleted, so a real run can still report them.
         counts = [
             ("Sample vendors", vendors.count()),
@@ -174,8 +221,9 @@ class Command(BaseCommand):
             ("Seeded evidence packages", packages.count()),
         ]
         # With no sign of the demo there is no history or status of its to take: all of it is the operator's.
-        demo_seen = bool(demo_users) or any(n for _, n in counts)
-        history = self._demo_history(retiring and demo_seen)
+        demo_seen = seeded_here or any(n for _, n in counts)
+        recompute = retiring and demo_seen
+        history = self._demo_history(recompute)
         counts.append(("Seeded readiness history points", history.count()))
 
         # A control owned by an account that can no longer sign in is effectively unowned.
@@ -212,8 +260,10 @@ class Command(BaseCommand):
                     user.is_active = False
                     user.set_unusable_password()
                     user.save(update_fields=["is_active", "password"])
-            # Today's point counted the data that just went; the dashboard trend ends on it.
-            record_today(force=True)
+            # Today's point counted the data that just went; the dashboard trend ends on it. Where nothing of the demo
+            # was found, or it was retired already, nothing went and the trend is left as it is.
+            if recompute:
+                record_today(force=True)
             # The record bootstrap_demo checks before seeding. ip_address stays empty, so the seeded-row match above
             # can never delete it on a later run.
             if retiring:
@@ -242,11 +292,15 @@ class Command(BaseCommand):
                 f"made since cannot be told apart from those. Review the statuses on the "
                 f"Controls page."))
         self.stdout.write(f"Controls owned by a demo account {would}left with no owner: {owned_count}")
+        if not demo_seen:
+            self.stdout.write("No sign that the demo dataset was loaded in this workspace: no sample row was touched.")
         if dry:
-            self.stdout.write("Today's readiness point would be recorded again without the demo data.")
+            if recompute:
+                self.stdout.write("Today's readiness point would be recorded again without the demo data.")
             self.stdout.write(self.style.WARNING("Dry run: nothing changed."))
             return
-        self.stdout.write("Today's readiness point recorded again without the demo data.")
+        if recompute:
+            self.stdout.write("Today's readiness point recorded again without the demo data.")
         self.stdout.write(self.style.SUCCESS(
             "Demo data removed. The demo accounts can no longer sign in, and later boots "
             "with SEED_DEMO_DATA=true leave this workspace alone."

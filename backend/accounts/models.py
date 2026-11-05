@@ -5,7 +5,7 @@ from django.db import models
 
 from config.fieldcrypto import EncryptedCharField
 
-from .tenancy import TenantModel, TenantUserManager
+from .tenancy import DEFAULT_SLUG, TenantModel, TenantUserManager
 
 # The URL an operator types; the columns are wider because they hold the encrypted envelope, not the URL.
 MAX_WEBHOOK_URL_LENGTH = 500
@@ -83,6 +83,23 @@ class Workspace(models.Model):
                 setattr(self, field, validate_webhook_url(channel, getattr(self, field, "")))
             except ValidationError as exc:
                 errors[field] = exc
+        # The API's rules for Default, which the admin form would otherwise skip: archiving it stops its sign-ins and
+        # its jobs, and its slug is what its signing identity is derived from.
+        stored_slug = (Workspace.objects.filter(pk=self.pk).values_list("slug", flat=True).first()
+                       if self.pk else None)
+        if stored_slug == DEFAULT_SLUG and self.slug != DEFAULT_SLUG:
+            errors["slug"] = ValidationError("The Default workspace keeps its slug.")
+        if self.slug == DEFAULT_SLUG and not self.is_active:
+            errors["is_active"] = ValidationError("The Default workspace cannot be archived.")
+        # The signing guard's refusal as a field error: its pre_save signal stays the backstop for every save, but an
+        # exception there is a server error in the admin.
+        if "slug" not in errors and self.slug and self.slug != stored_slug:
+            from attestations import signing
+
+            if signing.slug_reuses_a_registered_key(self.slug, self.pk):
+                errors["slug"] = ValidationError(
+                    "Another workspace has signed packages under this slug, and its signing key would carry over. "
+                    "Choose a slug no workspace has used.")
         if errors:
             raise ValidationError(errors)
 

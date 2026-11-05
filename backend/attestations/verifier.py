@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Verify a Conformiti evidence package (verify.py in every bundle): python3 verify.py [--allow-unsigned] [DIRECTORY].
-Read-only, standard library only. Exit codes: 0 all match; 1 mismatch; 2 unusable bundle; 3 files match but unsigned."""
+"""Verify a Conformiti evidence package (verify.py in every bundle):
+python3 verify.py [--allow-unsigned] [--trust KEY]... [DIRECTORY].
+KEY is a public key file or a 64-character sha256 fingerprint the organisation gave you; repeat the option to trust
+several (an export made after a key rotation carries two). Read-only, standard library only.
+Exit codes: 0 all match; 1 mismatch, or a signing key you did not trust; 2 unusable bundle; 3 matches but unsigned."""
 import base64
 import hashlib
 import json
 import os
+import stat
 import sys
 
 CHUNK = 64 * 1024
@@ -135,22 +139,56 @@ def unsafe(path):
     return any(p in ("..", "") for p in parts)
 
 
+def plain_file(root, name):
+    """True when ``name`` under ``root`` is a regular file reached through no symlink. A link would let a bundle point
+    the check at another file, or at /dev/zero, which never ends."""
+    path = root
+    parts = name.replace("\\", "/").split("/")
+    for index, part in enumerate(parts):
+        path = os.path.join(path, part)
+        try:
+            mode = os.lstat(path).st_mode
+        except OSError:
+            return False
+        if stat.S_ISLNK(mode):
+            return False
+        if not (stat.S_ISREG(mode) if index == len(parts) - 1 else stat.S_ISDIR(mode)):
+            return False
+    return True
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise OSError(f"{path} is not a regular file")
         for chunk in iter(lambda: fh.read(CHUNK), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def digest_or_none(path):
+    """The file's sha256, or None when it cannot be read as a regular file (so it matches nothing)."""
+    try:
+        return sha256_file(path)
+    except OSError:
+        return None
 
 
 def check_signature(root, problems):
     """Returns (status, fingerprint): 'valid', 'invalid', 'unsigned' or 'unusable'."""
     sig_path = os.path.join(root, "manifest.sig")
     key_path = os.path.join(root, "signing-key.pub")
-    if not os.path.isfile(sig_path):
+    if not os.path.lexists(sig_path):
         return "unsigned", None
-    if not os.path.isfile(key_path):
+    if not plain_file(root, "manifest.sig"):
+        problems.append("manifest.sig is not a regular file")
+        return "unusable", None
+    if not os.path.lexists(key_path):
         problems.append("manifest.sig is present but signing-key.pub is missing")
+        return "unusable", None
+    if not plain_file(root, "signing-key.pub"):
+        problems.append("signing-key.pub is not a regular file")
         return "unusable", None
     try:
         with open(sig_path, encoding="utf-8") as fh:
@@ -178,10 +216,16 @@ def check_sums_signature(root, problems):
     (controls.csv, samples.csv)."""
     sig_path = os.path.join(root, "SHA256SUMS.sig")
     key_path = os.path.join(root, "sums-key.pub")
-    if not os.path.isfile(sig_path):
+    if not os.path.lexists(sig_path):
         return "unsigned", None
-    if not os.path.isfile(key_path):
+    if not plain_file(root, "SHA256SUMS.sig"):
+        problems.append("SHA256SUMS.sig is not a regular file")
+        return "unusable", None
+    if not os.path.lexists(key_path):
         problems.append("SHA256SUMS.sig is present but sums-key.pub is missing")
+        return "unusable", None
+    if not plain_file(root, "sums-key.pub"):
+        problems.append("sums-key.pub is not a regular file")
         return "unusable", None
     try:
         with open(sig_path, encoding="utf-8") as fh:
@@ -199,9 +243,36 @@ def check_sums_signature(root, problems):
     return "invalid", fingerprint(public_key)
 
 
+def check_keys(signature, key_fp, sums_signature, sums_fp, trusted, problems):
+    """Which key signed what. The key shipped inside a bundle proves nothing about who made it, so two signatures
+    under different keys are a problem unless the reader trusted the second key, and with ``--trust`` every
+    signature must come from a key the reader named."""
+    manifest_key = key_fp if signature == "valid" else None
+    sums_key = sums_fp if sums_signature == "valid" else None
+    if manifest_key and sums_key and manifest_key != sums_key and sums_key not in trusted:
+        problems.append(
+            f"SHA256SUMS IS SIGNED BY A DIFFERENT KEY than manifest.json: {sums_key[:16]} against {manifest_key[:16]}. "
+            "The sums key travels inside the bundle, so a forger can supply one. An honest export made after the "
+            "organisation rotated its signing key looks the same: ask them to confirm both keys, "
+            f"sha256:{manifest_key} and sha256:{sums_key}, and re-run with "
+            f"--trust sha256:{manifest_key} --trust sha256:{sums_key}")
+    if not trusted:
+        return
+    for label, state, fp in (("manifest.json", signature, manifest_key), ("SHA256SUMS", sums_signature, sums_key)):
+        if state == "unsigned":
+            problems.append(f"--trust was given but {label} carries no signature")
+        elif fp and fp not in trusted:
+            problems.append(f"{label} is signed by key {fp[:16]}, which is not one of the keys given to --trust")
+
+
 def check_for_extra_files(root, listed, problems):
     """Report files SHA256SUMS does not name: a file ADDED to the bundle would otherwise go unnoticed."""
-    for base, _dirs, files in os.walk(root):
+    for base, dirs, files in os.walk(root):
+        for name in dirs:
+            full = os.path.join(base, name)
+            if os.path.islink(full):
+                rel = os.path.relpath(full, root).replace(os.sep, "/")
+                problems.append(f"refused a symbolic link to a directory: {rel}")
         for name in files:
             full = os.path.join(base, name)
             rel = os.path.relpath(full, root).replace(os.sep, "/")
@@ -210,23 +281,31 @@ def check_for_extra_files(root, listed, problems):
             problems.append(f"not listed in SHA256SUMS: {rel}")
 
 
-def main(root, allow_unsigned=False):
+def main(root, allow_unsigned=False, trusted=()):
+    """``trusted`` holds sha256 fingerprints (hex) of the keys the reader got from the organisation."""
     problems, checked = [], 0
+    trusted = {fp.lower() for fp in trusted}
 
     manifest_path = os.path.join(root, "manifest.json")
-    if not os.path.isfile(manifest_path):
-        print("FAIL: manifest.json is missing. This is not a complete bundle.")
+    if not plain_file(root, "manifest.json"):
+        if os.path.lexists(manifest_path):
+            print("FAIL: manifest.json is not a regular file. This is not a bundle this program will read.")
+        else:
+            print("FAIL: manifest.json is missing. This is not a complete bundle.")
         return 2
 
     manifest_digest = sha256_file(manifest_path)
     print(f"manifest.json sha256 = {manifest_digest}")
 
     recorded = os.path.join(root, "MANIFEST.sha256")
-    if os.path.isfile(recorded):
-        with open(recorded, encoding="utf-8") as fh:
-            parts = fh.read().strip().split()
-        if not parts or parts[0] != manifest_digest:
-            problems.append("MANIFEST.sha256 does not match manifest.json")
+    if os.path.lexists(recorded):
+        if not plain_file(root, "MANIFEST.sha256"):
+            problems.append("MANIFEST.sha256 is not a regular file")
+        else:
+            with open(recorded, encoding="utf-8") as fh:
+                parts = fh.read().strip().split()
+            if not parts or parts[0] != manifest_digest:
+                problems.append("MANIFEST.sha256 does not match manifest.json")
 
     try:
         with open(manifest_path, encoding="utf-8") as fh:
@@ -236,8 +315,9 @@ def main(root, allow_unsigned=False):
         return 2
 
     sums_path = os.path.join(root, "SHA256SUMS")
-    if not os.path.isfile(sums_path):
-        print("FAIL: SHA256SUMS is missing.")
+    if not plain_file(root, "SHA256SUMS"):
+        print("FAIL: SHA256SUMS is missing." if not os.path.lexists(sums_path)
+              else "FAIL: SHA256SUMS is not a regular file.")
         return 2
 
     listed = set()
@@ -252,11 +332,12 @@ def main(root, allow_unsigned=False):
                 continue
             listed.add(name)
             target = os.path.join(root, name)
-            if not os.path.isfile(target):
-                problems.append(f"missing: {name}")
+            if not plain_file(root, name):
+                problems.append(f"refused, not a regular file: {name}" if os.path.lexists(target)
+                                else f"missing: {name}")
                 continue
             checked += 1
-            if sha256_file(target) != expected:
+            if digest_or_none(target) != expected:
                 problems.append(f"ALTERED since export: {name}")
 
     check_for_extra_files(root, listed, problems)
@@ -271,10 +352,11 @@ def main(root, allow_unsigned=False):
                 problems.append(f"refused unsafe path in manifest: {path!r}")
                 continue
             target = os.path.join(root, path)
-            if not os.path.isfile(target):
-                problems.append(f"sealed evidence missing from bundle: {path}")
+            if not plain_file(root, path):
+                problems.append(f"sealed evidence is not a regular file: {path}" if os.path.lexists(target)
+                                else f"sealed evidence missing from bundle: {path}")
                 continue
-            if sha256_file(target) != item.get("sha256"):
+            if digest_or_none(target) != item.get("sha256"):
                 problems.append(
                     f"NOT THE SEALED BYTES: {path} "
                     f"(sealed {item.get('sha256', '')[:16]}…)"
@@ -282,6 +364,7 @@ def main(root, allow_unsigned=False):
 
     signature, key_fp = check_signature(root, problems)
     sums_signature, sums_fp = check_sums_signature(root, problems)
+    check_keys(signature, key_fp, sums_signature, sums_fp, trusted, problems)
 
     package = manifest.get("package", {})
     print(f"package      : {_safe(package.get('name', '?'))}")
@@ -305,7 +388,7 @@ def main(root, allow_unsigned=False):
     else:
         print(f"bundle sig   : {sums_signature.upper()} (Ed25519, over SHA256SUMS)")
         if sums_fp and sums_fp != key_fp:
-            print(f"exported by  : {sums_fp[:16]}  fingerprint sha256:{sums_fp}")
+            print(f"exported by  : {sums_fp[:16]}  fingerprint sha256:{sums_fp}  (a different key)")
 
     if problems:
         print(f"\nFAIL: {len(problems)} problem(s):")
@@ -329,8 +412,15 @@ def main(root, allow_unsigned=False):
     if signature == "valid" and sums_signature == "valid":
         print("Both signatures verify: the sealed manifest, and the file list covering every")
         print("other member, including controls.csv and samples.csv, which hold the")
-        print("conclusions recorded after the seal. Compare the fingerprint above with the one")
-        print("the organisation published; if they match, the bundle is theirs and unchanged.")
+        print("conclusions recorded after the seal.")
+        if trusted:
+            print("Each was made by a key you named with --trust, so the bundle comes from whoever")
+            print("holds that key and has not changed since it was exported.")
+        else:
+            print("That shows the bundle is consistent and was signed by one key; it does not show")
+            print("whose key that is, because the key travels inside the bundle. Compare the")
+            print("fingerprint above with the one the organisation gave you, or run this again with")
+            print(f"--trust {key_fp}")
     elif signature == "valid":
         print("The sealed manifest is signed and verifies. NOTE: this bundle carries no")
         print("signature over SHA256SUMS, so the files written after sealing (controls.csv,")
@@ -343,11 +433,55 @@ def main(root, allow_unsigned=False):
     return 0
 
 
+USAGE = "usage: verify.py [--allow-unsigned] [--trust KEY]... [DIRECTORY]"
+
+
+def trusted_fingerprint(value):
+    """The sha256 fingerprint (hex) for a --trust argument: a public key file, or the fingerprint itself."""
+    if os.path.isfile(value):
+        with open(value, encoding="utf-8") as fh:
+            return fingerprint(read_public_key(fh.read()))
+    text = value.strip().lower()
+    if text.startswith("sha256:"):
+        text = text[len("sha256:"):]
+    if len(text) == 64 and all(ch in "0123456789abcdef" for ch in text):
+        return text
+    raise ValueError(f"--trust takes a public key file or a full 64-character sha256 fingerprint, not {value!r}")
+
+
+def parse_args(argv):
+    """``(directory, allow_unsigned, trusted)``; ValueError carries the message for a bad command line."""
+    directory, allow_unsigned, trusted = [], False, []
+    items = list(argv)
+    while items:
+        item = items.pop(0)
+        if item == "--allow-unsigned":
+            allow_unsigned = True
+        elif item == "--trust" or item.startswith("--trust="):
+            if item == "--trust":
+                if not items:
+                    raise ValueError("--trust needs a public key file or a sha256 fingerprint")
+                item = items.pop(0)
+            else:
+                item = item[len("--trust="):]
+            try:
+                trusted.append(trusted_fingerprint(item))
+            except (OSError, ValueError) as exc:
+                raise ValueError(str(exc))
+        elif item.startswith("--"):
+            raise ValueError(f"unknown option {_safe(item)}")
+        else:
+            directory.append(item)
+    if len(directory) > 1:
+        raise ValueError("give one directory")
+    return (directory[0] if directory else "."), allow_unsigned, trusted
+
+
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    flags = {a for a in sys.argv[1:] if a.startswith("--")}
-    unknown = flags - {"--allow-unsigned"}
-    if unknown:
-        print(f"usage: verify.py [--allow-unsigned] [DIRECTORY]   (unknown: {', '.join(sorted(unknown))})")
+    try:
+        bundle_dir, unsigned_ok, trusted_keys = parse_args(sys.argv[1:])
+    except ValueError as exc:
+        print(USAGE)
+        print(f"  {exc}")
         sys.exit(2)
-    sys.exit(main(args[0] if args else ".", allow_unsigned="--allow-unsigned" in flags))
+    sys.exit(main(bundle_dir, allow_unsigned=unsigned_ok, trusted=trusted_keys))

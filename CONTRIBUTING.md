@@ -155,3 +155,13 @@ release. `tools/validate.py` refuses a build where these disagree. CI must be
 green. Pushing the tag runs `.github/workflows/packages.yml`, which refuses a
 tag that disagrees with `version.py` and publishes both images to ghcr.io
 under the version, the commit and `latest`, with provenance and an SBOM.
+
+Every `uses:` in the workflows is a full commit SHA with the tag it came from in
+a trailing comment (`uses: docker/login-action@<sha> # v3`), so a moved tag
+cannot change what runs in the job that holds `packages: write`.
+`tools/validate.py` refuses a bare tag in `packages.yml`. Dependabot proposes
+the updates monthly and keeps the comment. To update one by hand,
+resolve the new tag with `git ls-remote https://github.com/<owner>/<repo>
+refs/tags/<tag> "refs/tags/<tag>^{}"` (use the `^{}` line when there is one,
+because that is the commit an annotated tag points at), read the diff between
+the old and the new commit, and change the SHA and the comment together.

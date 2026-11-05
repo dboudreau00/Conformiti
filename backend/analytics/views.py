@@ -12,7 +12,7 @@ from compliance.models import Control, ControlEvidence, Framework
 from governance.models import Risk
 from documents.access import accessible_folder_ids
 from documents.models import Document
-from documents.serializers import person_name
+from documents.serializers import person_name, visible_folder_path
 
 from .snapshots import record_today, trend
 
@@ -71,7 +71,8 @@ def _review_timeline(dated, today):
     return timeline
 
 
-def _overdue_sample(dated, today):
+def _overdue_sample(dated, today, request):
+    paths = {"request": request}
     overdue_sample = []
     for d in (dated.filter(next_review_date__lt=today)
               .select_related("owner", "folder")
@@ -79,7 +80,7 @@ def _overdue_sample(dated, today):
         overdue_sample.append({
             "id": d.id,
             "name": d.name,
-            "folder_path": d.folder.path if d.folder_id else "",
+            "folder_path": visible_folder_path(d.folder, paths) if d.folder_id else "",
             "owner": person_name(d.owner) or None,
             "days_overdue": (today - d.next_review_date).days,
         })
@@ -162,7 +163,7 @@ class AnalyticsSummaryView(APIView):
         }
 
         timeline = _review_timeline(dated, today)
-        overdue_sample = _overdue_sample(dated, today)
+        overdue_sample = _overdue_sample(dated, today, request)
 
         risk_total = Risk.objects.exclude(status=Risk.Status.CLOSED).count()
         risk_owned = Risk.objects.exclude(status=Risk.Status.CLOSED).filter(owner__isnull=False).count()

@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -25,6 +26,28 @@ from .serializers import (
 User = get_user_model()
 
 
+def lock_administrators():
+    """Row-lock the active administrators before a check that one of them can go. Two requests that each remove an
+    administrator are then taken one after the other, and the second looks again at what the first left. The check and
+    the write run in the same transaction. SQLite takes no row locks, and already runs one writer at a time."""
+    return list(
+        User.objects.select_for_update(of=("self",)).filter(is_active=True)
+        .filter(Q(is_superuser=True) | Q(role__can_manage_users=True, role__is_auditor=False))
+        .values_list("pk", flat=True)
+    )
+
+
+def other_active_administrator(user):
+    """Whether an active superuser or non-auditor user manager other than ``user`` is left in this workspace: the
+    last-administrator test every path that can remove one shares."""
+    return (
+        User.objects.filter(is_active=True)
+        .exclude(pk=user.pk)
+        .filter(Q(is_superuser=True) | Q(role__can_manage_users=True, role__is_auditor=False))
+        .exists()
+    )
+
+
 class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
@@ -45,14 +68,15 @@ class RoleViewSet(viewsets.ModelViewSet):
         # No change may leave the workspace without an active administrator; dropping can_manage_users from a custom
         # role would otherwise bypass the user-level guard.
         role = serializer.instance
-        if (role.can_manage_users
-                and serializer.validated_data.get("can_manage_users", True) is False
-                and not self._administrator_remains_without(role)):
-            raise PermissionDenied(
-                "Removing user management from this role would leave no active "
-                "administrator. Give another account a role that manages users first."
-            )
-        serializer.save()
+        with transaction.atomic():
+            if role.can_manage_users and serializer.validated_data.get("can_manage_users", True) is False:
+                lock_administrators()
+                if not self._administrator_remains_without(role):
+                    raise PermissionDenied(
+                        "Removing user management from this role would leave no active "
+                        "administrator. Give another account a role that manages users first."
+                    )
+            serializer.save()
 
     @staticmethod
     def _administrator_remains_without(role):
@@ -86,12 +110,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
 
     def _other_active_admins(self, excluding):
-        return (
-            User.objects.filter(is_active=True)
-            .exclude(pk=excluding.pk)
-            .filter(Q(is_superuser=True) | Q(role__can_manage_users=True, role__is_auditor=False))
-            .exists()
-        )
+        return other_active_administrator(excluding)
 
     def perform_update(self, serializer):
         target = serializer.instance
@@ -113,13 +132,16 @@ class UserViewSet(viewsets.ModelViewSet):
             target.role and target.role.can_manage_users
             and (new_role is None or not new_role.can_manage_users)
         )
-        if (deactivating or loses_admin) and not target.is_superuser:
-            if (target.role and target.role.can_manage_users) and not self._other_active_admins(target):
-                raise PermissionDenied(
-                    "This is the last active administrator. Assign the role to "
-                    "someone else before removing it."
-                )
-        serializer.save()
+        with transaction.atomic():
+            if (deactivating or loses_admin) and not target.is_superuser:
+                if target.role and target.role.can_manage_users:
+                    lock_administrators()
+                    if not self._other_active_admins(target):
+                        raise PermissionDenied(
+                            "This is the last active administrator. Assign the role to "
+                            "someone else before removing it."
+                        )
+            serializer.save()
 
     @action(detail=True, methods=["post"])
     def reset_mfa(self, request, pk=None):
@@ -150,9 +172,12 @@ class UserViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You cannot delete your own account.")
         if instance.is_superuser:
             raise PermissionDenied("Superuser accounts cannot be deleted through the API. Deactivate instead.")
-        if instance.role and instance.role.can_manage_users and not self._other_active_admins(instance):
-            raise PermissionDenied("This is the last active administrator and cannot be deleted.")
-        instance.delete()
+        with transaction.atomic():
+            if instance.role and instance.role.can_manage_users:
+                lock_administrators()
+                if not self._other_active_admins(instance):
+                    raise PermissionDenied("This is the last active administrator and cannot be deleted.")
+            instance.delete()
 
     @action(detail=False, methods=["get", "patch"], permission_classes=[IsAuthenticated])
     def me(self, request):

@@ -3,6 +3,7 @@ import { PaperclipIcon } from "lucide-react";
 import api, { fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
+import { localDay } from "../../utils/format.js";
 import { CONTROL_STATUS, DOC_STATUS, READINESS_BAND } from "../../utils/tone.js";
 import DocumentViewer from "../documents/DocumentViewer.jsx";
 import { Badge } from "../ui/Badge.jsx";
@@ -292,7 +293,7 @@ export function ControlDetail({
                     type="date"
                     className="input input-sm"
                     value={control.last_tested_on || ""}
-                    max={new Date().toISOString().slice(0, 10)}
+                    max={localDay()}
                     disabled={saving}
                     onChange={(e) => patch("last_tested_on", e.target.value || null)}
                   />

@@ -410,8 +410,11 @@ function BackupCodes({ codes }) {
     const a = document.createElement("a");
     a.href = url;
     a.download = "compliance-backup-codes.txt";
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    // Revoking in the same tick can cancel the download in Firefox.
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
   return (
     <div className="mt-4 max-w-[640px] rounded-xl border border-success/25 bg-success/10 p-4" role="status">
@@ -1073,6 +1076,7 @@ function WorkspacesBlock({ me }) {
   const [teams, setTeams] = useState("");
   const superuser = !!me?.is_superuser;
   const [currentErr, setCurrentErr] = useState(null);
+  const [listErr, setListErr] = useState(null);
 
   // Only the newest answer counts: a slower, older one must not overwrite a newer one.
   const asked = useRef(0);
@@ -1092,11 +1096,17 @@ function WorkspacesBlock({ me }) {
         setCurrent(null);
         setCurrentErr(errorText(e, "Couldn't load the workspace."));
       });
-    if (superuser)
-      api
-        .get("/workspaces/", { params: { page_size: 100 } })
-        .then((r) => setList(r.data.results || r.data))
-        .catch(() => setList([]));
+    if (superuser) {
+      setListErr(null);
+      fetchAll("/workspaces/")
+        .then((rows) => { if (mine === asked.current) setList(rows); })
+        .catch((e) => {
+          if (mine !== asked.current) return;
+          // A failed read is not an empty list: say so, and offer the read again.
+          setList(null);
+          setListErr(errorText(e, "Couldn't load the workspaces."));
+        });
+    }
   };
   useEffect(() => { load(); }, [superuser]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1258,6 +1268,12 @@ function WorkspacesBlock({ me }) {
             ))}
             {list && !list.length ? <li className="px-3 py-2 text-xs text-muted">No workspaces.</li> : null}
           </ul>
+          {listErr ? (
+            <p className="notice notice-err mt-2" role="alert">
+              {listErr}{" "}
+              <Button size="sm" variant="secondary" onClick={load}>Try again</Button>
+            </p>
+          ) : null}
           <form onSubmit={create} className="mt-3 flex flex-wrap items-end gap-2">
             <Field id="new-workspace" label="New workspace" className="min-w-[220px] flex-1">
               <input

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { DownloadIcon, FileTextIcon, PaperclipIcon, XIcon } from "lucide-react";
-import api, { downloadFile, fetchAll } from "../../api/client.js";
+import api, { downloadFile, fetchAll, isTruncated } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button, IconButton } from "../ui/Button.jsx";
@@ -28,6 +28,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   const [form, setForm] = useState(EMPTY);
   const [users, setUsers] = useState(null);
   const [docs, setDocs] = useState(null);
+  const [docsFailed, setDocsFailed] = useState(false);
   const [attachTo, setAttachTo] = useState(null);
   const [attach, setAttach] = useState({ document: "", note: "" });
   const [editing, setEditing] = useState(null);
@@ -55,10 +56,10 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   }, [canAssemble, adding, editing, users]);
 
   useEffect(() => {
-    if (attachTo !== null && docs === null) {
-      fetchAll("/documents/").then(setDocs).catch(() => setDocs([]));
+    if (attachTo !== null && docs === null && !docsFailed) {
+      fetchAll("/documents/").then(setDocs).catch(() => setDocsFailed(true));
     }
-  }, [attachTo, docs]);
+  }, [attachTo, docs, docsFailed]);
 
   const reload = async () => {
     try {
@@ -345,6 +346,13 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                 {attachTo === r.id ? (
                   <form onSubmit={(e) => attachDoc(e, r)} className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                     <div>
+                      {docsFailed ? (
+                        <p className="notice notice-err" role="alert">
+                          The document list could not be loaded.{" "}
+                          <Button size="sm" variant="secondary" onClick={() => setDocsFailed(false)}>Try again</Button>
+                        </p>
+                      ) : (
+                      <>
                       <label htmlFor={id(`doc-${r.id}`)} className="field-label">Document</label>
                       <select
                         id={id(`doc-${r.id}`)}
@@ -358,6 +366,11 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                           <option key={d.id} value={d.id}>{d.name}{d.control_id ? ` (${d.control_id})` : ""}</option>
                         ))}
                       </select>
+                      </>
+                      )}
+                      {isTruncated(docs) ? (
+                        <p className="notice notice-warn mt-1" role="status">Only the first {docs.length} documents are listed here.</p>
+                      ) : null}
                     </div>
                     <div>
                       <label htmlFor={id(`note-${r.id}`)} className="field-label">Note (optional)</label>

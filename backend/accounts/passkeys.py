@@ -166,19 +166,32 @@ def finish_login(user, request, payload):
     except webauthn.WebAuthnError as exc:
         raise PasskeyRefused(exc.code, f"The passkey could not be verified ({exc.message}).")
     now = timezone.now()
-    if webauthn.counter_regressed(row.sign_count, auth.sign_count):
-        row.suspect_at = now
-        row.suspect_reason = (f"signature counter went from {row.sign_count} to {auth.sign_count}; "
-                              "a cloned authenticator may hold this key")[:200]
-        row.save(update_fields=["suspect_at", "suspect_reason"])
-        raise PasskeyRefused("clone", "This passkey's signature counter went backwards, which means a "
-                                      "copy of it may exist. It has been disabled; sign in with another "
-                                      "factor, then remove and re-enrol it.")
-    row.sign_count = auth.sign_count
-    row.last_used_at = now
-    row.backup_state = auth.backup_state
-    row.save(update_fields=["sign_count", "last_used_at", "backup_state"])
-    return row
+    # The counter is claimed with a conditional update on the value this assertion was checked against, so two
+    # assertions that carry the same counter cannot both pass: the second finds the row moved and is checked again.
+    for _attempt in range(3):
+        if webauthn.counter_regressed(row.sign_count, auth.sign_count):
+            row.suspect_at = now
+            row.suspect_reason = (f"signature counter went from {row.sign_count} to {auth.sign_count}; "
+                                  "a cloned authenticator may hold this key")[:200]
+            row.save(update_fields=["suspect_at", "suspect_reason"])
+            raise PasskeyRefused("clone", "This passkey's signature counter went backwards, which means a "
+                                          "copy of it may exist. It has been disabled; sign in with another "
+                                          "factor, then remove and re-enrol it.")
+        claimed = WebAuthnCredential.objects.filter(pk=row.pk, sign_count=row.sign_count).update(
+            sign_count=auth.sign_count, last_used_at=now, backup_state=auth.backup_state)
+        if claimed:
+            row.sign_count = auth.sign_count
+            row.last_used_at = now
+            row.backup_state = auth.backup_state
+            return row
+        try:
+            row.refresh_from_db()
+        except WebAuthnCredential.DoesNotExist:
+            raise PasskeyRefused("unknown", "That passkey is not enrolled on this account.")
+        if not row.is_usable:
+            raise PasskeyRefused("suspect", "That passkey was flagged as possibly cloned and is disabled. "
+                                            "Use another factor, then remove and re-enrol it.")
+    raise PasskeyRefused("state", "That passkey was used at the same moment. Try again.")
 
 
 def factors(user):

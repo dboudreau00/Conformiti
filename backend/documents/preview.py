@@ -198,8 +198,13 @@ def _shared_strings(zf):
 
 def _col_index(ref):
     letters = re.match(r"[A-Z]+", ref or "")
+    run = letters.group(0) if letters else "A"
+    # Three letters name every column a sheet can have; a longer run is out of range, and multiplying one costs more
+    # with every letter.
+    if len(run) > 3:
+        return MAX_SHEET_COLS
     n = 0
-    for ch in (letters.group(0) if letters else "A"):
+    for ch in run:
         n = n * 26 + (ord(ch) - 64)
     return n - 1
 

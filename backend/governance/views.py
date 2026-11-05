@@ -98,12 +98,16 @@ def _snapshot_items(review):
 
 def _apply_revocations(request, review):
     """Deactivate each account the review decided to revoke; returns ``{"revoked": [usernames], "skipped": [{"username",
-    "reason"}]}``. The reviewer's own account, superusers and missing users are reported, never applied."""
+    "reason"}]}``. The reviewer's own account, superusers, missing users and the last administrator are reported, never
+    applied."""
     from accounts.session_views import _blacklist_all
+    from accounts.views import lock_administrators, other_active_administrator
     from audit.events import record_auth_event
 
     revoked, skipped = [], []
-    rows = review.items.filter(decision=AccessReviewItem.Decision.REVOKE).select_related("user")
+    # Taken in turn with the user API's own removals, so the last-administrator check sees what those left.
+    lock_administrators()
+    rows = review.items.filter(decision=AccessReviewItem.Decision.REVOKE).select_related("user", "user__role")
     for item in rows:
         user = item.user
         if user is None:
@@ -118,6 +122,9 @@ def _apply_revocations(request, review):
             continue
         if not user.is_active:
             skipped.append({"username": user.username, "reason": "already inactive"})
+            continue
+        if user.role_id and user.role.can_manage_users and not other_active_administrator(user):
+            skipped.append({"username": user.username, "reason": "this is the last active administrator"})
             continue
         user.is_active = False
         user.save(update_fields=["is_active"])
@@ -147,6 +154,8 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
             locked = AccessReview.objects.select_for_update().get(pk=serializer.instance.pk)
             if locked.status == AccessReview.Status.COMPLETED:
                 raise ValidationError({"detail": "This review is completed and read-only."})
+            # Save the row as it is now: the loaded copy would write an older name or notes over a concurrent edit.
+            serializer.instance = locked
             serializer.save()
 
     def perform_destroy(self, instance):
@@ -223,6 +232,9 @@ class AccessReviewItemViewSet(viewsets.ModelViewSet):
             review = AccessReview.objects.select_for_update().get(pk=serializer.instance.review_id)
             if review.status == AccessReview.Status.COMPLETED:
                 raise ValidationError({"detail": "This review is completed and read-only."})
+            # Reload the row under the lock: saving the copy loaded before it would write back a decision that a
+            # concurrent request has since changed.
+            serializer.instance = AccessReviewItem.objects.select_for_update().get(pk=serializer.instance.pk)
             serializer.save()
 
 
@@ -284,6 +296,16 @@ from compliance.models import Control
 from .models import Risk, RiskNote
 from .risk_import import MAX_FILE_BYTES, normalize, parse_upload
 from .serializers import RiskNoteSerializer, RiskSerializer
+
+
+def _lock_workspace():
+    """Row lock on the active workspace, held to the end of the surrounding transaction: serialises the writers that
+    must not interleave (risk imports). NO KEY: every tenant insert checks its foreign key to this row with KEY SHARE,
+    which a plain FOR UPDATE would make wait for the whole import on PostgreSQL."""
+    from accounts import tenancy
+    from accounts.models import Workspace
+
+    Workspace.objects.select_for_update(no_key=True).filter(pk=tenancy.current_id()).first()
 
 
 class RiskPermission(BasePermission):
@@ -367,8 +389,8 @@ class RiskViewSet(viewsets.ModelViewSet):
                 r.identified_on.isoformat() if r.identified_on else "",
                 r.control.control_id if r.control else "",
                 r.jira_key, r.mitigation_plan, r.description,
-                r.created_at.date().isoformat(),
-                r.closed_at.date().isoformat() if r.closed_at else "",
+                timezone.localtime(r.created_at).date().isoformat(),
+                timezone.localtime(r.closed_at).date().isoformat() if r.closed_at else "",
             ]))
         return response
 
@@ -388,15 +410,18 @@ class RiskViewSet(viewsets.ModelViewSet):
         records, issues, fatal = normalize(rows)
         if fatal:
             raise ValidationError({"file": fatal})
+        if getattr(rows, "encoding", "utf-8") != "utf-8":
+            issues.insert(0, {"row": 0, "field": "file",
+                              "message": f"The file is not UTF-8, so it was read as {rows.encoding}"})
 
-        owner_lookup = {}
+        owners_by_login, owners_by_name = {}, {}
         for u in User.objects.all():
-            owner_lookup[u.username.lower()] = u
+            owners_by_login[u.username.lower()] = u
             if u.email:
-                owner_lookup[u.email.lower()] = u
+                owners_by_login[u.email.lower()] = u
             full = u.get_full_name().strip().lower()
             if full:
-                owner_lookup.setdefault(full, u)
+                owners_by_name.setdefault(full, []).append(u)
 
         control_lookup = {}
         for c in Control.objects.select_related("category__framework"):
@@ -405,9 +430,11 @@ class RiskViewSet(viewsets.ModelViewSet):
                 f"{c.category.framework.key.lower()}:{c.control_id.lower()}", [c]
             )
 
-        existing_titles = {t.lower() for t in Risk.objects.values_list("title", flat=True)}
         created, skipped = [], []
         with transaction.atomic():
+            # Two imports of one register run one after the other: the second reads the titles the first committed.
+            _lock_workspace()
+            existing_titles = {t.lower() for t in Risk.objects.values_list("title", flat=True)}
             for rec in records:
                 if rec["title"].lower() in existing_titles:
                     skipped.append({"row": rec["row"], "title": rec["title"],
@@ -415,10 +442,16 @@ class RiskViewSet(viewsets.ModelViewSet):
                     continue
                 owner = None
                 if rec["owner"]:
-                    owner = owner_lookup.get(rec["owner"].lower())
+                    key = rec["owner"].lower()
+                    owner = owners_by_login.get(key)
+                    named = owners_by_name.get(key, [])
+                    if owner is None and len(named) == 1:
+                        owner = named[0]
                     if owner is None:
+                        reason = ("matches more than one person, use a username or email" if len(named) > 1
+                                  else "not found")
                         issues.append({"row": rec["row"], "field": "owner",
-                                       "message": f"Owner {rec['owner']!r} not found, left unassigned"})
+                                       "message": f"Owner {rec['owner']!r} {reason}, left unassigned"})
                 control = None
                 if rec["control"]:
                     matches = control_lookup.get(rec["control"].lower(), [])

@@ -335,6 +335,23 @@ class SamlFlowTests(APITestBase):
         r = self.post(idp2)
         self.assertIn("sso_error=state", r["Location"])
 
+    def test_an_assertion_cannot_be_replayed_inside_the_clock_skew_after_it_expires(self):
+        def just_expired(idp):
+            # A minute past NotOnOrAfter is inside the allowed skew, so it is accepted once.
+            idp.not_after = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=1)
+
+        flow, _ = self.start()
+        idp = FakeIdp(flow)
+        just_expired(idp)
+        self.assertNotIn("sso_error", self.post(idp)["Location"])
+        row = SsoAssertion.objects.get(assertion_id=idp.assertion_id)
+        self.assertGreater(row.expires_at, dt.datetime.now(dt.timezone.utc), "the replay row must outlive the skew")
+        flow2, _ = self.start()
+        again = FakeIdp(flow2)
+        just_expired(again)
+        again.assertion_id = idp.assertion_id
+        self.assertIn("sso_error=state", self.post(again)["Location"])
+
     def test_the_provider_declining_and_garbage_are_clean_refusals(self):
         def declined(idp):
             idp.status = "urn:oasis:names:tc:SAML:2.0:status:Responder"
