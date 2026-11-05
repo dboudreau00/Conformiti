@@ -11,6 +11,91 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5oc], 2026-11-05
+
+What a review of 0.9.5ob found, closed (REVIEWS.md, 0.9.5oc review, lists all seventy findings), and two dependency changes that keep the build and the published images working. One migration.
+
+**On upgrade.**
+- One migration, `documents 0005`: archived document versions and form templates get scan fields of their own. The ones already stored read as not scanned until the next sweep; with the scanner on, run `manage.py scan_evidence --all` once to scan them (INSTALL.md, Watching the malware scanner).
+- Owning a folder no longer opens its subfolders: ownership covers that folder only, as the access checks already computed. Someone who read a subfolder's documents only by owning its parent needs a grant on the subfolder.
+- `DELETE` and `PUT` on `/api/frameworks/{key}/` answer 405, and a framework's key can no longer be changed over the API; no screen used either.
+- `verify.py` in an exported package fails when the file list was signed by a different key than the manifest, and takes `--trust` with a fingerprint or a key file to accept only the keys the organisation gave you. After an honest key rotation, trust both keys.
+- A workspace slug that another workspace has signed packages under cannot be given to a second workspace.
+- Docker: the worker and the scheduler no longer receive the first administrator's password, the demo password or the single sign-on client secret, and the scheduler no longer holds the mail and S3 credentials. The stack no longer publishes the API port; INSTALL.md, Debugging the API, gives the override that does.
+
+**Dependencies.**
+- The backend asks for `celery[redis]` instead of `celery`. kombu 5.7.0 (2026-11-03) moved `packaging` into its redis extra while its Redis transport still imports it, so an image built without it could start neither the worker nor the scheduler, behind a backend that still answered `/api/health/`. CI now waits for both to report healthy.
+- `follow-redirects` 1.16.2 in the front end's lockfile, for an advisory against 1.16.1. Only the build tools use it.
+
+**Fixed.**
+
+*Sign-in and sessions*
+- Reloading the app after the 60-minute access cookie had lapsed showed the sign-in page while the 7-day refresh cookie was still good. The app renews the session first now, through `/api/auth/token/renew/`, which answers a quiet no for a visitor, a dead token, and an account deleted or switched off since.
+- Signing out with an expired access token left the refresh token usable. It is revoked now, and the sign-out is in the audit log.
+- A wrong password typed on the sign-in page of one tab signed out or re-targeted the session in another. A refused sign-in changes nothing now.
+- One tab's failed token refresh, or a connection dropped during it, signed every tab out and dropped a superuser's chosen workspace. Both are tolerated now.
+- Single sign-on kept the previous superuser's chosen workspace in the same browser. It is cleared once the sign-in is accepted.
+- A single sign-on assertion could be posted a second time during the clock skew after it expired. The replay record lasts the skew longer now.
+- Two passkey sign-ins sent together with the same signature counter could both succeed. The second marks the key as possibly cloned now.
+- A superuser who also had the Django admin open in the same browser was signed out of the app on switching workspace. Switching works now.
+- When the account lookup failed after sign-in, the dashboard waited for ever. It says so and offers Try again.
+
+*Accounts and workspaces*
+- Two administrators demoting or deactivating each other at the same moment could leave a workspace with no administrator, and completing an access review could deactivate its last one. Both take the same lock and check now; the review lists that account as skipped.
+- The Django admin could archive the Default workspace, change its slug, or give a workspace a slug another one has signed packages under. It refuses all three on the form now.
+- Seeding the demo into a second workspace left some demo accounts behind when a demo username belonged to another workspace. It stops with a clear message now and leaves nothing.
+- `remove_demo_data` deleted real records that shared a demo name or had no creator, and the readiness history of an installation that never loaded the demo. It removes only the rows the demo seeded (recorded as they are seeded) or that a demo account made, and deletes nothing where the demo never was. A demo seeded by an older release, which kept no records, is still retired by its names and missing creators, also after this release has refreshed it.
+- The workspace list in Settings showed the first 50 workspaces however many existed, and an empty list when it could not be read. It follows the pages now, and a failed read says so.
+- The audit trail left out the changed fields of a request whose body was large or had many fields. It names them now, whatever parameters the content type carries, lists role and active-status changes first and counts the names it cannot fit.
+
+*Folders and documents*
+- Owning a folder showed you documents in its subfolders that you could not open (see On upgrade). Folders you create inside one you manage are yours.
+- A folder path named a parent folder you have no access to, in the document and folder lists, the evidence pickers, a control's evidence list and the dashboard's overdue documents. Each path stops at the first folder you cannot see now.
+- The malware re-scan checked only each document's current file. It also checks archived versions and form templates now, and a flagged one is refused wherever it is served: its own download, a sealed package's pinned evidence and export, and an attachment on the auditor's request list.
+- A re-scan that overlapped an upload stamped the old verdict on the new file, or released a file another scan had just flagged. A verdict is written only for the file that was scanned now.
+- A spreadsheet cell reference of hundreds of thousands of letters kept an API thread busy for minutes when the file was previewed. A reference longer than three letters is out of range now, and the rest of the sheet shows.
+- A folder chain could be made deeper than the access checks can walk, and the folder list then answered 500 for everyone. Creating or moving a folder past 32 levels is refused, and an existing deeper chain is shown by the folder's own name.
+- Two uploads of a new version at once failed with a server error, and marking a document reviewed overwrote a rename made at the same moment. The second upload answers 409 now, and marking reviewed saves only its own fields.
+- The document viewer let keyboard focus leave it while open. It keeps focus inside now.
+
+*Evidence packages and signatures*
+- `verify.py` reported "Both signatures verify" for a bundle whose file list was re-signed with a forger's key, and followed symbolic links (a link to /dev/zero hung it). It fails on both now (see On upgrade).
+- Reusing a workspace slug handed the new workspace the signing key of the one that used it before, and a key registered to one workspace could be taken over by another. Neither is possible now.
+- A withdrawn evidence package still took a management response, raised a finding as a risk, and let its request list be answered, accepted, returned, withdrawn or detached. It takes none of those now, and two requests raising the same finding no longer make two risks.
+- A package could not be issued again to the same auditor after a revoke or an expiry ("must make a unique set"). Issuing it again restores the grant, or extends a live one, and the revoke confirmation says so.
+- The public signing-keys list showed the key of an organisation that had not sealed anything. It answers like an unknown one now.
+- An auditor reading a sealed package saw the name and status of a draft rolled forward from it. It is hidden now.
+- Attaching a document to a request list line looked like an empty library when the document list failed to load. It says so and offers Try again now.
+
+*The programme*
+- Deleting a framework over the API took the seeded library and its evidence links with it, and renaming its key made the next boot seed a second copy (see On upgrade).
+- Two overlapping edits to an access review row could undo a decision the other had just recorded. The slower one reads the row again under its lock now.
+- Importing risks assigned an owner at random when two people shared a full name, read a date such as 05/06/2026 one way without saying so, stored replacement characters for an Excel Windows CSV, and two imports of the same register at once made duplicate risks. The row is left unassigned with a warning, the ambiguous date is warned about, a Windows CSV is read as one (said once for the file), and the second import waits for the first.
+- Spreadsheet imports read the first sheet file by its name instead of the workbook's first sheet. They follow the workbook now.
+- Two requests at once could give one control two Accountable parties. The second waits and is refused now.
+- A control id of `true` or `12.9` in a vendor responsibility matrix was read as control 1 or 12. Only a whole number names a control now.
+- The calendar showed a multi-day event only in the month it starts, accepted an end date before the start, and its feed had no window. Events show in every month they run through, a reversed span is refused, and the feed is bounded (a window past the ends of the calendar is a 400, not a 500).
+- Saving a questionnaire draft from the vendor's link was not recorded in the audit log, and attaching an assessment report told hidden document ids from missing ones. The draft is recorded now, and a hidden id is answered like a missing one.
+- Last tested on a control could not be set to today when the browser's day differed from the UTC day, and vendor invite, submission and onboarding dates and a new questionnaire's default title used the UTC day. All of them use the reader's own day now.
+- Downloading backup codes or the risk import template failed in Firefox. Both work now.
+
+*Scheduled work*
+- The morning scans acted on a row as they had read it after it changed: a document marked reviewed during the scan was marked expired, a moved review date got the old date's reminders, a request answered or given a new date was chased, and a bridge letter was asked for after one was filed. Each claim compares what it read now.
+- With a time zone other than UTC, review dates, overdue flags, vendor review dates, the bell's ages and CSV exports used the UTC day for a few hours around midnight. They use the local day now.
+- A weekly digest missed on Monday was skipped for the whole week. It goes out on the next run now.
+- Annual and biennial vendor review dates drifted a day earlier across 29 February. They land on the anniversary now.
+- The dashboard's upcoming reviews and the folder access list cost a query per row. Both load in a fixed number of queries now, and a reviews list at its 500-row limit says "500+ open".
+
+*Installation and operations*
+- `./install.sh --reset` checked that the folder it would delete was inside the checkout with a text comparison, so a path that stepped out with `..` passed. It resolves the path first, links included, and refuses anything outside the checkout or holding a line break; `install.ps1 -Reset` refuses a path through a link or a junction, which Windows PowerShell 5.1 deletes through.
+- `scripts/restore.sh` emptied the database before it knew the dump would load and emptied each volume before unpacking it, so a failed restore left a broken installation. It unpacks first, loads the database in one transaction, swaps the volumes only after that commits, and starts the stack again if the run fails before then.
+- The scheduler's healthcheck only checked that its process existed. It opens a connection to the broker as well now.
+- The boot message that the malware scanner is on but not answering appeared only when the setting was exactly `true`. `yes`, `1`, `on` and any capitals are read as the application reads them now.
+- The workflow that publishes the container images ran third-party actions by movable tag. Every action is pinned to a full commit SHA now, and the validator checks it.
+- The risk import's lock on PostgreSQL made every other write in the workspace wait for the import. It no longer does.
+
+---
+
 ## [0.9.5ob], 2026-10-30
 
 A tidy of the code and the defects it turned up. No migration and no stored data changed.
