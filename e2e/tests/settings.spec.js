@@ -31,7 +31,9 @@ test.describe("account settings", () => {
     const value = "Head of Compliance (e2e)";
     await jobTitle.fill(value);
     await page.getByRole("button", { name: /save changes/i }).click();
-    await page.waitForLoadState("networkidle");
+    // networkidle resolves at once on a page that has already settled, so the reload could beat the save: wait for the
+    // form's own confirmation instead.
+    await expect(page.getByRole("main").getByText("Profile saved.", { exact: true })).toBeVisible();
 
     await page.reload();
     await page.waitForLoadState("networkidle");
