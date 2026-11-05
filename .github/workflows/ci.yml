@@ -450,7 +450,9 @@ jobs:
   e2e:
     name: End-to-end browser tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Two passes of the suite take about 13 minutes, and installing Chromium's system packages took 9 to 11 on
+    # 2026-11-05: 20 cut the second pass short on runs that passed every test they reached.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
