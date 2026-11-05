@@ -15,6 +15,11 @@ updates:
       # move is to 6.2 LTS. See PREREQUISITES.md.
       - dependency-name: Django
         update-types: ["version-update:semver-major"]
+      # botocore (under boto3) requires python-dateutil<3, so a 3.x or 4.x
+      # floor cannot be installed and fails every job (PR #44). Take the next
+      # major when botocore allows it.
+      - dependency-name: python-dateutil
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
@@ -41,6 +46,12 @@ updates:
     directory: /backend
     schedule:
       interval: monthly
+    ignore:
+      # The backend image follows the Python versions Django 5.2 LTS supports
+      # (3.10 to 3.14) and the CI test matrix covers. Python 3.15 waits until
+      # both do (PR #45).
+      - dependency-name: python
+        versions: [">=3.15"]
   - package-ecosystem: docker
     directory: /frontend
     schedule:

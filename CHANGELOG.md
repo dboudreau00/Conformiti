@@ -11,6 +11,12 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [Unreleased]
+
+**Dependencies.** Django 5.2.18, Django REST framework 3.18.3, boto3 1.43.123 and signxml 5.2.0 in the backend; axios 1.21, framer-motion 14.9, lucide-react 1.66, pdf.js 6.5.438, React Router 7.18.5, Autoprefixer 10.6.2, PostCSS 8.5.32 and Vite 8.3.5 in the front end. python-dateutil stays on 2.x, now capped below 3, because botocore requires it, and the backend image stays on Python 3.14, the newest Django 5.2 supports. No setting or step changes.
+
+---
+
 ## [0.9.5oc], 2026-11-05
 
 What a review of 0.9.5ob found, closed (REVIEWS.md, 0.9.5oc review, lists all seventy findings), and two dependency changes that keep the build and the published images working. One migration.
