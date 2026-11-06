@@ -97,11 +97,11 @@ class FolderViewSet(viewsets.ModelViewSet):
         allowed = user.can_manage_folders or (parent and parent.can_edit(user))
         if not allowed:
             raise PermissionDenied("You cannot create a folder here.")
-        # Ownership does not reach below the folder it is set on: whoever manages the parent owns what they make in it,
-        # or they would create a folder they cannot see. Manage on the parent already implies manage below it.
+        # Ownership does not reach below the folder it is set on: whoever owns the parent owns what they make in it, or
+        # they would create a folder they cannot see. Manage through a grant already reaches below, and ends with it.
         extra = {}
         if parent is not None and not user.can_manage_folders and not serializer.validated_data.get("owner") \
-                and parent.can_manage(user):
+                and parent.owner_id == user.pk and parent.can_manage(user):
             extra["owner"] = user
         serializer.save(**extra)
 

@@ -86,6 +86,17 @@ class FolderOwnershipTests(APITestBase):
         self.assertIsNone(made.data["owner"])
         self.assertEqual(made.data["my_access"], "edit")
 
+    def test_manage_through_a_grant_does_not_make_the_creator_the_owner(self):
+        given = grant(self.hr, user=self.viewer, level="manage")
+        c = self.client_for(self.viewer)
+        made = c.post("/api/folders/", {"name": "Renewals", "parent": self.hr.pk}, format="json")
+        self.assertEqual(made.status_code, 201, made.data)
+        self.assertIsNone(made.data["owner"])
+        self.assertEqual(made.data["my_access"], "manage")
+        given.delete()
+        self.assertEqual(c.get(f"/api/folders/{made.data['id']}/").status_code, 404)
+        self.assertNotIn(made.data["id"], {f["id"] for f in rows(c.get("/api/folders/"))})
+
     def test_an_auditor_who_owns_a_folder_cannot_create_in_it(self):
         Folder.objects.filter(pk=self.hr.pk).update(owner=self.auditor)
         before = Folder.objects.count()
