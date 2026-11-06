@@ -41,7 +41,7 @@ function Sub({ total, notApplicable }) {
 
 const CELL = "tabular px-[var(--sc-pad)] text-right font-mono text-[13px] text-ink last:pr-5";
 
-/** The total row quotes the programme's own figures (readiness, controls), not the sum of the rounded rows. */
+/** The total row quotes the program's own figures (readiness, controls), not the sum of the rounded rows. */
 export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
   const known = Array.isArray(frameworks) && readiness && controls;
   const rows = known ? frameworks : [];

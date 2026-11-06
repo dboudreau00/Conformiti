@@ -743,9 +743,9 @@ def _dash_rule_covers(rel):
             or re.fullmatch(r"backend/(?:.+/)?templates/.+", rel) is not None)
 
 
-def _repository_files():
+def _repository_files(walk=True):
     """Every repository file relative to ROOT: git ls-files in a checkout, a walk that skips installed packages and
-    build output in a release archive."""
+    build output in a release archive. With ``walk=False`` there is no walk: None outside a checkout."""
     import subprocess
     try:
         run = subprocess.run(["git", "-C", ROOT, "ls-files", "-z"],
@@ -754,6 +754,8 @@ def _repository_files():
             return [p for p in run.stdout.decode("utf-8").split("\0") if p]
     except (OSError, subprocess.SubprocessError):
         pass
+    if not walk:
+        return None
     found = []
     for here, dirs, files in os.walk(ROOT):
         rel_here = os.path.relpath(here, ROOT).replace(os.sep, "/")
@@ -793,6 +795,44 @@ def check_no_dashes():
           f"checked for em and en dashes")
 
 
+# --- 21. One spelling of "program" ---
+# The British spelling, put together so that this file does not hold it either.
+BRITISH = "program" + "me"
+SPELLING = re.compile(r"\b" + BRITISH + r"s?\b", re.IGNORECASE)
+SPELLING_TEXT = (".md", ".py", ".js", ".jsx", ".mjs", ".html", ".txt", ".json", ".csv", ".yml", ".yaml",
+                 ".sh", ".ps1", ".css")
+# The release history keeps the words it was released with.
+SPELLING_HISTORY = {"CHANGELOG.md", "REVIEWS.md"}
+
+
+def check_spelling():
+    """One spelling of the word in text, code and data. A name joined with underscores, such as the analytics
+    ``*_score`` helper, is not a whole word, so the rule does not see it. The rule is for the repository's own files,
+    so it runs only in a git checkout: an installation's tree can hold files that are not the repository's."""
+    tracked = _repository_files(walk=False)
+    if tracked is None:
+        print(" 21. spelling: not a git checkout, skipped")
+        return
+    checked = 0
+    for rel in sorted(tracked):
+        if rel in SPELLING_HISTORY or not rel.endswith(SPELLING_TEXT):
+            continue
+        path = os.path.join(ROOT, *rel.split("/"))
+        if not os.path.isfile(path):
+            continue
+        checked += 1
+        try:
+            text = read(path)
+        except UnicodeDecodeError:
+            continue
+        hits = [n for n, line in enumerate(text.splitlines(), 1) if SPELLING.search(line)]
+        for n in hits[:5]:
+            err("spelling", f"{rel}:{n}: write \"program\", not \"{BRITISH}\"")
+        if len(hits) > 5:
+            err("spelling", f"{rel}: {len(hits) - 5} more line(s) with \"{BRITISH}\"")
+    print(f" 21. spelling: {checked} files checked for \"{BRITISH}\"")
+
+
 def main():
     print(f"Validating {ROOT}\n")
     check_python_syntax()
@@ -815,6 +855,7 @@ def main():
     check_no_offsite_assets()
     check_version_lock()
     check_no_dashes()
+    check_spelling()
 
     print()
     for w in warnings:

@@ -12,7 +12,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ## 1. Static validator: `python tools/validate.py`
 
 Dependency-free (standard library only), so it runs on a bare checkout before
-anything is installed. Exits non-zero on any error. Twenty checks:
+anything is installed. Exits non-zero on any error. Twenty-one checks:
 
 | # | Check |
 |---|---|
@@ -36,6 +36,7 @@ anything is installed. Exits non-zero on any error. Twenty checks:
 | 18 | Offsite assets: `index.html` loads nothing from another host, and neither it nor `nginx.conf` names a known CDN; the shipped Content-Security-Policy (`default-src 'self'`) is what refuses a third-party load at run time |
 | 19 | Version lock: the same version in nine places, `version.py`, `package.json` in `frontend/` and in `e2e/`, both version fields in each of their `package-lock.json` files (the top-level one and `packages[""]`), the README badge and the changelog heading |
 | 20 | No em or en dash (U+2014, U+2013) in a text body: every tracked Markdown file, and every file under a `backend/**/templates/` directory (the emails). Code, scripts and configuration files are not checked, their comments included |
+| 21 | One spelling: "program", never the British form, as a whole word in every tracked text, code and data file except `CHANGELOG.md` and `REVIEWS.md`, which keep the words each release shipped with. Names joined with underscores are not whole words and are not checked. It runs in a git checkout only, because an installed tree can hold files that are not the repository's |
 
 Check 15 counts the test functions in each app's `tests.py` only, so the
 number it prints is smaller than the `Ran N tests` of the suite below. Both

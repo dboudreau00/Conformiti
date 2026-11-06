@@ -364,7 +364,7 @@ class DemoRetirementTests(TestCase):
         self.assertTrue(ReadinessSnapshot.objects.filter(date=earlier).exists())
 
     def test_a_demo_seeded_by_an_older_release_is_reset_too(self):
-        """Deleting the programme record stands in for an older release that kept none."""
+        """Deleting the program record stands in for an older release that kept none."""
         from audit.models import AuditLog
 
         AuditLog.objects.filter(object_type="demo-controls").delete()
@@ -409,7 +409,7 @@ class DemoRetirementTests(TestCase):
 
     @staticmethod
     def unrecorded():
-        """A demo seeded by a release that kept no record of its programme."""
+        """A demo seeded by a release that kept no record of its program."""
         from audit.models import AuditLog
 
         AuditLog.objects.filter(object_type="demo-controls").delete()
@@ -478,9 +478,9 @@ class DemoRetirementTests(TestCase):
         rows = rows.get("results", rows) if isinstance(rows, dict) else rows
         self.assertEqual(len(rows), 1)
         detail = rows[0]["detail"]
-        self.assertTrue(detail.startswith("Demo control programme set statuses and owners on "),
+        self.assertTrue(detail.startswith("Demo control program set statuses and owners on "),
                         detail)
-        self.assertNotRegex(detail, r"\[|\]|programme last|order=|[0-9a-f]{16}")
+        self.assertNotRegex(detail, r"\[|\]|program last|order=|[0-9a-f]{16}")
         self.assertRegex(rows[0]["object_id"], r"^\d+-[0-9a-f]{16}$")
         self.assert_programme_gone()
 
@@ -529,7 +529,7 @@ class DemoRetirementTests(TestCase):
 
 
 class DemoOnAWorkedRegisterTests(TestCase):
-    """bootstrap_demo after the operator set statuses applies no programme: retiring it resets and warns of nothing."""
+    """bootstrap_demo after the operator set statuses applies no program: retiring it resets and warns of nothing."""
 
     def setUp(self):
         env = mock.patch.dict(os.environ, {"DEMO_PASSWORD": DEMO_PASSWORD})
@@ -553,7 +553,7 @@ class DemoOnAWorkedRegisterTests(TestCase):
         first.save()
         seeded = StringIO()
         call_command("bootstrap_demo", stdout=seeded)
-        self.assertIn("Control programme: already set, left alone", seeded.getvalue())
+        self.assertIn("Control program: already set, left alone", seeded.getvalue())
         make_user("realadmin", superuser=True)
 
         out = StringIO()
@@ -569,7 +569,7 @@ class DemoOnAWorkedRegisterTests(TestCase):
         self.assertNotRegex(record.detail, r"\[|[0-9a-f]{16}")
 
     def test_a_refresh_boot_writes_no_second_record(self):
-        """Only the seed that starts the demo records the programme as not applied; refresh boots add nothing."""
+        """Only the seed that starts the demo records the program as not applied; refresh boots add nothing."""
         from audit.models import AuditLog
         from compliance.models import Control
 

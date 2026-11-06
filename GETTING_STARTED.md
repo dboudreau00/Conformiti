@@ -142,9 +142,9 @@ this folder. Create a subfolder; delete it (framework folders cannot be deleted)
 ### 6 · Role-based access
 Sign out (account menu, top right); sign in as `val`. ✓ Only granted folders appear, no upload form, no
 "Mark reviewed", no risk creation. Try `/api/folders/` in the browser → only
-those folders. `val` still reads the programme-wide records (risks, vendors,
+those folders. `val` still reads the program-wide records (risks, vendors,
 controls, meetings, the user directory) through the API: the Viewer role
-narrows documents, not the rest of the programme. Sign back in as `mia`.
+narrows documents, not the rest of the program. Sign back in as `mia`.
 
 ### 7 · Risks
 ✓ `3 live · 1 overdue · 2 high/critical · 1 closed`. Open a row → change

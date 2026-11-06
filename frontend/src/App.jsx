@@ -150,7 +150,7 @@ function Protected({ me, setMe }) {
             <ErrorBoundary>
               <AnimatePresence mode="wait" initial={false}>
                 <Routes location={location} key={location.pathname}>
-                  {/* The dashboard reads the whole programme (analytics,
+                  {/* The dashboard reads the whole program (analytics,
                       frameworks), which an external auditor may not: send
                       them to the packages issued to them instead. */}
                   <Route path="/" element={me?.capabilities?.auditor

@@ -1,6 +1,6 @@
 # Conformiti executive summary
 
-**A self-hosted system of record for a compliance programme.** Controls,
+**A self-hosted system of record for a compliance program.** Controls,
 evidence, vendors, risk and access reviews in one place, ending in a sealed
 package an assessor can verify without you. AGPL-3.0 licensed, run on your own
 infrastructure, with no telemetry, no phone-home and no licence server.
@@ -9,7 +9,7 @@ infrastructure, with no telemetry, no phone-home and no licence server.
 
 ## The problem
 
-Most compliance programmes run on a control matrix in a spreadsheet, a folder
+Most compliance programs run on a control matrix in a spreadsheet, a folder
 of policies nobody has opened since the last audit, and six weeks of scrambling
 before fieldwork. Three questions show the gaps:
 
@@ -38,7 +38,7 @@ before fieldwork. Three questions show the gaps:
   if the send fails.
 - **Calculated readiness.** Implemented divided by applicable,
   scored per control across the signals an auditor asks about, snapshotted
-  daily for the whole programme and broken down live per framework. No
+  daily for the whole program and broken down live per framework. No
   percentage is entered by hand.
 - **Third parties.** A vendor register with assurance on file, a security
   questionnaire the vendor answers by a time-boxed link, and a shared

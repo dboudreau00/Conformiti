@@ -29,7 +29,7 @@ BUILTIN_ROLES = [
      dict(can_manage_documents=True)),
     ("Auditor", "Read-only outside party: packages issued to them, the folders granted with them, and the trail.",
      dict(is_auditor=True)),
-    ("Viewer", "Reads the programme-wide records and the folders granted to them; adds "
+    ("Viewer", "Reads the program-wide records and the folders granted to them; adds "
                "notes to risks and edits the risks they own.", dict()),
 ]
 

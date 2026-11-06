@@ -88,7 +88,7 @@ def _overdue_sample(dated, today, request):
 
 
 class AnalyticsSummaryView(APIView):
-    # Org-wide programme figures, not the engagement's: external auditors are refused.
+    # Org-wide program figures, not the engagement's: external auditors are refused.
     permission_classes = [IsAuthenticated, NotExternalAuditor]
 
     def get(self, request):
@@ -104,7 +104,7 @@ class AnalyticsSummaryView(APIView):
         owned_controls = Control.objects.filter(owner__isnull=False).count()
         applicable_all = total_controls - control_status["not_applicable"]
 
-        # Org-wide aggregates only (counts, no titles). One query grouped by framework; the programme figure is
+        # Org-wide aggregates only (counts, no titles). One query grouped by framework; the program figure is
         # their sum, so the schedule foots to the dashboard's coverage card.
         evidence_by_framework = {
             row["category__framework_id"]: row["n"]

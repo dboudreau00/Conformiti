@@ -63,7 +63,7 @@ export default function Dashboard({ me }) {
     setVersion((v) => v + 1);
   }, []);
 
-  // Waits for `me`: an external auditor may not read the whole programme, and the shell only redirects them once it
+  // Waits for `me`: an external auditor may not read the whole program, and the shell only redirects them once it
   // knows who they are, so firing on mount would put 403s on their console at every sign-in.
   useEffect(() => {
     if (!me) return;

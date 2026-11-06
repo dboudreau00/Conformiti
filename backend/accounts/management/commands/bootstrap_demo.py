@@ -69,9 +69,9 @@ REVIVED_ACTION = "create"
 SEEDED_OBJECT_TYPE = "demo-seeded"
 SEEDED_SEED_MARK = "seed"
 
-# The programme at position i of PROGRAMME_ORDER gets programme_values(i). Each run is recorded as a
+# The program at position i of PROGRAMME_ORDER gets programme_values(i). Each run is recorded as a
 # PROGRAMME_OBJECT_TYPE audit entry with object_id "<last pk>-<fingerprint>" (PROGRAMME_MARK), so remove_demo_data
-# restores only what the programme set and only where nobody has changed it since.
+# restores only what the program set and only where nobody has changed it since.
 PROGRAMME_ORDER = ("category__framework__key", "category__order", "control_id")
 PROGRAMME_OBJECT_TYPE = "demo-controls"
 PROGRAMME_MARK = re.compile(r"(\d+)-([0-9a-f]{16})")
@@ -82,8 +82,8 @@ _PROGRAMME_NOT_APPLICABLE = {24}
 
 
 def programme_values(i):
-    """(status, owner username) the programme gives the control at position ``i`` of PROGRAMME_ORDER; a status of None
-    leaves it Not started, since the programme only ever runs on an untouched register."""
+    """(status, owner username) the program gives the control at position ``i`` of PROGRAMME_ORDER; a status of None
+    leaves it Not started, since the program only ever runs on an untouched register."""
     r = i % 25
     if r in _PROGRAMME_IMPLEMENTED:
         status = Control.Status.IMPLEMENTED
@@ -637,7 +637,7 @@ class Command(BaseCommand):
 
         okta = Vendor.objects.filter(name="Okta").first()
         for control, party, role, note in [
-            (ctrl("soc2", "CC6.1"), mia, "accountable", "Programme owner for logical access"),
+            (ctrl("soc2", "CC6.1"), mia, "accountable", "Program owner for logical access"),
             (ctrl("soc2", "CC6.1"), owen, "responsible", "Runs the quarterly access review"),
             (ctrl("soc2", "CC6.1"), val, "informed", "Operations lead"),
             (ctrl("iso27001", "A.5.1"), mia, "accountable", ""),
@@ -757,7 +757,7 @@ class Command(BaseCommand):
         decisions = {
             "admin": (AccessReviewItem.Decision.KEEP, "Break-glass administrator; MFA enforced."),
             "aria": (AccessReviewItem.Decision.KEEP, "External auditor, read-only for the audit window."),
-            "mia": (AccessReviewItem.Decision.KEEP, "Programme owner."),
+            "mia": (AccessReviewItem.Decision.KEEP, "Program owner."),
             "owen": (AccessReviewItem.Decision.MODIFY, "Drop edit on PCI folders after the migration."),
         }
         decided = 0
@@ -955,13 +955,13 @@ class Command(BaseCommand):
         so an operator's real statuses are never overwritten."""
         if Control.objects.exclude(status=Control.Status.NOT_STARTED).exists() \
                 or Control.objects.filter(owner__isnull=False).exists():
-            self.stdout.write("  Control programme: already set, left alone")
+            self.stdout.write("  Control program: already set, left alone")
             if self._fresh:
                 # Record a walk of no controls: without it remove_demo_data would take the retirement for that of a
                 # demo seeded by an older release (no record) and warn about the wrong cause.
                 self._programme_record = (
                     f"0-{programme_fingerprint([])}",
-                    "Demo control programme not applied: the controls already had statuses "
+                    "Demo control program not applied: the controls already had statuses "
                     "or owners, which stay as they are.",
                 )
             return
@@ -979,13 +979,13 @@ class Command(BaseCommand):
             # Recorded at the end of the run (_record_programme): _audit seeds sample history only into an empty log.
             self._programme_record = (
                 f"{max(walked)}-{programme_fingerprint(walked)}",
-                f"Demo control programme set statuses and owners on {len(walked)} controls; "
+                f"Demo control program set statuses and owners on {len(walked)} controls; "
                 f"remove_demo_data resets the ones still as it left them.",
             )
-        self.stdout.write(f"  Control programme: statuses/owners set on {len(walked)} controls")
+        self.stdout.write(f"  Control program: statuses/owners set on {len(walked)} controls")
 
     def _record_programme(self):
-        """The audit entry remove_demo_data reads back to undo the programme.
+        """The audit entry remove_demo_data reads back to undo the program.
         ip_address stays empty, so its seeded-row match never deletes it."""
         if not self._programme_record:
             return

@@ -134,7 +134,7 @@ frontend/src/
   components/dashboard LeadSchedule, CoverageAtlas, NeedsAttention, calendar,
                     review queue
   pages/            one file per route
-tools/validate.py   dependency-free static validator (20 checks)
+tools/validate.py   dependency-free static validator (21 checks)
 ```
 
 ## Commit style

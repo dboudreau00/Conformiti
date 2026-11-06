@@ -49,7 +49,7 @@ DEMO_AUDIT_ROWS = [
 ]
 
 PROGRAMME_READ = "read"              # these controls still hold the demo's status
-PROGRAMME_UNREADABLE = "unreadable"  # a live programme that cannot be read back
+PROGRAMME_UNREADABLE = "unreadable"  # a live program that cannot be read back
 PROGRAMME_LEFT_BEHIND = "left"       # an older release retired the demo and kept its statuses
 
 # Keyed by the cause _programme_resets found: the warning names the one that applies, so the operator is not sent
@@ -69,8 +69,8 @@ UNREADABLE_BECAUSE = {
 
 
 def _owners_where_the_programme_put_them(walk, demo_by_pk):
-    """True when some control in ``walk`` has a demo owner and every such control sits where the programme put that
-    owner: the evidence that ``walk`` is the order the programme walked."""
+    """True when some control in ``walk`` has a demo owner and every such control sits where the program put that
+    owner: the evidence that ``walk`` is the order the program walked."""
     seen = False
     for i, control in enumerate(walk):
         name = demo_by_pk.get(control.owner_id)
@@ -83,7 +83,7 @@ def _owners_where_the_programme_put_them(walk, demo_by_pk):
 
 
 def _still_as_seeded(walk):
-    """The pks in ``walk`` whose status still matches the programme's for that position; changed ones are left alone."""
+    """The pks in ``walk`` whose status still matches the program's for that position; changed ones are left alone."""
     pks = []
     for i, control in enumerate(walk):
         status = programme_values(i)[0]
@@ -229,7 +229,7 @@ class Command(BaseCommand):
         # A control owned by an account that can no longer sign in is effectively unowned.
         demo_by_pk = {u.pk: u.username for u in demo_users}
         demo_owned = Control.objects.filter(owner_id__in=list(demo_by_pk))
-        programme, reset, unreadable = self._programme_resets(demo_by_pk, retiring, demo_seen)
+        program_state, reset, unreadable = self._programme_resets(demo_by_pk, retiring, demo_seen)
         owned_count = demo_owned.count()
 
         if not dry:
@@ -249,7 +249,7 @@ class Command(BaseCommand):
             raci.delete()
             vendors.delete()
             seeded_grants.delete()
-            if programme == PROGRAMME_READ:
+            if program_state == PROGRAMME_READ:
                 Control.objects.filter(pk__in=reset).update(status=Control.Status.NOT_STARTED)
             demo_owned.update(owner=None)
 
@@ -278,9 +278,9 @@ class Command(BaseCommand):
                           f"{', '.join(u.username for u in demo_users) or 'none'}")
         for label, n in counts:
             self.stdout.write(f"{label} {would}deleted: {n}")
-        if programme == PROGRAMME_READ:
+        if program_state == PROGRAMME_READ:
             self.stdout.write(f"Seeded control statuses {would}reset to Not started: {len(reset)}")
-        elif programme == PROGRAMME_UNREADABLE:
+        elif program_state == PROGRAMME_UNREADABLE:
             self.stdout.write(self.style.WARNING(
                 f"Seeded control statuses: not reset. {UNREADABLE_BECAUSE[unreadable]} The "
                 f"statuses it set can no longer be told apart from yours. Review the statuses "
@@ -346,7 +346,7 @@ class Command(BaseCommand):
                 return PROGRAMME_READ, _still_as_seeded(walk), None
             why = "library" if mark else "record"
         else:
-            # An older release kept no record: the whole register, in the order the programme walks it.
+            # An older release kept no record: the whole register, in the order the program walks it.
             walk = list(Control.objects.order_by(*PROGRAMME_ORDER))
             if not demo_by_pk:
                 why = "accounts"

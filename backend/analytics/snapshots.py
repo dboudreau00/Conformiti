@@ -36,7 +36,7 @@ def _measure(scored=None):
 
 def record_today(force=False, scored=None):
     """Create (or, with ``force``, refresh) today's snapshot; returns None on a DatabaseError rather than raising.
-    ``scored`` is a ``programme_score()`` result the caller already holds, so the programme is not scored twice."""
+    ``scored`` is a ``programme_score()`` result the caller already holds, so the program is not scored twice."""
     today = timezone.localdate()
     try:
         with transaction.atomic():

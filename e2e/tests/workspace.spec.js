@@ -145,7 +145,7 @@ test.describe("dashboard", () => {
     for (let col = 0; col < 5; col += 1) {
       expect(each.reduce((sum, row) => sum + row[col], 0), `column ${col} foots`).toBe(foot[col]);
     }
-    // Readiness is a score out of 100, not a count: the total quotes the programme's own figure, the headline.
+    // Readiness is a score out of 100, not a count: the total quotes the program's own figure, the headline.
     for (const row of each) expect(row[5]).toBeLessThanOrEqual(100);
     const headline = figure((await page.getByText("/100").locator("..").textContent()).replace("/100", ""));
     expect(foot[5]).toBe(headline);

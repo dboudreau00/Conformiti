@@ -8,7 +8,7 @@
 - **Next review:** _set in app_
 
 ## Objective
-The entity responds to identified security incidents through a defined programme.
+The entity responds to identified security incidents through a defined program.
 
 ## Evidence checklist
 - [ ] Approved policy in `policies/`

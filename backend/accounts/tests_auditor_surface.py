@@ -24,7 +24,7 @@ ALLOWED = {
     "workspaces": "their own, to name it on screen",
 }
 
-# Refused outright: the organisation's own programme, not the engagement.
+# Refused outright: the organisation's own program, not the engagement.
 DENIED = {
     "roles": "the capability model",
     "users": "the staff directory",
@@ -32,7 +32,7 @@ DENIED = {
     "controls": "the control library",
     "crosswalk": "the control library",
     "control-evidence": "every control's evidence, not just the package's",
-    "responsibilities": "who does what across the whole programme",
+    "responsibilities": "who does what across the whole program",
     "folder-permissions": "who else can see a folder is the organisation's business",
     "form-templates": "blank internal forms",
     "meeting-series": "the governance calendar",

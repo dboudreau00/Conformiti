@@ -62,11 +62,11 @@ and what it does there is recorded in that workspace's audit log.
 | **Administrator** | everything, including users, roles, access reviews, integrations |
 | **Compliance Manager** | frameworks and control statuses, all folders and documents, risks, meetings, calendar; sees the whole tree |
 | **Control Owner** | edit documents in folders granted to them, and documents they own; update risks they own; add, edit and delete meeting series and minutes, and, through the API, calendar events and form templates |
-| **Auditor** | the outside party: packages issued to them while their grant is live, the folders granted to them (or to the Auditor role), their own request list, access reviews and the workspace's whole audit log, and nothing else of the programme |
-| **Viewer** | read the documents in folders granted to them and the programme-wide records listed below; add notes to risks; edit a risk they are named owner of |
+| **Auditor** | the outside party: packages issued to them while their grant is live, the folders granted to them (or to the Auditor role), their own request list, access reviews and the workspace's whole audit log, and nothing else of the program |
+| **Viewer** | read the documents in folders granted to them and the program-wide records listed below; add notes to risks; edit a risk they are named owner of |
 
 Folder grants limit documents only. Every signed-in account except the Auditor
-reads the programme-wide records: the control library, the risk register and
+reads the program-wide records: the control library, the risk register and
 its export, vendors, the responsibility matrix, meetings and their minutes,
 champion groups, the calendar, analytics, the tracked Jira boards and the user
 directory (names, email addresses, roles, last sign-in, and whether two-factor
@@ -146,8 +146,8 @@ controls it has and how many of those are marked not applicable, then
 *Applicable*, *Implemented*, *In progress*, *Not started*, *Evidence linked*
 and *Readiness*. A framework's *Readiness* is its own score out of 100, the
 mean score of its applicable controls as the headline is for the whole
-programme. It is not the share marked implemented. The **Total** row is
-footed to the programme: it quotes the dashboard's own figures rather than
+program. It is not the share marked implemented. The **Total** row is
+footed to the program: it quotes the dashboard's own figures rather than
 adding rounded rows, so *Evidence linked* matches the evidence coverage
 figure and *Readiness* matches the readiness score. A framework's name opens
 the Controls page. With more than six frameworks the schedule shows six and a
@@ -172,7 +172,7 @@ while the rest dim a little. There are no lines between squares.
   **Page Up** and **Page Down** to the neighbouring framework, and **Ctrl
   Home** and **Ctrl End** to the first and last control. Each square is named
   with its reference, title and status.
-- **A large programme** shrinks the squares to a floor of nine pixels. Above
+- **A large program** shrinks the squares to a floor of nine pixels. Above
   600 controls the atlas draws the four frameworks with the most applicable
   controls and offers a chip per framework to draw the others, or **Draw all**.
 - **The place card's score** is the one the register shows you, which counts

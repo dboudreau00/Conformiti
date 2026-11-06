@@ -350,7 +350,7 @@ class EntrypointDemoPasswordTests(TestCase):
 
 class ViewerRoleDescriptionTests(TestCase):
     """The built-in Viewer description must not say "Read-only access to granted folders": the role also reads the
-    programme-wide records and writes risk notes, so that wording would understate it in an access review."""
+    program-wide records and writes risk notes, so that wording would understate it in an access review."""
 
     def test_the_description_says_what_the_role_does(self):
         viewer = make_roles()["Viewer"]

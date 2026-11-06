@@ -188,7 +188,7 @@
         {
           "control_id": "CC7.4",
           "title": "Incident response",
-          "objective": "The entity responds to identified security incidents through a defined programme."
+          "objective": "The entity responds to identified security incidents through a defined program."
         },
         {
           "control_id": "CC7.5",

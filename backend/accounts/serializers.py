@@ -19,7 +19,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """An auditor role holds no capabilities: ``PackageGrant`` asks only for ``is_auditor``, so a role that also
-        had ``can_view_all`` could be issued an engagement and read the whole programme (M-3)."""
+        had ``can_view_all`` could be issued an engagement and read the whole program (M-3)."""
         merged = dict(attrs)
         if self.instance is not None:
             for field in ("is_auditor", *self.CAPABILITIES):

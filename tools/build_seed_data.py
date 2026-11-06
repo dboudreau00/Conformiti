@@ -84,7 +84,7 @@ SOC2 = {
                 c("CC7.1", "Vulnerability management", "Configurations are monitored and vulnerabilities are detected and remediated."),
                 c("CC7.2", "Anomaly monitoring", "System components are monitored for anomalies indicative of security events."),
                 c("CC7.3", "Event evaluation", "Security events are evaluated to determine whether they are incidents."),
-                c("CC7.4", "Incident response", "The entity responds to identified security incidents through a defined programme."),
+                c("CC7.4", "Incident response", "The entity responds to identified security incidents through a defined program."),
                 c("CC7.5", "Recovery", "The entity recovers from identified security incidents."),
             ],
         },

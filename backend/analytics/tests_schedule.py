@@ -131,7 +131,7 @@ class ProgrammeScoreByFrameworkTests(APITestBase):
         for band, n in scored["bands"].items():
             self.assertEqual(sum(f["bands"][band] for f in by.values()), n)
         total = sum(f["score"] * f["applicable"] for f in by.values())
-        # Rounded per framework, so only close to the programme's own mean.
+        # Rounded per framework, so only close to the program's own mean.
         self.assertAlmostEqual(total / scored["applicable"], scored["score"], delta=1)
 
     def test_a_queryset_handed_in_is_grouped_the_same_way(self):

@@ -178,7 +178,7 @@ refused under `RemoteSigned` as well.
 
 ## Why this exists
 
-Most compliance programmes are held together by a control matrix in Excel, a
+Most compliance programs are held together by a control matrix in Excel, a
 folder of policies nobody has opened since the last audit, and a scramble
 in the six weeks before fieldwork. Three things reliably break:
 
@@ -193,7 +193,7 @@ implementation status, owner, evidence, the freshness of that evidence and
 testing, less a penalty for open risks. The dashboard leads with that score and
 shows the implemented share (**implemented ÷ applicable**) beside it. Its lead
 schedule gives each framework its own score and its controls by status, footed
-to the programme. The programme's figures are snapshotted daily. No percentage is
+to the program. The program's figures are snapshotted daily. No percentage is
 entered by hand.
 
 There is no telemetry, no phone-home, no licence server, and no seat meter in
@@ -664,7 +664,7 @@ access still sees and answers the lines assigned to them.**
 |---|---|---|
 | 1 | `docker compose up -d --build` | The stack comes up with `DEBUG` off, a generated secret key and only nginx reachable from the network. Set `POSTGRES_PASSWORD` and `REDIS_PASSWORD` in `.env` before the first start: otherwise the database password is `compliance` and Redis has none (neither publishes a port) |
 | 2 | `manage.py createsuperuser` | Your first real administrator, with a password that passes the policy (`PASSWORD_MIN_LENGTH`, 12 by default). No demo dataset is seeded unless you asked for one |
-| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate, `--dry-run` to see what it would change) | Only if you did ask: those accounts share one password and have no second factor. It refuses to run until the administrator from step 2 exists, and the retirement holds across restarts even with `SEED_DEMO_DATA=true` still set. It also takes back the demo's control programme: controls a demo account owns are left with no owner, the statuses the demo set go back to *Not started* unless someone changed them since, and the demo's readiness history goes |
+| 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate, `--dry-run` to see what it would change) | Only if you did ask: those accounts share one password and have no second factor. It refuses to run until the administrator from step 2 exists, and the retirement holds across restarts even with `SEED_DEMO_DATA=true` still set. It also takes back the demo's control program: controls a demo account owns are left with no owner, the statuses the demo set go back to *Not started* unless someone changed them since, and the demo's readiness history goes |
 | 4 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. `DJANGO_ALLOWED_HOSTS` is your public host name(s); the Docker stack adds its own internal names itself. Sending a vendor questionnaire is refused until `PUBLIC_URL` is set, because the link carries a bearer token |
 | 5 | Put TLS in front and set `BEHIND_TLS=true` and `NUM_PROXIES=2` (the terminator and the shipped nginx are two hops) | Secure cookies, HTTPS redirect, `__Host-` prefixes, and rate limits keyed on the real client. The prefix only works over https. Have the terminator set `X-Forwarded-Proto` itself rather than pass on the client's |
 | 6 | Configure `EMAIL_PROVIDER`, then send yourself a test: `manage.py test_mailbox --to you@example.com` | Reminders are half the product. It sends a sample review reminder through whichever provider is configured, with the template and transport real reminders use, and with `mailbox` checks the account's sign-in first |
@@ -852,7 +852,7 @@ account. Deactivate an auditor's account when their engagement ends. The risk
 register, the vendor file, the control library, the responsibility matrix, the
 meeting minutes, the calendar, the user directory and the analytics summary
 all answer `403`. Someone inside the company who needs a read-only view of the
-programme wants the **Viewer** role instead.
+program wants the **Viewer** role instead.
 
 **Effective folder access.** `Folder.effective_access(user)` returns the
 highest of:
@@ -1617,7 +1617,7 @@ this repository. None of it changes this repository or its licence.
 
 **0.9.5 is the last version number, and the feature-complete release of the
 open-source edition.** What the repository set out to be, a self-hosted
-programme of record for SOC 2, ISO 27001 and PCI DSS with sealed and signed
+program of record for SOC 2, ISO 27001 and PCI DSS with sealed and signed
 audit packages, vendor risk, workspaces and the operations to run it, is here,
 and every finding of the independent reviews recorded under
 [Quality gates](#quality-gates) is fixed or written down as deliberately left
