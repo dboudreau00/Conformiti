@@ -11,7 +11,24 @@ says what changed and what to expect on upgrade.
 
 ---
 
-## [Unreleased]
+## [0.9.5od], 2026-11-06
+
+A fix to folder ownership, and one spelling of "program" throughout. No migration.
+
+**On upgrade.**
+- Under 0.9.5oc, someone who managed a folder only through a grant became the owner of each subfolder they made
+  in it, and kept that access after the grant was revoked. A subfolder made that way keeps the owner it was given
+  until an administrator changes it.
+
+**Fixed.**
+- Making a subfolder in a folder you manage through a grant made you its owner, so your access to it outlived the
+  grant, and an access review, which lists grants, did not show it. Only the parent's owner becomes the owner of
+  what they make in it now.
+
+**Changed.**
+- "Program" throughout, in place of the British spelling: the guides, the demo data, the Viewer role's
+  description and the SOC 2 CC7.4 summary, which a restart re-seeds. `tools/validate.py` has a twenty-first check
+  that keeps it that way.
 
 **Dependencies.** Django 5.2.18, Django REST framework 3.18.3, boto3 1.43.123 and signxml 5.2.0 in the backend; axios 1.21, framer-motion 14.9, lucide-react 1.66, pdf.js 6.5.438, React Router 7.18.5, Autoprefixer 10.6.2, PostCSS 8.5.32, Vite 8.3.5 and Vite's React plugin 6.2.1 in the front end. python-dateutil stays on 2.x, now capped below 3, because botocore requires it, and the backend image stays on Python 3.14, the newest Django 5.2 supports. No setting or step changes.
 
