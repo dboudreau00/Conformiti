@@ -11,6 +11,33 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5oe], 2026-11-08
+
+A user-experience and consistency pass over every screen and message, and a safer installer on Windows. Three migrations, none of which change data.
+
+**On upgrade.**
+- Three migrations change only the labels a choice shows: `governance 0004`, `vendors 0005` and `calendar_app 0004`.
+- Audit log entries for ordinary writes now read as a short sentence ("created vendor 12, set name and tier") in place of the raw request. Entries already in the log keep their text.
+- A change to a completed access review is refused with `detail`, as every other refusal is. Two routes answered with `non_field_errors` before.
+- A sign-in refused by the security check on the request's origin carries a `code`: `csrf_origin`, `csrf_referer` or `csrf_failed`.
+
+**Fixed.**
+- `install.sh` run from Git Bash, MSYS or Cygwin on Windows deleted a working `.venv` and told you to install a package. It now stops first and points to `install.ps1` or WSL.
+- Turning off two-factor, removing a passkey, removing a chat channel, regenerating backup codes and revoking a questionnaire link acted on one click. Each asks first and says what it does, and the password is asked inside the dialog.
+- A failed load looked like an empty list or a row of zeros on the risk heatmap, an access review's rows, and the roles and champion lists. It now says it failed and offers Try again, and a review cannot be completed until its rows have loaded.
+- Error messages could show a raw server page, a throttle sentence, an HTTP status or an environment variable name. They now say what happened and what to do.
+- Marking a document reviewed from the review queue or the calendar now asks first.
+
+**Changed.**
+- One word for each thing across the screens, the API's refusals, the emails and the guides: workspace for the tenant, vendor, document (with evidence as its role on a control), two-factor and audit package, and one verb for each action (Add, Create, Save changes, Remove, Delete, Revoke, Try again).
+- The Controls register is a table that keyboards and screen readers can navigate, and an access review's rows are a table with a header for each column.
+- Dashboard and Analytics no longer give two different figures the same name: the Dashboard says "Readiness score" and Analytics says "Share implemented".
+- The navigation group named Workspace is now Compliance, and the default single sign-on button reads "Sign in with SSO" (`OIDC_LABEL` still overrides it).
+- Explanatory captions and hints are gone from the screens. What stays is the consequence of an action, an error, or an empty state that says what to do.
+- The installers warn when the checkout is in a synced folder (OneDrive, Dropbox, iCloud or Google Drive), say where to get a Python or Node that is new enough, and the quick-start lines run in PowerShell 5.1.
+
+---
+
 ## [0.9.5od], 2026-11-06
 
 A fix to folder ownership, and one spelling of "program" throughout. No migration.
