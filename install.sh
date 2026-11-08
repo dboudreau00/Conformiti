@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ===========================================================================
-# Conformiti installer (macOS / Linux / WSL)
+# Conformiti installer (macOS / Linux / WSL). On Windows use install.ps1: this
+# script stops in Git Bash and Cygwin.
 #
 #   ./install.sh                Local dev: venv + npm + migrate + seed, then
 #                               start the API on :8000 and the web app on
@@ -18,7 +19,7 @@
 #                               which must lie inside this checkout) and asks;
 #                               --yes answers for a script.
 #
-# Flags that combine with the above: --demo (load the sample organisation;
+# Flags that combine with the above: --demo (load the demo data;
 # off by default, and an installation carrying it says so on its sign-in
 # page), --open (open the browser when ready), --port N (Docker: host port).
 # With --docker and an existing .env, --demo / --no-demo and --port update
@@ -67,6 +68,14 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+# Git Bash (MINGW, MSYS) and Cygwin run this file, but their Python builds a
+# .venv with Scripts\python.exe and no bin/python, so the .venv step below
+# would take a good .venv for a broken one and delete it. Stop before anything
+# is touched. Unreachable on macOS, Linux and WSL, whose uname says Darwin or Linux.
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*)
+    die "install.sh does not run in Git Bash or Cygwin. On Windows, run: powershell -ExecutionPolicy Bypass -File .\\install.ps1   (add -Docker for the Docker stack). Or open a WSL terminal and run ./install.sh there." ;;
+esac
 check_port() {  # $1 = what the value is called, $2 = the value
   case "$2" in ''|*[!0-9]*) die "$1 needs a port number (got '$2')" ;; esac
   [ "${#2}" -le 5 ] && [ "$2" -ge 1 ] && [ "$2" -le 65535 ] || die "$1 must be between 1 and 65535 (got '$2')"
@@ -310,12 +319,12 @@ ENV
   # then restarts the stack and takes the demo password out of the log.
   CONFORMITI_PORT="$PORT" BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose up -d --build
   say "Waiting for the API to report healthy…"
-  if wait_for_health "http://localhost:${PORT}/api/health/" 240; then
+  if wait_for_health "http://localhost:${PORT}/api/health/" 360; then
     HEALTH=$(curl -fsS --noproxy '*' "http://localhost:${PORT}/api/health/")
     ok "healthy: ${HEALTH}"
   else
     docker compose ps
-    die "The stack did not become healthy in time. Inspect with: docker compose logs backend"
+    die "Still not healthy after 360 seconds. It may be finishing its first boot: run docker compose ps again, then docker compose logs backend."
   fi
   cat <<BANNER
 
@@ -379,19 +388,28 @@ for cand in python3.14 python3.13 python3.12 python3.11 python3 python; do
     PY="$cand"; break
   fi
 done
-[ -n "$PY" ] || die "Python 3.11 or newer is required but was not found on PATH (tested: 3.11 to 3.14)."
+[ -n "$PY" ] || die "Python 3.11 or newer is required but was not found on PATH (tested: 3.11 to 3.14). Install one from https://www.python.org/downloads/ (macOS: brew install python@3.12; Ubuntu 22.04, whose python3 is 3.10: python3.12 and python3.12-venv from the deadsnakes PPA), then run this again."
 # Newer than the tested range is allowed, not refused: it usually works, but
 # a dependency without wheels for it yet is the usual way it does not.
 if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info < (3, 15) else 1)' 2>/dev/null; then
   warn "$("$PY" --version 2>&1) is newer than the tested range (3.11 to 3.14): carrying on, but it is untested."
 fi
-command -v node >/dev/null 2>&1 || die "Node.js 20.19+ or 22.12+ (with npm) is required but was not found on PATH."
-command -v npm >/dev/null 2>&1 || die "npm is required but was not found on PATH."
+command -v node >/dev/null 2>&1 || die "Node.js 20.19+ or 22.12+ (with npm) is required but was not found on PATH. Install Node 22 LTS from https://nodejs.org/ or with nvm, open a new terminal, then run this again."
+command -v npm >/dev/null 2>&1 || die "npm is required but was not found on PATH. It comes with Node.js (https://nodejs.org/)."
 # Mirrors frontend/package.json engines, "^20.19.0 || >=22.12.0" (Vite 8):
 # 21.x and 22.0 to 22.11 are refused there, so they are refused here too.
 NODE_OK=$(node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.stdout.write(((a===20&&b>=19)||(a===22&&b>=12)||a>22)?"y":"n")')
-[ "$NODE_OK" = "y" ] || die "Node.js 20.19+ or 22.12+ is required (found $(node --version))."
+[ "$NODE_OK" = "y" ] || die "Node.js 20.19+ or 22.12+ is required (found $(node --version)). Install Node 22 LTS from https://nodejs.org/ or with nvm, open a new terminal, then run this again."
 ok "using $($PY --version 2>&1), node $(node --version), npm $(npm --version)"
+
+# A folder a sync client watches (OneDrive, Dropbox, iCloud Drive, Google Drive)
+# is the usual reason pip, npm and Vite fail part way or hang: .venv and
+# node_modules hold tens of thousands of small files the client locks and
+# rewrites (PREREQUISITES.md). Only a warning: it often works.
+case "$(pwd -P | tr '[:upper:]' '[:lower:]')" in
+  *onedrive*|*dropbox*|*icloud*|*"mobile documents"*|*"google drive"*|*googledrive*|*/library/cloudstorage/*)
+    warn "this folder looks like one a sync client watches ($(pwd -P)). If the install fails part way or hangs, clone into a plain local folder such as ~/conformiti and run this again." ;;
+esac
 
 # The local path's own ports, never the Docker ones: a CONFORMITI_API_PORT
 # exported for the stack must not put runserver on the stack's API port.

@@ -14,14 +14,15 @@ Legend: Parts A, D and E run in a terminal, and Parts B and C in the browser.
 **Docker (recommended):**
 
 ```bash
-git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
+git clone https://github.com/dboudreau00/Conformiti.git
+cd Conformiti
 git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"   # the newest release
 ./install.sh --docker --demo
 # Windows: git checkout (git tag --list 'v*' --sort=-v:refname | Select-Object -First 1)
 #          powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker -Demo
 ```
 
-`main` is the development line; installs follow release tags, and the second
+`main` is the development line; installs follow release tags, and the third
 line checks out the newest one.
 
 ✓ The script builds the images, waits for `/api/health/` to say `ok`, and
@@ -34,7 +35,7 @@ change to `.env`, starts a log without it. When the log no longer has it,
 the banner says so and gives
 `docker compose exec backend python manage.py changepassword admin`.
 
-`--demo` (`-Demo`) asks for the sample organisation this tour walks through.
+`--demo` (`-Demo`) loads the demo data this tour walks through.
 It lands in `.env` as `SEED_DEMO_DATA=true`, which is what the stack reads;
 with a `.env` already in place the script rewrites a line that disagrees,
 and says so. It is off by default, because a real installation should not
@@ -53,8 +54,11 @@ too close to the username or email. The policy has no bypass:
 script where the default policy would refuse it (*running scripts is
 disabled on this system*), and changes no setting
 ([INSTALL.md](INSTALL.md), the scripted variant, explains why).
-Windows is supported for development and evaluation; run production on a
-Linux host.
+`install.sh` stops in Git Bash and Cygwin, so use `install.ps1` from
+PowerShell, or `install.sh` in a WSL terminal. Clone into a plain local
+folder such as `C:\conformiti`, not Desktop or Documents, which OneDrive
+syncs by default. Windows is supported for development and evaluation; run
+production on a Linux host.
 
 **Local dev (no Docker):** `./install.sh --demo` (Windows:
 `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Demo`),
@@ -72,7 +76,7 @@ fifteen minutes; the backend suite is most of it.
 
 In the browser, sign in as `mia`, using the demo password from Part A. The sign-in page
 mentions the demo accounts only while they exist. ✓ The Dashboard loads. One
-bar runs across the top: the Workspace tabs (Dashboard, Analytics, Controls,
+bar runs across the top: the Compliance tabs (Dashboard, Analytics, Controls,
 Documents) with a live badge on Controls (controls in progress), and a
 **Governance** menu that holds the ten governance pages and shows its own badges
 (open access reviews, open risks) when you open it. Search, **Appearance**,
@@ -95,7 +99,7 @@ the **Governance** menu.
 ### 1 · Dashboard
 ✓ "Readiness score" out of 100 (the mean score of the applicable controls:
 implementation, an owner, evidence and its freshness, a test, less open
-risks), the share of controls marked implemented beneath it, a trend line
+risks), a trend line
 with one point per month (the demo back-fills five months; an installation
 without it shows the note *History builds from daily snapshots* until a
 second month is recorded) and a bar of readiness bands (Ready, Nearly there,
@@ -120,13 +124,13 @@ recolours instantly and the choice survives a reload. Account menu → Settings
 → Appearance also offers a custom accent colour.
 
 ### 3 · Analytics
-✓ Framework readiness bars (SOC 2, ISO 27001, PCI DSS), control and document
+✓ Share implemented, overall and by framework (SOC 2, ISO 27001, PCI DSS), control and document
 status donuts, the six-month review load, ownership coverage, most-overdue
 documents.
 
 ### 4 · Controls
 Filter by framework and status, search `CC6.1`, expand the row. ✓ Objective,
-status and owner selects (managers), linked evidence with **Unlink** only where
+status and owner selects (managers), evidence with **Remove** (it asks first) only where
 you have edit rights, an **Attach evidence** form. Attach the "Access Control
 Policy" to `CC6.2` → ✓ the evidence count bumps. **Export CSV** downloads the
 register.
@@ -147,20 +151,20 @@ controls, meetings, the user directory) through the API: the Viewer role
 narrows documents, not the rest of the program. Sign back in as `mia`.
 
 ### 7 · Risks
-✓ `3 live · 1 overdue · 2 high/critical · 1 closed`. Open a row → change
+✓ `Live 3 · Overdue 1 · High or critical 2 · Closed 1`. Open a row → change
 status, owner, plan; add a note. **Import CSV/XLSX** with
 `docs/sample-risk-import.csv` → ✓ *4 created*; import again → ✓ *4 skipped*.
-**Export**.
+**Export CSV**.
 
 ### 8 · User audit (as `admin`)
-**Start new review** → ✓ one row per account. Record decisions, **Export CSV**
+**Create review** → ✓ one row per account. Record decisions, **Export CSV**
 (open it: a name like `=1+1` is stored as text), **Complete review** (refused
-while rows are pending). Sign in as `aria` → ✓ read-only: no start/complete,
+while rows are pending). Sign in as `aria` → ✓ read-only: no create/complete,
 decisions shown as badges.
 
 ### 9 · Meetings · Groups · Jira (as `admin`)
 Meetings: ✓ Security Steering Committee on track, Risk Review behind; record
-minutes → the cadence meter moves. Groups: add a champion. Jira: configure
+minutes → the series meter moves. Groups: add a champion. Jira: configure
 with a real Atlassian site if you have one; otherwise ✓ a clear "not
 configured" state.
 
@@ -172,7 +176,7 @@ yourself or strip the last administrator.
 ### 11 · Two-factor auth
 Settings → Security → **Enable two-factor**: add the key to an authenticator,
 confirm the code, download the backup codes. Sign out and in → ✓ a code is
-required; a backup code works once. As `admin`, Governance → Users → **Reset 2FA**.
+required; a backup code works once. As `admin`, Governance → Users → **Reset two-factor**.
 
 ### 12 · Notifications
 The bell shows what *you* own or are responsible for (overdue documents and

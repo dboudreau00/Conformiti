@@ -9,7 +9,7 @@ class CalendarEvent(TenantModel):
 
     class Type(models.TextChoices):
         REVIEW_DUE = "review_due", "Document review due"
-        AUDIT = "audit", "Audit / assessment"
+        AUDIT = "audit", "Audit or assessment"
         TASK = "task", "Task"
         CUSTOM = "custom", "Custom"
 

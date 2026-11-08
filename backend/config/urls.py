@@ -45,7 +45,7 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         refused = cookie_auth.csrf_required(request)
         if refused:
-            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
+            return cookie_auth.csrf_refusal(refused)
         try:
             response = super().post(request, *args, **kwargs)
         except APIException as exc:
@@ -74,7 +74,7 @@ class ThrottledTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         refused = cookie_auth.csrf_required(request)
         if refused:
-            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
+            return cookie_auth.csrf_refusal(refused)
         if cookie_auth.cookie_mode() and not request.data.get("refresh"):
             cookie = request.COOKIES.get(cookie_auth.refresh_cookie_name())
             if cookie:
@@ -113,7 +113,7 @@ class TokenRenewView(ThrottledTokenRefreshView):
             return Response({"renewed": False})
         refused = cookie_auth.csrf_required(request)
         if refused:
-            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
+            return cookie_auth.csrf_refusal(refused)
         if not request.COOKIES.get(cookie_auth.refresh_cookie_name()):
             return Response({"renewed": False})
         try:

@@ -9,32 +9,22 @@ import { ReviewQueue } from "../components/dashboard/ReviewQueue.jsx";
 import { PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { Legend, SegmentBar } from "../components/ui/Meter.jsx";
-import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { joinAll } from "../components/ui/ShowMore.jsx";
 import { loadFailReason } from "../utils/a11y.js";
-import { CONTROL_STATUS } from "../utils/tone.js";
+import { CONTROL_STATUS, monthDelta } from "../utils/tone.js";
 
 const SOURCES = [
-  { key: "summary", label: "the analytics summary", url: "/analytics/summary/" },
+  { key: "summary", label: "dashboard figures", url: "/analytics/summary/" },
   { key: "reviews", label: "upcoming reviews", url: "/documents/reviews/?days=120" },
 ];
 
 const rows = (data) => (Array.isArray(data) ? data : data?.results || []);
 
-function joinNames(names) {
-  return joinAll(names);
-}
-
-function frameworkPhrase(names) {
-  return names.length > 3 ? `${names.length} frameworks` : joinAll(names);
-}
-
-function monthDelta(delta) {
-  if (delta > 0) return { tone: "success", text: `+${delta} pts this month` };
-  if (delta < 0) return { tone: "danger", text: `${delta} pts this month` };
-  return { tone: "muted", text: "No change this month" };
+function failedSentence(names) {
+  const text = joinAll(names);
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)} could not be loaded. Showing what is available.`;
 }
 
 export default function Dashboard({ me }) {
@@ -89,9 +79,6 @@ export default function Dashboard({ me }) {
   const revs = summary?.reviews;
   const risks = summary?.risks;
 
-  // The space before a digit is replaced by a literal non-breaking space (U+00A0) so a narrow card never wraps "SOC 2".
-  const fwNames = (summary?.frameworks || []).map((f) => (f.name || "").replace(/ (?=\d)/g, " "));
-
   const statusSegments = useMemo(() => {
     const by = controls?.by_status || {};
     return Object.entries(CONTROL_STATUS).map(([key, meta]) => ({ label: meta.label, value: by[key] || 0, tone: meta.tone }));
@@ -130,14 +117,14 @@ export default function Dashboard({ me }) {
     );
   }
 
-  // max-md:overflow-x-clip: on a phone the readiness tip's box hangs past the card's edge even while closed.
+  // max-md:overflow-x-clip: on a phone nothing here may widen the page.
   return (
     <PanelTransition className="max-md:overflow-x-clip">
       <Stack className="dash grid grid-cols-12 gap-4">
         {failed.length ? (
           <StackItem className="col-span-12">
             <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
-              <span>Couldn't load {joinNames(failed)}. Showing what is available.</span>
+              <span>{failedSentence(failed)}</span>
               <Button size="sm" onClick={load}>Try again</Button>
             </div>
           </StackItem>
@@ -150,25 +137,13 @@ export default function Dashboard({ me }) {
                 <>
                   <div>
                     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <Label>{scored ? "Readiness score" : "Overall readiness"}</Label>
-                        <InfoTip label={scored ? "How the readiness score is worked out" : "How overall readiness is worked out"}>
-                          {scored
-                            ? `The mean score across ${readiness.applicable.toLocaleString()} applicable controls${fwNames.length ? ` in ${frameworkPhrase(fwNames)}` : ""}, the same score the register gives each control: implementation, an owner, evidence and its freshness, a test, less open risks.`
-                            : `${readiness.implemented.toLocaleString()} of ${readiness.applicable.toLocaleString()} applicable controls${fwNames.length ? ` across ${frameworkPhrase(fwNames)}` : ""} are marked implemented.`}
-                        </InfoTip>
-                      </span>
+                      <Label>{scored ? "Readiness score" : "Share implemented"}</Label>
                       {deltaBadge ? <Badge tone={deltaBadge.tone} mono>{deltaBadge.text}</Badge> : null}
                     </div>
                     <div className="mt-3 flex items-end gap-2">
                       <span className="tabular text-[64px] font-semibold leading-[0.85] tracking-[-0.045em] text-ink">{hero}</span>
                       <span className="tabular pb-1 text-2xl font-medium text-faint">{scored ? "/100" : "%"}</span>
                     </div>
-                    <p className="mt-2 max-w-[38ch] text-[13px] leading-snug text-muted">
-                      {scored
-                        ? `${readiness.pct}% of ${readiness.applicable.toLocaleString()} applicable controls are marked implemented.`
-                        : `${readiness.implemented.toLocaleString()} of ${readiness.applicable.toLocaleString()} applicable controls implemented.`}
-                    </p>
                   </div>
 
                   <div className="mt-4">
@@ -210,10 +185,7 @@ export default function Dashboard({ me }) {
                   </div>
                 </>
               ) : (
-                <Empty title="Readiness unavailable">
-                  The analytics summary could not be loaded.
-                  <Button size="sm" className="mt-3" onClick={load}>Try again</Button>
-                </Empty>
+                <LoadError what="Readiness" onRetry={load} />
               )}
             </Panel>
 
@@ -247,13 +219,13 @@ export default function Dashboard({ me }) {
 
         <StackItem className="dash-span-4 col-span-12">
           {/* #review-queue is the target of NeedsAttention's "Open the review queue" link. The queue is not drawn until
-              reviews have loaded: given nothing, it claims every scheduled review is attested. */}
+              reviews have loaded: given nothing, it claims there is nothing left to review. */}
           <div id="review-queue" className="h-full">
             {reviews ? (
               <ReviewQueue me={me} reviews={reviews} onChanged={load} />
             ) : (
               <Panel className="flex h-full flex-col">
-                <PanelHeader title="Reviews coming up" meta="Next 120 days" />
+                <PanelHeader inline title="Reviews coming up" meta="Next 120 days" />
                 <LoadError what="Upcoming reviews" onRetry={load} />
               </Panel>
             )}

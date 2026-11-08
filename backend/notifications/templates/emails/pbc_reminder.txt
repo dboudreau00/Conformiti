@@ -10,6 +10,6 @@ Hello {{ assignee_name }},
 {% endif %}{% if request.status == "returned" and request.returned_note %}
 Returned by the auditor: {{ request.returned_note }}
 {% endif %}
-Attach the document(s) and mark it provided in Conformiti (Audit packages > {{ package.name }} > Request list).
+Attach the document and mark the request provided in Conformiti (Audit packages > {{ package.name }} > Request list).
 
 Conformiti

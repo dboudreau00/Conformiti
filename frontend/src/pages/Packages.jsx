@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DownloadIcon,
-  FileTextIcon,
   LockIcon,
   RefreshCwIcon,
   UserPlusIcon,
@@ -12,16 +11,18 @@ import {
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import DocumentViewer from "../components/documents/DocumentViewer.jsx";
 import { AddControls } from "../components/packages/AddControls.jsx";
-import { PbcList } from "../components/packages/PbcList.jsx";
+import { EvidenceChip, PbcList } from "../components/packages/PbcList.jsx";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { InfoTip } from "../components/ui/InfoTip.jsx";
-import { ConfirmDialog, TextDialog } from "../components/ui/Dialog.jsx";
+import { ConfirmDialog, TextDialog, useConfirm } from "../components/ui/Dialog.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
+import { fmtDate } from "../utils/format.js";
+import { CONTROL_STATUS } from "../utils/tone.js";
 
 const EASE = [0.23, 1, 0.32, 1];
 
@@ -50,28 +51,37 @@ const ASSURANCE = [
   ["internal", "Internal audit"],
 ];
 
-function Notice({ msg }) {
+function Notice({ msg, onDismiss }) {
   if (!msg) return null;
   return (
-    <p className={cn("notice", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
-      {msg.text}
-    </p>
+    <div className={cn("notice mb-4 flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")}
+         role={msg.ok ? "status" : "alert"}>
+      <span>{msg.text}</span>
+      <button type="button" aria-label="Dismiss" onClick={onDismiss}
+              className="shrink-0 opacity-70 transition-opacity hover:opacity-100">
+        <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 
 export default function Packages({ me }) {
   const [packages, setPackages] = useState(null);
-  const [listErr, setListErr] = useState(false);
+  const [listErr, setListErr] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [rows, setRows] = useState([]);
   const [grants, setGrants] = useState([]);
   const [integrity, setIntegrity] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState({ name: "", engagement: "", audit_firm: "", assurance_type: "type_ii" });
   const [viewing, setViewing] = useState(null);
+  // Counts up each time the empty controls list asks for the picker; AddControls opens on every increase.
+  const [addRequest, setAddRequest] = useState(0);
+  const [issueRequest, setIssueRequest] = useState(0);
 
   // Pinned evidence opens through the package's preview route: the auditor's grant, not folder permissions, admits them.
   const openEvidence = (e) => setViewing({
@@ -101,19 +111,26 @@ export default function Packages({ me }) {
   async function loadPackages(keep = selectedId) {
     const data = await fetchAll("/evidence-packages/");
     setPackages(data);
-    setListErr(false);
+    setListErr(null);
     const next = data.find((p) => p.id === keep) || data[0] || null;
     setSelectedId(next ? next.id : null);
   }
 
   // A failed list load must not read as an empty list: listErr holds the count and empty state back until a load succeeds.
+  // It is shown once, as the list's own error; a page notice on top would say it twice.
   function loadList() {
     return loadPackages().catch((e) => {
       setPackages([]);
-      setListErr(true);
-      setMsg({ ok: false, text: errorText(e, "Couldn't load evidence packages.") });
+      setListErr({ reason: loadFailReason(e) });
     });
   }
+
+  // Choosing a package drops the last one's notice: it belongs to the package it was about.
+  const pick = (id) => {
+    if (id === selectedId) return;
+    setMsg(null);
+    setSelectedId(id);
+  };
 
   useEffect(() => {
     loadList();
@@ -138,12 +155,14 @@ export default function Packages({ me }) {
       setRows([]);
       setGrants([]);
       setDetailErr(errorText(e, "Couldn't load this package's controls and grants."));
+      setDetailLoading(false);
       return;
     }
     if (!current()) return;
     setRows(controls);
     setGrants(issued);
     setDetailErr(null);
+    setDetailLoading(false);
     try {
       const { data } = await api.get(`/evidence-packages/${id}/verify/`);
       if (current()) setIntegrity(data);
@@ -154,20 +173,36 @@ export default function Packages({ me }) {
 
   // Keyed on the status too: sealing or withdrawing changes the grants and the verdict, and a withdrawn package must not
   // offer Revoke on closed grants. The verdict is cleared first so the card never shows the previous package's result.
+  // A different package also starts with no rows and a loading line, so the last one's controls (with live buttons) never sit
+  // under the new header and "No controls yet" never shows before the answer; a status change keeps what is on screen.
   const selectedStatus = selected?.status;
+  const shownId = useRef(null);
   useEffect(() => {
     setIntegrity(null);
     if (!selectedId) {
       detailSeq.current += 1;
+      shownId.current = null;
       setRows([]);
       setGrants([]);
       setDetailErr(null);
+      setDetailLoading(false);
       return;
+    }
+    if (shownId.current !== selectedId) {
+      shownId.current = selectedId;
+      setRows([]);
+      setGrants([]);
+      setDetailErr(null);
+      setDetailLoading(true);
     }
     loadDetail(selectedId);
   }, [selectedId, selectedStatus]);
 
-  const retryDetail = () => loadDetail(selectedId);
+  const retryDetail = () => {
+    setDetailErr(null);
+    setDetailLoading(true);
+    loadDetail(selectedId);
+  };
 
   async function act(kind, fn, okText) {
     setBusy(kind);
@@ -189,7 +224,7 @@ export default function Packages({ me }) {
       setCreating(false);
       setDraft({ name: "", engagement: "", audit_firm: "", assurance_type: "type_ii" });
       await loadPackages(data.id);
-    }, "Package opened.");
+    }, "Package created.");
   };
 
   const [ask, setAsk] = useState(null);
@@ -231,7 +266,7 @@ export default function Packages({ me }) {
     const skipped = (data.skipped || []).length;
     setMsg({
       ok: true,
-      text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} evidence file(s) skipped: not visible to you)` : ""}.`,
+      text: `Rolled forward into "${data.name}"${skipped ? ` (${skipped} ${skipped === 1 ? "document" : "documents"} skipped: not visible to you)` : ""}.`,
     });
   })();
 
@@ -255,7 +290,7 @@ export default function Packages({ me }) {
     await api.delete(`/package-controls/${row.id}/`);
     setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
     await loadPackages();
-  }, `${row.control_ref} taken out of scope.`)();
+  }, `${row.control_ref} removed from the package.`)();
 
   const submitRevoke = () => rethrowing(`revoke-${ask.grant.id}`, async () => {
     await api.delete(`/package-grants/${ask.grant.id}/`);
@@ -269,9 +304,9 @@ export default function Packages({ me }) {
     const listed = skipped.slice(0, 3).map((s) => `${s.document} (${s.control})`).join(", ");
     setMsg({
       ok: true,
-      text: `${data.added} control(s) added to the package.`
+      text: `${data.added} ${data.added === 1 ? "control" : "controls"} added to the package.`
         + (skipped.length
-          ? ` ${skipped.length} evidence file(s) were not pinned because you cannot see them: ${listed}${skipped.length > 3 ? "…" : ""}.`
+          ? ` ${skipped.length} ${skipped.length === 1 ? "document was" : "documents were"} not pinned as evidence because you cannot see ${skipped.length === 1 ? "it" : "them"}: ${listed}${skipped.length > 3 ? "…" : ""}.`
           : ""),
     });
   };
@@ -286,10 +321,12 @@ export default function Packages({ me }) {
 
   return (
     <PanelTransition>
+    {/* Above both columns: on a phone the detail column stacks under the list, and a message there is off screen. */}
+    <Notice msg={msg} onDismiss={() => setMsg(null)} />
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <div className="flex flex-col gap-4">
         <Panel className="overflow-hidden">
-          <PanelHeader title="Evidence packages" meta={listErr ? "- total" : `${packages.length} total`}>
+          <PanelHeader title="All packages" meta={listErr ? "- total" : `${packages.length} total`}>
             {canAssemble && !creating ? (
               <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New package</Button>
             ) : null}
@@ -325,7 +362,7 @@ export default function Packages({ me }) {
               </div>
               <div className="mt-1 flex gap-2">
                 <Button type="submit" variant="primary" size="sm" disabled={busy === "create"}>
-                  {busy === "create" ? "Opening…" : "Open package"}
+                  {busy === "create" ? "Creating…" : "Create package"}
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => setCreating(false)}>
                   Cancel
@@ -334,7 +371,7 @@ export default function Packages({ me }) {
             </form>
           ) : null}
           {listErr ? (
-            <LoadError what="The package list" onRetry={() => { setMsg(null); loadList(); }} />
+            <LoadError what="The package list" reason={listErr.reason} onRetry={() => { setMsg(null); loadList(); }} />
           ) : packages.length === 0 ? (
             creating ? null : (
               <Empty title={canAssemble ? "No packages yet" : "No packages visible to you"} />
@@ -347,7 +384,7 @@ export default function Packages({ me }) {
                   <li key={p.id}>
                     <button
                       type="button"
-                      onClick={() => setSelectedId(p.id)}
+                      onClick={() => pick(p.id)}
                       aria-current={p.id === selectedId || undefined}
                       className={cn(
                         "block w-full px-4 py-3 text-left transition-colors duration-150 ease-out",
@@ -357,7 +394,7 @@ export default function Packages({ me }) {
                       <span className="block truncate text-[13px] font-medium text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center gap-2">
                         <Badge tone={tone.tone} dot>{tone.label}</Badge>
-                        <Label>{p.control_count} controls · {p.evidence_count} files</Label>
+                        <Label>{p.control_count} controls · {p.evidence_count} evidence</Label>
                       </span>
                     </button>
                   </li>
@@ -374,7 +411,6 @@ export default function Packages({ me }) {
       </div>
 
       <div className="flex min-w-0 flex-col gap-4">
-        <Notice msg={msg} />
         {!selected ? (
           <Panel>
             <Empty title="Select a package" />
@@ -420,7 +456,7 @@ export default function Packages({ me }) {
               {selected.prior_package ? (
                 <p className="mt-2 text-xs text-muted">
                   Rolled forward from{" "}
-                  <button type="button" className="link" onClick={() => setSelectedId(selected.prior_package)}>
+                  <button type="button" className="link" onClick={() => pick(selected.prior_package)}>
                     {selected.prior_package_name}
                   </button>
                 </p>
@@ -431,7 +467,7 @@ export default function Packages({ me }) {
                   {selected.successors.map((s, i) => (
                     <span key={s.id}>
                       {i ? ", " : ""}
-                      <button type="button" className="link" onClick={() => setSelectedId(s.id)}>{s.name}</button>
+                      <button type="button" className="link" onClick={() => pick(s.id)}>{s.name}</button>
                     </span>
                   ))}
                 </p>
@@ -439,15 +475,11 @@ export default function Packages({ me }) {
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <StatCard label="Controls" value={selected.control_count} />
-                <StatCard label="Evidence files" value={selected.evidence_count} />
+                <StatCard label="Evidence" value={selected.evidence_count} />
                 <StatCard
                   label="Integrity"
-                  value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length}`) : "-"}
-                  detail={integrity
-                    ? (integrity.ok
-                        ? `Every file matches what was ${selected.status === "draft" ? "pinned" : "sealed"}`
-                        : `File(s) no longer match what was ${selected.status === "draft" ? "pinned" : "sealed"}`)
-                    : "Not checked"}
+                  value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length} changed`) : "-"}
+                  detail={integrity ? undefined : "Not checked"}
                   tone={integrity ? (integrity.ok ? "success" : "danger") : "muted"}
                 />
               </div>
@@ -471,8 +503,8 @@ export default function Packages({ me }) {
                       <span>Ed25519, signing key <span className="font-mono text-ink">{selected.signing_key_id}</span></span>
                     </p>
                   ) : (
-                    <p className="mt-1.5 text-xs text-muted">
-                      This package carries no signature: the installation had no signing key when it was sealed.
+                    <p className="mt-2">
+                      <Badge tone="warning" dot>Not signed</Badge>
                     </p>
                   )}
                 </div>
@@ -485,7 +517,7 @@ export default function Packages({ me }) {
                     {selected.assertion}
                   </p>
                   <Label as="p" className="mt-1.5">
-                    {selected.asserted_by_name} · {selected.sealed_at?.slice(0, 10)}
+                    {selected.asserted_by_name} · {fmtDate(selected.sealed_at)}
                   </Label>
                 </div>
               ) : null}
@@ -493,9 +525,10 @@ export default function Packages({ me }) {
 
             {/* After a failed detail load neither list is known: headers show "-" (not 0) and the Issue form and picker stay closed. */}
             <Panel className="overflow-hidden">
-              <PanelHeader title="Issued to" meta={detailErr ? "- live" : `${grants.filter((g) => g.is_live).length} live`}>
-                {canAssemble && selected.status === "sealed" && !detailErr ? (
-                  <IssueForm packageId={selected.id} canAddAuditor={!!me?.capabilities?.manage_users} onDone={async () => {
+              <PanelHeader title="Issued to" meta={detailErr || detailLoading ? "- live" : `${grants.filter((g) => g.is_live).length} live`}>
+                {canAssemble && selected.status === "sealed" && !detailErr && !detailLoading ? (
+                  <IssueForm key={`issue-${selected.id}`} packageId={selected.id} openRequest={issueRequest}
+                             canAddAuditor={!!me?.capabilities?.manage_users} onDone={async () => {
                     setGrants(await fetchAll(`/package-grants/?package=${selected.id}`));
                     await loadPackages();
                   }} onError={(text) => setMsg({ ok: false, text })} />
@@ -503,8 +536,15 @@ export default function Packages({ me }) {
               </PanelHeader>
               {detailErr ? (
                 <LoadError what="This package's access list" onRetry={retryDetail} />
+              ) : detailLoading ? (
+                <Loading />
               ) : grants.length === 0 ? (
-                <Empty title="Not issued yet" />
+                <Empty
+                  title="Not issued yet"
+                  action={canAssemble && selected.status === "sealed"
+                    ? <Button size="sm" variant="primary" onClick={() => setIssueRequest((n) => n + 1)}>Issue</Button>
+                    : null}
+                />
               ) : (
                 <ul className="divide-y divide-line">
                   {grants.map((g) => (
@@ -514,13 +554,13 @@ export default function Packages({ me }) {
                           {g.full_name || g.username}
                         </span>
                         <Label className="block">
-                          {g.is_live ? `until ${g.expires_at?.slice(0, 10)}` : "revoked"}
-                          {g.access_count ? ` · ${g.access_count} file read(s)` : ""}
+                          {g.is_live ? `until ${fmtDate(g.expires_at)}` : `since ${fmtDate(g.revoked_at || g.expires_at)}`}
+                          {g.access_count ? ` · ${g.access_count} ${g.access_count === 1 ? "read" : "reads"}` : ""}
                         </Label>
                       </span>
                       <span className="flex items-center gap-2">
                         <Badge tone={g.is_live ? "success" : "muted"} dot>
-                          {g.is_live ? "Live" : "Closed"}
+                          {g.is_live ? "Live" : g.revoked_at ? "Revoked" : "Expired"}
                         </Badge>
                         {canAssemble && g.is_live ? (
                           <Button size="sm" variant="ghost" onClick={() => setAsk({ kind: "revoke", grant: g })}>
@@ -540,17 +580,24 @@ export default function Packages({ me }) {
                      canRaise={(canAssemble || isGrantee) && selected.status !== "withdrawn"}
                      canAssemble={canAssemble} onOpen={setViewing} onMessage={setMsg} />
 
-            {canAssemble && selected.status === "draft" && !detailErr ? (
-              <AddControls key={`add-${selected.id}`} packageId={selected.id} inScope={rows}
+            {canAssemble && selected.status === "draft" && !detailErr && !detailLoading ? (
+              <AddControls key={`add-${selected.id}`} packageId={selected.id} inScope={rows} openRequest={addRequest}
                            onAdded={onControlsAdded} onError={(text) => setMsg({ ok: false, text })} />
             ) : null}
 
             <Panel className="overflow-hidden">
-              <PanelHeader title="Controls in scope" meta={detailErr ? "- rows" : `${rows.length} rows`} />
+              <PanelHeader title="Controls in scope" meta={detailErr || detailLoading ? "- rows" : `${rows.length} rows`} />
               {detailErr ? (
                 <LoadError what="This package's controls" onRetry={retryDetail} />
+              ) : detailLoading ? (
+                <Loading />
               ) : rows.length === 0 ? (
-                <Empty title="No controls yet" />
+                <Empty
+                  title="No controls yet"
+                  action={canAssemble && selected.status === "draft"
+                    ? <Button size="sm" variant="primary" onClick={() => setAddRequest((n) => n + 1)}>Add controls</Button>
+                    : null}
+                />
               ) : (
                 <ul className="divide-y divide-line">
                   <AnimatePresence initial={false}>
@@ -587,15 +634,10 @@ export default function Packages({ me }) {
                           <ul className="mt-2 flex flex-wrap gap-1.5">
                             {row.evidence.map((e) => (
                               <li key={e.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => openEvidence(e)}
-                                  className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2 py-1 text-2xs text-muted transition-colors duration-150 ease-out hover:border-line-strong hover:text-ink"
-                                  title={`Open · v${e.pinned_version} · ${e.content_sha256.slice(0, 16)}…`}
-                                >
-                                  <FileTextIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+                                <EvidenceChip onClick={() => openEvidence(e)}
+                                              title={`Open · v${e.pinned_version} · ${e.content_sha256.slice(0, 16)}…`}>
                                   {e.document_name}
-                                </button>
+                                </EvidenceChip>
                               </li>
                             ))}
                           </ul>
@@ -717,8 +759,8 @@ export default function Packages({ me }) {
     <ConfirmDialog
       open={ask?.kind === "remove"}
       onClose={() => setAsk(null)}
-      title={`Take ${ask?.row?.control_ref} out of scope?`}
-      description="Its pinned evidence and any sample items listed for it are dropped from this draft."
+      title={`Remove ${ask?.row?.control_ref} from the package?`}
+      description="Its pinned evidence and any sample items listed for it are removed from this draft."
       confirmLabel="Remove"
       onConfirm={() => removeControl(ask.row)}
     />
@@ -729,14 +771,20 @@ export default function Packages({ me }) {
 function YearOverYear({ pkg }) {
   const [diff, setDiff] = useState(null);
   const [err, setErr] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let live = true;
     api.get(`/evidence-packages/${pkg.id}/diff/`)
       .then((r) => live && setDiff(r.data))
-      .catch((e) => live && setErr(errorText(e, "Couldn't compare with the predecessor.")));
+      .catch((e) => live && setErr({ reason: loadFailReason(e) }));
     return () => { live = false; };
-  }, [pkg.id]);
+  }, [pkg.id, attempt]);
+  const retry = () => {
+    setErr(null);
+    setAttempt((n) => n + 1);
+  };
+  const statusLabel = (value) => (CONTROL_STATUS[value]?.label || String(value)).toLowerCase();
   const t = diff?.totals;
   const cap = (xs) => (xs.length > 8 ? `${xs.slice(0, 8).join(", ")} and ${xs.length - 8} more` : xs.join(", "));
   return (
@@ -748,7 +796,7 @@ function YearOverYear({ pkg }) {
           </Button>
         ) : null}
       </PanelHeader>
-      {err ? <p className="px-5 py-3 text-xs text-danger">{err}</p> : !diff ? <Loading /> : (
+      {err ? <LoadError what="The comparison with last year" reason={err.reason} onRetry={retry} /> : !diff ? <Loading /> : (
         <>
           <div className="grid gap-3 px-5 py-4 sm:grid-cols-4">
             <StatCard label="Controls added" value={t.controls_added} tone={t.controls_added ? "info" : undefined} />
@@ -782,7 +830,7 @@ function YearOverYear({ pkg }) {
                 <li key={`k-${c.id}`} className="px-5 py-2 text-xs">
                   <span className="font-mono text-muted">{c.control_ref}</span> {c.title}
                   {c.prior_exception ? <Badge tone="danger" mono className="ml-2">exception last year</Badge> : null}
-                  {c.status_then !== c.status_now ? <span className="ml-2 text-faint">status {c.status_then} → {c.status_now}</span> : null}
+                  {c.status_then !== c.status_now ? <span className="ml-2 text-faint">status {statusLabel(c.status_then)} → {statusLabel(c.status_now)}</span> : null}
                   {c.evidence.changed.length || c.evidence.added.length || c.evidence.removed.length ? (
                     <span className="mt-1 block text-faint">
                       {c.evidence.changed.map((e) => `${e.now.document} v${e.then.version}→v${e.now.version}`)
@@ -810,7 +858,6 @@ const SAMPLE_RESULT = {
 const SAMPLING = [["", "Method not stated"], ["random", "Random"], ["haphazard", "Haphazard"],
                   ["judgmental", "Judgmental"], ["complete", "Complete population"]];
 const EMPTY_SAMPLE = { identifier: "", description: "", population_ref: "", evidence: "" };
-const DATE = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
 /** Items listed before sealing are part of the manifest; results are the auditor's alone. */
 function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, onOpen }) {
@@ -821,6 +868,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_SAMPLE);
   const [pop, setPop] = useState(null);
+  const { ask: askDelete, confirmDialog } = useConfirm();
   const s = row.sample_summary || { total: 0, pass: 0, fail: 0, not_tested: 0, pending: 0 };
   const samples = row.samples || [];
   const id = (k) => `sample-${row.id}-${k}`;
@@ -835,7 +883,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
       setForm(EMPTY_SAMPLE);
       setAdding(false);
       await reload();
-    }, "Sample item listed.");
+    }, "Sample item added.");
   };
   const [failing, setFailing] = useState(null);
   const judge = (sample, result) => {
@@ -859,9 +907,19 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
     });
     if (failed) throw new Error(errorText(failed));
   };
-  const remove = (sample) => act(`sample-${sample.id}`, async () => {
-    await api.delete(`/package-samples/${sample.id}/`);
-    await reload();
+  const remove = (sample) => askDelete({
+    title: `Delete sample item ${sample.identifier}?`,
+    description: "Its recorded result is deleted with it.",
+    confirmLabel: "Delete",
+    // Rethrown like the exception note: act resolves on failure, which would close the dialog as if the delete went through.
+    onConfirm: async () => {
+      let failed = null;
+      await act(`sample-${sample.id}`, async () => {
+        try { await api.delete(`/package-samples/${sample.id}/`); } catch (e) { failed = e; throw e; }
+        await reload();
+      }, "Sample item deleted.");
+      if (failed) throw new Error(errorText(failed));
+    },
   });
   const savePopulation = (e) => {
     e.preventDefault();
@@ -967,7 +1025,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
                   <tr key={sm.id} className="align-top">
                     <td className="py-1.5 pr-3 font-mono text-ink">
                       {sm.identifier}
-                      {sm.sealed_in ? "" : <span className="ml-1 text-faint" title="Added by the auditor after sealing">†</span>}
+                      {sm.sealed_in ? null : <Badge tone="faint" className="ml-1.5 align-middle">Added after sealing</Badge>}
                     </td>
                     <td className="py-1.5 pr-3 text-muted">{sm.description || "-"}</td>
                     <td className="py-1.5 pr-3 text-muted">{sm.population_ref || "-"}</td>
@@ -983,7 +1041,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
                       {sm.exception_note ? <span className="mt-1 block max-w-[320px] text-danger">{sm.exception_note}</span> : null}
                     </td>
                     <td className="py-1.5">
-                      <span className="block text-muted">{sm.tested_by_name ? `${sm.tested_by_name} · ${DATE(sm.tested_at)}` : "-"}</span>
+                      <span className="block text-muted">{sm.tested_by_name ? `${sm.tested_by_name} · ${fmtDate(sm.tested_at)}` : "-"}</span>
                       <span className="mt-1 flex flex-wrap gap-1">
                         {canJudge ? ["pass", "fail", "not_tested"].map((v) => (
                           <Button key={v} size="sm" variant={sm.result === v ? "primary" : "ghost"} disabled={busy === `sample-${sm.id}`}
@@ -993,11 +1051,11 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
                           <Button
                             size="sm"
                             variant="ghost"
-                            aria-label={`Remove ${sm.identifier}`}
+                            aria-label={`Delete ${sm.identifier}`}
                             disabled={busy === `sample-${sm.id}`}
                             onClick={() => remove(sm)}
                           >
-                            Remove
+                            Delete
                           </Button>
                         ) : null}
                       </span>
@@ -1054,6 +1112,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
           </div>
         </form>
       ) : null}
+      {confirmDialog}
       <TextDialog
         open={!!failing}
         onClose={() => setFailing(null)}
@@ -1069,8 +1128,15 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
   );
 }
 
-function IssueForm({ packageId, canAddAuditor, onDone, onError }) {
+/** `openRequest` is a counter: each increase after mount opens the form, for the empty list's Issue button. */
+function IssueForm({ packageId, canAddAuditor, onDone, onError, openRequest = 0 }) {
   const [open, setOpen] = useState(false);
+  const seenRequest = useRef(openRequest);
+  useEffect(() => {
+    if (openRequest === seenRequest.current) return;
+    seenRequest.current = openRequest;
+    setOpen(true);
+  }, [openRequest]);
   const [auditors, setAuditors] = useState([]);
   const [user, setUser] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1123,9 +1189,9 @@ function IssueForm({ packageId, canAddAuditor, onDone, onError }) {
           {canAddAuditor ? <> <Link to="/users" className="link">Go to Users</Link></> : null}
         </p>
       ) : state === "error" ? (
-        <p className="text-xs text-danger" role="alert">The list of auditors could not be loaded. Close this and try again.</p>
+        <p className="text-xs text-danger" role="alert">The list of auditors could not be loaded. Cancel and try again.</p>
       ) : (
-        <select className="input h-8 py-0 text-xs" required value={user}
+        <select className="input input-sm" required value={user}
                 aria-label="Auditor to issue to"
                 disabled={state === "loading"}
                 onChange={(e) => setUser(e.target.value)}>
@@ -1140,7 +1206,7 @@ function IssueForm({ packageId, canAddAuditor, onDone, onError }) {
           {busy ? "Issuing…" : "Issue"}
         </Button>
       ) : null}
-      <Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)} aria-label="Close">
+      <Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)} aria-label="Cancel" title="Cancel">
         <XIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
       </Button>
     </form>

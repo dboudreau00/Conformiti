@@ -6,6 +6,7 @@ import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/Pa
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { ConfirmDialog } from "../components/ui/Dialog.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { errorText } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
@@ -24,14 +25,7 @@ function statusTone(status) {
   return "muted";
 }
 
-function Notice({ msg }) {
-  if (!msg) return null;
-  return (
-    <div className={cn("notice", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
-      {msg.text}
-    </div>
-  );
-}
+const focusField = (id) => document.getElementById(id)?.focus();
 
 export default function Jira({ me }) {
   const isManager = !!me?.capabilities?.manage_users;
@@ -151,10 +145,10 @@ export default function Jira({ me }) {
         name: newBoard.name.trim(),
       });
       setNewBoard({ board_id: "", name: "" });
-      setBoardMsg({ ok: true, text: `Now tracking ${data.name}.` });
+      setBoardMsg({ ok: true, text: `Added ${data.name}.` });
       await loadBoards(data.id);
     } catch (err) {
-      setBoardMsg({ ok: false, text: errorText(err, "Couldn't track that board.") });
+      setBoardMsg({ ok: false, text: errorText(err, "Couldn't add that board.") });
     } finally {
       setBusy(null);
     }
@@ -196,7 +190,12 @@ export default function Jira({ me }) {
   if (boardsErr) {
     noBoard = <Empty title="No board to show" />;
   } else if (connected === false) {
-    noBoard = <Empty title="Jira isn't connected yet" />;
+    noBoard = (
+      <Empty
+        title="Jira isn't connected yet"
+        action={<Button size="sm" onClick={() => focusField("jira-base-url")}>Configure Jira</Button>}
+      />
+    );;
   } else if (connected) {
     noBoard = <Empty title="No board selected" />;
   } else if (isManager && !configErr) {
@@ -213,7 +212,7 @@ export default function Jira({ me }) {
             <Panel className="overflow-hidden">
               <PanelHeader title="Connection">
                 <Badge tone={config?.enabled ? "success" : "muted"} dot>
-                  {config?.enabled ? "enabled" : "disabled"}
+                  {config?.enabled ? "On" : "Off"}
                 </Badge>
               </PanelHeader>
               {configErr ? (
@@ -278,12 +277,12 @@ export default function Jira({ me }) {
                     />
                     Integration enabled
                   </label>
-                  <Notice msg={msg} />
+                  {msg ? <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)}>{msg.text}</Notice> : null}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Button type="submit" variant="primary" size="sm" disabled={!!busy}>
                       {busy === "save" ? "Saving…" : "Save configuration"}
                     </Button>
-                    <Button size="sm" onClick={testConnection} disabled={!!busy}>
+                    <Button size="sm" onClick={testConnection} disabled={!!busy || dirty}>
                       {busy === "test" ? "Testing…" : "Test connection"}
                     </Button>
                     <AnimatePresence>
@@ -302,9 +301,6 @@ export default function Jira({ me }) {
                       ) : null}
                     </AnimatePresence>
                   </div>
-                  {dirty ? (
-                    <p className="text-2xs leading-snug text-faint">Test connection checks the saved configuration, so save first.</p>
-                  ) : null}
                 </form>
               )}
             </Panel>
@@ -324,7 +320,10 @@ export default function Jira({ me }) {
                 </div>
               </div>
             ) : boards.length === 0 ? (
-              <Empty title="No boards tracked yet" />
+              <Empty
+                title="No boards tracked yet"
+                action={isManager ? <Button size="sm" onClick={() => focusField("jira-board-id")}>Add board</Button> : null}
+              />
             ) : (
               <ul className="p-2">
                 <AnimatePresence initial={false}>
@@ -383,7 +382,6 @@ export default function Jira({ me }) {
             )}
             {isManager ? (
               <form onSubmit={addBoard} noValidate className="space-y-2.5 border-t border-line bg-surface-2 p-3">
-                <Label>Track board</Label>
                 <div className="grid grid-cols-[96px_1fr] gap-2">
                   <div>
                     <label htmlFor="jira-board-id" className="field-label">
@@ -414,7 +412,9 @@ export default function Jira({ me }) {
                     />
                   </div>
                 </div>
-                <Notice msg={boardMsg} />
+                {boardMsg ? (
+                  <Notice kind={boardMsg.ok ? "ok" : "err"} onDismiss={() => setBoardMsg(null)}>{boardMsg.text}</Notice>
+                ) : null}
                 <Button
                   type="submit"
                   variant="primary"
@@ -423,9 +423,8 @@ export default function Jira({ me }) {
                   disabled={!canAdd}
                   icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                 >
-                  {busy === "add" ? "Tracking…" : "Track board"}
+                  {busy === "add" ? "Adding…" : "Add board"}
                 </Button>
-                <p className="text-2xs leading-snug text-faint">The board ID is the number in the Jira board URL (…/boards/12).</p>
               </form>
             ) : null}
           </Panel>
@@ -542,9 +541,9 @@ export default function Jira({ me }) {
       <ConfirmDialog
         open={!!removing}
         onClose={() => setRemoving(null)}
-        title={`Stop tracking ${removing?.name}?`}
+        title={`Remove ${removing?.name}?`}
         description="Its issues disappear from this page. Nothing changes in Jira."
-        confirmLabel="Stop tracking"
+        confirmLabel="Remove"
         onConfirm={() => removeBoard(removing)}
       />
     </PanelTransition>

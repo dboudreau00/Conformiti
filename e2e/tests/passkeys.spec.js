@@ -45,7 +45,7 @@ test.describe("passkeys", () => {
       await page.getByRole("button", { name: "Add passkey" }).click();
       const list = page.getByRole("list", { name: "Enrolled passkeys" });
       await expect(list.getByText("E2E key")).toBeVisible();
-      await expect(list.getByText("Active")).toBeVisible();
+      await expect(list.getByText("On", { exact: true })).toBeVisible();
       await expect(page.getByText(/Passkey enrolled/)).toBeVisible();
 
       await signOut(page);
@@ -56,13 +56,20 @@ test.describe("passkeys", () => {
       await page.getByRole("button", { name: "Use passkey" }).click();
       await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
-      // Remove it again (password-gated), leaving the account as it was.
+      // Remove it again: the dialog states what happens and takes the password, leaving the account as it was.
       await page.goto(`${BASE}/settings`);
       await section(page, "Security").click();
       await expect(list.getByText("E2E key")).toBeVisible();
       await expect(list.getByText(/last used \d{4}-\d{2}-\d{2}/)).toBeVisible();
-      await page.locator("#passkey-password").fill(DEMO.owner.password);
       await list.getByRole("button", { name: "Remove" }).click();
+      const confirm = page.getByRole("dialog", { name: /Remove .E2E key.\?/ });
+      await expect(confirm).toContainText("It can no longer be used to sign in.");
+      await confirm.getByRole("button", { name: "Cancel" }).click();
+      await expect(confirm).toHaveCount(0);
+      await expect(list.getByText("E2E key")).toBeVisible();
+      await list.getByRole("button", { name: "Remove" }).click();
+      await confirm.getByLabel("Your password").fill(DEMO.owner.password);
+      await confirm.getByRole("button", { name: "Remove passkey" }).click();
       await expect(page.getByText("No passkeys enrolled.")).toBeVisible();
     } finally {
       await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId }).catch(() => {});

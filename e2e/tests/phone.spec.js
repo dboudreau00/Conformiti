@@ -36,7 +36,7 @@ test.describe("phone width", () => {
     await expect(menu).toHaveAttribute("aria-expanded", "true");
     const sheet = page.getByRole("group", { name: "Menu", exact: true });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("heading")).toHaveText(["Workspace", "Governance", "Account"]);
+    await expect(sheet.getByRole("heading")).toHaveText(["Compliance", "Governance", "Account"]);
     const links = sheet.getByRole("link");
     await expect(links).toHaveCount(ALL_PAGES.length);
     expect(await links.evaluateAll((els) => els.map((el) => el.getAttribute("href")))).toEqual(ALL_PAGES);
@@ -100,7 +100,7 @@ test.describe("phone width", () => {
     }
 
     await searchButton(page).click();
-    const palette = page.getByRole("dialog", { name: "Jump to" });
+    const palette = page.getByRole("dialog", { name: "Search", exact: true });
     await expect(palette).toBeVisible();
     await expect(palette.getByRole("combobox")).toBeFocused();
     within("the search palette", await palette.boundingBox());

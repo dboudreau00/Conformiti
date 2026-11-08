@@ -1,10 +1,11 @@
 import { passwordMinLength } from "../../api/client.js";
 import { Button } from "../ui/Button.jsx";
+import { Notice } from "../ui/Notice.jsx";
 import { Panel, PanelHeader } from "../ui/Panel.jsx";
 
 export const BLANK_USER_FORM = { username: "", first: "", last: "", email: "", job: "", role: "", password: "" };
 
-export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, busy, error }) {
+export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, busy, error, rolesFailed, onRetryRoles }) {
   const set = (k) => (e) => onChange({ ...form, [k]: e.target.value });
   const minLength = passwordMinLength();
   const valid = form.username.trim() && form.role && form.password.length >= minLength;
@@ -42,12 +43,25 @@ export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, bus
         </div>
         <div>
           <label htmlFor="nu-role" className="field-label">Role *</label>
-          <select id="nu-role" className="input" required value={form.role} onChange={set("role")}>
+          <select
+            id="nu-role"
+            className="input"
+            required
+            value={form.role}
+            onChange={set("role")}
+            aria-describedby={rolesFailed ? "nu-role-error" : undefined}
+          >
             <option value="" disabled>Choose a role</option>
             {roles.map((r) => (
               <option key={r.id} value={r.id}>{r.name}</option>
             ))}
           </select>
+          {rolesFailed ? (
+            <p id="nu-role-error" className="mt-1.5 text-xs text-danger" role="alert">
+              Roles could not be loaded.{" "}
+              <button type="button" className="link" onClick={onRetryRoles}>Try again</button>
+            </p>
+          ) : null}
         </div>
         <div className="md:col-span-2">
           <label htmlFor="nu-password" className="field-label">Temporary password *</label>
@@ -73,9 +87,7 @@ export function NewUserForm({ id, form, onChange, roles, onSubmit, onCancel, bus
             {busy ? "Creating…" : "Create user"}
           </Button>
         </div>
-        {error ? (
-          <div className="notice notice-err md:col-span-3" role="alert">{error}</div>
-        ) : null}
+        {error ? <Notice kind="err" className="md:col-span-3">{error}</Notice> : null}
       </form>
     </Panel>
   );

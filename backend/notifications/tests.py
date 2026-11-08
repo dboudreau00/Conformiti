@@ -115,7 +115,7 @@ class GreetingNameTests(APITestBase):
         self.assertIn(f">{greeting}</p>", msg.alternatives[0][0])
 
     def test_the_review_reminder(self):
-        for i, (owner, greeting) in enumerate(self._people("Hi")):
+        for i, (owner, greeting) in enumerate(self._people("Hello")):
             with self.subTest(greeting=greeting):
                 make_doc(self.tree.ctrl1, owner, name=f"Late {i}", days=-1)
                 self.assertEqual(run_review_scan(), 1)

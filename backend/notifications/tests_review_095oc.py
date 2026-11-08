@@ -95,7 +95,7 @@ class LocalCalendarDayTests(APITestBase):
         Vendor.objects.filter(pk=vendor.pk).update(created_at=self.NOW)
         with mock.patch("django.utils.timezone.now", return_value=self.NOW):
             item = next(i for i in build(self.owner) if i["key"] == f"vendor-onboard:{vendor.pk}")
-        self.assertIn("(0d since onboarding)", item["detail"])
+        self.assertIn("(0 days since onboarding)", item["detail"])
 
 
 @override_settings(EMAIL_PROVIDER="console", PUBLIC_URL="https://grc.example")
@@ -118,6 +118,7 @@ class WeeklyDigestCatchUpTests(APITestBase):
     def test_a_missed_monday_is_made_up_on_a_later_day(self):
         self._sent_ago(8)
         self.assertEqual(run_digests(today=self.tuesday), 1)
+        self.assertIn("Your weekly Conformiti digest", mail.outbox[0].body, "the choice label's (Monday) is not copied in")
         self.assertEqual(run_digests(today=self.tuesday), 0, "the claim stops a second mail the same day")
 
     def test_a_recent_digest_or_none_at_all_waits_for_monday(self):

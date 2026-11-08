@@ -94,7 +94,8 @@ class WebhookTests(PackageTestBase):
         row = WebhookDelivery.objects.get()
         self.assertFalse(row.ok)
         self.assertEqual(row.response_code, 503)
-        self.assertIn("after one retry", row.error)
+        self.assertEqual(row.error, "The channel had a problem. Try again shortly. It was tried twice.")
+        self.assertNotIn("503", row.error)
         self.sleep.assert_called_once()
 
     def test_what_will_answer_the_same_way_is_not_retried(self):
@@ -189,7 +190,7 @@ class WebhookTests(PackageTestBase):
             webhooks.post_event("test", "x", "y", sync=True)
         refused = WebhookDelivery.objects.get(channel="slack")
         self.assertFalse(refused.ok)
-        self.assertIn("not https", refused.error)
+        self.assertEqual(refused.error, "The webhook address must start with https://.")
         self.assertEqual(len(self.http.calls), 1)          # Teams still got it
         with override_settings(NOTIFY_EVENTS=["package.sealed"]):
             self.assertEqual(webhooks.post_event("pbc.returned", "x", "y", sync=True), [])
@@ -203,7 +204,8 @@ class WebhookTests(PackageTestBase):
             self.assertEqual(webhooks.post_event("test", "x", "y", sync=True), ["slack", "teams"])
         rows = WebhookDelivery.objects.all()
         self.assertEqual(rows.count(), 2)
-        self.assertTrue(all(not r.ok and "refused" in r.error for r in rows))
+        self.assertTrue(all(not r.ok and r.error == "Could not reach the channel. Check the webhook address."
+                            for r in rows))
 
     def test_sealing_issuing_and_withdrawing_post(self):
         self.add_control()

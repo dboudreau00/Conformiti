@@ -8,7 +8,7 @@ test.describe("audit packages", () => {
 
     const digest = page.getByText(/^[0-9a-f]{64}$/);
     await expect(digest).toBeVisible();
-    await expect(page.getByText(/Ed25519, signing key|carries no signature/i)).toBeVisible();
+    await expect(page.getByText(/Ed25519, signing key|Not signed/i)).toBeVisible();
     await expect(page.getByText("Signed", { exact: true })).toBeVisible();
 
     await expect(page.getByText("Management assertion")).toBeVisible();
@@ -19,7 +19,7 @@ test.describe("audit packages", () => {
   test("integrity is checked before the bundle can be trusted", async ({ page }) => {
     await open(page, "/packages", "Audit packages");
     await expect(page.getByText("Integrity")).toBeVisible();
-    await expect(page.getByText("Every file matches what was sealed")).toBeVisible();
+    await expect(page.getByText("OK", { exact: true })).toBeVisible();
   });
 
   test("the controls in scope carry their conclusions and evidence", async ({ page }) => {

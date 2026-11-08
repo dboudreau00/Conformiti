@@ -4,7 +4,7 @@
 export const NAV_SECTIONS = [
   {
     id: "workspace",
-    label: "Workspace",
+    label: "Compliance",
     items: [
       { id: "dashboard", label: "Dashboard", path: "/", icon: "LayoutDashboard" },
       { id: "analytics", label: "Analytics", path: "/analytics", icon: "ChartPie" },
@@ -24,8 +24,8 @@ export const NAV_SECTIONS = [
       { id: "audit-log", label: "Audit log", path: "/audit-log", icon: "ScrollText" },
       { id: "meetings", label: "Meetings", path: "/meetings", icon: "CalendarClock" },
       { id: "groups", label: "Champion groups", path: "/groups", icon: "Flag" },
-      { id: "risks", label: "Risks", path: "/risks", icon: "TriangleAlert", badge: "risks" },
-      { id: "jira", label: "Jira", path: "/jira", icon: "Diamond" },
+      { id: "risks", label: "Risk register", path: "/risks", icon: "TriangleAlert", badge: "risks" },
+      { id: "jira", label: "Jira boards", path: "/jira", icon: "Diamond" },
     ],
   },
   {
@@ -75,7 +75,8 @@ export const NAV_LOOKUP = {
   "/settings": { title: "Settings" },
 };
 
-// Where the shell draws each section that navSections(me) returns:
+// Where the shell draws each section that navSections(me) returns (the `workspace` id is a stable key; its label,
+// "Compliance", must not borrow the word the tenant owns):
 //   workspace   the tabs in the top bar
 //   governance  the Governance panel in the top bar
 //   account     the user menu, except the items an add-on appends to it

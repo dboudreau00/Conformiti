@@ -5,27 +5,22 @@ import api, { fetchAll } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { ConfirmDialog } from "../components/ui/Dialog.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
 
-function Notice({ notice }) {
+/** A `{ kind, text }` result held in state, with the same look and the same Dismiss as every other page's. */
+function Flash({ notice, onClear }) {
   if (!notice) return null;
-  return (
-    <div
-      className={cn("notice", notice.kind === "ok" ? "notice-ok" : "notice-err")}
-      role={notice.kind === "ok" ? "status" : "alert"}
-    >
-      {notice.text}
-    </div>
-  );
+  return <Notice kind={notice.kind} onDismiss={onClear}>{notice.text}</Notice>;
 }
 
 /** Membership is unique per (group, user); DRF phrases that as a "unique set" error. */
 function memberErrorText(e) {
   const msg = errorText(e);
-  return /unique/i.test(msg) ? "That person is already a champion in this group." : msg;
+  return /unique/i.test(msg) ? "That champion is already in this group." : msg;
 }
 
 /** Group names are unique per workspace; DRF's "unique set" error names the internal field, so say what it means. */
@@ -41,11 +36,12 @@ export default function Groups({ me }) {
 
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadErr, setLoadErr] = useState("");
+  // { reason } while the last load of the groups (or of the open group's champions) failed: that is not an empty list.
+  const [loadFailed, setLoadFailed] = useState(null);
   const [active, setActive] = useState(null);
   const [members, setMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
-  const [membersErr, setMembersErr] = useState("");
+  const [membersFailed, setMembersFailed] = useState(null);
   const [users, setUsers] = useState([]);
 
   // Guards against a slow members response landing after the user switched groups.
@@ -89,7 +85,7 @@ export default function Groups({ me }) {
       setEditingGroup(false);
       setEditingMemberId(null);
     }
-    setMembersErr("");
+    setMembersFailed(null);
     const req = ++membersReq.current;
     fetchAll(`/group-members/?group=${g.id}`)
       .then((list) => {
@@ -99,15 +95,20 @@ export default function Groups({ me }) {
       .catch((e) => {
         if (membersReq.current !== req) return;
         setMembers([]);
-        setMembersErr(errorText(e));
+        setMembersFailed({ reason: loadFailReason(e) });
       })
       .finally(() => {
         if (membersReq.current === req) setMembersLoading(false);
       });
   }
 
+  function retryMembers() {
+    setMembersLoading(true);
+    open(active);
+  }
+
   function loadGroups(selectId) {
-    setLoadErr("");
+    setLoadFailed(null);
     return fetchAll("/champion-groups/")
       .then((list) => {
         setGroups(list);
@@ -119,8 +120,22 @@ export default function Groups({ me }) {
           setMembers([]);
         }
       })
-      .catch((e) => setLoadErr(errorText(e)))
+      .catch((e) => {
+        // Groups from before a failed refresh would describe a state that may have changed, so none are kept.
+        activeIdRef.current = null;
+        membersReq.current += 1;
+        setGroups([]);
+        setActive(null);
+        setMembers([]);
+        setMembersLoading(false);
+        setLoadFailed({ reason: loadFailReason(e) });
+      })
       .finally(() => setLoading(false));
+  }
+
+  function retryGroups() {
+    setLoading(true);
+    loadGroups();
   }
 
   useEffect(() => {
@@ -256,8 +271,16 @@ export default function Groups({ me }) {
 
   const memberIds = new Set(members.map((m) => m.user));
   const addable = users.filter((u) => !memberIds.has(u.id));
-  const memberLabel = (n) => `${n} ${n === 1 ? "member" : "members"}`;
-  // A save ends by reselecting the group and reports in its panel, so the list is disabled until the save lands.
+  const memberLabel = (n) => `${n} ${n === 1 ? "champion" : "champions"}`;
+  const allAreChampions = addable.length === 0 && users.length > 0 && !membersLoading && !membersFailed;
+  // Enter saves an inline champion edit and Escape leaves it, as in the password row on the Users screen.
+  const memberEditKeys = (m) => (e) => {
+    if (e.key === "Enter") saveMember(e, m);
+    else if (e.key === "Escape") {
+      e.preventDefault();
+      setEditingMemberId(null);
+    }
+  };  // A save ends by reselecting the group and reports in its panel, so the list is disabled until the save lands.
   const saving = egBusy || emBusy || mBusy;
 
   return (
@@ -267,19 +290,15 @@ export default function Groups({ me }) {
           <Panel className="overflow-hidden">
             <PanelHeader
               title="Champion groups"
-              meta={!loading ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : undefined}
+              meta={!loading && !loadFailed ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : undefined}
             />
-
-            {loadErr ? (
-              <div className="px-4 pt-3">
-                <div className="notice notice-err" role="alert">{loadErr}</div>
-              </div>
-            ) : null}
 
             {loading ? (
               <Loading />
+            ) : loadFailed ? (
+              <LoadError what="The champion groups" reason={loadFailed.reason} onRetry={retryGroups} />
             ) : groups.length === 0 ? (
-              <Empty title="No champion groups yet" />
+              <Empty title="No champion groups yet">{canEdit ? "Create one below." : null}</Empty>
             ) : (
               <ul className="p-2" aria-label="Champion groups">
                 {groups.map((g) => {
@@ -375,22 +394,18 @@ export default function Groups({ me }) {
                 >
                   {gBusy ? "Creating…" : "Create group"}
                 </Button>
-                <Notice notice={gNotice} />
+                <Flash notice={gNotice} onClear={() => setGNotice(null)} />
               </form>
             ) : null}
           </Panel>
         </StackItem>
 
-        <StackItem className="col-span-12 space-y-4 lg:col-span-8">
+        <StackItem className={cn("col-span-12 space-y-4 lg:col-span-8", !loading && !active && "hidden")}>
           {loading ? (
             <Panel>
               <Loading />
             </Panel>
-          ) : !active ? (
-            <Panel>
-              <Empty title="No group selected" />
-            </Panel>
-          ) : (
+          ) : !active ? null : (
             <AnimatePresence mode="wait">
               <motion.div
                 key={active.id}
@@ -462,13 +477,13 @@ export default function Groups({ me }) {
                           disabled={egBusy}
                         />
                       </div>
-                      {egNotice ? <Notice notice={egNotice} /> : null}
+                      <Flash notice={egNotice} onClear={() => setEgNotice(null)} />
                       <div className="flex justify-end gap-2">
                         <Button type="button" size="sm" variant="ghost" onClick={() => setEditingGroup(false)} disabled={egBusy}>
                           Cancel
                         </Button>
                         <Button type="submit" size="sm" variant="primary" disabled={egBusy || !egName.trim()}>
-                          {egBusy ? "Saving…" : "Save"}
+                          {egBusy ? "Saving…" : "Save changes"}
                         </Button>
                       </div>
                     </form>
@@ -483,10 +498,10 @@ export default function Groups({ me }) {
                     </p>
                   )}
 
-                  {mNotice ? <div className="px-5 pt-3"><Notice notice={mNotice} /></div> : null}
+                  {mNotice ? <div className="px-5 pt-3"><Flash notice={mNotice} onClear={() => setMNotice(null)} /></div> : null}
 
-                  {membersErr ? (
-                    <div className="px-5 py-3"><div className="notice notice-err" role="alert">{membersErr}</div></div>
+                  {membersFailed ? (
+                    <LoadError what="The champions" reason={membersFailed.reason} onRetry={retryMembers} />
                   ) : membersLoading ? (
                     <Loading />
                   ) : (
@@ -525,6 +540,7 @@ export default function Groups({ me }) {
                                       className="input input-sm"
                                       value={emDept}
                                       onChange={(e) => setEmDept(e.target.value)}
+                                      onKeyDown={memberEditKeys(m)}
                                       required
                                       maxLength={120}
                                       disabled={emBusy}
@@ -540,6 +556,7 @@ export default function Groups({ me }) {
                                       className="input input-sm"
                                       value={emNote}
                                       onChange={(e) => setEmNote(e.target.value)}
+                                      onKeyDown={memberEditKeys(m)}
                                       maxLength={200}
                                       disabled={emBusy}
                                       aria-label={`Note for ${m.user_name || m.username}`}
@@ -563,7 +580,7 @@ export default function Groups({ me }) {
                                           onClick={(e) => saveMember(e, m)}
                                           disabled={emBusy || !emDept.trim()}
                                         >
-                                          {emBusy ? "Saving…" : "Save"}
+                                          {emBusy ? "Saving…" : "Save changes"}
                                         </Button>
                                       </div>
                                     ) : (
@@ -601,10 +618,6 @@ export default function Groups({ me }) {
                       ) : null}
                     </div>
                   )}
-
-                  <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-2.5">
-                    <Label>{membersLoading ? "Loading…" : memberLabel(members.length)}</Label>
-                  </div>
                 </Panel>
               </motion.div>
             </AnimatePresence>
@@ -616,16 +629,16 @@ export default function Groups({ me }) {
               <form onSubmit={addMember} className="bg-surface-2 p-4">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_200px_minmax(0,1fr)_auto] md:items-end">
                   <div>
-                    <label htmlFor="cm-user" className="field-label">User</label>
+                    <label htmlFor="cm-user" className="field-label">Champion</label>
                     <select
                       id="cm-user"
                       className="input input-sm"
                       value={mUser}
                       onChange={(e) => setMUser(e.target.value)}
                       required
-                      disabled={mBusy}
+                      disabled={mBusy || allAreChampions}
                     >
-                      <option value="">Select a person…</option>
+                      <option value="">{allAreChampions ? "Everyone is already a champion" : "Choose a champion"}</option>
                       {addable.map((u) => (
                         <option key={u.id} value={u.id}>
                           {displayName(u)}{u.role_detail?.name ? ` · ${u.role_detail.name}` : ""}
@@ -669,9 +682,6 @@ export default function Groups({ me }) {
                     {mBusy ? "Adding…" : "Add champion"}
                   </Button>
                 </div>
-                {addable.length === 0 && users.length > 0 && !membersLoading ? (
-                  <p className="mt-3 text-xs text-faint">Everyone is already a champion in this group.</p>
-                ) : null}
               </form>
             </Panel>
           ) : null}
@@ -700,7 +710,7 @@ export default function Groups({ me }) {
         onClose={() => setRemoving(null)}
         title={`Remove ${removing?.user_name || removing?.username} from ${active?.name}?`}
         description="Their department tag and note are deleted with the membership."
-        confirmLabel="Remove"
+        confirmLabel="Remove champion"
         onConfirm={() => removeMember(removing)}
       />
     </PanelTransition>

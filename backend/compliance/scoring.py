@@ -4,6 +4,8 @@ from django.conf import settings
 from django.db.models import Count, Max, Q
 from django.utils import timezone
 
+from notifications.wording import count_of
+
 DEFAULT_WEIGHTS = {
     "implementation": 35,
     "owner": 10,
@@ -134,7 +136,7 @@ def _owner(control, weight):
 def _evidence(total, weight):
     # Binary on purpose: a link count is trivially gamed.
     if total:
-        return 1.0, f"{total} document(s) linked as evidence."
+        return 1.0, f"{count_of(total, 'document')} linked as evidence."
     return 0.0, "No evidence linked."
 
 
@@ -142,18 +144,20 @@ def _freshness(total, approved, best_review, weight, today, fresh_days):
     if not total:
         return 0.0, "No evidence to age."
     if not approved:
-        return 0.0, f"{total} document(s) linked but none are approved."
+        return 0.0, f"{count_of(total, 'document')} linked, none approved."
     if best_review is None:
         # Zero, not partial: a "none" review cadence leaves next_review_date null, and that must not score well.
-        return 0.0, "Approved evidence has no review schedule."
+        return 0.0, "No review date."
     days = (best_review - today).days
     if days >= fresh_days:
-        return 1.0, f"Freshest approved evidence is current (next review in {days} days)."
-    if days >= 0:
-        return 0.75, f"Freshest approved evidence is due in {days} days."
+        return 1.0, f"Next review in {count_of(days, 'day')}."
+    if days > 0:
+        return 0.75, f"Due in {count_of(days, 'day')}."
+    if days == 0:
+        return 0.75, "Due today."
     if days >= -fresh_days:
-        return 0.4, f"Freshest approved evidence was due {-days} days ago."
-    return 0.0, f"Freshest approved evidence is {-days} days overdue."
+        return 0.4, f"Was due {count_of(-days, 'day')} ago."
+    return 0.0, f"{count_of(-days, 'day')} overdue."
 
 
 def _testing(control, weight, today, default_interval):
@@ -164,10 +168,10 @@ def _testing(control, weight, today, default_interval):
         interval = default_interval
     age = max(0, (today - control.last_tested_on).days)
     if age <= interval:
-        return 1.0, f"Tested {age} days ago (interval {interval} days)."
+        return 1.0, "Tested today." if age == 0 else f"Tested {count_of(age, 'day')} ago."
     if age <= interval * 3 // 2:
-        return 0.5, f"Test is {age - interval} days past its {interval}-day interval."
-    return 0.0, f"Last tested {age} days ago, well past its {interval}-day interval."
+        return 0.5, f"{count_of(age - interval, 'day')} past the {interval}-day interval."
+    return 0.0, f"Last tested {count_of(age, 'day')} ago, past the {interval}-day interval."
 
 
 def score_control(control, user=None):

@@ -3,11 +3,12 @@ import { PaperclipIcon } from "lucide-react";
 import api, { fetchAll } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
-import { localDay } from "../../utils/format.js";
+import { fmtDate, localDay } from "../../utils/format.js";
 import { CONTROL_STATUS, DOC_STATUS, READINESS_BAND } from "../../utils/tone.js";
 import DocumentViewer from "../documents/DocumentViewer.jsx";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
+import { useConfirm } from "../ui/Dialog.jsx";
 import { Label, Loading } from "../ui/Panel.jsx";
 
 const STATUS_KEYS = Object.keys(CONTROL_STATUS);
@@ -41,6 +42,7 @@ export function ControlDetail({
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const { ask, confirmDialog } = useConfirm();
   // Draft state: a controlled input whose onChange sets no state rejects every keystroke.
   const [interval, setIntervalDraft] = useState(control.test_interval_days ?? "");
   useEffect(() => {
@@ -56,7 +58,7 @@ export function ControlDetail({
     badge: DOC_STATUS[l.document_status] || { label: l.document_status, tone: "muted" },
     facts: [
       { label: "Folder", value: l.folder_path },
-      { label: "Linked by", value: l.linked_by_name || "-" },
+      { label: "Attached by", value: l.linked_by_name || "-" },
       { label: "Note", value: l.note || "-" },
     ],
   });
@@ -68,7 +70,7 @@ export function ControlDetail({
       const rows = await fetchAll(`/control-evidence/?control=${id}`);
       if (alive()) setLinks(rows);
     } catch (e) {
-      if (alive()) setLinksError(errorText(e, "Couldn't load linked evidence."));
+      if (alive()) setLinksError(errorText(e, "Couldn't load the evidence."));
     } finally {
       if (alive()) setLinksLoading(false);
     }
@@ -141,7 +143,6 @@ export function ControlDetail({
     return available.concat(more).filter((d) => `${d.name} ${d.path}`.toLowerCase().includes(q));
   }, [available, found, linkedIds, docQuery]);
   const picked = (docId) => selDocs.some((d) => d.id === docId);
-  const hiddenPicks = selDocs.filter((s) => !visibleDocs.some((d) => d.id === s.id)).length;
   function toggleDoc(doc) {
     setSelDocs((sel) => (sel.some((d) => d.id === doc.id) ? sel.filter((d) => d.id !== doc.id) : [...sel, doc]));
   }
@@ -157,7 +158,7 @@ export function ControlDetail({
         owner: "Owner updated.",
         last_tested_on: "Test date recorded.",
         test_interval_days: "Test interval updated.",
-      }[field] || "Saved." });
+      }[field] || "Changes saved." });
     } catch (e) {
       setNotice({ err: errorText(e) });
     } finally {
@@ -188,7 +189,8 @@ export function ControlDetail({
       await loadLinks();
       if (created.length) loadReadiness();
       setNotice({
-        ok: `${created.length} attached`,
+        // Nothing attached means every document was skipped: the list of reasons says so, and "0 attached" would add noise.
+        ok: created.length ? `${created.length} ${created.length === 1 ? "document" : "documents"} attached.` : undefined,
         skipped: skipped.map((s) => `${docName(s.document)}: ${s.reason}`),
       });
     } catch (ex) {
@@ -198,6 +200,7 @@ export function ControlDetail({
     }
   }
 
+  // The confirm dialog closes when this resolves and shows a thrown message in place, so a failure throws a sentence.
   async function unlink(link) {
     setBusy(true);
     setNotice(null);
@@ -206,12 +209,21 @@ export function ControlDetail({
       setLinks((ls) => ls.filter((l) => l.id !== link.id));
       onEvidenceDelta(id, -1);
       loadReadiness();
-      setNotice({ ok: `Unlinked ${link.document_name}.` });
+      setNotice({ ok: `${link.document_name} removed as evidence.` });
     } catch (ex) {
-      setNotice({ err: errorText(ex) });
+      throw new Error(errorText(ex, "Couldn't remove the evidence. Try again."));
     } finally {
       setBusy(false);
     }
+  }
+
+  function askUnlink(link) {
+    ask({
+      title: `Remove ${link.document_name} as evidence?`,
+      description: `The document stays in the library, but ${control.control_id} may lose readiness points.`,
+      confirmLabel: "Remove",
+      onConfirm: () => unlink(link),
+    });
   }
 
   const statusMeta = CONTROL_STATUS[control.status] || { label: control.status, tone: "muted" };
@@ -266,6 +278,10 @@ export function ControlDetail({
                   onChange={(e) => patch("owner", e.target.value === "" ? null : Number(e.target.value))}
                 >
                   <option value="">Unassigned</option>
+                  {/* Only active people are listed, so a deactivated owner keeps their own option and the select stays true. */}
+                  {control.owner && !users.some((u) => u.id === control.owner) ? (
+                    <option value={control.owner}>{control.owner_name || "Current owner"}</option>
+                  ) : null}
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
                   ))}
@@ -302,7 +318,7 @@ export function ControlDetail({
                 <>
                   <Label className="mb-1.5 block">Last tested</Label>
                   <p className={cn("text-[13px]", control.last_tested_on ? "text-ink" : "text-danger")}>
-                    {control.last_tested_on || "Never"}
+                    {control.last_tested_on ? fmtDate(control.last_tested_on) : "Never"}
                   </p>
                 </>
               )}
@@ -344,7 +360,7 @@ export function ControlDetail({
           </div>
           {control.last_tested_by_name ? (
             <p className="mt-2 text-2xs text-faint">
-              {`Recorded by ${control.last_tested_by_name}${control.last_tested_recorded_at ? ` on ${String(control.last_tested_recorded_at).slice(0, 10)}` : ""}.`}
+              {`Recorded by ${control.last_tested_by_name}${control.last_tested_recorded_at ? ` on ${fmtDate(control.last_tested_recorded_at)}` : ""}.`}
             </p>
           ) : null}
         </div>
@@ -364,7 +380,7 @@ export function ControlDetail({
 
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <Label>Linked evidence</Label>
+            <Label>Evidence</Label>
             <Label className="tabular">{links.length}</Label>
           </div>
           {linksLoading ? (
@@ -390,11 +406,11 @@ export function ControlDetail({
                       </div>
                       <p className="truncate font-mono text-2xs text-faint">{l.folder_path}</p>
                       {l.note ? <p className="mt-1 text-xs text-muted">{l.note}</p> : null}
-                      {l.linked_by_name ? <p className="mt-0.5 text-2xs text-faint">Linked by {l.linked_by_name}</p> : null}
+                      {l.linked_by_name ? <p className="mt-0.5 text-2xs text-faint">Attached by {l.linked_by_name}</p> : null}
                     </div>
                     {l.can_unlink ? (
-                      <Button size="sm" variant="ghost" onClick={() => unlink(l)} disabled={busy} aria-label={`Unlink ${l.document_name}`}>
-                        Unlink
+                      <Button size="sm" variant="ghost" onClick={() => askUnlink(l)} disabled={busy} aria-label={`Remove ${l.document_name} as evidence`}>
+                        Remove
                       </Button>
                     ) : null}
                   </li>
@@ -417,7 +433,7 @@ export function ControlDetail({
               <>
                 <label htmlFor={`attach-docs-${id}`} className="field-label">Documents</label>
                 {available.length === 0 && !capped ? (
-                  <p className="text-xs text-muted">Every document you can see is already linked to this control.</p>
+                  <p className="text-xs text-muted">No documents left to attach.</p>
                 ) : (
                   <>
                     {/* Enter in the search box must not submit the attach form. */}
@@ -432,11 +448,7 @@ export function ControlDetail({
                     <div className="mt-2 max-h-[200px] overflow-y-auto rounded-lg border border-line">
                       {visibleDocs.length === 0 ? (
                         <p className="px-3 py-3 text-xs text-muted">
-                          {searching
-                            ? "Searching every document…"
-                            : searchError
-                              ? `No matches in the first ${CHOICES_CAP} documents.`
-                              : "No documents match."}
+                          {searching ? "Searching every document…" : "No documents match."}
                         </p>
                       ) : (
                         <ul className="divide-y divide-line">
@@ -462,15 +474,6 @@ export function ControlDetail({
                     </div>
                     {searchError ? (
                       <p className="mt-1.5 text-2xs text-danger" role="alert">{searchError}</p>
-                    ) : capped && !docQuery.trim() ? (
-                      <p className="mt-1.5 text-2xs text-faint">
-                        Showing the first {CHOICES_CAP} documents by name. Search to find the others.
-                      </p>
-                    ) : null}
-                    {hiddenPicks ? (
-                      <p className="mt-1.5 text-2xs text-faint">
-                        {hiddenPicks} ticked {hiddenPicks === 1 ? "document is" : "documents are"} not in the list above and will be attached too.
-                      </p>
                     ) : null}
                   </>
                 )}
@@ -500,6 +503,7 @@ export function ControlDetail({
         ) : null}
       </div>
       <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
+      {confirmDialog}
     </div>
   );
 }
@@ -528,10 +532,7 @@ function ReadinessBreakdown({ readiness }) {
       <ul className="mt-2 space-y-1">
         {readiness.components.map((c) => (
           <li key={c.key} className="flex items-baseline justify-between gap-3">
-            <span className={cn("text-xs", c.earned ? "text-muted" : "text-faint")}>
-              {c.label}
-              <span className="block text-2xs leading-snug text-faint">{c.detail}</span>
-            </span>
+            <span className={cn("text-xs", c.earned ? "text-muted" : "text-faint")}>{c.label}</span>
             <span className={cn(
               "tabular shrink-0 font-mono text-xs",
               c.earned ? "text-success" : c.points ? "text-warning" : "text-faint"
@@ -543,10 +544,7 @@ function ReadinessBreakdown({ readiness }) {
         {readiness.penalty ? (
           <li className="flex items-baseline justify-between gap-3 border-t border-line pt-1">
             <span className="text-xs text-danger">
-              Open risks
-              <span className="block text-2xs leading-snug text-faint">
-                {readiness.open_risks} open or mitigating risk(s) against this control.
-              </span>
+              {readiness.open_risks} open {readiness.open_risks === 1 ? "risk" : "risks"}
             </span>
             <span className="tabular shrink-0 font-mono text-xs text-danger">
               −{readiness.penalty}

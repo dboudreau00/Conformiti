@@ -319,8 +319,20 @@ class MatrixTests(APITestBase):
             {"control": self.tree.c1.pk, "responsibility": None,
              "provider_statement": "AWS patches the hypervisor."}]}, format="json")
         self.assertEqual(r.status_code, 400)
-        self.assertIn("statement", str(r.data["rows"]))
+        self.assertIn("statement", str(r.data["detail"]))
+        self.assertIn(f"Control {self.tree.c1.control_id}:", str(r.data["detail"]))
+        self.assertNotIn("['", str(r.data["detail"]))
         self.assertEqual(SharedResponsibility.objects.count(), 0)
+
+    def test_a_matrix_refusal_names_the_control_and_the_choices_in_words(self):
+        r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
+            {"control": self.tree.c1.pk, "responsibility": "everyone"}]}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.data["detail"],
+                         f"Control {self.tree.c1.control_id}: choose Provider, Customer, Shared or Not applicable.")
+        r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [
+            {"control": self.tree.c1.pk, "responsibility": "shared"}, {"responsibility": "shared"}]}, format="json")
+        self.assertEqual(r.data["detail"], "Row 2: the control is missing.")
 
     def test_the_grid_validates_before_it_writes(self):
         r = self.c.put(f"/api/vendors/{self.v.pk}/matrix/", {"rows": [

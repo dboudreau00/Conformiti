@@ -1,7 +1,7 @@
 import { test, expect, expectBrowserError, open } from "../fixtures.js";
 
 // The words client.js uses when an X-Accel-Redirect reaches the browser because no nginx is in front.
-const UNSERVED = /MEDIA_INTERNAL=false/;
+const UNSERVED = /Ask your administrator to check the file server settings/;
 
 async function withoutNginx(page, url) {
   let answered = 0;
@@ -73,11 +73,11 @@ test.describe("a stored file that no nginx sends", () => {
       mimeType: "text/plain",
       buffer: Buffer.from("Decisions: none.\n"),
     });
-    await page.getByRole("button", { name: "Save minutes" }).click();
+    await page.getByRole("button", { name: "Add minutes" }).click();
     await expect(page.getByText(/^Minutes recorded for /)).toBeVisible();
 
     const row = page.getByRole("listitem").filter({ hasText: "E2E minutes with a file" });
-    await row.getByRole("button", { name: "Open file" }).click();
+    await row.getByRole("button", { name: "Download file" }).click();
     await expect(alertSaying(page, UNSERVED)).toBeVisible();
     expect(answered()).toBe(1);
     expect(saved()).toBe(0);
@@ -88,7 +88,7 @@ test.describe("a CSV export the server fails", () => {
   test("the responsibility matrix says the export failed", async ({ page }) => {
     await failing(page, /\/api\/responsibilities\/export\//);
     await open(page, "/responsibilities", "Responsibility matrix");
-    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
     await expect(alertSaying(page, "Couldn't export the responsibility matrix.")).toBeVisible();
   });
 

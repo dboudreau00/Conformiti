@@ -174,7 +174,7 @@ class VendorAssessment(TenantModel):
         QUESTIONNAIRE = "questionnaire", "Security questionnaire"
         DPA = "dpa", "Data-processing agreement"
         CONTRACT = "contract", "Contract / MSA"
-        RESP_MATRIX = "resp_matrix", "Responsibility matrix (their document)"
+        RESP_MATRIX = "resp_matrix", "Vendor's responsibility matrix"
         BRIDGE_LETTER = "bridge_letter", "Bridge letter"
         OTHER = "other", "Other"
 
@@ -228,7 +228,7 @@ class SharedResponsibility(TenantModel):
 
     class Responsibility(models.TextChoices):
         PROVIDER = "provider", "Provider"
-        CUSTOMER = "customer", "Customer (us)"
+        CUSTOMER = "customer", "Customer"
         SHARED = "shared", "Shared"
         NOT_APPLICABLE = "not_applicable", "Not applicable"
 

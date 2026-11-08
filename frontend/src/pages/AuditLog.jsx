@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 import api from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { errorText, loadFailReason } from "../utils/a11y.js";
@@ -29,6 +30,54 @@ const EMPTY_FACETS = { actions: [], object_types: [], users: [] };
 
 function fmtWhen(ts) {
   return ts ? ts.slice(0, 16).replace("T", " ") : "";
+}
+
+// The trail stores the address segment a record was changed under. Each is shown as a person would name the record;
+// the filter still sends the stored value.
+const RECORD_LABELS = {
+  "access-review-items": "Access review row",
+  "access-reviews": "Access review",
+  auth: "Sign-in",
+  calendar: "Calendar",
+  "champion-groups": "Champion group",
+  "control-evidence": "Control evidence",
+  controls: "Control",
+  crosswalk: "Crosswalk",
+  documents: "Document",
+  "evidence-packages": "Audit package",
+  "folder-permissions": "Folder permission",
+  folders: "Folder",
+  "form-templates": "Form template",
+  frameworks: "Framework",
+  "group-members": "Champion",
+  integrations: "Integration",
+  "meeting-minutes": "Meeting minutes",
+  "meeting-series": "Meeting series",
+  "package-controls": "Audit package control",
+  "package-evidence": "Audit package evidence",
+  "package-grants": "Audit package grant",
+  "package-samples": "Audit package sample",
+  "pbc-items": "Request list item",
+  "pbc-requests": "Request list",
+  "questionnaire-invites": "Questionnaire invite",
+  responsibilities: "Responsibility",
+  "risk-notes": "Risk note",
+  risks: "Risk",
+  roles: "Role",
+  users: "User",
+  "vendor-assessments": "Vendor assessment",
+  vendors: "Vendor",
+  workspaces: "Workspace",
+};
+
+/** A stored record type as a label. One this list does not know is spelled out in words, never shown as its stored
+ * form; an administration-site record keeps an "Admin" lead so it cannot read as the record of the same name. */
+function recordLabel(type) {
+  if (RECORD_LABELS[type]) return RECORD_LABELS[type];
+  const admin = String(type).startsWith("admin:");
+  const words = String(type).replace(/^admin:/, "").split(".").pop().replace(/[-_]+/g, " ").trim();
+  const text = `${admin ? "Admin " : ""}${words}`;
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 }
 
 export default function AuditLog({ me }) {
@@ -83,12 +132,14 @@ export default function AuditLog({ me }) {
         setDenied(true);
         return;
       }
-      setErr(errorText(e, "Couldn't load the audit trail."));
-      // A failed "Load more" keeps the rows; a failed first page must drop them, or they describe a query that did not run.
+      // A failed "Load more" keeps the rows and says so above them; a failed first page must drop them, or they describe a
+      // query that did not run, and the panel says it once (a banner as well would repeat it).
       if (p === 1) {
         setList({ rows: [], from: 0 });
         setNext(null);
         setLoadFailed({ reason: loadFailReason(e) });
+      } else {
+        setErr(errorText(e, "Couldn't load the audit trail."));
       }
     } finally {
       if (seq === loadSeq.current) setLoading(false);
@@ -183,7 +234,7 @@ export default function AuditLog({ me }) {
             >
               <option value="">All record types</option>
               {facets.object_types.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>{recordLabel(t)}</option>
               ))}
             </select>
             <select
@@ -192,7 +243,7 @@ export default function AuditLog({ me }) {
               value={f.user}
               onChange={(e) => setF({ ...f, user: e.target.value })}
             >
-              <option value="">All users</option>
+              <option value="">All actors</option>
               {facets.users.map((u) => (
                 <option key={u.id} value={u.id}>{u.username}</option>
               ))}
@@ -244,7 +295,7 @@ export default function AuditLog({ me }) {
 
         {err ? (
           <StackItem>
-            <div className="notice notice-err" role="alert">{err}</div>
+            <Notice kind="err">{err}</Notice>
           </StackItem>
         ) : null}
 
@@ -301,11 +352,11 @@ export default function AuditLog({ me }) {
                           <td className="whitespace-nowrap px-5 py-2.5">
                             <Badge tone={tone} mono dot>{String(r.action || "").replace(/_/g, " ") || "-"}</Badge>
                           </td>
-                          <td className="max-w-0 truncate px-5 py-2.5 font-mono text-xs text-ink">
+                          <td className="max-w-0 truncate px-5 py-2.5 text-[13px] text-ink">
                             {r.object_type ? (
                               <>
-                                {r.object_type}
-                                {r.object_id ? <span className="text-muted"> #{r.object_id}</span> : null}
+                                {recordLabel(r.object_type)}
+                                {r.object_id ? <span className="font-mono text-xs text-muted"> #{r.object_id}</span> : null}
                               </>
                             ) : (
                               <span className="text-faint">-</span>

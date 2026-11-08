@@ -47,7 +47,7 @@ const SECTIONS = [
   },
   {
     key: "people",
-    label: "People",
+    label: "Users",
     Icon: UserIcon,
     url: "/users/",
     // The directory answers any member, but the Users page it links to needs manage_users.
@@ -147,14 +147,14 @@ function PaletteBody({ onClose }) {
 
   const q = query.trim();
   let message = null;
-  if (q.length < MIN_CHARS) message = `Type ${MIN_CHARS} or more characters.`;
+  if (q.length < MIN_CHARS) message = null;
   else if (state.status === "loading" && !options.length) message = "Searching…";
   else if (state.status === "error") message = "Search is unavailable. Try again.";
   else if (state.status === "done" && !options.length) message = `Nothing matches "${q}".`;
 
   return (
     <div>
-      <label htmlFor={`${listId}-q`} className="sr-only">Jump to a control, document or person</label>
+      <label htmlFor={`${listId}-q`} className="sr-only">Search</label>
       <div className="relative">
         <SearchIcon
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
@@ -171,7 +171,7 @@ function PaletteBody({ onClose }) {
           aria-activedescendant={current?.optionId}
           autoComplete="off"
           spellCheck={false}
-          placeholder="Jump to a control, document or person"
+          placeholder="Search controls, documents and users"
           className="input pl-9"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setActive(0); }}
@@ -233,7 +233,7 @@ function PaletteBody({ onClose }) {
 
 export function SearchPalette({ open, onClose }) {
   return (
-    <Dialog open={open} onClose={onClose} title="Jump to" placement="top">
+    <Dialog open={open} onClose={onClose} title="Search" placement="top">
       <PaletteBody onClose={onClose} />
     </Dialog>
   );

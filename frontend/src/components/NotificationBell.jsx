@@ -5,10 +5,12 @@ import { BellIcon, XIcon } from "lucide-react";
 import api from "../api/client.js";
 import { cn } from "../utils/cn.js";
 import { TONE_FILL } from "../utils/tone.js";
-import { Label } from "./ui/Panel.jsx";
+import { Button } from "./ui/Button.jsx";
+import { Label, Loading } from "./ui/Panel.jsx";
 import { Popover } from "./ui/Popover.jsx";
 
 const SEV_TONE = { critical: "danger", high: "danger", medium: "warning", low: "info", info: "muted" };
+const SEV_WORD = { critical: "Critical", high: "High", medium: "Medium", low: "Low", info: "Info" };
 
 export default function NotificationBell() {
   const nav = useNavigate();
@@ -16,15 +18,27 @@ export default function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const shown = unread > 99 ? "99+" : String(unread);
   const [open, setOpen] = useState(false);
+  // The bell itself stays quiet when a poll fails; the open tray says so, instead of passing for an empty list.
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   async function load() {
     try {
       const { data } = await api.get("/notifications/");
       setItems(data.results);
       setUnread(data.unread);
+      setFailed(false);
     } catch {
-      /* not signed in yet or transient, leave the bell quiet */
+      setFailed(true);
+    } finally {
+      setLoaded(true);
     }
+  }
+
+  function retry() {
+    setFailed(false);
+    setLoaded(false);
+    load();
   }
 
   useEffect(() => {
@@ -80,12 +94,15 @@ export default function NotificationBell() {
         </button>
       )}
     >
-      <div className="flex items-center justify-between border-b border-line px-3 py-2">
-        <Label>Activity</Label>
-        <Label>{items.length ? `${items.length} for you` : "nothing right now"}</Label>
-      </div>
       <ul className="max-h-[420px] divide-y divide-line overflow-y-auto">
-        {items.length === 0 ? (
+        {failed ? (
+          <li className="flex items-center justify-between gap-3 px-3 py-3">
+            <span className="text-xs text-muted" role="alert">Notifications could not be loaded.</span>
+            <Button size="sm" variant="secondary" onClick={retry}>Try again</Button>
+          </li>
+        ) : null}
+        {!loaded && !failed ? <li><Loading className="py-8" /></li> : null}
+        {loaded && !failed && items.length === 0 ? (
           <li className="px-3 py-8 text-center text-xs text-muted">You're all caught up.</li>
         ) : (
           items.map((i, idx) => (
@@ -101,6 +118,7 @@ export default function NotificationBell() {
                 <span
                   className={cn("block text-[13px] leading-snug", SEV_TONE[i.severity] === "danger" ? "text-danger" : "text-ink")}
                 >
+                  {SEV_WORD[i.severity] ? <span className="sr-only">{SEV_WORD[i.severity]}: </span> : null}
                   {i.title}
                 </span>
                 <Label className="mt-1 block truncate">{i.detail}</Label>
@@ -109,9 +127,9 @@ export default function NotificationBell() {
                 type="button"
                 onClick={(e) => dismiss(e, i.key)}
                 aria-label="Dismiss"
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint opacity-60 transition-opacity hover:bg-surface-2 hover:text-ink hover:opacity-100 focus-visible:opacity-100"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-ink"
               >
-                <XIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                <XIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
               </button>
             </motion.li>
           ))

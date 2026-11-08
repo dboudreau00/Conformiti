@@ -5,14 +5,13 @@ import { DonutLegend } from "../components/charts/Donut.jsx";
 import DocumentViewer from "../components/documents/DocumentViewer.jsx";
 import { PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
-import { Button } from "../components/ui/Button.jsx";
 import { Legend, Meter, SegmentBar } from "../components/ui/Meter.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ShowMore } from "../components/ui/ShowMore.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
-import { errorText } from "../utils/a11y.js";
+import { loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
-import { CONTROL_STATUS, DOC_STATUS, TONE_TEXT } from "../utils/tone.js";
+import { CONTROL_STATUS, DOC_STATUS, TONE_TEXT, dueWords, monthDelta } from "../utils/tone.js";
 
 // Organisation-wide, except documents: the server already filters those to the folders the caller may see.
 const SUMMARY_URL = "/analytics/summary/";
@@ -81,7 +80,7 @@ export default function Analytics({ me }) {
       const r = await api.get(SUMMARY_URL);
       setData(r.data);
     } catch (e) {
-      setError(errorText(e, "Couldn't load analytics. Please try again."));
+      setError(loadFailReason(e));
     } finally {
       setLoading(false);
     }
@@ -102,13 +101,8 @@ export default function Analytics({ me }) {
   if (error || !data) {
     return (
       <PanelTransition>
-        <Panel className="p-5">
-          <div className="notice notice-err" role="alert">
-            {error || "Couldn't load analytics."}
-          </div>
-          <Button className="mt-4" onClick={load} disabled={loading}>
-            Try again
-          </Button>
+        <Panel>
+          <LoadError what="Analytics" reason={error} onRetry={load} />
         </Panel>
       </PanelTransition>
     );
@@ -145,36 +139,17 @@ export default function Analytics({ me }) {
   const withEvidence = controls.with_evidence || 0;
 
   const bars = timeline.map((t) => ({ label: t.label, value: t.count || 0 }));
-  const sixMonthTotal = timeline.reduce((s, t) => s + (t.count || 0), 0);
-  const noSchedule = revs.no_schedule || 0;
-
-  const unownedControls = controls.unowned ?? Math.max(0, controlTotal - (controls.owned || 0));
-  const unownedDocs = docs.unowned ?? Math.max(0, (docs.total || 0) - (docs.owned || 0));
   const liveRisks = risks.total_live || 0;
-  const unownedRisks = Math.max(0, liveRisks - (risks.owned || 0));
-  const gaps = [];
-  if (unownedControls) gaps.push(`${unownedControls} ${unownedControls === 1 ? "control has" : "controls have"} no named owner.`);
-  if (unownedDocs) gaps.push(`${unownedDocs} ${unownedDocs === 1 ? "document is" : "documents are"} unowned.`);
-  if (unownedRisks) gaps.push(`${unownedRisks} live ${unownedRisks === 1 ? "risk has" : "risks have"} no treatment owner.`);
-
   const overdueTotal = revs.overdue || 0;
+  const deltaBadge = delta != null ? monthDelta(delta) : null;
 
   return (
     <PanelTransition>
       <Stack className="flex flex-col gap-4">
         <StackItem className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Overall readiness"
-            value={readinessPct}
-            suffix="%"
-            detail={`${implemented} implemented ÷ ${applicable} applicable`}
-          >
-            <Meter value={readinessPct} total={100} className="mt-3" delay={0.08} ariaLabel="Overall readiness" />
-            {delta != null ? (
-              <p className={cn("tabular mt-2 font-mono text-2xs", delta > 0 ? "text-success" : delta < 0 ? "text-danger" : "text-faint")}>
-                {delta > 0 ? `+${delta}` : delta} pts this month
-              </p>
-            ) : null}
+          <StatCard label="Share implemented" value={readinessPct} suffix="%">
+            <Meter value={readinessPct} total={100} className="mt-3" delay={0.08} ariaLabel="Share implemented" />
+            {deltaBadge ? <Badge tone={deltaBadge.tone} mono className="mt-2 self-start">{deltaBadge.text}</Badge> : null}
           </StatCard>
           <StatCard
             label="Controls implemented"
@@ -191,14 +166,14 @@ export default function Analytics({ me }) {
           <StatCard
             label="Reviews overdue"
             value={overdueTotal}
-            detail={`${revs.due_30 || 0} due in 30d · ${revs.scheduled || 0} scheduled`}
+            detail={`${revs.due_30 || 0} due in 30 days · ${revs.scheduled || 0} scheduled`}
             tone={overdueTotal > 0 ? "danger" : undefined}
           />
         </StackItem>
 
         <StackItem>
           <Panel>
-            <PanelHeader title="Framework readiness" />
+            <PanelHeader title="Implementation by framework" />
             {frameworks.length === 0 ? (
               <Empty title="No frameworks loaded" />
             ) : (
@@ -267,10 +242,6 @@ export default function Analytics({ me }) {
             ) : (
               <div className="flex flex-1 flex-col p-5">
                 <BarChart bars={bars} ariaLabel="Scheduled document reviews per month for the next six months" />
-                <p className="mt-3 text-xs leading-snug text-muted">
-                  {sixMonthTotal === 0 ? "None due in the next six months" : `${sixMonthTotal} due in the next six months`}
-                  {noSchedule ? ` · ${noSchedule} without a review date` : ""}
-                </p>
               </div>
             )}
           </Panel>
@@ -281,12 +252,6 @@ export default function Analytics({ me }) {
               <CoverageRow label="Controls with an owner" owned={controls.owned || 0} total={controlTotal} delay={0} />
               <CoverageRow label="Documents with an owner" owned={docs.owned || 0} total={docs.total || 0} delay={0.06} />
               <CoverageRow label="Risks with a treatment owner" owned={risks.owned || 0} total={liveRisks} delay={0.12} />
-              <div className="rounded-lg border border-line bg-surface-2 p-3">
-                <Label className="mb-1 block">Gap</Label>
-                <p className="text-xs leading-snug text-muted">
-                  {gaps.length ? gaps.join(" ") : "Every control, document and live risk has a named owner."}
-                </p>
-              </div>
             </div>
           </Panel>
         </StackItem>
@@ -300,8 +265,8 @@ export default function Analytics({ me }) {
               <ul className="divide-y divide-line">
                 {overdueSample.map((d) => (
                   <li key={d.id} className="flex items-center gap-3 px-5 py-2.5">
-                    <Badge tone="danger" dot mono className="tabular w-[64px] shrink-0 justify-center">
-                      {d.days_overdue}d
+                    <Badge tone="danger" dot className="tabular min-w-[112px] shrink-0 justify-center">
+                      {dueWords(-d.days_overdue)}
                     </Badge>
                     <div className="min-w-0 flex-1">
                       <button
@@ -321,19 +286,12 @@ export default function Analytics({ me }) {
                       <p className="truncate font-mono text-2xs uppercase tracking-label text-faint">{d.folder_path || "-"}</p>
                     </div>
                     <span className={cn("shrink-0 font-mono text-2xs", d.owner ? "text-muted" : "text-faint")}>
-                      {d.owner || "unassigned"}
+                      {d.owner || "No owner"}
                     </span>
                   </li>
                 ))}
               </ul>
             )}
-            {overdueTotal > overdueSample.length ? (
-              <div className="border-t border-line px-5 py-2.5">
-                <Label className="tabular">
-                  Showing {overdueSample.length} of {overdueTotal} overdue
-                </Label>
-              </div>
-            ) : null}
           </Panel>
         </StackItem>
       </Stack>

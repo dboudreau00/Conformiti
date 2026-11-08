@@ -29,9 +29,16 @@ class InfectedError(Exception):
 class LimitsExceededError(Exception):
     """clamd declined to inspect the whole file: neither clean nor malware."""
 
-    def __init__(self, reason):
+    def __init__(self, reason, limit_bytes=None):
         self.reason = reason
+        self.limit_bytes = limit_bytes
         super().__init__(reason)
+
+    def plain(self):
+        """Why, in words a person can act on: no signature name and no byte count."""
+        if self.limit_bytes:
+            return f"it is larger than the scanner can inspect ({max(1, self.limit_bytes // (1024 * 1024))} MB)"
+        return "it is too large or too deeply nested for the scanner to inspect"
 
 
 def parse_response(text):
@@ -70,7 +77,7 @@ def scan_stream(fileobj, host, port, timeout=10.0, connect_timeout=3.0, max_byte
                 sent += len(chunk)
                 if max_bytes is not None and sent > max_bytes:
                     raise LimitsExceededError(
-                        f"file exceeds the {max_bytes} byte scanning limit")
+                        f"file exceeds the {max_bytes} byte scanning limit", limit_bytes=max_bytes)
                 sock.sendall(struct.pack("!L", len(chunk)) + chunk)
             sock.sendall(struct.pack("!L", 0))
             reply = b""

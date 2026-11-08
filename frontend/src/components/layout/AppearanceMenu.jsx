@@ -56,15 +56,19 @@ export function AppearanceMenu() {
                   <span className="h-full w-1/2" style={{ background: pack.swatch[0] }} />
                   <span className="h-full w-1/2" style={{ background: pack.swatch[1] }} />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-medium text-ink">{pack.name}</span>
+                <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                  <span className="text-[13px] font-medium text-ink">{pack.name}</span>
+                  {/* Said once: "Ledger Dark" already is. */}
+                  {pack.name.toLowerCase().includes(pack.mode.toLowerCase()) ? null : (
+                    <span className="text-xs text-muted">{pack.mode}</span>
+                  )}
                 </span>
                 {pack.id === theme ? <CheckIcon className="h-4 w-4 shrink-0 text-accent" strokeWidth={2.5} aria-hidden="true" /> : null}
               </MenuItem>
             ))}
           </div>
         </div>
-        <div role="group" aria-label="Accent colour">
+        <div role="group" aria-label="Accent">
           <div className="flex items-center justify-between border-y border-line px-3 py-2">
             <Label>Accent</Label>
             <span className="text-xs text-muted">{accentName}</span>

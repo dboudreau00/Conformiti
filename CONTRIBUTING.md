@@ -12,8 +12,10 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -SetupOnly      # Windows
 
 That creates `.venv`, installs backend and frontend dependencies, migrates a
 SQLite database and seeds the control libraries; add `--demo` (`-Demo`) for
-the sample organisation and its five accounts. Work on a branch from `main`,
+the demo data and its five accounts. Work on a branch from `main`,
 the development line (installs follow release tags; contributions do not).
+On Windows use `install.ps1`: `install.sh` stops in Git Bash and Cygwin, so
+run it only on macOS, Linux or in WSL.
 
 Start both servers with the installer:
 
@@ -35,7 +37,9 @@ cd frontend; npm.cmd run dev          # http://localhost:5173
 ```
 
 In Windows PowerShell use `npm.cmd`: a bare `npm` finds `npm.ps1`, which the
-default execution policy refuses.
+default execution policy refuses. Run by hand, nothing checks the Node version
+for you (the installers refuse an old one): `node --version` must say 20.19 or
+newer on 20, or 22.12 or newer.
 
 ## Before you open a pull request
 
@@ -46,9 +50,10 @@ Run the same gates CI runs:
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
-which is shorthand for these, except `node ../tools/jscheck.mjs src` (run from
-`frontend/`) and `npm audit`, which only CI runs. Each block starts at the
-repository root and runs top to bottom:
+which is shorthand for these, except that it does not run the last two lines,
+`node ../tools/jscheck.mjs src` (from `frontend/`) and `npm audit`: run those
+yourself, as CI does. Each block starts at the repository root and runs top to
+bottom:
 
 ```bash
 python3 tools/validate.py             # static wiring/contract checks; any bare Python 3.11+ will do
@@ -71,7 +76,7 @@ cd backend
 cd ..\frontend
 npm.cmd run build
 node ..\tools\jscheck.mjs src
-npm.cmd audit --audit-level=high
+npm.cmd audit --omit=dev --audit-level=high
 ```
 
 Rules of thumb:

@@ -80,7 +80,7 @@ export function TopBar({ onSignOut }) {
           >
             <SearchIcon className="h-[15px] w-[15px] shrink-0" strokeWidth={1.75} aria-hidden="true" />
             <span className="sr-only min-[1181px]:not-sr-only min-[1181px]:min-w-0 min-[1181px]:flex-1 min-[1181px]:truncate min-[1181px]:text-[12.5px]">
-              Jump to a control, document or person
+              Search
             </span>
             <kbd className="hidden shrink-0 rounded-md border border-line-strong bg-surface-2 px-1.5 font-mono text-[10px] font-medium leading-4 text-muted min-[1181px]:inline-block" aria-hidden="true">
               {MAC ? "Cmd K" : "Ctrl K"}

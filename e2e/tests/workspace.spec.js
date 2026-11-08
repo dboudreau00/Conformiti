@@ -13,18 +13,14 @@ test.describe("dashboard", () => {
   });
 
   test("the readiness card reports a figure and a trend", async ({ page }) => {
-    const label = page.getByText(/^(Readiness score|Overall readiness)$/);
+    const label = page.getByText(/^(Readiness score|Share implemented)$/);
     await expect(label).toBeVisible();
     if ((await label.textContent()).trim() === "Readiness score") {
       await expect(page.getByText("/100")).toBeVisible();
-      await expect(page.getByText(/\d+% of [\d,]+ applicable controls are marked implemented/)).toBeVisible();
-      const why = page.getByRole("button", { name: /how the readiness score is worked out/i });
-      await expect(why).toBeVisible();
-      await why.hover();
-      await expect(page.getByRole("tooltip")).toContainText(/mean score across [\d,]+ applicable controls/i);
-    } else {
-      await expect(page.getByText(/of \d+ applicable controls implemented/)).toBeVisible();
     }
+    // The card carries the figure and no explanation of how it is worked out.
+    await expect(page.getByRole("button", { name: /worked out/i })).toHaveCount(0);
+    await expect(page.getByText(/applicable controls (are marked )?implemented/)).toHaveCount(0);
     await expect(page.getByRole("img", { name: /readiness trend/i })).toBeVisible();
   });
 
@@ -86,12 +82,21 @@ test.describe("dashboard", () => {
     expect(await monthCount()).toBe(total);
   });
 
-  test("the review queue marks a document reviewed", async ({ page }) => {
+  test("the review queue asks before it marks a document reviewed", async ({ page }) => {
     const queue = panel(page, "Reviews coming up");
     await expect(queue).toBeVisible();
     const button = queue.getByRole("button", { name: /^Mark reviewed: / }).first();
     const label = await button.getAttribute("aria-label");
+    const confirm = page.getByRole("dialog", { name: /^Mark .+ reviewed\?$/ });
+
     await button.click();
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(queue.getByRole("button", { name: label, exact: true })).toHaveCount(1);
+
+    await button.click();
+    await confirm.getByRole("button", { name: "Mark reviewed", exact: true }).click();
     await page.waitForLoadState("networkidle");
     await expect(queue.getByRole("button", { name: label, exact: true })).toHaveCount(0);
   });
@@ -100,7 +105,6 @@ test.describe("dashboard", () => {
     await expect(page.getByRole("progressbar", { name: /evidence coverage/i })).toBeVisible();
     // The seed links documents to controls, so a count of zero means the summary lost its figures.
     await expect(page.getByText(/^[1-9]\d*\/\d+ controls$/)).toBeVisible();
-    await expect(page.getByText(/^[1-9]\d* links between controls and documents\.$/)).toBeVisible();
   });
 
   const FRAMEWORKS = ["ISO/IEC 27001", "PCI DSS", "SOC 2"];
@@ -262,7 +266,7 @@ test.describe("dashboard", () => {
   test("Enter pins a square and shows its place card, and Escape clears it", async ({ page }) => {
     const first = squares(page).first();
     const ref = await refOf(first);
-    await expect(card(page)).toContainText("Crosswalk");
+    await expect(card(page)).toContainText("Related controls");
 
     await first.focus();
     await page.keyboard.press("Enter");
@@ -289,7 +293,7 @@ test.describe("dashboard", () => {
     await page.keyboard.press("Escape");
     await expect(field(page).locator('[aria-pressed="true"]')).toHaveCount(0);
     await expect(lit(page)).toHaveCount(0);
-    await expect(card(page)).toContainText("Crosswalk");
+    await expect(card(page)).toContainText("Related controls");
     await expect(card(page).getByRole("link", { name: /Open control/ })).toHaveCount(0);
 
     await first.focus();
@@ -331,7 +335,7 @@ test.describe("documents", () => {
   test("choosing a file names the upload after it, unless a name was typed first", async ({ page }) => {
     await open(page, "/documents", "Documents");
     await page.getByText("CC6 - Logical and Physical Access Controls", { exact: true }).first().click();
-    await page.getByRole("button", { name: "Upload document" }).click();
+    await page.getByRole("button", { name: "Upload document" }).first().click();
     const name = page.locator("#upload-name");
     const file = page.getByLabel("Document file");
     const upload = page.getByRole("button", { name: "Upload", exact: true });
@@ -369,7 +373,7 @@ test.describe("risk register", () => {
 
   test("exporting the register downloads a file", async ({ page }) => {
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
     expect((await download).suggestedFilename()).toMatch(/\.(csv|xlsx)$/);
   });
 });

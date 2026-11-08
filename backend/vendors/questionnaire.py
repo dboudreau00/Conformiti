@@ -18,6 +18,7 @@ from .models import DEFAULT_QUESTIONNAIRE, QuestionnaireInvite, Vendor, VendorAs
 logger = logging.getLogger(__name__)
 
 QUESTION_IDS = {q["id"] for q in DEFAULT_QUESTIONNAIRE}
+QUESTION_TEXT = {q["id"]: q["text"] for q in DEFAULT_QUESTIONNAIRE}
 ANSWER_VALUES = ("yes", "no", "partial", "n/a", None)
 
 
@@ -29,17 +30,18 @@ class QuestionnaireError(Exception):
 
 
 def validate_answers(value):
-    """The one validation both sides use. Raises ValueError with a message."""
+    """The one validation both sides use. Raises ValueError with a message the person filling the form can act on, so
+    a question is named by its own text, never by its id."""
     if not isinstance(value, dict):
-        raise ValueError("Answers must be an object keyed by question id.")
+        raise ValueError("Your answers could not be read. Reload the page and try again.")
     unknown = set(value) - QUESTION_IDS
     if unknown:
-        raise ValueError(f"Unknown question id(s): {', '.join(sorted(unknown))}")
+        raise ValueError("Some of these questions are no longer on the questionnaire. Reload the page and try again.")
     for qid, entry in value.items():
         if not isinstance(entry, dict) or entry.get("answer") not in ANSWER_VALUES:
-            raise ValueError(f"{qid}: answer must be one of yes, no, partial, n/a.")
+            raise ValueError(f"{QUESTION_TEXT[qid]} Choose Yes, No, Partial or N/A.")
         if len(str(entry.get("note", ""))) > 1000:
-            raise ValueError(f"{qid}: note is too long.")
+            raise ValueError(f"{QUESTION_TEXT[qid]} The note is too long (1000 characters at most).")
     return {
         qid: {"answer": entry.get("answer"), "note": str(entry.get("note") or "")[:1000]}
         for qid, entry in value.items()
@@ -73,9 +75,8 @@ def public_base(request):
         return configured.rstrip("/")
     if not getattr(settings, "DEBUG", False):
         raise LinkBaseUnset(
-            "This installation has no PUBLIC_URL set, so a questionnaire link would "
-            "point wherever the request said. Set PUBLIC_URL to the address vendors "
-            "reach, then send the invitation again.")
+            "The address vendors reach this workspace at is not set, so a questionnaire link cannot be built. "
+            "Ask an administrator to set it, then send the invitation again.")
     if request is None:
         return ""
     origin = (request.headers.get("Origin") or "").strip().rstrip("/")

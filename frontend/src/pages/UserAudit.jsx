@@ -3,12 +3,13 @@ import { motion } from "framer-motion";
 import { CheckCircle2, Download, Plus, X } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
-import { Button } from "../components/ui/Button.jsx";
+import { Button, IconButton } from "../components/ui/Button.jsx";
 import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
 import { toneVar } from "../utils/tone.js";
 
@@ -31,25 +32,44 @@ function fmtDate(s) {
   return s ? s.slice(0, 10) : "never";
 }
 
+const REVIEW_KEY_STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+const reviewStatus = (s) => REVIEW_STATUS[s] || REVIEW_STATUS.open;
+
+// The tone-coloured highlight and the busy state keep this off the shared SegmentedControl, which is a tab list; a
+// decision is one of three choices, so it stays a radio group with a radio group's keys.
 function DecisionControl({ item, disabled, onChange }) {
   const name = item.full_name || item.username;
   const decision = item.decision;
+  const radios = useRef({});
+  // One tab stop: the chosen radio, or the first while none is chosen.
+  const stop = DECISIONS.some((d) => d.id === decision) ? decision : DECISIONS[0].id;
   return (
-    <span className="flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <div className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5" role="radiogroup" aria-label={`Decision for ${name}`}>
-        {DECISIONS.map((d) => {
+        {DECISIONS.map((d, i) => {
           const on = decision === d.id;
           return (
             <button
               key={d.id}
+              ref={(node) => { radios.current[d.id] = node; }}
               type="button"
               role="radio"
               aria-checked={on}
-              disabled={disabled}
-              onClick={() => { if (!on) onChange(d.id); }}
+              tabIndex={d.id === stop ? 0 : -1}
+              // Not `disabled`: a row that is saving keeps focus, so a keyboard user does not lose their place.
+              aria-disabled={disabled || undefined}
+              onClick={() => { if (!on && !disabled) onChange(d.id); }}
+              onKeyDown={(e) => {
+                const step = REVIEW_KEY_STEP[e.key];
+                if (!step || disabled) return;
+                e.preventDefault();
+                const next = DECISIONS[(i + step + DECISIONS.length) % DECISIONS.length];
+                radios.current[next.id]?.focus();
+                onChange(next.id);
+              }}
               className={cn(
                 "relative h-6 rounded-md px-2 text-2xs font-medium transition-colors duration-150 ease-out",
-                "disabled:cursor-not-allowed disabled:opacity-60",
+                "aria-disabled:cursor-not-allowed aria-disabled:opacity-60",
                 on ? "text-ink" : "text-faint hover:text-muted"
               )}
             >
@@ -70,18 +90,11 @@ function DecisionControl({ item, disabled, onChange }) {
       {decision === "pending" ? (
         <Badge tone="muted" mono>pending</Badge>
       ) : (
-        <button
-          type="button"
-          aria-label={`Reset decision for ${name} to pending`}
-          title="Reset to pending"
-          disabled={disabled}
-          onClick={() => onChange("pending")}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <X className="h-3.5 w-3.5" strokeWidth={2} />
-        </button>
+        <IconButton label={`Reset decision for ${name} to pending`} disabled={disabled} onClick={() => onChange("pending")}>
+          <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+        </IconButton>
       )}
-    </span>
+    </div>
   );
 }
 
@@ -99,6 +112,9 @@ export default function UserAudit({ me }) {
   const [denied, setDenied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [itemsLoading, setItemsLoading] = useState(false);
+  // { reason } while the last load of the reviews (or of the open review's rows) failed: that is not an empty list.
+  const [loadFailed, setLoadFailed] = useState(null);
+  const [itemsFailed, setItemsFailed] = useState(null);
   const [busy, setBusy] = useState(null); // "start" | "complete" | "export"
   const [savingId, setSavingId] = useState(null);
   const [confirmComplete, setConfirmComplete] = useState(false);
@@ -111,6 +127,7 @@ export default function UserAudit({ me }) {
     setReview(rev);
     setMsg(null);
     setDrafts({});
+    setItemsFailed(null);
     setItemsLoading(true);
     try {
       const r = await api.get(`/access-review-items/?review=${rev.id}`);
@@ -119,13 +136,14 @@ export default function UserAudit({ me }) {
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setItems([]);
-      setMsg({ ok: false, text: errorText(e, "Couldn't load the review rows.") });
+      setItemsFailed({ reason: loadFailReason(e) });
     } finally {
       if (seq === loadSeq.current) setItemsLoading(false);
     }
   }
 
   async function loadReviews(selectId) {
+    setLoadFailed(null);
     try {
       const list = await fetchAll("/access-reviews/");
       setReviews(list);
@@ -136,10 +154,23 @@ export default function UserAudit({ me }) {
       else { setReview(null); setItems([]); }
     } catch (e) {
       if (e?.response?.status === 403) setDenied(true);
-      else setMsg({ ok: false, text: errorText(e, "Couldn't load access reviews.") });
+      else {
+        loadSeq.current += 1;
+        setReviews([]);
+        setReview(null);
+        setItems([]);
+        setItemsFailed(null);
+        setItemsLoading(false);
+        setLoadFailed({ reason: loadFailReason(e) });
+      }
     } finally {
       setLoading(false);
     }
+  }
+
+  function retryReviews() {
+    setLoading(true);
+    loadReviews();
   }
 
   useEffect(() => { if (canRead) loadReviews(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -153,9 +184,9 @@ export default function UserAudit({ me }) {
       const { data } = await api.post("/access-reviews/", { name });
       setNewName("");
       await loadReviews(data.id);
-      setMsg({ ok: true, text: `Started "${data.name}".` });
+      setMsg({ kind: "ok", text: `Created "${data.name}".` });
     } catch (ex) {
-      setMsg({ ok: false, text: errorText(ex, "Couldn't start the review.") });
+      setMsg({ kind: "err", text: errorText(ex, "Couldn't create the review.") });
     } finally {
       setBusy(null);
     }
@@ -174,7 +205,7 @@ export default function UserAudit({ me }) {
       }
       return true;
     } catch (e) {
-      setMsg({ ok: false, text: errorText(e, "Couldn't save that change.") });
+      setMsg({ kind: "err", text: errorText(e, "Couldn't save that change.") });
       return false;
     } finally {
       setSavingId(null);
@@ -211,7 +242,7 @@ export default function UserAudit({ me }) {
       setReviews((rs) => rs.map((r) => (r.id === rev.id ? rev : r)));
       setReport({ reviewId: rev.id, revoked: applied?.revoked || [], skipped: applied?.skipped || [] });
     } catch (e) {
-      setMsg({ ok: false, text: errorText(e, "Couldn't complete the review.") });
+      setMsg({ kind: "err", text: errorText(e, "Couldn't complete the review.") });
     } finally {
       setBusy(null);
     }
@@ -223,7 +254,7 @@ export default function UserAudit({ me }) {
     try {
       await downloadFile(`/access-reviews/${review.id}/export/`, `access-review-${review.id}.csv`);
     } catch (e) {
-      setMsg({ ok: false, text: errorText(e, "Couldn't export the review.") });
+      setMsg({ kind: "err", text: errorText(e, "Couldn't export the review.") });
     } finally {
       setBusy(null);
     }
@@ -244,8 +275,14 @@ export default function UserAudit({ me }) {
   const pending = total - decided;
   const completed = review?.status === "completed";
   const editable = canWrite && !completed;
-  const status = REVIEW_STATUS[review?.status] || REVIEW_STATUS.open;
+  const status = reviewStatus(review?.status);
   const allDecided = total > 0 && decided === total;
+  const reviewDates = review
+    ? [
+        `Started ${fmtDate(review.created_at)}${review.created_by_name ? ` by ${review.created_by_name}` : ""}`,
+        review.completed_at ? `Completed ${fmtDate(review.completed_at)}` : null,
+      ].filter(Boolean).join(" · ")
+    : "";
   const revoking = items.filter((i) => i.decision === "revoke");
   const isOwnRow = (it) => it.user != null && it.user === me?.id;
   // The server never revokes the reviewer's own access, so that row does not count toward what completing will change.
@@ -253,17 +290,17 @@ export default function UserAudit({ me }) {
 
   let completeDescription;
   if (deactivating.length) {
-    completeDescription = "The accounts marked Revoke are deactivated and signed out of all their sessions straight away. The decisions then become read-only evidence, and nothing can be changed afterwards.";
+    completeDescription = "Accounts marked Revoke are deactivated and signed out. Decisions become read-only.";
   } else if (revoking.length) {
-    completeDescription = "No account will be deactivated: your own row is the only one marked Revoke, and a review never revokes its reviewer's access. Every decision becomes read-only evidence, and nothing can be changed afterwards.";
+    completeDescription = "No account is deactivated: your own row is the only one marked Revoke. Decisions become read-only.";
   } else {
-    completeDescription = "No row is marked Revoke, so no account changes. Every decision becomes read-only evidence, and nothing can be changed afterwards.";
+    completeDescription = "No row is marked Revoke, so no account changes. Decisions become read-only.";
   }
 
   return (
     <PanelTransition>
-      {/* Completing also deactivates accounts and revokes their refresh tokens, so the dialog names them and says which
-          rows it leaves alone. */}
+      {/* Completing also deactivates accounts and revokes their refresh tokens, so the dialog names them. The rows it
+          leaves alone are listed on screen afterwards. */}
       <ConfirmDialog
         open={confirmComplete}
         onClose={() => setConfirmComplete(false)}
@@ -285,9 +322,6 @@ export default function UserAudit({ me }) {
                 </li>
               ))}
             </ul>
-            <p className="mt-3 text-xs text-muted">
-              Your own account, superusers, and accounts already inactive or deleted are left as they are and listed afterwards.
-            </p>
           </>
         ) : null}
       </ConfirmDialog>
@@ -307,7 +341,7 @@ export default function UserAudit({ me }) {
               {reviews.length === 0 ? <option value="">No reviews yet</option> : null}
               {reviews.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name}, {r.status} ({r.decided_count}/{r.item_count})
+                  {r.name}, {reviewStatus(r.status).label} ({r.decided_count}/{r.item_count})
                 </option>
               ))}
             </select>
@@ -325,10 +359,10 @@ export default function UserAudit({ me }) {
                   type="submit"
                   size="sm"
                   variant="primary"
-                  icon={<Plus className="h-3.5 w-3.5" strokeWidth={2} />}
+                  icon={<Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                   disabled={busy === "start"}
                 >
-                  {busy === "start" ? "Starting…" : "Start new review"}
+                  {busy === "start" ? "Creating…" : "Create review"}
                 </Button>
               </form>
             ) : null}
@@ -338,7 +372,7 @@ export default function UserAudit({ me }) {
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                icon={<Download className="h-3.5 w-3.5" strokeWidth={2} />}
+                icon={<Download className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                 onClick={exportCsv}
                 disabled={busy === "export"}
               >
@@ -348,8 +382,8 @@ export default function UserAudit({ me }) {
                 <Button
                   size="sm"
                   variant="primary"
-                  icon={<CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} />}
-                  disabled={busy === "complete" || itemsLoading || pending > 0}
+                  icon={<CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+                  disabled={busy === "complete" || itemsLoading || !!itemsFailed || pending > 0}
                   onClick={() => setConfirmComplete(true)}
                 >
                   {busy === "complete"
@@ -365,53 +399,44 @@ export default function UserAudit({ me }) {
 
         {msg ? (
           <StackItem>
-            <div className={cn("notice", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>
-              {msg.text}
-            </div>
+            <Notice kind={msg.kind} onDismiss={() => setMsg(null)}>{msg.text}</Notice>
           </StackItem>
         ) : null}
 
         {report && report.reviewId === review?.id ? (
           <StackItem>
-            <div
-              className={cn("notice flex items-start justify-between gap-3", report.skipped.length ? "notice-warn" : "notice-ok")}
-              role="status"
-            >
-              <div className="min-w-0">
-                <p className="font-medium">Review completed.</p>
-                <p className="mt-1">
-                  {report.revoked.length
-                    ? `Deactivated and signed out of every session: ${report.revoked.join(", ")}.`
-                    : report.skipped.length
-                      ? "No account was deactivated."
-                      : "No row was marked Revoke, so no account changed."}
-                </p>
-                {report.skipped.length ? (
-                  <>
-                    <p className="mt-1">Marked Revoke but left as they were, so check each by hand:</p>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                      {report.skipped.map((s, i) => (
-                        <li key={`${s.username}-${i}`}><span className="font-mono">{s.username}</span>: {s.reason}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                aria-label="Dismiss"
-                onClick={() => setReport(null)}
-                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <Notice kind={report.skipped.length ? "warn" : "ok"} onDismiss={() => setReport(null)}>
+              <p className="font-medium">Review completed.</p>
+              <p className="mt-1">
+                {report.revoked.length
+                  ? `Deactivated and signed out of every session: ${report.revoked.join(", ")}.`
+                  : report.skipped.length
+                    ? "No account was deactivated."
+                    : "No row was marked Revoke, so no account changed."}
+              </p>
+              {report.skipped.length ? (
+                <>
+                  <p className="mt-1">Marked Revoke but left as they were, so check each by hand:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                    {report.skipped.map((s, i) => (
+                      <li key={`${s.username}-${i}`}><span className="font-mono">{s.username}</span>: {s.reason}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </Notice>
           </StackItem>
         ) : null}
 
         {loading ? (
           <StackItem>
             <Panel><Loading /></Panel>
+          </StackItem>
+        ) : loadFailed ? (
+          <StackItem>
+            <Panel>
+              <LoadError what="The access reviews" reason={loadFailed.reason} onRetry={retryReviews} />
+            </Panel>
           </StackItem>
         ) : !review ? (
           <StackItem>
@@ -440,43 +465,46 @@ export default function UserAudit({ me }) {
                   height={8}
                   ariaLabel="Access review progress"
                 />
-                <p className="mt-2 text-2xs text-faint">
-                  Started {fmtDate(review.created_at)}
-                  {review.created_by_name ? ` by ${review.created_by_name}` : ""}
-                  {review.completed_at ? ` · completed ${fmtDate(review.completed_at)}` : ""}
-                  {!canWrite && !completed ? " · read-only for your role" : ""}
-                </p>
+                {!canWrite && !completed ? <p className="mt-2 text-2xs text-faint">Read-only for your role.</p> : null}
               </Panel>
             </StackItem>
 
             <StackItem>
               <Panel className="overflow-hidden">
-                <PanelHeader title={review.name} meta={`${total} users · ${decided} decided`} />
+                <PanelHeader
+                  title={review.name}
+                  meta={<Label className="whitespace-normal text-right">{reviewDates}</Label>}
+                />
                 {itemsLoading ? (
                   <Loading />
+                ) : itemsFailed ? (
+                  <LoadError what="The review rows" reason={itemsFailed.reason} onRetry={() => selectReview(review)} />
                 ) : total === 0 ? (
                   <Empty title="No rows in this review" />
                 ) : (
                   <div className="overflow-x-auto" role="region" aria-label={`Users in ${review.name}`} tabIndex={0}>
-                    <div className={GRID_MIN_W}>
-                      <div className={cn("grid gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
-                        {COLUMNS.map((h) => <Label key={h}>{h}</Label>)}
+                    <div className={GRID_MIN_W} role="table">
+                      <div role="rowgroup">
+                        <div role="row" className={cn("grid gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
+                          {COLUMNS.map((h) => <Label key={h} role="columnheader">{h}</Label>)}
+                        </div>
                       </div>
-                      <ul className="divide-y divide-line">
+                      <div role="rowgroup" className="divide-y divide-line">
                         {items.map((it, i) => {
                           const name = it.full_name || it.username;
                           const rowBusy = savingId === it.id;
                           const activity = `${it.is_active ? "active" : "inactive"} · last login ${fmtDate(it.last_login)}`;
                           const grants = it.folder_grants ?? 0;
                           return (
-                            <motion.li
+                            <motion.div
                               key={it.id}
+                              role="row"
                               initial={{ opacity: 0, y: 6 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ duration: 0.22, ease: EASE, delay: Math.min(i, 16) * 0.03 }}
                               className={cn("grid items-center gap-4 px-5 py-3", GRID)}
                             >
-                              <span className="min-w-0">
+                              <div role="cell" className="min-w-0">
                                 <span className="block truncate text-[13px] font-medium text-ink">{name}</span>
                                 <span className="block truncate font-mono text-2xs text-muted">
                                   <span className="text-accent">{it.username}</span>
@@ -485,20 +513,20 @@ export default function UserAudit({ me }) {
                                 <span className="block truncate font-mono text-2xs text-muted" title={activity}>
                                   {activity}
                                 </span>
-                              </span>
-                              <span className="min-w-0">
+                              </div>
+                              <div role="cell" className="min-w-0">
                                 <span className="block truncate text-xs text-ink">{it.role_name || "-"}</span>
                                 {it.job_title ? <span className="block truncate text-2xs text-muted">{it.job_title}</span> : null}
-                              </span>
-                              <span className="min-w-0">
+                              </div>
+                              <div role="cell" className="min-w-0">
                                 <span className="block truncate text-xs text-muted" title={it.capabilities || undefined}>
                                   {it.capabilities || "-"}
                                 </span>
                                 <span className="block truncate text-2xs text-faint">
                                   {grants} folder grant{grants === 1 ? "" : "s"}
                                 </span>
-                              </span>
-                              <span className="flex min-w-0 flex-col items-start gap-1">
+                              </div>
+                              <div role="cell" className="flex min-w-0 flex-col items-start gap-1">
                                 {editable ? (
                                   <DecisionControl
                                     item={it}
@@ -513,28 +541,30 @@ export default function UserAudit({ me }) {
                                     {it.decided_by_name} · {fmtDate(it.decided_at)}
                                   </span>
                                 ) : null}
-                              </span>
-                              {editable ? (
-                                <input
-                                  value={drafts[it.id] ?? it.decision_notes ?? ""}
-                                  onChange={(e) => setDrafts((d) => ({ ...d, [it.id]: e.target.value }))}
-                                  onBlur={() => commitNote(it)}
-                                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                                  placeholder="Add a justification"
-                                  aria-label={`Notes for ${name}`}
-                                  maxLength={300}
-                                  disabled={rowBusy}
-                                  className="input input-sm"
-                                />
-                              ) : (
-                                <span className="truncate text-xs text-muted" title={it.decision_notes || undefined}>
-                                  {it.decision_notes || <span className="text-faint">-</span>}
-                                </span>
-                              )}
-                            </motion.li>
+                              </div>
+                              <div role="cell" className="min-w-0">
+                                {editable ? (
+                                  <input
+                                    value={drafts[it.id] ?? it.decision_notes ?? ""}
+                                    onChange={(e) => setDrafts((d) => ({ ...d, [it.id]: e.target.value }))}
+                                    onBlur={() => commitNote(it)}
+                                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                                    placeholder="Add a justification"
+                                    aria-label={`Notes for ${name}`}
+                                    maxLength={300}
+                                    disabled={rowBusy}
+                                    className="input input-sm"
+                                  />
+                                ) : (
+                                  <span className="block truncate text-xs text-muted" title={it.decision_notes || undefined}>
+                                    {it.decision_notes || <span className="text-faint">-</span>}
+                                  </span>
+                                )}
+                              </div>
+                            </motion.div>
                           );
                         })}
-                      </ul>
+                      </div>
                     </div>
                   </div>
                 )}

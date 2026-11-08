@@ -1,13 +1,35 @@
 """The SimpleJWT tokens as HttpOnly cookies (AUTH_TRANSPORT=cookie); a Bearer header works in both modes.
 Cookie mode needs CSRF: unsafe methods must carry X-CSRFToken (Django's double-submit check). Same-origin only."""
+import logging
 from datetime import datetime, timezone
 
 from django.conf import settings
 from django.middleware.csrf import CsrfViewMiddleware, rotate_token
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+logger = logging.getLogger(__name__)
+
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS", "TRACE")
+
+CSRF_REFUSED = "Your session could not be verified. Reload the page and sign in again."
+
+
+def _csrf_code(reason):
+    """A short code for the sign-in screen to tell an address the server does not trust from any other CSRF failure.
+    Django's own reason names the header or the origin: it goes to the log, where an administrator fixing the trusted
+    origins finds it, and never to the person."""
+    logger.warning("CSRF check refused: %s", reason)
+    text = str(reason).lower()
+    if "origin checking failed" in text or "does not match any trusted origins" in text:
+        return "csrf_origin"
+    return "csrf_referer" if "referer checking failed" in text else "csrf_failed"
+
+
+def csrf_refusal(reason):
+    """The 403 a cookie-setting endpoint answers when csrf_required() gave a reason."""
+    return Response({"detail": CSRF_REFUSED, "code": _csrf_code(reason)}, status=403)
 
 
 def transport():
@@ -121,9 +143,10 @@ class CookieJWTAuthentication(JWTAuthentication):
                 user = (self.user_model.objects.select_related("workspace", "role")
                         .get(**{api_settings.USER_ID_FIELD: user_id}))
         except self.user_model.DoesNotExist as exc:
-            raise AuthenticationFailed("User not found", code="user_not_found") from exc
+            raise AuthenticationFailed(
+                "This account no longer exists. Ask an administrator.", code="user_not_found") from exc
         if api_settings.CHECK_USER_IS_ACTIVE and not user.is_active:
-            raise AuthenticationFailed("User is inactive", code="user_inactive")
+            raise AuthenticationFailed("This account is deactivated. Ask an administrator.", code="user_inactive")
         if user.workspace_id and not user.workspace.is_active and not user.is_superuser:
             raise AuthenticationFailed("This workspace is archived.", code="workspace_archived")
         _refuse_if_superseded(user, validated_token)
@@ -148,7 +171,7 @@ class CookieJWTAuthentication(JWTAuthentication):
             return
         reason = _Enforcer(lambda r: None).process_view(request, None, (), {})
         if reason:
-            raise PermissionDenied(f"CSRF failed: {reason}")
+            raise PermissionDenied(CSRF_REFUSED, code=_csrf_code(reason))
 
 
 def _refuse_if_superseded(user, validated_token):

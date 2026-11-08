@@ -1,4 +1,4 @@
-import { test, expect, DEMO, signIn, signOut, accountButton, COOKIE_MODE, forgetSession } from "../fixtures.js";
+import { test, expect, expectBrowserError, DEMO, signIn, signOut, accountButton, COOKIE_MODE, forgetSession } from "../fixtures.js";
 
 test.describe("authentication", () => {
   test("a wrong password is refused and the user stays on the login page", async ({ page }) => {
@@ -9,6 +9,32 @@ test.describe("authentication", () => {
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByRole("navigation", { name: "Primary", exact: true })).toHaveCount(0);
+  });
+
+  test("a server fault on sign-in is said in plain words, with no status code", async ({ page }) => {
+    expectBrowserError(page, /status of 502/);
+    await forgetSession(page);
+    await page.route("**/api/auth/token/", (route) =>
+      route.fulfill({ status: 502, contentType: "text/html", body: "<html>Bad gateway</html>" }));
+    await signIn(page, { username: "admin", password: "not-the-password" }, { expectFailure: true });
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("The server could not sign you in");
+    await expect(alert).not.toContainText(/HTTP|502|Bad gateway/);
+  });
+
+  test("a refused address on sign-in names no setting", async ({ page }) => {
+    expectBrowserError(page, /status of 403/);
+    await forgetSession(page);
+    await page.route("**/api/auth/token/", (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "CSRF Failed: Origin checking failed - http://elsewhere.example does not match any trusted origins." }),
+      }));
+    await signIn(page, { username: "admin", password: "not-the-password" }, { expectFailure: true });
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("Ask your administrator to add that address");
+    await expect(alert).not.toContainText(/CSRF|HTTP|403|origins/);
   });
 
   test("the sign-in page's shield and wordmark wear the saved accent", async ({ page }) => {
@@ -112,7 +138,7 @@ test.describe("authentication", () => {
       await expect(page.getByText("Not available to an auditor account")).toBeVisible();
       await expect(page.getByText("You do not have permission")).toHaveCount(0);
     }
-    await page.getByRole("button", { name: "Go to your packages" }).click();
+    await page.getByRole("button", { name: "Go to audit packages" }).click();
     await expect(page.getByRole("heading", { name: "Audit packages" })).toBeVisible();
     await page.goto("/audit-log");
     await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();

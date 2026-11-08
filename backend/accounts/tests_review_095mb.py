@@ -210,9 +210,9 @@ class SecondFactorTrailTests(APITestBase):
         self.assertEqual(c.post("/api/auth/mfa/disable/", {"password": PASSWORD},
                                 format="json").status_code, 200)
         self.assertEqual(self.mfa_details(), [
-            "authenticator app enrolled; backup codes issued",
+            "two-factor app enrolled; backup codes issued",
             "backup codes regenerated (the previous set no longer works)",
-            "authenticator app removed; backup codes deleted",
+            "two-factor app removed; backup codes deleted",
         ])
 
 
@@ -237,7 +237,7 @@ class AdminActivityTrailTests(APITestBase):
         Client().post("/admin/login/", {"username": "ada", "password": PASSWORD})
         details = list(AuditLog.objects.filter(object_type="auth")
                        .order_by("pk").values_list("action", "detail"))
-        self.assertIn(("login_failed", "Django admin sign-in failed for ada: "
+        self.assertIn(("login_failed", "sign-in to the Django admin failed for ada: "
                                        "invalid credentials or not a staff account"), details)
         self.assertIn(("login", "signed in to the Django admin: ada"), details)
         self.assertFalse(any("wrong" in d or PASSWORD in d for _, d in details))

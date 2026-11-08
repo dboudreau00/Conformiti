@@ -89,7 +89,8 @@ class EvidenceByteTests(PackageTestBase):
             {"file": SimpleUploadedFile("swapped.txt", b"unscanned bytes")},
             format="multipart")
         self.assertEqual(r.status_code, 400, r.data)
-        self.assertIn("new_version", str(r.data))
+        self.assertIn("Upload new version", str(r.data))
+        self.assertNotIn("/new_version/", str(r.data))
         self.doc.refresh_from_db()
         self.assertEqual(self.doc.version, before)
         self.assertEqual(self.doc.file.read(), b"policy bytes")

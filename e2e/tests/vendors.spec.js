@@ -8,8 +8,8 @@ test.describe("vendor register", () => {
     for (const name of [/Amazon Web Services/, /Okta/, /Stripe/, /Brightline Security/]) {
       await expect(page.getByRole("button", { name })).toBeVisible();
     }
-    await expect(page.getByText("critical", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("no matrix", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("Critical", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("No matrix", { exact: true })).toHaveCount(1);
   });
 
   test.describe("the portfolio view link", () => {
@@ -76,7 +76,7 @@ test.describe("vendor register", () => {
     await page.getByRole("button", { name: /Stripe/ }).click();
     await tab(page, "Assurance").click();
     await expect(page.getByText(/PCI DSS Attestation of Compliance/).first()).toBeVisible();
-    await expect(page.getByText("expired", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Expired", { exact: true }).first()).toBeVisible();
   });
 
   test("the shared responsibility matrix is an editable grid over the controls", async ({ page }) => {
@@ -88,9 +88,11 @@ test.describe("vendor register", () => {
     await page.locator("#matrix-framework").selectOption("pci_dss_v4");
     await expect(page.getByLabel("Amazon Web Services does for 1.3", { exact: true })).toHaveValue(/Edge network controls/);
     await page.getByLabel("We do for 12.1", { exact: true }).fill("Our policy, our review cycle.");
-    await expect(page.getByText("unsaved", { exact: true })).toBeVisible();
+    await expect(page.getByText("Unsaved", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /Save 1 change/ }).click();
-    await expect(page.getByText("1 control(s) saved.")).toBeVisible();
+    await expect(page.getByText("1 control saved.")).toBeVisible();
+    // With nothing left to save the button is gone, not a disabled "Nothing to save".
+    await expect(page.getByRole("button", { name: /Save \d+ change/ })).toHaveCount(0);
   });
 
   test("importing the vendor's own CSV recognises columns and values, then confirms", async ({ page }) => {
@@ -104,13 +106,17 @@ test.describe("vendor register", () => {
       mimeType: "text/csv",
       buffer: Buffer.from("Requirement,AWS,Customer\n1.3,X,X\n12.1,,X\nZZ9,X,\n"),
     });
-    await expect(page.getByText(/AWS → provider mark/)).toBeVisible();
-    await expect(page.getByText(/Customer → customer mark/)).toBeVisible();
+    await expect(page.getByText(/AWS: provider mark/)).toBeVisible();
+    await expect(page.getByText(/Customer: customer mark/)).toBeVisible();
     await expect(page.getByText("2 matched a control")).toBeVisible();
     await expect(page.getByText("1 unmatched")).toBeVisible();
     await page.getByRole("button", { name: /Import 2 row/ }).click();
-    await expect(page.getByText(/2 row\(s\) imported/)).toBeVisible();
-    await expect(page.getByText("import", { exact: true }).first()).toBeVisible();
+    // 1.3 already has AWS's statement from the seed, so importing over it asks first.
+    const replace = page.getByRole("dialog", { name: /Replace \d+ stated responsibilit/ });
+    await expect(replace).toContainText("take the imported one instead");
+    await replace.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(page.getByText(/2 rows imported/)).toBeVisible();
+    await expect(page.getByText("Imported", { exact: true }).first()).toBeVisible();
   });
 
   test("the matrix exports as CSV", async ({ page }) => {
@@ -126,7 +132,7 @@ test.describe("vendor register", () => {
     await open(page, "/vendors", "Vendors");
     await page.getByRole("button", { name: /Brightline Security/ }).click();
     await expect(page.getByText(/no responsibilities stated yet/)).toBeVisible();
-    await page.getByRole("button", { name: "Walk me through it" }).click();
+    await page.getByRole("button", { name: "Fill in responsibilities", exact: true }).click();
     const prompt = page.getByRole("region", { name: "Responsibility prompt" });
     await expect(prompt.getByText(/Control 1 of \d+ without a statement/)).toBeVisible();
     const first = await prompt.locator("h3").textContent();
@@ -145,7 +151,7 @@ test.describe("vendor register", () => {
     await open(page, "/vendors", "Vendors");
     await page.getByRole("button", { name: /Amazon Web Services/ }).click();
     await expect(page.getByRole("heading", { name: "Amazon Web Services" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Register a vendor" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New vendor" })).toHaveCount(0);
     await tab(page, "Responsibility matrix").click();
     await expect(page.getByText("Controls in scope", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /Import CSV/ })).toHaveCount(0);
@@ -179,7 +185,7 @@ test.describe("responsibility matrix (RACI)", () => {
   test("the matrix exports as CSV", async ({ page }) => {
     await open(page, "/responsibilities", "Responsibility matrix");
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
     expect((await download).suggestedFilename()).toBe("responsibility-matrix.csv");
   });
 });

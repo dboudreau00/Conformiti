@@ -896,9 +896,17 @@ class VirusScanTests(APITestBase):
             r = self.upload(b"a big archive")
         self.assertEqual(r.status_code, 400)
         self.assertIn("could not be fully inspected", str(r.data))
+        # The person is told why in words, not the scanner's signature name or a byte count.
+        self.assertIn("too large or too deeply nested for the scanner to inspect", str(r.data))
+        self.assertNotIn("Heuristics", str(r.data))
         self.assertFalse(
             AuditLog.objects.filter(detail__contains="refused infected upload").exists(),
             "this is not a detection")
+
+    def test_the_scanner_size_limit_is_given_in_megabytes(self):
+        limit = 25 * 1024 * 1024
+        self.assertEqual(clamav.LimitsExceededError("file exceeds the byte scanning limit", limit_bytes=limit).plain(),
+                         "it is larger than the scanner can inspect (25 MB)")
 
     def test_a_file_over_the_stream_limit_is_refused_before_it_is_sent(self):
         with self.scanning(CLAMAV_MAX_BYTES=8):

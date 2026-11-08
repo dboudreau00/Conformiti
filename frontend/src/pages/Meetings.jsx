@@ -3,12 +3,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import { PaperclipIcon, PlusIcon, UsersIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import { cn } from "../utils/cn.js";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
+import { fmtDate } from "../utils/format.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 
 const CADENCE = {
@@ -16,16 +17,6 @@ const CADENCE = {
   on_track: { label: "On track", tone: "success" },
   behind: { label: "Behind", tone: "warning" },
 };
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "2026-07-20" -> "20 Jul 2026" without going through Date (no timezone drift). */
-function fmtDate(iso) {
-  if (!iso) return "";
-  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
-  if (!y || !m || !d || !MONTHS[m - 1]) return iso;
-  return `${String(d).padStart(2, "0")} ${MONTHS[m - 1]} ${y}`;
-}
 
 const EMPTY_SERIES = { name: "", required: "4", owner: "", description: "" };
 const EMPTY_SERIES_EDIT = { name: "", required: "4", owner: "", description: "", active: true };
@@ -43,9 +34,12 @@ function deleteConsequence(m) {
   const year = Number(String(m?.date || "").slice(0, 4));
   if (!year) return "This cannot be undone.";
   return year === new Date().getFullYear()
-    ? "It counts toward this year's cadence, so the number held this year drops by one. This cannot be undone."
-    : `It is dated ${year}, so this year's cadence count does not change. This cannot be undone.`;
+    ? "It counts toward this year's total, so the number held this year drops by one. This cannot be undone."
+    : `It is dated ${year}, so this year's total does not change. This cannot be undone.`;
 }
+
+// The dialog keeps rendering through its exit, when there is no minute left to name.
+const minuteDate = (m) => (m?.date ? fmtDate(m.date) : "");
 
 function Notice({ msg, className }) {
   if (!msg) return null;
@@ -77,7 +71,8 @@ export default function Meetings({ me }) {
 
   const [series, setSeries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadErr, setLoadErr] = useState("");
+  // null, or { reason } once the list failed to load: never shown as an empty register.
+  const [loadErr, setLoadErr] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [minutes, setMinutes] = useState([]);
   const [minutesLoading, setMinutesLoading] = useState(false);
@@ -125,14 +120,14 @@ export default function Meetings({ me }) {
       setMinutes([...rows].sort(byDateDesc));
     } catch (e) {
       if (req !== minutesReq.current) return;
-      setMinutesErr(errorText(e, "The minutes for this series couldn't be loaded."));
+      setMinutesErr(errorText(e, "Couldn't load the minutes for this series. Try again."));
     } finally {
       if (req === minutesReq.current) setMinutesLoading(false);
     }
   }
 
   async function loadSeries(selectId, keep = false) {
-    setLoadErr("");
+    setLoadErr(null);
     try {
       const list = await fetchAll("/meeting-series/");
       setSeries(list);
@@ -143,7 +138,7 @@ export default function Meetings({ me }) {
         setMinutes([]);
       }
     } catch (e) {
-      setLoadErr(errorText(e, "Meeting cadences couldn't be loaded. Please try again."));
+      setLoadErr({ reason: loadFailReason(e) });
     } finally {
       setLoading(false);
     }
@@ -159,7 +154,8 @@ export default function Meetings({ me }) {
     if (!canEdit) return;
     fetchAll("/users/")
       .then((list) => {
-        setUsers(list);
+        // Only active people can be picked; the saved owner of the open series gets its own option below.
+        setUsers(list.filter((u) => u.is_active));
         setUsersErr(false);
       })
       .catch(() => {
@@ -196,7 +192,7 @@ export default function Meetings({ me }) {
       setSeriesMsg({ kind: "ok", text: `“${data.name}” created.` });
       await loadSeries(data.id);
     } catch (ex) {
-      setSeriesMsg({ kind: "err", text: errorText(ex, "The series couldn't be created. Please try again.") });
+      setSeriesMsg({ kind: "err", text: errorText(ex, "Couldn't create the series. Try again.") });
     } finally {
       setSeriesBusy(false);
     }
@@ -236,7 +232,7 @@ export default function Meetings({ me }) {
       setEditingSeries(false);
       await loadSeries(data.id, true);
     } catch (ex) {
-      setSeriesEditMsg({ kind: "err", text: errorText(ex, "The series couldn't be updated. Please try again.") });
+      setSeriesEditMsg({ kind: "err", text: errorText(ex, "Couldn't save the series. Try again.") });
     } finally {
       setSeriesEditBusy(false);
     }
@@ -263,7 +259,7 @@ export default function Meetings({ me }) {
       setMinuteMsg({ kind: "ok", text: `Minutes recorded for ${fmtDate(mf.date)}.` });
       await loadSeries(active.id, true);
     } catch (ex) {
-      setMinuteMsg({ kind: "err", text: errorText(ex, "The minutes couldn't be saved. Please try again.") });
+      setMinuteMsg({ kind: "err", text: errorText(ex, "Couldn't add the minutes. Try again.") });
     } finally {
       setMinuteBusy(false);
     }
@@ -276,7 +272,7 @@ export default function Meetings({ me }) {
       await api.delete(`/meeting-minutes/${m.id}/`);
     } catch (ex) {
       // 404: deleted first elsewhere. The outcome holds, so refresh instead of leaving a row whose Delete can only fail.
-      if (ex?.response?.status !== 404) throw new Error(errorText(ex, "The minutes couldn't be deleted. Please try again."));
+      if (ex?.response?.status !== 404) throw new Error(errorText(ex, "Couldn't delete the minutes. Try again."));
       alreadyGone = true;
     }
     // A "Minutes recorded" notice may be describing the very record just deleted.
@@ -295,7 +291,7 @@ export default function Meetings({ me }) {
     try {
       await downloadFile(m.download_url, `${m.title || "minutes"}`);
     } catch (ex) {
-      setListMsg({ kind: "err", text: errorText(ex, "Couldn't open the minutes.") });
+      setListMsg({ kind: "err", text: errorText(ex, "Couldn't download the file. Try again.") });
     }
   }
 
@@ -304,32 +300,31 @@ export default function Meetings({ me }) {
   // saved owner always gets an option.
   const savedOwnerMissing = !!active?.owner && !users.some((u) => u.id === active.owner);
   const detailKey = loading ? "loading" : active ? `series-${active.id}` : "none";
+  // A list that never arrived is not an empty one: its two panes would only say there is nothing to see.
+  const loadFailedEmpty = !!loadErr && series.length === 0;
 
   return (
     <PanelTransition>
       <Stack className="grid grid-cols-12 gap-4">
         {loadErr ? (
           <StackItem className="col-span-12">
-            <div className="notice notice-err flex flex-wrap items-center justify-between gap-3" role="alert">
-              <span>{loadErr}</span>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
+            <Panel>
+              <LoadError
+                what="Meeting series"
+                reason={loadErr.reason}
+                onRetry={() => {
                   setLoading(true);
                   loadSeries(activeId ?? undefined);
                 }}
-              >
-                Try again
-              </Button>
-            </div>
+              />
+            </Panel>
           </StackItem>
         ) : null}
 
         {/* First in the DOM (it is the navigation), shown on the right at desktop widths via order. */}
-        <StackItem className="col-span-12 lg:order-2 lg:col-span-4">
+        <StackItem className={cn("col-span-12 lg:order-2 lg:col-span-4", loadFailedEmpty && "hidden")}>
           <Panel className="overflow-hidden">
-            <PanelHeader title="Meeting cadences" meta={canEdit ? undefined : `${series.length} series`}>
+            <PanelHeader title="Meeting series" meta={canEdit ? undefined : `${series.length} series`}>
               {canEdit ? (
                 <div className="flex items-center gap-3">
                   <Label className="tabular">{series.length} series</Label>
@@ -448,9 +443,16 @@ export default function Meetings({ me }) {
             <Notice msg={seriesMsg} className="mx-4 mt-3" />
 
             {loading ? (
-              <Loading>Loading cadences…</Loading>
+              <Loading>Loading series…</Loading>
             ) : series.length === 0 ? (
-              <Empty title="No meeting cadences yet" />
+              <Empty
+                title="No meeting series yet"
+                action={
+                  canEdit ? (
+                    <Button size="sm" variant="primary" onClick={() => setShowNewSeries(true)}>New series</Button>
+                  ) : null
+                }
+              />
             ) : (
               <ul className="divide-y divide-line">
                 {series.map((s) => {
@@ -497,7 +499,7 @@ export default function Meetings({ me }) {
                           </span>
                         </span>
                         <span className="mt-1.5 block truncate text-xs text-muted">
-                          Owner: {s.owner_name || <span className="text-faint">unassigned</span>}
+                          Owner: {s.owner_name || <span className="text-faint">Unassigned</span>}
                         </span>
                       </button>
                     </li>
@@ -508,7 +510,7 @@ export default function Meetings({ me }) {
           </Panel>
         </StackItem>
 
-        <StackItem className="col-span-12 lg:order-1 lg:col-span-8">
+        <StackItem className={cn("col-span-12 lg:order-1 lg:col-span-8", loadFailedEmpty && "hidden")}>
           <AnimatePresence mode="wait">
             <motion.div
               key={detailKey}
@@ -524,7 +526,7 @@ export default function Meetings({ me }) {
                 </Panel>
               ) : !active ? (
                 <Panel>
-                  <Empty title="No cadence selected" />
+                  <Empty title="No series selected" />
                 </Panel>
               ) : (
                 <>
@@ -626,7 +628,7 @@ export default function Meetings({ me }) {
                             onChange={(e) => setEs({ ...es, active: e.target.checked })}
                             disabled={seriesEditBusy}
                           />
-                          This forum is still active
+                          This series is active
                         </label>
                         <Notice msg={seriesEditMsg} />
                         <div className="flex justify-end gap-2">
@@ -640,7 +642,7 @@ export default function Meetings({ me }) {
                             Cancel
                           </Button>
                           <Button type="submit" size="sm" variant="primary" disabled={seriesEditBusy || !es.name.trim()}>
-                            {seriesEditBusy ? "Saving…" : "Save"}
+                            {seriesEditBusy ? "Saving…" : "Save changes"}
                           </Button>
                         </div>
                       </form>
@@ -716,9 +718,10 @@ export default function Meetings({ me }) {
                                   type="button"
                                   className="link"
                                   onClick={() => openMinutesFile(m)}
+                                  aria-label={`Download file, minutes of ${fmtDate(m.date)}${m.title ? `, ${m.title}` : ""}`}
                                 >
                                   <PaperclipIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
-                                  Open file
+                                  Download file
                                 </button>
                               ) : null}
                               {canEdit ? (
@@ -786,7 +789,7 @@ export default function Meetings({ me }) {
                         </div>
                         <div className="mt-4">
                           <label htmlFor="mm-notes" className="field-label">
-                            Notes / decisions
+                            Notes and decisions
                           </label>
                           <textarea
                             id="mm-notes"
@@ -800,7 +803,7 @@ export default function Meetings({ me }) {
                         </div>
                         <div className="mt-4">
                           <label htmlFor="mm-file" className="field-label">
-                            Attachment (optional)
+                            File (optional)
                           </label>
                           <input
                             id="mm-file"
@@ -816,7 +819,7 @@ export default function Meetings({ me }) {
 
                         <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
                           <Button type="submit" variant="primary" disabled={minuteBusy || !mf.date}>
-                            {minuteBusy ? "Saving…" : "Save minutes"}
+                            {minuteBusy ? "Adding…" : "Add minutes"}
                           </Button>
                         </div>
                       </form>
@@ -835,10 +838,10 @@ export default function Meetings({ me }) {
         title={
           deletingMinute?.title
             ? `Delete “${deletingMinute.title}” (${fmtDate(deletingMinute.date)})?`
-            : `Delete the minutes of ${fmtDate(deletingMinute?.date)}?`
+            : `Delete the minutes of ${minuteDate(deletingMinute)}?`
         }
         description={deleteConsequence(deletingMinute)}
-        confirmLabel="Delete"
+        confirmLabel="Delete minutes"
         onConfirm={() => deleteMinute(deletingMinute)}
       />
     </PanelTransition>

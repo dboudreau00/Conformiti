@@ -6,7 +6,7 @@ export const STATUSES = Object.entries(RISK_STATUS).map(([value, meta]) => [valu
 export const TYPES = [
   ["control_gap", "Control gap"],
   ["audit_finding", "Audit finding"],
-  ["pentest", "Pen test"],
+  ["pentest", "Penetration test"],
   ["vendor", "Vendor"],
   ["incident", "Incident"],
   ["other", "Other"],

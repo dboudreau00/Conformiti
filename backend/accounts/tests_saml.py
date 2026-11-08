@@ -390,7 +390,7 @@ class SamlFlowTests(APITestBase):
         r = self.anon.post("/api/auth/oidc/redeem/", {"ticket": ticket, "otp": mfa_lib.totp(secret)}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertIn("access", r.data)
-        self.assertTrue(AuditLog.objects.filter(detail__contains="step-up: second factor verified").exists())
+        self.assertTrue(AuditLog.objects.filter(detail__contains="step-up: two-factor code verified").exists())
         self.assertTrue(AuditLog.objects.filter(detail__contains="step-up pending").exists())
 
     def test_an_asserted_second_factor_skips_the_step_up(self):

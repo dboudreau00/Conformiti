@@ -11,6 +11,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from notifications.wording import count_of
+
 from .models import MfaDevice, Role
 from . import mfa as mfa_lib
 from .permissions import CanManageUsers
@@ -118,7 +120,7 @@ class UserViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
 
         if target.is_superuser and not actor.is_superuser:
-            raise PermissionDenied("Only a superuser can modify a superuser account.")
+            raise PermissionDenied("Only an administrator who works across workspaces can change this account.")
 
         if target.pk == actor.pk:
             if "is_active" in data and data["is_active"] is False:
@@ -147,7 +149,8 @@ class UserViewSet(viewsets.ModelViewSet):
     def reset_mfa(self, request, pk=None):
         target = self.get_object()
         if target.is_superuser and not request.user.is_superuser:
-            raise PermissionDenied("Only a superuser can reset a superuser's MFA.")
+            raise PermissionDenied(
+                "Only an administrator who works across workspaces can reset two-factor for this account.")
         device = getattr(target, "mfa_device", None)
         if device:
             device.delete()
@@ -161,17 +164,18 @@ class UserViewSet(viewsets.ModelViewSet):
         # A compromised or lost second factor: the existing sessions go too.
         end_all_sessions(target)
         record_auth_event(request, target, "mfa",
-                          f"MFA reset by {request.user.get_username()}: authenticator "
-                          f"{'removed' if device else 'absent'}, {removed} passkey(s) removed, "
+                          f"two-factor reset by {request.user.get_username()}: two-factor app "
+                          f"{'removed' if device else 'absent'}, {count_of(removed, 'passkey')} removed, "
                           f"sessions revoked")
-        return Response({"detail": f"MFA reset for {target.get_username()}.", "mfa_enabled": False})
+        return Response({"detail": f"Two-factor reset for {target.get_username()}.", "mfa_enabled": False})
 
     def perform_destroy(self, instance):
         actor = self.request.user
         if instance.pk == actor.pk:
             raise PermissionDenied("You cannot delete your own account.")
         if instance.is_superuser:
-            raise PermissionDenied("Superuser accounts cannot be deleted through the API. Deactivate instead.")
+            raise PermissionDenied(
+                "An administrator who works across workspaces cannot be deleted here. Deactivate the account instead.")
         with transaction.atomic():
             if instance.role and instance.role.can_manage_users:
                 lock_administrators()
@@ -229,6 +233,10 @@ class _MfaThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
+WRONG_CODE = "That code isn't valid. Check the code and try again."
+REAUTH_OR_CODE = "Confirm your password, or enter a two-factor code."
+
+
 def _reauth_required(detail):
     return Response({"detail": detail, "code": "reauth_required"}, status=403)
 
@@ -260,11 +268,11 @@ class MfaSetupView(APIView):
     def post(self, request):
         device = getattr(request.user, "mfa_device", None)
         if device and device.enabled:
-            return Response({"detail": "MFA is already enabled. Disable it first to re-enroll."}, status=400)
+            return Response({"detail": "Two-factor is already on. Turn it off first to set it up again."}, status=400)
         # Asked here as well as at /verify/, so nobody scans a QR code only to be turned away. Without it a hijacked
         # session could enrol the attacker's authenticator and lock the owner out. A passkey enrolment asks the same.
         if not reauthenticated(request):
-            return _reauth_required("Confirm your password to set up an authenticator.")
+            return _reauth_required("Confirm your password to set up two-factor.")
         secret = mfa_lib.generate_secret()
         if device:
             device.secret = secret
@@ -280,7 +288,7 @@ class MfaSetupView(APIView):
 
 
 class MfaVerifyView(APIView):
-    """Confirm a code to switch MFA on; returns the backup codes, shown exactly once."""
+    """Confirm a code to switch two-factor on; returns the backup codes, shown exactly once."""
     permission_classes = [IsAuthenticated]
     throttle_classes = [_MfaThrottle]
 
@@ -289,14 +297,14 @@ class MfaVerifyView(APIView):
         if not device:
             return Response({"detail": "Start setup first."}, status=400)
         if device.enabled:
-            return Response({"detail": "MFA is already enabled."}, status=400)
+            return Response({"detail": "Two-factor is already on."}, status=400)
         if not reauthenticated(request):
-            return _reauth_required("Confirm your password to turn on the authenticator.")
+            return _reauth_required("Confirm your password to turn on two-factor.")
         code = (request.data.get("code") or "").strip()
         # device.verify, not mfa_lib.verify: it spends the time step, so the code that switched the factor on cannot
         # be replayed to sign in.
         if not device.verify(code):
-            return Response({"detail": "That code isn't valid. Check your authenticator and try again."}, status=400)
+            return Response({"detail": WRONG_CODE}, status=400)
         from django.utils import timezone
         device.enabled = True
         device.confirmed_at = timezone.now()
@@ -308,7 +316,7 @@ class MfaVerifyView(APIView):
         from audit.events import record_auth_event
 
         record_auth_event(request, request.user, "mfa",
-                          "authenticator app enrolled" + ("; backup codes issued" if codes else ""))
+                          "two-factor app enrolled" + ("; backup codes issued" if codes else ""))
         return Response({"enabled": True, "backup_codes": codes,
                          "backup_codes_remaining": request.user.backup_codes_remaining})
 
@@ -319,7 +327,7 @@ class MfaDisableView(APIView):
 
     def post(self, request):
         if not reauthenticated(request):
-            return _reauth_required("Confirm your password, or a code from a factor you still have.")
+            return _reauth_required(REAUTH_OR_CODE)
         device = getattr(request.user, "mfa_device", None)
         if device:
             device.delete()
@@ -330,7 +338,7 @@ class MfaDisableView(APIView):
         from audit.events import record_auth_event
 
         record_auth_event(request, request.user, "mfa",
-                          ("authenticator app removed" if device else "authenticator app off (none enrolled)")
+                          ("two-factor app removed" if device else "two-factor app off (none enrolled)")
                           + ("; backup codes deleted" if codes_gone else ""))
         return Response({"enabled": False})
 
@@ -342,9 +350,9 @@ class MfaBackupCodesView(APIView):
 
     def post(self, request):
         if not request.user.mfa_enabled:
-            return Response({"detail": "Enrol an authenticator app or a passkey first."}, status=400)
+            return Response({"detail": "Set up two-factor or add a passkey first."}, status=400)
         if not reauthenticated(request):
-            return _reauth_required("Confirm your password, or a code from a factor you still have.")
+            return _reauth_required(REAUTH_OR_CODE)
         codes = request.user.issue_backup_codes()
         from audit.events import record_auth_event
 

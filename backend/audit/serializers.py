@@ -16,5 +16,5 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     def get_user_name(self, obj):
         if not obj.user:
-            return "system"
+            return "Not signed in" if obj.action == "login_failed" else "System"
         return obj.user.get_full_name() or obj.user.get_username()

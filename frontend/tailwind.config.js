@@ -10,6 +10,7 @@ export default {
         line: "rgb(var(--line) / <alpha-value>)",
         "line-strong": "rgb(var(--line-strong) / <alpha-value>)",
         grid: "rgb(var(--grid) / <alpha-value>)",
+        scrim: "rgb(var(--scrim) / <alpha-value>)",
         ink: "rgb(var(--ink) / <alpha-value>)",
         muted: "rgb(var(--muted) / <alpha-value>)",
         faint: "rgb(var(--faint) / <alpha-value>)",

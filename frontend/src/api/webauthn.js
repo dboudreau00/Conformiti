@@ -1,3 +1,7 @@
+import { errorText } from "../utils/a11y.js";
+
+const PASSKEY_FAILED = "The passkey could not be used.";
+
 function encode(buffer) {
   const bytes = new Uint8Array(buffer);
   let text = "";
@@ -61,13 +65,14 @@ export async function getAssertion(options) {
   };
 }
 
+/** What a person reads after a passkey step fails. A browser exception is named by `err.name`; a server refusal goes
+ * through errorText. Nothing else (an exception's own message, a status line) reaches the screen. */
 export function passkeyErrorText(err) {
   const name = err?.name || "";
   if (name === "NotAllowedError") return "The passkey prompt was cancelled or timed out. Try again.";
-  if (name === "InvalidStateError") return "That authenticator is already enrolled on this account.";
-  if (name === "SecurityError") {
-    return "Passkeys need a secure (https) address that matches the server's relying-party id.";
-  }
-  if (name === "NotSupportedError") return "This authenticator does not support the requested key type.";
-  return err?.response?.data?.detail || err?.message || "The passkey could not be used.";
+  if (name === "InvalidStateError") return "That passkey is already added to this account.";
+  if (name === "SecurityError") return "Passkeys need a secure (https) address on this site's own domain.";
+  if (name === "NotSupportedError") return "This device cannot create that kind of passkey.";
+  if (err?.response || err?.isAxiosError) return errorText(err, PASSKEY_FAILED);
+  return PASSKEY_FAILED;
 }

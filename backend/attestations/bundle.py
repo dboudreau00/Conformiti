@@ -7,6 +7,7 @@ from pathlib import Path
 from django.utils import timezone
 
 from config.csvsafe import csv_safe
+from notifications.wording import count_of
 
 from . import manifest as mf
 from .models import PackageEvidence
@@ -304,7 +305,7 @@ def readme_text(package, digest, summary):
         f"{package.name}",
         "=" * len(package.name),
         "",
-        "An evidence package exported from Conformiti.",
+        "An audit package exported from Conformiti.",
         "",
         f"Engagement       {package.engagement or '-'}",
         f"Audit firm       {package.audit_firm or '-'}",
@@ -321,7 +322,7 @@ def readme_text(package, digest, summary):
         f"Controls         {summary['controls']}",
         f"Evidence files   {summary['items']}",
         f"Not tested       {summary['not_tested']}",
-        f"Sample items     {summary['samples']} ({summary['sample_exceptions']} exception(s))",
+        f"Sample items     {summary['samples']} ({count_of(summary['sample_exceptions'], 'exception')})",
         *([f"Audit trail      trail.csv holds the first {summary['trail_shown']} of "
            f"{summary['trail_entries']} entries, oldest first; ask the organisation for the rest"]
           if summary.get("trail_truncated") else []),

@@ -18,8 +18,8 @@ test.describe("PBC request list", () => {
     const due = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     await panel.locator("#pbc-due").fill(due);
     await panel.locator("#pbc-assignee").selectOption({ label: "Owen Owner" });
-    await panel.getByRole("button", { name: "Raise", exact: true }).click();
-    await expect(page.getByText("Request raised.")).toBeVisible();
+    await panel.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText("Request added.")).toBeVisible();
     const fresh = line(page, "PBC-04");
     await expect(fresh.getByText(/Board minutes/)).toBeVisible();
     await expect(fresh.getByText(/raised by Ada Admin \(organisation\)/)).toBeVisible();

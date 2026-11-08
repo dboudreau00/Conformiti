@@ -22,7 +22,7 @@
                   application is set to use, which must lie inside this
                   checkout) and asks; -Yes answers for a script.
 
-  Combine with -Demo (load the sample organisation; off by default), -Open
+  Combine with -Demo (load the demo data; off by default), -Open
   (launch the browser when ready) and -Port N (Docker host port). With -Docker
   and an existing .env, -Demo / -NoDemo and -Port update SEED_DEMO_DATA and
   CONFORMITI_PORT in it, and the script says so. Every native command is
@@ -68,7 +68,7 @@ function Run {
   & $path @rest
   if ($LASTEXITCODE -ne 0) { Fail "'$exe $($rest -join ' ')' exited with code $LASTEXITCODE" }
 }
-function Wait-Healthy([string]$Url, [int]$Seconds = 240) {
+function Wait-Healthy([string]$Url, [int]$Seconds = 360) {
   $elapsed = 0
   while ($elapsed -lt $Seconds) {
     try {
@@ -247,7 +247,7 @@ function Show-OriginWarning([int]$WebPort) {
   Warn "CORS_ALLOWED_ORIGINS in .env, or every sign-in from the web app is refused."
 }
 if ($Port -lt 1 -or $Port -gt 65535) { Fail "-Port must be between 1 and 65535 (got $Port)." }
-# Off unless asked for: an installation carrying the sample organisation says
+# Off unless asked for: an installation carrying the demo data says
 # so on its own sign-in page, which a real deployment should never publish.
 # -NoDemo is kept because older notes say it, and it agrees with the default.
 # Not "$demo": PowerShell names are case-insensitive, so that would be the
@@ -371,7 +371,7 @@ if ($Docker) {
   }
   Say "Waiting for the API to report healthy..."
   $health = Wait-Healthy "http://localhost:$Port/api/health/"
-  if (-not $health) { & docker compose ps; Fail "The stack did not become healthy in time. Inspect with: docker compose logs backend" }
+  if (-not $health) { & docker compose ps; Fail "Still not healthy after 360 seconds. It may be finishing its first boot: run docker compose ps again, then docker compose logs backend." }
   Ok "healthy: version $($health.version), database $($health.database)"
   Write-Host ""
   Write-Host "Conformiti is running." -ForegroundColor Green
@@ -435,12 +435,12 @@ if (-not $py) { Fail "Python 3.11 or newer is required but was not found on PATH
 if ((Probe $py -c "import sys; sys.exit(0 if sys.version_info < (3, 15) else 1)") -ne 0) {
   Warn "$(& $py --version) is newer than the tested range (3.11 to 3.14): carrying on, but it is untested."
 }
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js 20.19+ or 22.12+ (with npm) is required but was not found on PATH." }
-if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "npm is required but was not found on PATH." }
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js 20.19+ or 22.12+ (with npm) is required but was not found on PATH. Install Node 22 LTS from https://nodejs.org/, open a new PowerShell window, then run this again." }
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "npm is required but was not found on PATH. It comes with Node.js (https://nodejs.org/)." }
 # Same range as frontend/package.json "engines" (^20.19.0 || >=22.12.0): Vite
 # rejects 21.x and 22.0 to 22.11.
 $nodeOk = & node -e "const [a,b]=process.versions.node.split('.').map(Number); process.stdout.write(((a===20&&b>=19)||(a===22&&b>=12)||a>22)?'y':'n')"
-if ($nodeOk -ne "y") { Fail "Node.js 20.19+ or 22.12+ is required (found $(node --version))." }
+if ($nodeOk -ne "y") { Fail "Node.js 20.19+ or 22.12+ is required (found $(node --version)). Install Node 22 LTS from https://nodejs.org/, open a new PowerShell window, then run this again." }
 Ok "using $(& $py --version), node $(node --version), npm $(npm --version)"
 
 # The local path's own ports, never the Docker ones: a CONFORMITI_API_PORT set
@@ -462,6 +462,14 @@ try {
 } catch { }
 if (-not $longPaths -and (($PSScriptRoot.Length + 150) -gt 259)) {
   Fail "this folder's path is $($PSScriptRoot.Length) characters long. The folder tree Conformiti creates goes up to 150 characters below it, past the 259 that Windows allows unless long paths are on. Install under a shorter path (for example C:\conformiti), or turn on Windows long paths (LongPathsEnabled) and run this again."
+}
+# A folder a sync client watches (OneDrive, Dropbox, iCloud Drive, Google Drive)
+# is the usual reason pip, npm and Vite fail part way or hang: .venv and
+# node_modules hold tens of thousands of small files the client locks and
+# rewrites (PREREQUISITES.md). Desktop and Documents are OneDrive's by default.
+# Only a warning: it often works.
+if ($PSScriptRoot -match 'OneDrive|Dropbox|iCloud|Google ?Drive') {
+  Warn "this folder looks like one a sync client watches ($PSScriptRoot). If the install fails part way or hangs, clone into a plain local folder such as C:\conformiti and run this again."
 }
 
 # --- .env with a generated secret key ---------------------------------------
@@ -656,7 +664,13 @@ Push-Location backend
 try {
   Run $pyexe manage.py migrate --noinput
   Run $pyexe manage.py seed_frameworks --with-folders
-  $null = Probe $pyexe manage.py generate_folder_tree
+  # Probe drops the output, so a failure is reported here with the command that
+  # re-runs it and prints the reason. Not fatal: the default tree root ships in
+  # the clone (INSTALL.md, section 3).
+  $treeCode = Probe $pyexe manage.py generate_folder_tree
+  if ($treeCode -ne 0) {
+    Warn "the evidence folder tree could not be written to disk (generate_folder_tree exited with code $treeCode). To see why, run: cd backend; ..\.venv\Scripts\python.exe manage.py generate_folder_tree"
+  }
   if ($seedDemo -eq "true") {
     # Captured so the banner below can repeat the one-time password. It is only
     # printed when this run created the accounts; a re-run keeps the old one.

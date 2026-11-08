@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BellIcon,
@@ -23,7 +23,8 @@ import { errorText } from "../utils/a11y.js";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
-import { TextDialog, useConfirm } from "../components/ui/Dialog.jsx";
+import { ConfirmDialog, TextDialog, useConfirm } from "../components/ui/Dialog.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Divider, Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ShowMore } from "../components/ui/ShowMore.jsx";
 
@@ -76,12 +77,38 @@ function Field({ id, label, hint, error = false, className, children }) {
   );
 }
 
-function Notice({ msg, className }) {
-  if (!msg) return null;
+/** Asks for the account password, or a code from a factor still held, then runs `request.run(proof)`. A refusal
+ * keeps the dialog open with its message so the person can type again. */
+function ProofDialog({ request, onClose }) {
+  const fieldId = useId();
+  const [proof, setProof] = useState("");
+  useEffect(() => {
+    if (request) setProof("");
+  }, [request]);
   return (
-    <div className={cn("notice", msg.ok ? "notice-ok" : "notice-err", className)} role={msg.ok ? "status" : "alert"}>
-      {msg.text}
-    </div>
+    <ConfirmDialog
+      open={!!request}
+      title={request?.title || ""}
+      description={request?.description}
+      confirmLabel={request?.confirmLabel}
+      tone={request?.tone}
+      onClose={onClose}
+      onConfirm={async () => {
+        if (!proof.trim()) throw new Error("Enter your password, or a code from a factor you still have.");
+        await request.run(proof);
+      }}
+    >
+      <Field id={fieldId} label="Your password">
+        <input
+          id={fieldId}
+          type="password"
+          autoComplete="current-password"
+          className="input"
+          value={proof}
+          onChange={(e) => setProof(e.target.value)}
+        />
+      </Field>
+    </ConfirmDialog>
   );
 }
 
@@ -91,16 +118,6 @@ const pickProfile = (u) => ({
   last_name: u?.last_name || "",
   job_title: u?.job_title || "",
 });
-
-// The admin is served by the API; the Vite dev server proxies only /api and /media, so a local install uses the API port.
-function AdminWhere() {
-  return (
-    <>
-      the Django admin, under Users: <span className="font-mono">/admin/</span> on this site's address, or
-      on a local install <span className="font-mono">{"http://127.0.0.1:8000/admin/"}</span>.
-    </>
-  );
-}
 
 function ProfileSection({ me, onUpdate }) {
   const [form, setForm] = useState(() => pickProfile(me));
@@ -147,10 +164,7 @@ function ProfileSection({ me, onUpdate }) {
         <Field id="acct-last" label="Last name">
           <input id="acct-last" className="input" autoComplete="family-name" value={form.last_name} onChange={set("last_name")} />
         </Field>
-        <Field id="acct-email" label="Email" className="sm:col-span-2"
-               hint={me.is_superuser
-                 ? <>Change it in <AdminWhere /></>
-                 : "Managed by an administrator."}>
+        <Field id="acct-email" label="Email" className="sm:col-span-2" hint="Ask an administrator to change it.">
           <input id="acct-email" type="email" className="input" value={me.email || ""} disabled />
         </Field>
         <Field id="acct-title" label="Job title" className="sm:col-span-2">
@@ -163,14 +177,11 @@ function ProfileSection({ me, onUpdate }) {
             onChange={set("job_title")}
           />
         </Field>
-        <Field id="acct-username" label="Username" className="sm:col-span-2"
-               hint={me.is_superuser
-                 ? <>Change it in <AdminWhere /></>
-                 : "Managed by an administrator."}>
+        <Field id="acct-username" label="Username" className="sm:col-span-2" hint="Ask an administrator to change it.">
           <input id="acct-username" className="input font-mono" value={me.username || ""} disabled />
         </Field>
         <div className="flex flex-col items-start gap-3 sm:col-span-2">
-          <Notice msg={msg} className="w-full" />
+          {msg ? <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)} className="w-full">{msg.text}</Notice> : null}
           <Button type="submit" variant="primary" disabled={saving}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
@@ -393,7 +404,7 @@ function PasswordBlock() {
           />
         </Field>
         <div className="flex flex-col items-start gap-3 sm:col-span-2">
-          <Notice msg={msg} className="w-full" />
+          {msg ? <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)} className="w-full">{msg.text}</Notice> : null}
           <Button type="submit" variant="primary" disabled={saving || !form.current_password || !form.new_password || !form.confirm}>
             {saving ? "Updating…" : "Update password"}
           </Button>
@@ -409,7 +420,7 @@ function BackupCodes({ codes }) {
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = "compliance-backup-codes.txt";
+    a.download = "conformiti-backup-codes.txt";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -497,37 +508,47 @@ function MfaBlock() {
     }
   }
 
-  async function disable() {
+  // Both take their proof from the dialog that asks first; a refusal is thrown so the dialog stays open with it.
+  async function disable(proof) {
     setMsg(null);
-    setBusy(true);
-    try {
-      await api.post("/auth/mfa/disable/", { password, otp: password });
-      setPassword("");
-      setCodes(null);
-      loadStatus();
-      setMsg({ ok: true, text: "Two-factor authentication is off." });
-    } catch (e) {
-      setMsg({ ok: false, text: errorText(e, "Couldn't disable MFA.") });
-    } finally {
-      setBusy(false);
-    }
+    await api.post("/auth/mfa/disable/", { password: proof, otp: proof }).catch((e) => {
+      throw new Error(errorText(e, "Couldn't turn off two-factor."));
+    });
+    setPassword("");
+    setCodes(null);
+    loadStatus();
+    setMsg({ ok: true, text: "Two-factor authentication is off." });
   }
 
-  async function regen() {
+  async function regen(proof) {
     setMsg(null);
-    setBusy(true);
-    try {
-      const { data } = await api.post("/auth/mfa/backup-codes/", { password, otp: password });
-      setCodes(data.backup_codes);
-      setPassword("");
-      loadStatus();
-      setMsg({ ok: true, text: "New backup codes issued. The old ones no longer work." });
-    } catch (e) {
-      setMsg({ ok: false, text: errorText(e, "Couldn't regenerate codes.") });
-    } finally {
-      setBusy(false);
-    }
+    const { data } = await api.post("/auth/mfa/backup-codes/", { password: proof, otp: proof }).catch((e) => {
+      throw new Error(errorText(e, "Couldn't regenerate codes."));
+    });
+    setCodes(data.backup_codes);
+    setPassword("");
+    loadStatus();
+    setMsg({ ok: true, text: "New backup codes issued. The old ones no longer work." });
   }
+
+  const [proofAsk, setProofAsk] = useState(null);
+  const askRegen = () =>
+    setProofAsk({
+      title: "Regenerate backup codes?",
+      description: "Your current backup codes stop working.",
+      confirmLabel: "Regenerate",
+      tone: "primary",
+      run: regen,
+    });
+  const askTurnOff = () =>
+    setProofAsk({
+      title: "Turn off two-factor?",
+      description: status?.passkeys
+        ? "Sign-in stops asking for your authenticator app. Your passkeys and backup codes still work."
+        : "Sign-in will ask for your password alone, and your backup codes are deleted.",
+      confirmLabel: "Turn off",
+      run: disable,
+    });
 
   function cancelSetup() {
     setSetup(null);
@@ -560,7 +581,7 @@ function MfaBlock() {
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium text-ink">Authenticator app</span>
               <span className="block text-xs text-muted">
-                {status.enabled ? "Enrolled · TOTP" : setup || status.pending ? "Enrolment started, not yet verified" : "Not enrolled"}
+                {status.enabled ? "Enrolled" : setup || status.pending ? "Enrolment started, not yet verified" : "Not enrolled"}
               </span>
             </span>
             <Badge tone={status.enabled ? "success" : "muted"} dot>
@@ -568,14 +589,16 @@ function MfaBlock() {
             </Badge>
             {!status.enabled && !setup ? (
               <Button size="sm" variant="primary" onClick={begin} disabled={busy}>
-                {busy ? "Starting…" : "Enable"}
+                {busy ? "Starting…" : "Turn on"}
               </Button>
             ) : null}
           </li>
         </ul>
       )}
 
-      <Notice msg={msg} className="mt-4 max-w-[640px]" />
+      {msg ? (
+        <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)} className="mt-4 max-w-[640px]">{msg.text}</Notice>
+      ) : null}
       {codes ? <BackupCodes codes={codes} /> : null}
 
       {/* Same proof as removing a factor: a hijacked session must not be able to enrol its own authenticator. */}
@@ -591,9 +614,6 @@ function MfaBlock() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </Field>
-          <p className="mt-2 text-xs text-muted">
-            No password here (single sign-on)? Leave this empty.
-          </p>
         </div>
       ) : null}
 
@@ -606,7 +626,7 @@ function MfaBlock() {
                 {secretGrouped}
               </p>
             </div>
-            <Field id="mfa-uri" label="otpauth URI">
+            <Field id="mfa-uri" label="Setup link">
               <input
                 id="mfa-uri"
                 className="input font-mono text-xs"
@@ -641,33 +661,22 @@ function MfaBlock() {
       ) : null}
 
       {status?.second_factor && !codes ? (
-        <div className="mt-4 max-w-[640px]">
-          <Field id="mfa-password" label="Confirm your password to make changes">
-            <input
-              id="mfa-password"
-              type="password"
-              autoComplete="current-password"
-              className="input sm:max-w-[312px]"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button
-              onClick={regen}
-              disabled={busy || !password}
-              icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
-            >
-              Regenerate backup codes
+        <div className="mt-4 flex max-w-[640px] flex-wrap items-center gap-2">
+          <Button
+            onClick={askRegen}
+            disabled={busy}
+            icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
+          >
+            Regenerate backup codes
+          </Button>
+          {status.enabled ? (
+            <Button variant="danger" onClick={askTurnOff} disabled={busy}>
+              Turn off
             </Button>
-            {status.enabled ? (
-              <Button variant="danger" onClick={disable} disabled={busy || !password}>
-                Turn off
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
         </div>
       ) : null}
+      <ProofDialog request={proofAsk} onClose={() => setProofAsk(null)} />
     </>
   );
 }
@@ -715,20 +724,23 @@ function PasskeysBlock() {
     }
   }
 
-  async function remove(row) {
+  // The proof comes from the dialog that asks first; a refusal is thrown so the dialog stays open with it.
+  async function remove(row, proof) {
     setMsg(null);
-    setBusy(true);
-    try {
-      await api.delete(`/auth/webauthn/${row.id}/`, { data: { password, otp: password } });
-      setPassword("");
-      load();
-      setMsg({ ok: true, text: `Removed "${row.name}".` });
-    } catch (err) {
-      setMsg({ ok: false, text: errorText(err, "Couldn't remove the passkey.") });
-    } finally {
-      setBusy(false);
-    }
+    await api.delete(`/auth/webauthn/${row.id}/`, { data: { password: proof, otp: proof } }).catch((err) => {
+      throw new Error(errorText(err, "Couldn't remove the passkey."));
+    });
+    load();
+    setMsg({ ok: true, text: `Removed "${row.name}".` });
   }
+  const [proofAsk, setProofAsk] = useState(null);
+  const askRemove = (row) =>
+    setProofAsk({
+      title: `Remove “${row.name}”?`,
+      description: "It can no longer be used to sign in.",
+      confirmLabel: "Remove passkey",
+      run: (proof) => remove(row, proof),
+    });
 
   const [renaming, setRenaming] = useState(null);
   const rename = (row) => setRenaming(row);
@@ -758,15 +770,9 @@ function PasskeysBlock() {
         <Loading className="py-6 text-left" />
       ) : (
         <>
-          <div className="mt-4 max-w-[640px]">
-            <Field id="passkey-password" label="Confirm your password to add or remove a key">
-              <input id="passkey-password" type="password" autoComplete="current-password" className="input sm:max-w-[312px]"
-                     value={password} onChange={(e) => setPassword(e.target.value)} />
-            </Field>
-          </div>
           {suspect ? (
             <div className="notice notice-err mt-4 max-w-[640px]" role="alert">
-              {suspect === 1 ? "One passkey was" : `${suspect} passkeys were`} disabled: the signature counter went backwards, so a copy of the key may exist. Remove {suspect === 1 ? "it" : "them"} and enrol a fresh key.
+              {suspect === 1 ? "One passkey was" : `${suspect} passkeys were`} turned off because {suspect === 1 ? "it" : "they"} may have been copied. Remove {suspect === 1 ? "it" : "them"} and add a new one.
             </div>
           ) : null}
           <ul className="mt-4 max-w-[640px] divide-y divide-line rounded-xl border border-line" aria-label="Enrolled passkeys">
@@ -786,11 +792,10 @@ function PasskeysBlock() {
                     {" · added "}{String(r.created_at).slice(0, 10)}
                     {r.last_used_at ? ` · last used ${String(r.last_used_at).slice(0, 10)}` : " · never used"}
                   </span>
-                  {!r.usable ? <span className="block text-xs text-danger">{r.suspect_reason}</span> : null}
                 </span>
-                <Badge tone={r.usable ? "success" : "danger"} dot>{r.usable ? "Active" : "Disabled"}</Badge>
+                <Badge tone={r.usable ? "success" : "danger"} dot>{r.usable ? "On" : "Off"}</Badge>
                 {r.usable ? <Button size="sm" variant="ghost" onClick={() => rename(r)} disabled={busy}>Rename</Button> : null}
-                <Button size="sm" variant="danger" onClick={() => remove(r)} disabled={busy || !password}>
+                <Button size="sm" variant="danger" onClick={() => askRemove(r)} disabled={busy} aria-label={`Remove ${r.name}`}>
                   Remove
                 </Button>
               </li>
@@ -798,7 +803,9 @@ function PasskeysBlock() {
           </ul>
         </>
       )}
-      <Notice msg={msg} className="mt-4 max-w-[640px]" />
+      {msg ? (
+        <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)} className="mt-4 max-w-[640px]">{msg.text}</Notice>
+      ) : null}
       {codes ? <BackupCodes codes={codes} /> : null}
       {state && supported && rows.length < (state.max || 10) ? (
         <form onSubmit={add} noValidate className="mt-4 flex max-w-[640px] flex-wrap items-end gap-2">
@@ -806,16 +813,19 @@ function PasskeysBlock() {
             <input id="passkey-name" className="input" value={name} placeholder="Work laptop" maxLength={80}
                    onChange={(e) => setName(e.target.value)} />
           </Field>
+          <Field id="passkey-password" label="Confirm your password to add a key" className="min-w-[220px] flex-1">
+            <input id="passkey-password" type="password" autoComplete="current-password" className="input"
+                   value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Field>
           <Button type="submit" variant="primary" disabled={busy}
                   icon={<FingerprintIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
-            {busy ? "Waiting for your authenticator…" : "Add passkey"}
+            {busy ? "Waiting for your device…" : "Add passkey"}
           </Button>
         </form>
       ) : state && !supported ? (
-        <p className="mt-3 max-w-[640px] text-xs text-muted">
-          This browser cannot enrol passkeys (it needs a secure https address and a modern browser).
-        </p>
+        <p className="mt-3 max-w-[640px] text-xs text-muted">This browser can't add passkeys.</p>
       ) : null}
+      <ProofDialog request={proofAsk} onClose={() => setProofAsk(null)} />
       <TextDialog
         open={!!renaming}
         onClose={() => setRenaming(null)}
@@ -845,10 +855,20 @@ function SecuritySection() {
   );
 }
 
-const deliveryLine = (d) => {
-  const outcome = d.ok ? "ok" : `failed${d.error ? ` (${d.error})` : ""}`;
-  return `${d.channel} ${d.event} ${outcome}`;
-};
+const CHANNEL_NAME = { slack: "Slack", teams: "Teams" };
+const channelName = (c) => CHANNEL_NAME[c] || c;
+
+/** The newest delivery per channel decides: a channel whose last message failed is worth a line, a log of them is not. */
+function failingChannels(deliveries) {
+  const seen = new Set();
+  const failing = [];
+  for (const d of deliveries || []) {
+    if (seen.has(d.channel)) continue;
+    seen.add(d.channel);
+    if (!d.ok) failing.push(channelName(d.channel));
+  }
+  return failing;
+}
 
 function ChannelsBlock({ me, onUpdate }) {
   const [info, setInfo] = useState(null);
@@ -891,8 +911,8 @@ function ChannelsBlock({ me, onUpdate }) {
       const { data } = await api.post("/notifications/channels/", {});
       const failed = (data.results || []).filter((r) => !r.ok);
       setMsg(failed.length
-        ? { ok: false, text: `Delivery failed for ${failed.map((r) => `${r.channel} (${r.error || r.response_code})`).join(", ")}.` }
-        : { ok: true, text: `Test message delivered to ${data.attempted.join(" and ")}.` });
+        ? { ok: false, text: `${failed.map((r) => channelName(r.channel)).join(" and ")} did not accept the message. Check the webhook ${failed.length === 1 ? "address" : "addresses"}.` }
+        : { ok: true, text: `Test message delivered to ${data.attempted.map(channelName).join(" and ")}.` });
       load();
     } catch (e) {
       setMsg({ ok: false, text: errorText(e, "Couldn't send the test message.") });
@@ -901,6 +921,7 @@ function ChannelsBlock({ me, onUpdate }) {
     }
   }
 
+  const failing = failingChannels(info?.deliveries);
   const choices = info?.digest_choices || [
     { id: "off", label: "Off" },
     { id: "daily", label: "Daily" },
@@ -909,9 +930,9 @@ function ChannelsBlock({ me, onUpdate }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-1 px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
-        <span className="text-[13px] font-medium text-ink">Digest of your tray</span>
+        <label htmlFor="digest-cadence" className="text-[13px] font-medium text-ink">Digest of your tray</label>
         <span className="text-[13px] leading-snug text-muted">
-          <select id="digest-cadence" className="input sm:max-w-[240px]" value={digest} disabled={busy} aria-label="Digest cadence"
+          <select id="digest-cadence" className="input sm:max-w-[240px]" value={digest} disabled={busy}
                   onChange={(e) => saveDigest(e.target.value)}>
             {choices.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
@@ -919,13 +940,15 @@ function ChannelsBlock({ me, onUpdate }) {
       </div>
       <div className="grid grid-cols-1 gap-1 border-t border-line px-5 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
         <span className="text-[13px] font-medium text-ink">Chat channels</span>
-        <span className="text-[13px] leading-snug text-muted">
+        <div className="text-[13px] leading-snug text-muted">
           {loadErr ? (
             <span role="alert">
               {loadErr}{" "}
               <button type="button" className="link" onClick={load}>Try again</button>
             </span>
-          ) : !info ? "…" : (
+          ) : !info ? (
+            <Loading className="px-0 py-1 text-left" />
+          ) : (
             <>
               <span className="flex flex-wrap items-center gap-1.5">
                 <Badge tone={info.slack ? "success" : "muted"} dot>Slack {info.slack ? "configured" : "not configured"}</Badge>
@@ -934,16 +957,20 @@ function ChannelsBlock({ me, onUpdate }) {
                   <Button size="sm" onClick={sendTest} disabled={busy}>{busy ? "Sending…" : "Send a test message"}</Button>
                 ) : null}
               </span>
-              {admin && info.deliveries?.length ? (
-                <span className="mt-2 block font-mono text-2xs text-faint">
-                  Last deliveries: {info.deliveries.slice(0, 5).map(deliveryLine).join(" · ")}
+              {admin && failing.length ? (
+                <span className="mt-2 block text-xs text-warning" role="status">
+                  The last message to {failing.join(" and ")} did not go through.
                 </span>
               ) : null}
             </>
           )}
-        </span>
+        </div>
       </div>
-      {msg ? <div className="px-5 pb-3"><Notice msg={msg} /></div> : null}
+      {msg ? (
+        <div className="px-5 pb-3">
+          <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)}>{msg.text}</Notice>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -962,9 +989,7 @@ function NotificationsSection({ me, onUpdate }) {
       v: me.email ? (
         <span className="font-mono text-xs text-ink">{me.email}</span>
       ) : (
-        <span>
-          No email on file. {me.is_superuser ? <>Add it in <AdminWhere /></> : "Ask an administrator to add one."}
-        </span>
+        <span>No email on file. Ask an administrator to add one.</span>
       ),
     },
   ];
@@ -1150,7 +1175,7 @@ function WorkspacesBlock({ me }) {
       const chatNote = slack.trim() || teams.trim() ? ", and its chat events to its own channel" : "";
       setMsg({ ok: true, text: inbox.trim()
         ? `Reminders for ${current.name} now go to ${inbox.trim()}${chatNote}.`
-        : `Reminders for ${current.name} fall back to the installation address.` });
+        : `Reminders for ${current.name} fall back to the default address.` });
       load();
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't save the workspace settings.") });
@@ -1175,11 +1200,21 @@ function WorkspacesBlock({ me }) {
     }
   }
 
+  function askRemoveWebhook(field) {
+    const channel = field === "slack_webhook_url" ? "Slack" : "Teams";
+    ask({
+      title: `Remove the ${channel} channel?`,
+      description: `${current?.name || "This workspace"}'s events stop going to ${channel}, and the saved webhook address is erased.`,
+      confirmLabel: "Remove channel",
+      onConfirm: () => removeWebhook(field),
+    });
+  }
+
   function archive(ws) {
     ask({
       title: `Archive “${ws.name}”?`,
       description: "Its people can no longer sign in. Nothing is deleted, and it can be made active again.",
-      confirmLabel: "Archive the workspace",
+      confirmLabel: "Archive workspace",
       onConfirm: () => reallyArchive(ws),
     });
   }
@@ -1201,7 +1236,7 @@ function WorkspacesBlock({ me }) {
     <div className="mt-6 border-t border-line pt-5" data-testid="workspaces">
       {confirmDialog}
       <Label as="p" className="mb-2.5">Workspace</Label>
-      <p className="text-[13px] text-ink">
+      <div className="text-[13px] text-ink">
         {current ? (
           <>
             <span className="font-semibold">{current.name}</span>
@@ -1212,8 +1247,8 @@ function WorkspacesBlock({ me }) {
             {currentErr}{" "}
             <button type="button" className="link" onClick={load}>Try again</button>
           </span>
-        ) : "…"}
-      </p>
+        ) : <Loading className="px-0 py-1 text-left" />}
+      </div>
       {superuser ? (
         <>
           <form onSubmit={saveInbox} className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -1228,8 +1263,8 @@ function WorkspacesBlock({ me }) {
                      placeholder={current?.slack_configured ? "••••••••  (configured)" : "https://hooks.slack.com/services/…"}
                      onChange={(e) => setSlack(e.target.value)} />
               {current?.slack_configured ? (
-                <button type="button" className="mt-1 text-xs text-muted underline" disabled={busy}
-                        onClick={() => removeWebhook("slack_webhook_url")}>Remove</button>
+                <Button size="sm" variant="ghost" className="mt-1" disabled={busy} aria-label="Remove Slack channel"
+                        onClick={() => askRemoveWebhook("slack_webhook_url")}>Remove</Button>
               ) : null}
             </Field>
             <Field id="workspace-teams" label="Teams incoming webhook for this workspace"
@@ -1238,12 +1273,12 @@ function WorkspacesBlock({ me }) {
                      placeholder={current?.teams_configured ? "••••••••  (configured)" : "https://…webhook.office.com/…"}
                      onChange={(e) => setTeams(e.target.value)} />
               {current?.teams_configured ? (
-                <button type="button" className="mt-1 text-xs text-muted underline" disabled={busy}
-                        onClick={() => removeWebhook("teams_webhook_url")}>Remove</button>
+                <Button size="sm" variant="ghost" className="mt-1" disabled={busy} aria-label="Remove Teams channel"
+                        onClick={() => askRemoveWebhook("teams_webhook_url")}>Remove</Button>
               ) : null}
             </Field>
             <div className="sm:col-span-2">
-              <Button type="submit" size="sm" variant="secondary" disabled={busy || !current}>Save</Button>
+              <Button type="submit" size="sm" variant="secondary" disabled={busy || !current}>Save changes</Button>
             </div>
           </form>
           <ul className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2">
@@ -1281,7 +1316,7 @@ function WorkspacesBlock({ me }) {
                 className="input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Organisation name"
+                placeholder="Workspace name"
                 disabled={busy}
               />
             </Field>
@@ -1293,7 +1328,7 @@ function WorkspacesBlock({ me }) {
           </form>
         </>
       ) : null}
-      {msg ? <Notice msg={msg} className="mt-3" /> : null}
+      {msg ? <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)} className="mt-3">{msg.text}</Notice> : null}
     </div>
   );
 }
@@ -1350,12 +1385,12 @@ function AboutSection() {
     ? "Off"
     : scanning.reachable
       ? `On · answering${scanning.latency_ms != null ? ` in ${scanning.latency_ms} ms` : ""}`
-      : `On · UNREACHABLE${scanning.down_since ? ` since ${String(scanning.down_since).slice(0, 16).replace("T", " ")}` : ""}`;
+      : `On · not answering${scanning.down_since ? ` since ${String(scanning.down_since).slice(0, 16).replace("T", " ")}` : ""}`;
   const rows = [
     ["Version", health?.version ? `v${health.version}` : "-"],
     ["Core licence", "AGPL-3.0"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
-    ...(auditor ? [] : [["Frameworks", frameworks ? `${frameworks.length} loaded` : "…"]]),
+    ...(auditor ? [] : [["Frameworks", frameworks ? `${frameworks.length} loaded` : "Loading…"]]),
     ["Malware scanning", scannerLabel],
     ["Package signing", signingLabel(signingKey)],
     ...(signingKey?.fingerprint ? [["Signing key fingerprint", `sha256:${signingKey.fingerprint}`]] : []),

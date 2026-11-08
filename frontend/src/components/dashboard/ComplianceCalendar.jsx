@@ -2,13 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import api from "../../api/client.js";
-import { errorText } from "../../utils/a11y.js";
+import { errorText, loadFailReason } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
 import { TONE_FILL, TONE_TEXT, TONE_WASH } from "../../utils/tone.js";
 import DocumentViewer from "../documents/DocumentViewer.jsx";
 import { Collapse, EASE } from "../layout/PanelTransition.jsx";
 import { Button, IconButton } from "../ui/Button.jsx";
-import { Label, Panel } from "../ui/Panel.jsx";
+import { useConfirm } from "../ui/Dialog.jsx";
+import { Label, Panel, PanelHeader } from "../ui/Panel.jsx";
+import { reviewRequest } from "./ReviewQueue.jsx";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -61,6 +63,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
   const [busyId, setBusyId] = useState(null);
   const [outcome, setOutcome] = useState(null);
   const reqRef = useRef(0);
+  const { ask, confirmDialog } = useConfirm();
   const [todayKey] = useState(() => localKey(new Date()));
 
   // The API returns 403 without edit access to the folder; ReviewQueue applies the same rule.
@@ -84,7 +87,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
         if (id !== reqRef.current) return;
         // The previous feed is dropped so the counts read as unknown, not as a confident zero.
         setEvents([]);
-        setError(errorText(e, "Couldn't load the calendar feed."));
+        setError(`The calendar could not be loaded. ${loadFailReason(e) || "Try again."}`);
       })
       .finally(() => {
         if (id === reqRef.current) setLoading(false);
@@ -148,12 +151,12 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
     setBusyId(event.id);
     try {
       await api.post(`/documents/${event.document}/mark_reviewed/`);
-      // Drop the entry now: until the feed reloads, a second click on it would attest it again.
+      // Drop the entry now: until the feed reloads, a second click on it would mark it reviewed again.
       setEvents((list) => list.filter((e) => e.id !== event.id));
       setOutcome({ day: event.date, ok: true, text: `Marked "${name}" reviewed.` });
       await onChanged?.();
     } catch (e) {
-      setOutcome({ day: event.date, ok: false, text: errorText(e, `Couldn't mark "${name}" reviewed. Please try again.`) });
+      setOutcome({ day: event.date, ok: false, text: errorText(e, `"${name}" could not be marked reviewed. Try again.`) });
     } finally {
       setBusyId(null);
     }
@@ -161,13 +164,12 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
 
   return (
     <Panel className="flex flex-col overflow-hidden" aria-busy={loading}>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
-        <div className="flex items-baseline gap-3">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Compliance calendar</h2>
-          <Label>
-            {loading ? "Loading…" : unknown ? "- items this month" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}
-          </Label>
-        </div>
+      <PanelHeader
+        inline
+        title="Compliance calendar"
+        meta={loading ? "Loading…" : unknown ? "- items this month" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}
+        className="flex-wrap gap-3"
+      >
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1" role="group" aria-label="Filter calendar by item type">
             {KINDS.filter((kind) => presentKinds.has(kind)).map((kind) => {
@@ -210,7 +212,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
             </IconButton>
           </div>
         </div>
-      </header>
+      </PanelHeader>
 
       {error ? (
         <div className="notice notice-err mx-5 mt-3 flex items-center justify-between gap-3" role="alert">
@@ -384,7 +386,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                             {kind.label}
                             {event.overdue ? " / overdue" : ""}
                             {event.completed ? " / completed" : ""}
-                            {event.end_date && event.end_date !== event.date ? ` / until ${event.end_date}` : ""}
+                            {event.end_date && event.end_date !== event.date ? ` / until ${longDate(parseKey(event.end_date))}` : ""}
                           </span>
                         </span>
                         {canReview && review && !event.completed ? (
@@ -393,13 +395,13 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
                             className="shrink-0"
                             disabled={busyId != null}
                             aria-label={`Mark reviewed: ${docName}`}
-                            onClick={() => markReviewed(event)}
+                            onClick={() => ask(reviewRequest(docName, () => markReviewed(event)))}
                             icon={<CheckIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />}
                           >
                             {busyId === event.id ? "Marking…" : "Mark reviewed"}
                           </Button>
                         ) : null}
-                        <span className="hidden text-xs text-muted sm:block">{event.assignee || "Unassigned"}</span>
+                        <span className="hidden text-xs text-muted sm:block">{event.assignee || "No owner"}</span>
                       </motion.li>
                     );
                   })}
@@ -411,6 +413,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       </AnimatePresence>
 
       <DocumentViewer open={!!viewing} {...(viewing || {})} onClose={() => setViewing(null)} />
+      {confirmDialog}
     </Panel>
   );
 }

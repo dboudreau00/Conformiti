@@ -2,6 +2,7 @@ import math
 
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import APIException
 
 from accounts.tenancy import CurrentWorkspaceDefault
 from documents.serializers import PersonNameField
@@ -14,6 +15,13 @@ from .models import (
     MeetingMinute,
     MeetingSeries,
 )
+
+
+class ReviewIsCompleted(APIException):
+    """The one refusal a completed review gives, from a serializer or a view, so both answer ``{"detail": ...}``."""
+    status_code = 400
+    default_detail = "This review is completed and read-only."
+    default_code = "review_completed"
 
 
 class AccessReviewItemSerializer(serializers.ModelSerializer):
@@ -34,7 +42,7 @@ class AccessReviewItemSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if self.instance and self.instance.review.status == AccessReview.Status.COMPLETED:
-            raise serializers.ValidationError("This review is completed and read-only.")
+            raise ReviewIsCompleted()
         return attrs
 
     def update(self, instance, validated_data):
@@ -66,7 +74,7 @@ class AccessReviewSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         # A completed review is evidence: its name and notes are locked, like its rows.
         if self.instance and self.instance.status == AccessReview.Status.COMPLETED:
-            raise serializers.ValidationError("This review is completed and read-only.")
+            raise ReviewIsCompleted()
         return attrs
 
     def get_item_count(self, obj):

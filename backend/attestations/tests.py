@@ -395,12 +395,17 @@ class ConclusionTests(PackageTestBase):
         risk = Risk.objects.get(risk_type=Risk.Type.AUDIT_FINDING)
         self.assertIn("TC1.1", risk.title)
         self.assertEqual(risk.control, self.tree.c1)
-        self.assertEqual(self.manager_client.post(f"{url}promote/").status_code, 400)
+        again = self.manager_client.post(f"{url}promote/")
+        self.assertEqual(again.status_code, 400)
+        # The screen says "risk" (Raise as a risk, Tracked as a risk); the refusal must use the same word.
+        self.assertIn("already tracked as a risk", str(again.data))
+        self.assertNotIn("finding", str(again.data))
 
     def test_a_control_without_exceptions_cannot_be_promoted(self):
-        self.assertEqual(
-            self.manager_client.post(f"/api/package-controls/{self.row.pk}/promote/").status_code,
-            400)
+        r = self.manager_client.post(f"/api/package-controls/{self.row.pk}/promote/")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("can be raised as a risk", str(r.data))
+        self.assertNotIn("finding", str(r.data))
 
 
 class ManifestTests(PackageTestBase):

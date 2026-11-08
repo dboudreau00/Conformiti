@@ -42,7 +42,10 @@ package signing key, and a restore without it loses all three.
 - **Python 3.11 to 3.14** with `venv` and `pip`
   (Debian or Ubuntu: `sudo apt install python3-venv python3-pip`). The
   installer refuses anything older than 3.11 and warns about anything newer
-  than 3.14, which is untested.
+  than 3.14, which is untested. The system `python3` of Ubuntu 22.04 (3.10) and
+  of macOS (3.9) is too old: install 3.12 from python.org, with Homebrew
+  (`brew install python@3.12`) or, on Ubuntu 22.04, from the deadsnakes PPA
+  (`python3.12` and `python3.12-venv`).
 - **Node.js 20.19+ or 22.12+** with npm 10+ (Vite 8 requires it). A Linux
   distribution's own `nodejs` package is usually older (Debian 12 and Ubuntu
   24.04 ship 18, Ubuntu 22.04 ships 12), so install Node 22 LTS from
@@ -59,7 +62,8 @@ On Windows, start the installer with
 Docker path). Windows PowerShell refuses to run any script by default, and a
 script extracted from a downloaded ZIP is refused under `RemoteSigned` too.
 `-ExecutionPolicy Bypass` lifts that for the one run and changes nothing on
-the machine.
+the machine. `install.sh` is for macOS, Linux and WSL: it stops at once in Git
+Bash and Cygwin.
 
 ## Where it runs badly
 
@@ -68,7 +72,9 @@ the machine.
   of small files, and the sync client locks and rewrites them while pip, npm and
   Vite are using them, which shows up as installs that fail halfway or hang.
   Clone into a plain local folder (for example `C:\conformiti` or
-  `~/conformiti`). The same goes for a network share.
+  `~/conformiti`). The same goes for a network share. Both installers warn
+  when the folder's path names one of these services. On Windows, Desktop and
+  Documents are OneDrive's by default.
 - **A long path on Windows.** The evidence folder tree goes up to 150
   characters below the checkout, and Windows stops at 259 unless long paths are
   switched on. `install.ps1` refuses a folder that is too deep and says so; a

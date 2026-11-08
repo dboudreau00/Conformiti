@@ -100,7 +100,7 @@ def _verdict(subject):
     except clamav.InfectedError as exc:
         return Document.Scan.INFECTED, str(exc.signature)[:200], exc
     except clamav.LimitsExceededError as exc:
-        return Document.Scan.ERROR, f"not fully inspected: {exc.reason}"[:200], None
+        return Document.Scan.ERROR, f"not fully inspected: {exc.plain()}"[:200], None
     except clamav.ScanError as exc:
         logger.error("Re-scan of %s %s failed: %s", type(subject).__name__.lower(), subject.pk, exc)
         return Document.Scan.ERROR, str(exc)[:200], None

@@ -21,7 +21,7 @@ npm test
 That is the whole setup. Playwright starts everything it needs:
 
 1. deletes `e2e/.e2e-db.sqlite3`, `e2e/.e2e-media` and `e2e/.e2e-tree`, then
-   migrates, seeds the three control libraries and loads the demo dataset into
+   migrates, seeds the three control libraries and loads the demo data into
    them (your own development database and uploads are never touched);
 2. starts Django on `127.0.0.1:8001`;
 3. runs `npm run build` in `frontend/` and serves the result with

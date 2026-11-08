@@ -80,23 +80,20 @@ function MapEditor({ doc, choices, busy, onAdd, onRemove }) {
       <div className="flex flex-wrap gap-1.5">
         {doc.satisfies?.length ? (
           doc.satisfies.map((s) => (
-            <span
-              key={s.link_id}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent/10 py-0.5 pl-2 pr-1 text-2xs font-medium text-accent ring-1 ring-accent/25"
-            >
+            <Badge key={s.link_id} tone="accent" className="max-w-full pr-1">
               <span className="font-mono">{s.label}</span>
               <span className="max-w-[240px] truncate text-muted">{s.title}</span>
               <button
                 type="button"
-                aria-label={`Unlink ${s.label}`}
-                title="Unlink"
+                aria-label={`Remove ${s.label} from this document`}
+                title="Remove"
                 disabled={busy}
                 onClick={() => onRemove(s.link_id)}
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-accent/70 transition-colors duration-150 ease-out hover:bg-accent/15 hover:text-accent disabled:opacity-50"
               >
-                <XIcon className="h-3 w-3" strokeWidth={2.5} />
+                <XIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />
               </button>
-            </span>
+            </Badge>
           ))
         ) : (
           <span className="text-xs text-faint">Not linked to any control yet.</span>
@@ -281,12 +278,12 @@ function DocActionsMenu({
   );
 }
 
-function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, onGrantBy, grant, onGrantChange, onGrant, onRemove }) {
+function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, onGrantBy, grant, onGrantChange, onGrant, onRevoke }) {
   const list = grantBy === "role" ? roles : users;
   return (
     <div id="folder-access" className="border-b border-line bg-surface-2 px-5 py-4">
       <div className="mb-3 flex items-center justify-between gap-4">
-        <Label className="whitespace-normal">Folder access · inherited by subfolders</Label>
+        <Label className="whitespace-normal">Folder access</Label>
         {permsErr ? <Label>- grants</Label> : perms ? <Label>{perms.length} {perms.length === 1 ? "grant" : "grants"}</Label> : null}
       </div>
       {permsErr ? (
@@ -307,11 +304,11 @@ function AccessEditor({ perms, permsErr, onRetry, roles, users, busy, grantBy, o
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => onRemove(p.id)}
+                  onClick={() => onRevoke(p, who)}
                   disabled={busy}
-                  aria-label={`Remove ${p.access_level} access for ${who}`}
+                  aria-label={`Revoke ${p.access_level} access for ${who}`}
                 >
-                  Remove
+                  Revoke
                 </Button>
               </li>
             );
@@ -612,7 +609,7 @@ export default function Documents({ me }) {
     refreshDocs(); // always refresh: a duplicate or race is best resolved with server truth
   }
   async function removeLink(linkId) {
-    const ok = await run(() => api.delete(`/control-evidence/${linkId}/`), "Control unlinked.");
+    const ok = await run(() => api.delete(`/control-evidence/${linkId}/`), "Control removed from this document.");
     if (ok) refreshDocs();
   }
 
@@ -714,9 +711,27 @@ export default function Documents({ me }) {
     const ok = await run(() => api.post("/folder-permissions/", payload), "Access granted.");
     if (ok) { setGrant((g) => ({ ...g, target: "" })); loadPerms(folder.id); }
   }
-  async function removeGrant(id) {
-    const ok = await run(() => api.delete(`/folder-permissions/${id}/`), "Access removed.");
-    if (ok) loadPerms(folder.id);
+  // Runs inside the confirmation dialog, so a failure must throw: the dialog stays open and says why.
+  async function revokeGrant(id) {
+    setMsg(null);
+    setBusy(true);
+    try {
+      await api.delete(`/folder-permissions/${id}/`);
+    } catch (e) {
+      throw new Error(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+    setMsg({ ok: true, text: "Access revoked." });
+    loadPerms(folder.id);
+  }
+  function confirmRevokeGrant(p, who) {
+    ask({
+      title: `Revoke ${who}'s ${p.access_level} access?`,
+      description: "They lose this access to the folder and its subfolders unless another grant gives it back.",
+      confirmLabel: "Revoke",
+      onConfirm: () => revokeGrant(p.id),
+    });
   }
 
   /** parentId: undefined creates inside the open folder, null at the root. */
@@ -736,7 +751,7 @@ export default function Documents({ me }) {
     ask({
       title: `Delete "${folder.name}"?`,
       description: "Everything inside it goes too: subfolders, documents and every version of them. This cannot be undone.",
-      confirmLabel: "Delete the folder",
+      confirmLabel: "Delete folder",
       onConfirm: () => reallyDeleteFolder(),
     });
   }
@@ -759,6 +774,7 @@ export default function Documents({ me }) {
   );
   // Counts show a dash until this folder's list has arrived: never zeros, or the previous folder's numbers.
   const countsKnown = !!folder && !docsLoading && !docsErr;
+  const listed = countsKnown && docs.length > 0;
   const cols = canEdit ? DOC_COLS_EDIT : DOC_COLS;
   const meName = me?.full_name || me?.username || "Me";
 
@@ -830,11 +846,6 @@ export default function Documents({ me }) {
                 className="max-h-[60vh] overflow-y-auto"
               />
             )}
-            {treeErr || canEdit || !folder ? null : (
-              <div className="border-t border-line p-3">
-                <p className="text-center text-2xs text-faint">This folder is view-only for you.</p>
-              </div>
-            )}
           </Panel>
 
           <Panel className="mt-4 p-4">
@@ -896,28 +907,30 @@ export default function Documents({ me }) {
                   <Empty title="No documents match" />
                 ) : (
                   <div className="overflow-x-auto">
-                    <div style={{ minWidth: SEARCH_COLS.minWidth }}>
+                    <div style={{ minWidth: SEARCH_COLS.minWidth }} role="table" aria-label="Matching documents">
                       <div
+                        role="row"
                         className="grid gap-3 border-b border-line bg-surface-2 px-5 py-2"
                         style={{ gridTemplateColumns: SEARCH_COLS.template }}
                       >
-                        <Label>Document</Label>
-                        <Label>Folder</Label>
-                        <Label>Status</Label>
-                        <Label>Review due</Label>
-                        <Label>Owner</Label>
+                        <Label role="columnheader">Document</Label>
+                        <Label role="columnheader">Folder</Label>
+                        <Label role="columnheader">Status</Label>
+                        <Label role="columnheader">Review due</Label>
+                        <Label role="columnheader">Owner</Label>
                       </div>
-                      <ul className="divide-y divide-line">
+                      <ul role="rowgroup" className="divide-y divide-line">
                         {hits.map((d) => {
                           const status = DOC_STATUS[d.status] || { label: d.status, tone: "muted" };
                           const days = d.days_until_review;
                           return (
                             <li
                               key={d.id}
+                              role="row"
                               className="grid items-center gap-3 px-5 py-3 transition-colors duration-150 ease-out hover:bg-surface-2"
                               style={{ gridTemplateColumns: SEARCH_COLS.template }}
                             >
-                              <span className="flex min-w-0 items-center gap-1">
+                              <span role="cell" className="flex min-w-0 items-center gap-1">
                                 <button
                                   type="button"
                                   onClick={() => setViewing(documentViewerProps(d))}
@@ -930,22 +943,24 @@ export default function Documents({ me }) {
                                   <DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                                 </IconButton>
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => jumpTo(d)}
-                                title="Open this folder"
-                                className="truncate text-left font-mono text-2xs uppercase tracking-label text-faint transition-colors duration-150 ease-out hover:text-accent"
-                              >
-                                {d.folder_path}
-                              </button>
-                              <span><Badge tone={status.tone} dot>{status.label}</Badge></span>
-                              <span className="flex flex-col items-start gap-1">
+                              <span role="cell" className="min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => jumpTo(d)}
+                                  title="Open this folder"
+                                  className="block max-w-full truncate text-left font-mono text-2xs uppercase tracking-label text-faint transition-colors duration-150 ease-out hover:text-accent"
+                                >
+                                  {d.folder_path}
+                                </button>
+                              </span>
+                              <span role="cell"><Badge tone={status.tone} dot>{status.label}</Badge></span>
+                              <span role="cell" className="flex flex-col items-start gap-1">
                                 <span className="tabular font-mono text-xs" style={{ color: toneVar(dueTone(days)) }}>
                                   {fmtDate(d.next_review_date)}
                                 </span>
                                 <Badge tone={dueTone(days)} mono>{dueLabel(days)}</Badge>
                               </span>
-                              <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>
+                              <span role="cell" className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>
                                 {d.owner_name || "-"}
                               </span>
                             </li>
@@ -1100,40 +1115,51 @@ export default function Documents({ me }) {
                         grant={grant}
                         onGrantChange={setGrant}
                         onGrant={submitGrant}
-                        onRemove={removeGrant}
+                        onRevoke={confirmRevokeGrant}
                       />
                     </Collapse>
                   ) : null}
                 </AnimatePresence>
 
+                {isTruncated(docs) && !docsLoading && !docsErr ? (
+                  <p className="notice notice-warn mx-5 my-3" role="status">
+                    Showing the first {docs.length} documents in this folder. Search to find the others.
+                  </p>
+                ) : null}
                 <div className="overflow-x-auto">
-                  <div style={{ minWidth: cols.minWidth }}>
+                  {/* A table only while there are rows: a loading line or an empty state is not a row of it. */}
+                  <div
+                    style={{ minWidth: cols.minWidth }}
+                    role={listed ? "table" : undefined}
+                    aria-label={listed ? `Documents in ${folder.name}` : undefined}
+                  >
                     <div
+                      role={listed ? "row" : undefined}
                       className="relative grid gap-3 border-b border-line bg-surface-2 px-5 py-2"
                       style={{ gridTemplateColumns: cols.template }}
                     >
-                      <Label>Document</Label>
-                      <Label>Status</Label>
-                      <Label>Review due</Label>
-                      <Label>Owner</Label>
-                      <Label>Version</Label>
-                      <Label>Controls</Label>
+                      <Label role={listed ? "columnheader" : undefined}>Document</Label>
+                      <Label role={listed ? "columnheader" : undefined}>Status</Label>
+                      <Label role={listed ? "columnheader" : undefined}>Review due</Label>
+                      <Label role={listed ? "columnheader" : undefined}>Owner</Label>
+                      <Label role={listed ? "columnheader" : undefined}>Version</Label>
+                      <Label role={listed ? "columnheader" : undefined}>Controls</Label>
                       {/* sr-only: the column is one button wide, narrower than the word. */}
-                      {canEdit ? <span className="sr-only">Actions</span> : null}
+                      {canEdit ? <span className="sr-only" role={listed ? "columnheader" : undefined}>Actions</span> : null}
                     </div>
-                    {isTruncated(docs) && !docsLoading && !docsErr ? (
-                      <p className="notice notice-warn mx-5 my-3" role="status">
-                        Showing the first {docs.length} documents in this folder. Search to find the others.
-                      </p>
-                    ) : null}
                     {docsLoading ? (
                       <Loading />
                     ) : docsErr ? (
                       <LoadError what="This folder's documents" reason={docsErr.reason} onRetry={() => loadDocs(folderId)} />
                     ) : docs.length === 0 ? (
-                      <Empty title="No documents in this folder" />
+                      <Empty
+                        title="No documents in this folder"
+                        action={canEdit && !showUpload ? (
+                          <Button size="sm" variant="primary" onClick={toggleUpload} disabled={busy}>Upload document</Button>
+                        ) : null}
+                      />
                     ) : (
-                      <ul className="divide-y divide-line">
+                      <ul role="rowgroup" className="divide-y divide-line">
                         <AnimatePresence>
                           {docs.map((d, i) => {
                             const days = d.days_until_review;
@@ -1143,16 +1169,18 @@ export default function Documents({ me }) {
                             return (
                               <motion.li
                                 key={d.id}
+                                role="presentation"
                                 initial={{ opacity: 0, y: 6 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: 0.2, ease: EASE, delay: Math.min(i, 12) * 0.02 }}
                               >
                                 <div
+                                  role="row"
                                   className="grid items-center gap-3 px-5 py-3 transition-colors duration-150 ease-out hover:bg-surface-2"
                                   style={{ gridTemplateColumns: cols.template }}
                                 >
-                                  <span className="min-w-0">
+                                  <span role="cell" className="min-w-0">
                                     <span className="flex min-w-0 items-center gap-1">
                                       <button
                                         type="button"
@@ -1170,21 +1198,21 @@ export default function Documents({ me }) {
                                       {d.folder_path}{d.control_id ? ` · ${d.control_id}` : ""}
                                     </span>
                                   </span>
-                                  <span className="flex flex-col items-start gap-1">
+                                  <span role="cell" className="flex flex-col items-start gap-1">
                                     <Badge tone={status.tone} dot>{status.label}</Badge>
                                     {d.quarantined ? <Badge tone="danger" mono title={d.scan_signature}>quarantined</Badge> : null}
                                   </span>
-                                  <span className="flex flex-col items-start gap-1">
+                                  <span role="cell" className="flex flex-col items-start gap-1">
                                     <span className="tabular font-mono text-xs" style={{ color: toneVar(dueTone(days)) }}>
                                       {fmtDate(d.next_review_date)}
                                     </span>
                                     <Badge tone={dueTone(days)} mono>{dueLabel(days)}</Badge>
                                   </span>
-                                  <span className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>
+                                  <span role="cell" className={cn("truncate text-xs", d.owner_name ? "text-muted" : "text-faint")}>
                                     {d.owner_name || "-"}
                                   </span>
-                                  <span className="tabular font-mono text-xs text-muted">v{d.version}</span>
-                                  <span className="flex flex-wrap gap-1">
+                                  <span role="cell" className="tabular font-mono text-xs text-muted">v{d.version}</span>
+                                  <span role="cell" className="flex flex-wrap gap-1">
                                     {chips.length === 0 ? <span className="text-2xs text-faint">-</span> : null}
                                     {chips.slice(0, MAX_CHIPS).map((s) => (
                                       <Badge key={s.link_id} tone="accent" mono title={s.title}>{s.label}</Badge>
@@ -1192,7 +1220,7 @@ export default function Documents({ me }) {
                                     {chips.length > MAX_CHIPS ? <Badge tone="muted" mono>+{chips.length - MAX_CHIPS}</Badge> : null}
                                   </span>
                                   {canEdit ? (
-                                    <span className="flex items-center justify-end">
+                                    <span role="cell" className="flex items-center justify-end">
                                       <RowActionsTrigger
                                         doc={d}
                                         busy={busy}
@@ -1205,24 +1233,28 @@ export default function Documents({ me }) {
                                 <AnimatePresence initial={false}>
                                   {mode === "map" ? (
                                     <Collapse key="map" open>
-                                      <MapEditor
-                                        doc={d}
-                                        choices={controlChoices}
-                                        busy={busy}
-                                        onAdd={(id) => addLink(d, id)}
-                                        onRemove={removeLink}
-                                      />
+                                      <div role="row"><div role="cell">
+                                        <MapEditor
+                                          doc={d}
+                                          choices={controlChoices}
+                                          busy={busy}
+                                          onAdd={(id) => addLink(d, id)}
+                                          onRemove={removeLink}
+                                        />
+                                      </div></div>
                                     </Collapse>
                                   ) : mode === "rename" ? (
                                     <Collapse key="rename" open>
-                                      <RenameEditor
-                                        doc={d}
-                                        value={renameValue}
-                                        onChange={setRenameValue}
-                                        onSubmit={(e) => submitRename(e, d)}
-                                        onCancel={() => setEditor(null)}
-                                        busy={busy}
-                                      />
+                                      <div role="row"><div role="cell">
+                                        <RenameEditor
+                                          doc={d}
+                                          value={renameValue}
+                                          onChange={setRenameValue}
+                                          onSubmit={(e) => submitRename(e, d)}
+                                          onCancel={() => setEditor(null)}
+                                          busy={busy}
+                                        />
+                                      </div></div>
                                     </Collapse>
                                   ) : null}
                                 </AnimatePresence>

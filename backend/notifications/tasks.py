@@ -30,7 +30,7 @@ def _notify(document, days, overdue, window=None):
     recipients.append(compliance_inbox())
 
     if overdue:
-        subject = f"[Overdue] Review overdue: {document.name}"
+        subject = f"[Overdue] Document review: {document.name}"
     else:
         subject = f"[Reminder] Review due in {count_of(days, 'day')}: {document.name}"
 
@@ -154,7 +154,7 @@ def _notify_pbc(req, days, overdue, window=None):
         recipients.append(req.assignee.email)
     recipients.append(compliance_inbox())
     if overdue:
-        subject = f"[Overdue] Auditor request {req.reference} overdue: {req.title}"
+        subject = f"[Overdue] Auditor request {req.reference}: {req.title}"
     else:
         subject = f"[Reminder] Auditor request {req.reference} due in {count_of(days, 'day')}: {req.title}"
     context = {
@@ -232,7 +232,7 @@ def run_scanner_watch(dry_run=False):
                     "scanner_alert", {"down": True, "since": status.down_since or now},
                     [compliance_inbox()])
                 webhooks.post_event("scanner.down", "Malware scanner unreachable",
-                                    "clamd stopped answering; evidence uploads are being refused until it is back.",
+                                    "The malware scanner stopped answering; evidence uploads are being refused until it is back.",
                                     facts=[("Down since", (status.down_since or now).isoformat(timespec="minutes"))],
                                     path="/documents", severity="critical")
                 status.alerted_down_at = now
@@ -306,7 +306,7 @@ def run_digests(dry_run=False, today=None):
         groups = [(sev, rows) for sev, rows in groups if rows]
         context = {
             "user": user, "items": items, "groups": groups, "count": len(items),
-            "base": base, "cadence": user.get_digest_display().lower(), "today": today,
+            "base": base, "cadence": user.digest, "today": today,
         }
         needs = "needs" if len(items) == 1 else "need"
         subject = f"[Conformiti] {count_of(len(items), 'item')} {needs} your attention"
@@ -353,7 +353,7 @@ def post_daily_summary(today=None):
     if not (docs or risks or pbc or held):
         return []
     facts = [("Documents overdue for review", docs), ("Risks past their due date", risks),
-             ("Auditor requests overdue", pbc), ("Files in quarantine", held)]
+             ("Auditor requests overdue", pbc), ("Documents in quarantine", held)]
     return webhooks.post_event(
         "digest.daily", f"Conformiti daily summary: {today.isoformat()}",
         "Outstanding across the workspace this morning.",

@@ -14,7 +14,7 @@ export function MobileMenu() {
   const { pathname } = useLocation();
   const heading = useId();
   const groups = [
-    { id: "workspace", label: "Workspace", items: tabs },
+    { id: "workspace", label: "Compliance", items: tabs },
     { id: "governance", label: "Governance", items: governance },
     ...side,
     { id: "foot", label: editionTitle(me), items: foot },

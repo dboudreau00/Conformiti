@@ -10,7 +10,7 @@ import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { usePage } from "../components/ui/ShowMore.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
 import { TONE_RING, TONE_TEXT, TONE_WASH } from "../utils/tone.js";
 
@@ -76,9 +76,9 @@ export default function Responsibilities({ me }) {
     try {
       const { data: d } = await api.get(`/responsibilities/matrix/${framework ? `?framework=${encodeURIComponent(framework)}` : ""}`);
       setData(d);
-    } catch {
+    } catch (e) {
       setData(null);
-      setLoadErr(true);
+      setLoadErr({ reason: loadFailReason(e) });
     }
   }
   useEffect(() => { load(fw); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [fw]);
@@ -154,7 +154,7 @@ export default function Responsibilities({ me }) {
             onClick={() => setMsg(null)}
             className="shrink-0 opacity-70 hover:opacity-100"
           >
-            <XIcon className="h-3.5 w-3.5" />
+            <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>
       ) : null}
@@ -183,11 +183,10 @@ export default function Responsibilities({ me }) {
           >
             <Button
               size="sm"
-              variant="ghost"
               icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
               onClick={exportCsv}
             >
-              Export
+              Export CSV
             </Button>
           </PanelHeader>
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
@@ -212,7 +211,7 @@ export default function Responsibilities({ me }) {
             />
           </div>
           {loadErr ? (
-            <LoadError what="The responsibility matrix" onRetry={() => load(fw)} />
+            <LoadError what="The responsibility matrix" reason={loadErr.reason} onRetry={() => load(fw)} />
           ) : !data ? (
             <Loading />
           ) : rows.length === 0 ? (
@@ -265,7 +264,7 @@ export default function Responsibilities({ me }) {
                                 k === "accountable" ? "text-danger" : k === "responsible" ? "text-warning" : "text-faint"
                               )}
                             >
-                              {k === "accountable" ? "nobody" : "-"}
+                              {k === "accountable" || k === "responsible" ? "Unassigned" : "-"}
                             </span>
                           ) : (
                             <span className="flex flex-wrap gap-1">
@@ -315,20 +314,21 @@ export default function Responsibilities({ me }) {
                   e.preventDefault();
                   const body = { control: Number(form.control), role: form.role, note: form.note };
                   body[form.kind === "vendor" ? "vendor" : "user"] = Number(form.party);
-                  if (await act(() => api.post("/responsibilities/", body), "Assigned.", "assign"))
+                  if (await act(() => api.post("/responsibilities/", body), "Responsibility assigned.", "assign"))
                     setForm((f) => ({ ...f, party: "", note: "" }));
                 }}
               >
                 <div>
-                  <span className="field-label">Control</span>
+                  <span id="raci-control-label" className="field-label">Control</span>
                   {chosen ? (
-                    <div className="mt-1 flex items-baseline gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5">
+                    <div role="group" aria-labelledby="raci-control-label" className="mt-1 flex items-baseline gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5">
                       <span className="shrink-0 font-mono text-xs text-accent">{chosen.label}</span>
                       <span className="truncate text-xs text-ink">{chosen.title}</span>
                       <button
                         type="button"
                         className="ml-auto shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink"
                         onClick={() => setForm((f) => ({ ...f, control: "" }))}
+                        aria-label="Change control"
                       >
                         Change
                       </button>
@@ -336,7 +336,7 @@ export default function Responsibilities({ me }) {
                   ) : (
                     <ControlPicker
                       id="raci-control"
-                      label="Control"
+                      labelledBy="raci-control-label"
                       className="mt-1"
                       controls={controls}
                       framework={fw}

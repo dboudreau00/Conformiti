@@ -9,6 +9,7 @@ import { Button } from "../ui/Button.jsx";
 import { Label, Loading } from "../ui/Panel.jsx";
 import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
+import { fmtDate } from "../../utils/format.js";
 import { DOC_STATUS } from "../../utils/tone.js";
 
 const FOCUSABLE = 'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])';
@@ -31,8 +32,8 @@ export function documentViewerProps(doc) {
       { label: "Version", value: `v${doc.version ?? 1}` },
       { label: "Owner", value: doc.owner_name || "-" },
       { label: "Folder", value: doc.folder_path || "-" },
-      { label: "Next review", value: doc.next_review_date || "-" },
-      { label: "Updated", value: (doc.updated_at || "").slice(0, 10) || "-" },
+      { label: "Next review", value: fmtDate(doc.next_review_date) },
+      { label: "Updated", value: fmtDate(doc.updated_at) },
     ],
     chips: (doc.satisfies || []).map((s) => ({ label: s.label, title: s.title })),
   };
@@ -202,7 +203,8 @@ function PdfBody({ bytes, title }) {
         docRef.current = doc;
         setState({ status: "ready", pages: doc.numPages, shown: Math.min(doc.numPages, PDF_PAGE_BATCH), error: "" });
       } catch (e) {
-        if (live) setState({ status: "error", pages: 0, shown: 0, error: e?.message || "This PDF could not be rendered." });
+        // pdf.js words its own failures for developers; the person reads one fixed line.
+        if (live) setState({ status: "error", pages: 0, shown: 0, error: "This PDF could not be shown." });
       }
     })();
     return () => {
@@ -258,6 +260,7 @@ function PdfBody({ bytes, title }) {
   if (state.status === "error") {
     return <p className="p-8 text-center text-sm text-danger" role="alert">{state.error}</p>;
   }
+  const more = Math.min(PDF_PAGE_BATCH, state.pages - state.shown);
   return (
     <div ref={hostRef} className="min-h-full px-6 py-4" data-pdf-pages={state.pages}>
       <div className="mb-3 flex items-center justify-center gap-2">
@@ -286,7 +289,7 @@ function PdfBody({ bytes, title }) {
           <canvas
             key={i + 1}
             data-page={i + 1}
-            className="max-w-full rounded-sm bg-white shadow-md"
+            className="max-w-full rounded-sm bg-surface shadow-md"
             aria-label={`${title}, page ${i + 1}`}
             role="img"
           />
@@ -295,7 +298,7 @@ function PdfBody({ bytes, title }) {
       {state.shown < state.pages ? (
         <div className="mt-4 flex justify-center">
           <Button size="sm" onClick={() => setState((s) => ({ ...s, shown: Math.min(s.pages, s.shown + PDF_PAGE_BATCH) }))}>
-            Show {Math.min(PDF_PAGE_BATCH, state.pages - state.shown)} more page(s)
+            Show {more} more {more === 1 ? "page" : "pages"}
           </Button>
         </div>
       ) : null}
@@ -471,7 +474,7 @@ export default function DocumentViewer({
           role="dialog"
           aria-modal="true"
           aria-label={`Viewing ${title}`}
-          className="fixed inset-0 z-50 flex flex-col bg-black/70 p-2 outline-none backdrop-blur-sm sm:p-5"
+          className="fixed inset-0 z-50 flex flex-col bg-scrim/60 p-2 outline-none backdrop-blur-sm sm:p-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -563,7 +566,7 @@ export default function DocumentViewer({
                         ) : digest === "computing" ? (
                           <Label>Computing…</Label>
                         ) : digest === "unavailable" ? (
-                          <Label>Not available in this browser context.</Label>
+                          <Label>Can't compute here</Label>
                         ) : (
                           <Button size="sm" variant="ghost" onClick={computeDigest}
                                   icon={<FingerprintIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>

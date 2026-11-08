@@ -83,8 +83,8 @@ class ControlSerializer(serializers.ModelSerializer):
             AuditLog.objects.create(
                 user=request.user if request.user.is_authenticated else None,
                 action="update", object_type="controls", object_id=str(control.pk),
-                detail=f"{control.control_id} last_tested_on {previous or 'never'} "
-                       f"-> {control.last_tested_on}"[:255],
+                detail=f"{control.control_id}: last test date changed from {previous or 'never'} "
+                       f"to {control.last_tested_on}"[:255],
                 ip_address=_client_ip(request),
             )
         except Exception:  # pragma: no cover - logging must not block the write

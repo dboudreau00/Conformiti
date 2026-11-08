@@ -10,7 +10,7 @@ export function NotForAuditors() {
       <Panel>
         <Empty
           title="Not available to an auditor account"
-          action={<Button size="sm" variant="primary" onClick={() => nav("/packages")}>Go to your packages</Button>}
+          action={<Button size="sm" variant="primary" onClick={() => nav("/packages")}>Go to audit packages</Button>}
         />
       </Panel>
     </PanelTransition>

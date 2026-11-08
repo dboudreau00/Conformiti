@@ -258,6 +258,11 @@ def map_headers(header_row):
     return [HEADER_ALIASES.get(_norm_header(h)) for h in header_row]
 
 
+def _label(field):
+    """A field name as a person says it: "risk_type" is "Risk type"."""
+    return field.replace("_", " ").capitalize()
+
+
 def _norm_scale(value, field, row_n, issues):
     v = (value or "").strip().lower()
     if not v:
@@ -267,12 +272,12 @@ def _norm_scale(value, field, row_n, issues):
         if 1 <= n <= 5:
             return n
         issues.append({"row": row_n, "field": field,
-                       "message": f"{field} must be 1-5; got {value!r}"})
+                       "message": f"{_label(field)} must be between 1 and 5, not \"{value}\""})
         return None
     if v in SCALE_WORDS:
         return SCALE_WORDS[v]
     issues.append({"row": row_n, "field": field,
-                   "message": f"Unrecognized {field} {value!r} (use 1-5 or low/medium/high)"})
+                   "message": f"Unrecognised {_label(field).lower()} \"{value}\" (use 1 to 5, or low, medium or high)"})
     return None
 
 
@@ -283,7 +288,7 @@ def _norm_choice(value, aliases, field, row_n, issues, default=None):
     if v in aliases:
         return aliases[v]
     issues.append({"row": row_n, "field": field,
-                   "message": f"Unrecognized {field} {value!r}, using default"})
+                   "message": f"Unrecognised {_label(field).lower()} \"{value}\", using the default"})
     return default
 
 
@@ -320,10 +325,10 @@ def _norm_date(value, field, row_n, issues):
                 other = parsed
             if other != parsed:
                 issues.append({"row": row_n, "field": field,
-                               "message": f"Date {value!r} is read as month/day; use YYYY-MM-DD to be sure"})
+                               "message": f"Date \"{value}\" is read as month/day; use YYYY-MM-DD to be sure"})
         return parsed
     issues.append({"row": row_n, "field": field,
-                   "message": f"Could not parse date {value!r} (use YYYY-MM-DD)"})
+                   "message": f"Could not read date \"{value}\" (use YYYY-MM-DD)"})
     return None
 
 
@@ -335,7 +340,7 @@ def normalize(rows):
         return [], [], "The file is empty."
     header = map_headers(rows[0])
     if "title" not in header:
-        return [], [], ("Could not find a Title column. Recognized headers include: "
+        return [], [], ("Could not find a Title column. Recognised headers include: "
                         "Title, Description, Status, Type, Likelihood, Impact, Owner, "
                         "Control, Due date, Jira, Mitigation plan, Note.")
 

@@ -68,7 +68,7 @@ class OidcRedeemView(APIView):
         # Sets auth cookies yet authenticates nobody, so CookieJWTAuthentication's CSRF check never runs: do it here.
         refused = cookie_auth.csrf_required(request)
         if refused:
-            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
+            return cookie_auth.csrf_refusal(refused)
         otp = request.data.get("otp")
         passkey = request.data.get("passkey")
         try:
@@ -83,7 +83,7 @@ class OidcRedeemView(APIView):
                 oidc.audit(request, None, False, f"sso ticket refused ({exc.code}): {exc.detail}")
             return Response({"detail": exc.message, "code": exc.code}, status=400)
         if otp is not None or passkey is not None:
-            how = "passkey verified" if passkey is not None else "second factor verified"
+            how = "passkey verified" if passkey is not None else "two-factor code verified"
             oidc.audit(request, user, True, f"sso step-up: {how} for {user.get_username()}")
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)

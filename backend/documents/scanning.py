@@ -55,8 +55,8 @@ def scan_or_raise(uploaded, request=None):
     except clamav.LimitsExceededError as exc:
         # Refused but not recorded as malware: the scanner declined to inspect the whole file.
         raise ValidationError({"file": [
-            "This file could not be fully inspected by the malware scanner "
-            f"({exc.reason}), so it has not been stored. Split it or upload a "
+            "This file could not be fully inspected by the malware scanner: "
+            f"{exc.plain()}. It has not been stored. Split it or upload a "
             "smaller export."
         ]})
     except clamav.ScanError as exc:

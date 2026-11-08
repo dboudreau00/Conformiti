@@ -16,7 +16,9 @@ import { useDeepLink } from "../utils/deepLink.js";
 import { CONTROL_STATUS, READINESS_BAND } from "../utils/tone.js";
 
 const STATUS_KEYS = Object.keys(CONTROL_STATUS);
-const GRID = "grid-cols-[110px_minmax(0,1fr)_120px_130px_130px_120px_80px]";
+// From lg up a row is a seven-column grid; below it the cells wrap, so a phone never scrolls the register sideways.
+const GRID = "lg:grid lg:min-w-[960px] lg:grid-cols-[110px_minmax(0,1fr)_120px_130px_130px_120px_80px] lg:items-center lg:gap-4";
+const HEADINGS = ["Ref", "Control", "Framework", "Status", "Owner", "Readiness", "Evidence"];
 
 export default function Controls({ me }) {
   const { refreshCounts } = useShell();
@@ -35,8 +37,6 @@ export default function Controls({ me }) {
   // A failed load is not an empty catalogue: showing it as one would tell the reader to seed a framework they have.
   const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  // The notice a failed controls fetch put up, so a later good fetch can clear just that one.
-  const controlsNotice = useRef("");
 
   const [users, setUsers] = useState(null);
   const [docChoices, setDocChoices] = useState(null);
@@ -74,7 +74,6 @@ export default function Controls({ me }) {
         setFrameworks([]);
         setLoading(false);
         setLoadFailed({ reason: loadFailReason(e) });
-        setPageError(errorText(e, "Couldn't load frameworks."));
       });
     return () => {
       alive = false;
@@ -92,19 +91,13 @@ export default function Controls({ me }) {
         if (!alive) return;
         setControls(rs.flatMap((r) => r.data.results || r.data));
         setLoadedFor(framework);
-        if (keys.length) {
-          // A failure on another tab is over once this one has loaded.
-          setLoadFailed(false);
-          setPageError((p) => (p === controlsNotice.current ? "" : p));
-          controlsNotice.current = "";
-        }
+        // A failure on another tab is over once this one has loaded.
+        if (keys.length) setLoadFailed(false);
       })
       .catch((e) => {
         if (!alive) return;
         setControls([]);
         setLoadFailed({ reason: loadFailReason(e) });
-        controlsNotice.current = errorText(e, "Couldn't load controls.");
-        setPageError(controlsNotice.current);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -127,7 +120,8 @@ export default function Controls({ me }) {
     let alive = true;
     fetchAll("/users/")
       .then((rows) => {
-        if (alive) setUsers(rows);
+        // A deactivated person cannot be picked; the open control's current owner is added back by its own select.
+        if (alive) setUsers(rows.filter((u) => u.is_active));
       })
       .catch((e) => {
         if (alive) setPageError(errorText(e, "Couldn't load the user list; owners can't be reassigned right now."));
@@ -219,6 +213,8 @@ export default function Controls({ me }) {
   }, [frameworks]);
 
   const ready = frameworks !== null && !loading;
+  // Rows, the empty note and "Show more" belong to a register that loaded and has frameworks.
+  const listed = ready && !loadFailed && frameworks.length > 0;
   const page = usePage(rows, 100, [framework, status, query]);
 
   return (
@@ -270,7 +266,7 @@ export default function Controls({ me }) {
               tone={key === "all" ? undefined : CONTROL_STATUS[key].tone}
               count={statusCounts[key] || 0}
             >
-              {key === "all" ? "Every status" : CONTROL_STATUS[key].label}
+              {key === "all" ? "All statuses" : CONTROL_STATUS[key].label}
             </Chip>
           ))}
         </StackItem>
@@ -289,12 +285,45 @@ export default function Controls({ me }) {
             </PanelHeader>
 
             <div className="overflow-x-auto">
-              <div className={cn("grid min-w-[960px] items-center gap-4 border-b border-line bg-surface-2 px-5 py-2", GRID)}>
-                {["Ref", "Control", "Framework", "Status", "Owner", "Readiness", "Evidence"].map((h) => (
-                  <Label key={h} className={h === "Evidence" ? "text-right" : undefined}>
-                    {h}
-                  </Label>
-                ))}
+              {/* A table to a screen reader: the headings are columnheaders, and below lg they are hidden from sight only. */}
+              <div role="table" aria-label="Control register">
+                <div role="rowgroup" className="max-lg:sr-only">
+                  <div role="row" className={cn("border-b border-line bg-surface-2 px-5 py-2", GRID)}>
+                    {HEADINGS.map((h) => (
+                      <Label key={h} role="columnheader" className={h === "Evidence" ? "text-right" : undefined}>
+                        {h}
+                      </Label>
+                    ))}
+                  </div>
+                </div>
+
+                {listed ? (
+                  <ul role="rowgroup" className="[&>li:first-child>[role=row]]:border-t-0">
+                    <AnimatePresence initial={false}>
+                      {page.visible.map((control) => (
+                        <ControlRow
+                          key={control.id}
+                          control={control}
+                          expanded={expanded === control.id}
+                          onToggle={() => setExpanded(expanded === control.id ? null : control.id)}
+                        >
+                          <ControlDetail
+                            control={control}
+                            canManage={canManage}
+                            canLink={canLink}
+                            users={users}
+                            docChoices={docChoices}
+                            docsTruncated={docsTruncated}
+                            choicesError={choicesError}
+                            onPatch={patchControl}
+                            onEvidenceDelta={bumpEvidence}
+                            onScore={applyScore}
+                          />
+                        </ControlRow>
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                ) : null}
               </div>
 
               {!ready ? (
@@ -312,35 +341,15 @@ export default function Controls({ me }) {
                 />
               ) : frameworks.length === 0 ? (
                 <Empty title="No frameworks yet" />
-              ) : (
-                <ul className="min-w-[960px] divide-y divide-line">
-                  <AnimatePresence initial={false}>
-                    {page.visible.map((control) => (
-                      <ControlRow
-                        key={control.id}
-                        control={control}
-                        expanded={expanded === control.id}
-                        onToggle={() => setExpanded(expanded === control.id ? null : control.id)}
-                      >
-                        <ControlDetail
-                          control={control}
-                          canManage={canManage}
-                          canLink={canLink}
-                          users={users}
-                          docChoices={docChoices}
-                          docsTruncated={docsTruncated}
-                          choicesError={choicesError}
-                          onPatch={patchControl}
-                          onEvidenceDelta={bumpEvidence}
-                          onScore={applyScore}
-                        />
-                      </ControlRow>
-                    ))}
-                  </AnimatePresence>
-                  {rows.length === 0 ? (
-                    <li>
-                      <Empty title="No controls match these filters" />
-                      <div className="pb-8 text-center">
+              ) : null}
+              {listed && rows.length === 0 ? (
+                <div className="border-t border-line">
+                  {controls.length === 0 ? (
+                    <Empty title={framework === "all" ? "No controls yet" : "No controls in this framework"} />
+                  ) : (
+                    <Empty
+                      title="No controls match these filters"
+                      action={
                         <Button
                           size="sm"
                           onClick={() => {
@@ -351,18 +360,18 @@ export default function Controls({ me }) {
                         >
                           Clear filters
                         </Button>
-                      </div>
-                    </li>
-                  ) : null}
-                  {page.remaining ? (
-                    <li className="px-5 py-3 text-center">
-                      <Button size="sm" variant="secondary" onClick={page.more}>
-                        Show {Math.min(page.size, page.remaining)} more of {page.remaining.toLocaleString()}
-                      </Button>
-                    </li>
-                  ) : null}
-                </ul>
-              )}
+                      }
+                    />
+                  )}
+                </div>
+              ) : null}
+              {listed && page.remaining ? (
+                <div className="border-t border-line px-5 py-3 text-center">
+                  <Button size="sm" variant="secondary" onClick={page.more}>
+                    Show {Math.min(page.size, page.remaining)} more of {page.remaining.toLocaleString()}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </Panel>
         </StackItem>
@@ -377,40 +386,50 @@ function ControlRow({ control, expanded, onToggle, children }) {
   const bodyId = `control-detail-${control.id}`;
   return (
     <motion.li
+      role="none"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.18, ease: EASE }}
     >
-      <button
-        type="button"
+      {/* The button in the first cell is the control; the row's own click is the same toggle for a pointer. */}
+      <div
+        role="row"
         onClick={onToggle}
-        aria-expanded={expanded}
-        aria-controls={bodyId}
         className={cn(
-          "grid w-full items-center gap-4 px-5 py-3 text-left",
-          "transition-colors duration-150 ease-out hover:bg-surface-2",
+          "flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line px-4 py-3 text-left lg:px-5",
+          "transition-colors duration-150 ease-out hover:bg-surface-2 has-[:focus-visible]:bg-surface-2",
           expanded && "bg-surface-2",
           GRID
         )}
       >
-        <span className="flex items-center gap-1.5">
-          <ChevronRightIcon
-            className={cn("h-3.5 w-3.5 shrink-0 text-faint transition-transform duration-150 ease-out", expanded && "rotate-90")}
-            strokeWidth={2}
-            aria-hidden="true"
-          />
-          <span className="truncate font-mono text-xs text-accent">{control.control_id}</span>
-        </span>
-        <span className="truncate text-[13px] text-ink" title={control.title}>{control.title}</span>
-        <span className="truncate text-xs text-muted" title={control.framework}>{control.framework}</span>
-        <span>
+        <div role="cell" className="min-w-0">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            aria-label={`${control.control_id}, ${control.title}`}
+            className="flex max-w-full items-center gap-1.5 text-left"
+          >
+            <ChevronRightIcon
+              className={cn("h-3.5 w-3.5 shrink-0 text-faint transition-transform duration-150 ease-out", expanded && "rotate-90")}
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+            <span className="min-w-0 truncate font-mono text-xs text-accent">{control.control_id}</span>
+          </button>
+        </div>
+        <div role="cell" className="min-w-0 flex-1 basis-[calc(100%-7rem)]">
+          <span className="block truncate text-[13px] text-ink" title={control.title}>{control.title}</span>
+        </div>
+        <div role="cell" className="min-w-0 max-w-full truncate text-xs text-muted" title={control.framework}>{control.framework}</div>
+        <div role="cell">
           <Badge tone={meta.tone} dot>{meta.label}</Badge>
-        </span>
-        <span className={cn("truncate text-xs", control.owner_name ? "text-muted" : "text-danger")}>
+        </div>
+        <div role="cell" className={cn("min-w-0 max-w-full truncate text-xs", control.owner_name ? "text-muted" : "text-danger")}>
           {control.owner_name || "Unassigned"}
-        </span>
-        <span className="flex items-center gap-1.5">
+        </div>
+        <div role="cell" className="flex items-center gap-1.5">
           {control.readiness_score === null ? (
             <Badge tone="muted">Excluded</Badge>
           ) : (
@@ -419,17 +438,19 @@ function ControlRow({ control, expanded, onToggle, children }) {
               <Badge tone={band.tone}>{band.label}</Badge>
             </>
           )}
-        </span>
-        <span className="tabular flex items-center justify-end gap-1 font-mono text-xs text-muted">
+        </div>
+        <div role="cell" className="tabular flex items-center justify-end gap-1 font-mono text-xs text-muted">
           <PaperclipIcon className="h-3 w-3 text-faint" strokeWidth={2} aria-hidden="true" />
           {control.evidence_count || 0}
-        </span>
-      </button>
+        </div>
+      </div>
 
       <AnimatePresence initial={false}>
         {expanded ? (
           <Collapse key="detail" open className="border-t border-line bg-surface-2">
-            <div id={bodyId}>{children}</div>
+            <div role="row">
+              <div role="cell" aria-colspan={HEADINGS.length} id={bodyId}>{children}</div>
+            </div>
           </Collapse>
         ) : null}
       </AnimatePresence>

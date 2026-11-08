@@ -50,7 +50,7 @@ export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
     <Panel className="sched-panel flex h-full min-w-0 flex-col">
       <PanelHeader title="Lead schedule" meta={known ? `${rows.length} ${rows.length === 1 ? "framework" : "frameworks"}` : null} />
       {!known ? (
-        <LoadError what="The lead schedule" onRetry={onRetry} />
+        <LoadError what="Framework figures" onRetry={onRetry} />
       ) : rows.length === 0 ? (
         <Empty title="No frameworks yet" />
       ) : (

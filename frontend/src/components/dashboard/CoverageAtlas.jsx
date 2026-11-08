@@ -4,7 +4,7 @@ import { ArrowUpRightIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
 import { CONTROL_STATUS, READINESS_BAND, TONE_FILL, TONE_TEXT } from "../../utils/tone.js";
 import { Badge } from "../ui/Badge.jsx";
-import { Empty, Label, LoadError, Loading, Panel } from "../ui/Panel.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
 import { joinSome } from "../ui/ShowMore.jsx";
 import { STATUS_FILL, StatusGlyph } from "./StatusGlyph.jsx";
 
@@ -244,7 +244,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
     return (
       <Panel className="min-w-0">
         <AtlasHeader />
-        <Empty title="No controls to draw" />
+        <Empty title="No controls to show" />
       </Panel>
     );
   }
@@ -270,20 +270,13 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
                 <b className="tabular font-mono text-2xs font-medium text-ink">{(counts[status] || 0).toLocaleString()}</b>
               </li>
             ))}
-            <li className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted">
-              <i
-                aria-hidden="true"
-                className="inline-block h-[11px] w-[11px] shrink-0 rounded-[3px] border border-line-strong bg-surface-2 shadow-[0_0_0_1.5px_rgb(var(--accent)),0_0_6px_1px_rgb(var(--accent)/0.5)]"
-              />
-              Answers the same theme
-            </li>
           </ul>
         }
       />
 
       {chips ? (
-        <div role="group" aria-label="Frameworks to draw" className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
-          <Label className="mr-1">Draw</Label>
+        <div role="group" aria-label="Frameworks to show" className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
+          <Label className="mr-1">Show</Label>
           {model.territories.map((t) => {
             const on = drawnIds.has(t.fw.id);
             return (
@@ -317,7 +310,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
               )
             }
           >
-            {drawnIds.size === model.territories.length ? `Draw the largest ${DEFAULT_DRAWN}` : "Draw all"}
+            {drawnIds.size === model.territories.length ? `Show the largest ${DEFAULT_DRAWN}` : "Show all"}
           </button>
         </div>
       ) : null}
@@ -325,7 +318,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
       <div className="dash-atlas p-4 sm:p-5">
         <div className="min-w-0">
           {shown.length === 0 ? (
-            <Empty title="Nothing is drawn" className="py-8">Choose a framework above.</Empty>
+            <Empty title="No framework is shown" className="py-8">Choose a framework above.</Empty>
           ) : (
             <div
               ref={fieldRef}
@@ -421,7 +414,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
             />
           ) : (
             <div className="rounded-xl border border-line border-t-2 border-t-accent bg-surface-2 p-4">
-              <Label>Crosswalk</Label>
+              <Label>Related controls</Label>
               {probe ? (
                 <>
                   <p className="mt-2 flex items-baseline gap-2">
@@ -452,10 +445,9 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
 
 function AtlasHeader({ legend }) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-line px-5 py-3.5">
-      <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Coverage atlas</h2>
+    <PanelHeader title="Coverage atlas" className="flex-wrap gap-x-6 gap-y-2">
       {legend}
-    </header>
+    </PanelHeader>
   );
 }
 
@@ -495,7 +487,7 @@ function PlaceCard({ control, detail, litDrawn, onPick, onClear }) {
           <>
             <p className="mt-1.5 text-xs text-muted">
               {detail.list.length.toLocaleString()} {detail.list.length === 1 ? "control" : "controls"}
-              {litDrawn !== detail.list.length ? `, ${litDrawn.toLocaleString()} in the territories drawn` : ""}. Themes: {joinSome(detail.themes, 2)}.
+              {litDrawn !== detail.list.length ? `, ${litDrawn.toLocaleString()} in the frameworks shown` : ""}. Themes: {joinSome(detail.themes, 2)}.
             </p>
             <ul className="mt-2 flex flex-col gap-0.5">
               {detail.list.slice(0, LISTED).map((p) => (

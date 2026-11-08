@@ -285,7 +285,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         # A PATCH of the file would skip new_version's scan, archive and version bump, and keep a stale scan verdict.
         if "file" in serializer.validated_data:
             raise ValidationError(
-                {"file": "Upload a new version instead: POST /documents/{id}/new_version/."})
+                {"file": "Use Upload new version to change the file."})
         # Moving by PATCH needs what `move` needs: edit on the destination (else a document could be planted there)
         # and on the source, since an owner with view alone must not take evidence out of a folder.
         new_folder = serializer.validated_data.get("folder")
@@ -321,14 +321,14 @@ class DocumentViewSet(viewsets.ModelViewSet):
         raw = request.data.get("folder")
         # True is 1 and 1.5 truncates to 1: either would move the document into a folder the caller never named.
         if isinstance(raw, (bool, float)):
-            raise ValidationError({"folder": "Target folder not found."})
+            raise ValidationError({"folder": "That folder was not found."})
         try:
             target = Folder.objects.get(pk=raw)
         except (Folder.DoesNotExist, TypeError, ValueError):
-            raise ValidationError({"folder": "Target folder not found."})
+            raise ValidationError({"folder": "That folder was not found."})
         # A hidden folder is "not found" too: a 403 would confirm it exists.
         if not target.can_view(request.user):
-            raise ValidationError({"folder": "Target folder not found."})
+            raise ValidationError({"folder": "That folder was not found."})
         self._require_folder_edit(target)
         doc.folder = target
         doc.save(update_fields=["folder", "updated_at"])

@@ -281,7 +281,7 @@ class EnrolAndLoginTests(PasskeyTestBase):
         self.assertEqual(bad.status_code, 401)
         self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="passkey refused (unknown)").exists())
         self.assertTrue(AuditLog.objects.filter(
-            action="login_failed", detail__contains="invalid second factor").exists())
+            action="login_failed", detail__contains="invalid two-factor code").exists())
 
     def test_a_wrong_origin_is_refused_at_sign_in(self):
         auth, _ = self.enrol(self.owner)
@@ -403,7 +403,7 @@ class ManagementTests(PasskeyTestBase):
         r = self.client_for(self.admin).post(f"/api/users/{self.owner.pk}/reset_mfa/")
         self.assertEqual(r.status_code, 200)
         self.assertFalse(WebAuthnCredential.objects.filter(user=self.owner).exists())
-        self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="1 passkey(s) removed").exists())
+        self.assertTrue(AuditLog.objects.filter(action="mfa", detail__contains="1 passkey removed").exists())
 
 
 class CloneTests(PasskeyTestBase):

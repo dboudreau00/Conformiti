@@ -10,15 +10,35 @@ class AuditMiddlewareTests(APITestBase):
         entry = AuditLog.objects.filter(object_type="risks", action="create").latest("timestamp")
         self.assertEqual(entry.user, self.manager)
         self.assertEqual(entry.object_id, str(r.data["id"]))
-        self.assertIn("fields=", entry.detail)
+        self.assertTrue(entry.detail.startswith(f"created risk {r.data['id']}, set "), entry.detail)
         self.assertIn("title", entry.detail)
+        self.assertNotIn("POST", entry.detail)
+        self.assertNotIn("/api/", entry.detail)
         self.assertNotIn("secret text", entry.detail)  # names only, never values
+
+    def test_a_change_and_an_action_read_as_sentences(self):
+        c = self.client_for(self.admin)
+        c.patch(f"/api/users/{self.viewer.pk}/", {"job_title": "Analyst"}, format="json")
+        entry = AuditLog.objects.filter(object_type="users", action="update").latest("timestamp")
+        self.assertEqual(entry.detail, f"changed member {self.viewer.pk}, set job title")
+        from audit.middleware import _phrase
+
+        self.assertEqual(_phrase("create", ["api", "documents", "12", "mark_reviewed"], ""),
+                         "mark reviewed on document 12")
+        self.assertEqual(_phrase("delete", ["api", "evidence-packages", "3"], ""), "deleted audit package 3")
+
+    def test_a_path_the_core_cannot_name_keeps_the_raw_call(self):
+        from audit.middleware import _call_detail, _phrase
+
+        self.assertIsNone(_phrase("create", ["api", "pro", "remediation", "imports"], ""))
+        self.assertEqual(_call_detail("POST /api/pro/remediation/imports/", "name,scope"),
+                         "POST /api/pro/remediation/imports/ fields=name,scope")
 
     def test_password_fields_never_appear(self):
         c = self.client_for(self.admin)
         c.patch(f"/api/users/{self.viewer.pk}/", {"password": "Another-Strong-Pass1", "job_title": "x"}, format="json")
         entry = AuditLog.objects.filter(object_type="users", action="update").latest("timestamp")
-        self.assertIn("job_title", entry.detail)
+        self.assertIn("job title", entry.detail)
         self.assertNotIn("password", entry.detail)
         self.assertNotIn("Another-Strong", entry.detail)
 
@@ -34,9 +54,9 @@ class AuditMiddlewareTests(APITestBase):
         }, format="multipart")
         self.assertEqual(r.status_code, 201, r.data)
         entry = AuditLog.objects.filter(object_type="documents", action="create").latest("timestamp")
-        self.assertIn("fields=", entry.detail)
+        self.assertIn(", set ", entry.detail)
         self.assertIn("file", entry.detail)
-        self.assertNotIn("evidence", entry.detail.replace("fields=", ""))
+        self.assertNotIn("evidence", entry.detail)
 
     def test_a_refused_form_or_upload_is_not_parsed_for_the_trail(self):
         from django.core.files.uploadedfile import SimpleUploadedFile

@@ -199,7 +199,7 @@ has no write surface.
 ## Frontend
 
 React 19 SPA (Vite 8). `App.jsx` mounts the shell and routes. The shell is
-one sticky `TopBar` (`components/layout`): the Workspace tabs, a
+one sticky `TopBar` (`components/layout`): the Compliance tabs, a
 `GovernanceMenu`, a `SearchPalette` opened by Ctrl K or Cmd K, an
 `AppearanceMenu`, the notification bell and a `UserMenu`; a `SideMenu`; and,
 under 768px, a `MobileMenu` sheet in place of the tabs and the side menu. The

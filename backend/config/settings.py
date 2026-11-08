@@ -547,7 +547,7 @@ OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip().rstrip("/")
 OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()
 OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
 OIDC_SCOPES = os.getenv("OIDC_SCOPES", "openid email profile").strip() or "openid email profile"
-OIDC_LABEL = os.getenv("OIDC_LABEL", "Single sign-on").strip() or "Single sign-on"
+OIDC_LABEL = os.getenv("OIDC_LABEL", "Sign in with SSO").strip() or "Sign in with SSO"
 OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "").strip()
 OIDC_ALLOWED_DOMAINS = [
     d.strip().lower().lstrip("@") for d in os.getenv("OIDC_ALLOWED_DOMAINS", "").split(",") if d.strip()

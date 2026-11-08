@@ -34,7 +34,7 @@ export async function loadAuthConfig() {
   try {
     const { data } = await axios.get("/api/auth/config/", { withCredentials: true });
     transport = data.transport === "cookie" ? "cookie" : "header";
-    oidc = { enabled: !!data.oidc?.enabled, label: data.oidc?.label || "Single sign-on" };
+    oidc = { enabled: !!data.oidc?.enabled, label: data.oidc?.label || "Sign in with SSO" };
     saml = { enabled: !!data.saml?.enabled, label: data.saml?.label || "Sign in with SAML" };
     const min = data.password_min_length;
     passwordMin = Number.isInteger(min) && min > 0 ? min : null;
@@ -98,16 +98,18 @@ const api = axios.create({ baseURL: "/api", withCredentials: true });
 
 const UNSAFE = ["post", "put", "patch", "delete"];
 
-const UNSERVED_FILE_MESSAGE =
-  "The server handed this file to a proxy that is not there (an nginx " +
-  "X-Accel-Redirect reached the browser), so it arrived empty and was not " +
-  "saved. An administrator can fix this by setting MEDIA_INTERNAL=false in " +
-  "the server's .env and restarting the backend.";
+const UNSERVED_FILE_MESSAGE = "The file could not be downloaded. Ask your administrator to check the file server settings.";
+
+// For whoever runs the server: the console, never the page.
+const UNSERVED_FILE_DETAIL =
+  "The server handed this file to a proxy that is not there (an nginx X-Accel-Redirect reached the browser), so it " +
+  "arrived empty and was not saved. Set MEDIA_INTERNAL=false in the server's .env and restart the backend.";
 
 // An X-Accel-Redirect header that reaches the browser means no nginx swapped in the file: the empty body must never
 // be saved or hashed. Thrown from the interceptor for every caller; also set as response.data.detail for errorText().
 function unservedFileError(response) {
   if (!response?.headers?.["x-accel-redirect"]) return null;
+  console.warn(UNSERVED_FILE_DETAIL);
   const error = new Error(UNSERVED_FILE_MESSAGE);
   error.name = "UnservedFileError";
   error.response = { ...response, data: { detail: UNSERVED_FILE_MESSAGE } };

@@ -11,7 +11,8 @@ function rankOf(ref, title, needle) {
 }
 
 /** `controls`: rows as /control-evidence/choices/ returns them ({ id, label, title, framework, framework_name }),
- * or null while they load. `onPick(control)` receives the whole row. */
+ * or null while they load. `onPick(control)` receives the whole row. `labelledBy` names the id of a visible label
+ * elsewhere on the page; the picker then adds none of its own, so the box is announced once. */
 export function ControlPicker({
   controls,
   onPick,
@@ -19,6 +20,7 @@ export function ControlPicker({
   framework = "",
   placeholder = "Find a control by reference or title",
   label = "Find a control",
+  labelledBy,
   limit = 40,
   className,
   id,
@@ -41,17 +43,16 @@ export function ControlPicker({
     return scored.slice(0, limit).map(([, c]) => c);
   }, [controls, needle, framework, limit]);
 
-  const total = controls ? (framework ? controls.filter((c) => c.framework === framework).length : controls.length) : 0;
-
   return (
     <div className={cn("relative", className)}>
-      <label htmlFor={id} className="sr-only">{label}</label>
+      {labelledBy ? null : <label htmlFor={id} className="sr-only">{label}</label>}
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
                     strokeWidth={2} aria-hidden="true" />
         <input
           id={id}
           type="search"
+          aria-labelledby={labelledBy}
           className="input input-sm w-full pl-8"
           placeholder={controls ? placeholder : "Loading controls…"}
           value={q}
@@ -82,10 +83,6 @@ export function ControlPicker({
         ) : (
           <p className="mt-2 text-xs text-muted">Nothing matches “{q.trim()}”.</p>
         )
-      ) : controls ? (
-        <p className="mt-1 text-2xs text-faint">
-          {total.toLocaleString()} controls. Type two or more characters.
-        </p>
       ) : null}
     </div>
   );

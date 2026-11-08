@@ -278,7 +278,21 @@ class ReadinessScoringTests(APITestBase):
         self.assertEqual(result["score"], 80)
         freshness = next(c for c in result["components"] if c["key"] == "freshness")
         self.assertEqual(freshness["points"], 0)
-        self.assertIn("no review schedule", freshness["detail"])
+        self.assertEqual(freshness["detail"], "No review date.")
+
+    def test_readiness_details_agree_with_a_count_of_one_day(self):
+        self._perfect()
+        doc = Document.objects.get(name="Policy")
+        Document.objects.filter(pk=doc.pk).update(next_review_date=self.today + timedelta(days=1))
+        Control.objects.filter(pk=self.control.pk).update(last_tested_on=self.today - timedelta(days=1))
+        self.control.refresh_from_db()
+        details = {c["key"]: c["detail"] for c in self._score()["components"]}
+        self.assertEqual(details["freshness"], "Due in 1 day.")
+        self.assertEqual(details["testing"], "Tested 1 day ago.")
+        self.assertEqual(details["evidence"], "1 document linked as evidence.")
+        Document.objects.filter(pk=doc.pk).update(next_review_date=self.today - timedelta(days=1))
+        details = {c["key"]: c["detail"] for c in self._score()["components"]}
+        self.assertEqual(details["freshness"], "Was due 1 day ago.")
 
     def test_overdue_evidence_loses_freshness_by_degrees(self):
         self._perfect()
@@ -398,7 +412,7 @@ class ReadinessScoringTests(APITestBase):
         # The middleware also logs the PATCH (field names only); the row that matters names the old and new dates.
         self.assertTrue(
             AuditLog.objects.filter(object_type="controls",
-                                    detail__contains="last_tested_on never ->").exists(),
+                                    detail__contains="last test date changed from never to").exists(),
             [e.detail for e in AuditLog.objects.filter(object_type="controls")])
 
     def test_a_future_test_date_and_a_silly_interval_are_refused(self):

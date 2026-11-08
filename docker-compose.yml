@@ -15,7 +15,7 @@
 # CONFORMITI_* names instead of their DJANGO_ and CLAMAV_ ones, on purpose (see
 # the note on DJANGO_DEBUG below), and DJANGO_ALLOWED_HOSTS adds your host
 # names to the stack's own instead of replacing them (see the note beside it).
-# The demo dataset is NOT seeded: set SEED_DEMO_DATA=true for the guided tour.
+# The demo data is NOT loaded: set SEED_DEMO_DATA=true to load it.
 # Its sign-in password is generated on first boot and printed once (docker
 # compose logs backend), and an installation carrying it says so on its
 # sign-in page until `manage.py remove_demo_data` is run.

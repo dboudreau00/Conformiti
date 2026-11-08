@@ -119,7 +119,7 @@ class WebhookDestinationTests(APITestBase):
         sender.assert_not_called()
         row = WebhookDelivery.objects.get(channel="slack")
         self.assertFalse(row.ok)
-        self.assertIn("refused", row.error)
+        self.assertEqual(row.error, "The URL must name a public host. Check the webhook address.")
 
     @override_settings(WEBHOOK_SYNC=True, NOTIFY_EVENTS=[])
     def test_a_redirect_is_refused_rather_than_followed(self):

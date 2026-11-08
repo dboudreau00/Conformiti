@@ -161,7 +161,7 @@ class Risk(TenantModel):
     class Type(models.TextChoices):
         CONTROL_GAP = "control_gap", "Control gap"
         AUDIT_FINDING = "audit_finding", "Audit finding"
-        PENTEST = "pentest", "Pen test"
+        PENTEST = "pentest", "Penetration test"
         VENDOR = "vendor", "Vendor"
         INCIDENT = "incident", "Incident"
         OTHER = "other", "Other"

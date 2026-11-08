@@ -54,7 +54,7 @@ class SessionClearView(APIView):
         # and this endpoint exists for when that cookie is gone. SameSite=Lax misses Chrome's 2-minute Lax+POST window.
         refused = cookie_auth.csrf_required(request)
         if refused:
-            return Response({"detail": f"CSRF failed: {refused}"}, status=403)
+            return cookie_auth.csrf_refusal(refused)
 
         revoked = 0
         token = None

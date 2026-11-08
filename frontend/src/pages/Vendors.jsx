@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Building2Icon, DownloadIcon, FileUpIcon, SparklesIcon, XIcon } from "lucide-react";
+import { Building2Icon, DownloadIcon, FileUpIcon, SparklesIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import { Collapse, EASE, PanelTransition } from "../components/layout/PanelTransition.jsx";
 import DocumentViewer from "../components/documents/DocumentViewer.jsx";
@@ -10,6 +10,7 @@ import { Button } from "../components/ui/Button.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
 import { useConfirm } from "../components/ui/Dialog.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
@@ -78,36 +79,10 @@ function hostOf(url) {
   try { return new URL(url).host; } catch { return url; }
 }
 
-function Notice({ msg, onClose }) {
-  return (
-    <AnimatePresence initial={false}>
-      {msg ? (
-        <motion.div
-          key={`${msg.ok}-${msg.text}`}
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, ease: EASE }}
-        >
-          <div
-            className={cn("notice flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")}
-            role={msg.ok ? "status" : "alert"}
-          >
-            <span>{msg.text}</span>
-            <button
-              type="button"
-              aria-label="Dismiss"
-              onClick={onClose}
-              className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
-            >
-              <XIcon className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
-}
+const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+const TIER_LABEL = Object.fromEntries(TIERS);
+const INVITE_LABEL = { open: "Open", submitted: "Submitted", expired: "Expired", revoked: "Revoked" };
+const SOURCE_LABEL = { manual: "Manual", import: "Imported" };
 
 function Field({ id, label, children, className }) {
   return (
@@ -213,7 +188,7 @@ function OverviewTab({ vendor, users, canManage, busy, onSave, onReviewed }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Risk rating" value={rating.label} tone={rating.tone} detail={`${vendor.tier_display} tier × assurance held`} />
+        <StatCard label="Risk rating" value={rating.label} tone={rating.tone} />
         <StatCard label="Assurance" value={posture.label} tone={posture.tone}
                   detail={`${a.current || 0} current · ${a.expired || 0} expired${unsatisfactoryNote}`} />
         <StatCard label="Next review" value={fmtDate(vendor.next_review_date)} tone={vendor.is_review_overdue ? "danger" : "muted"}
@@ -221,7 +196,7 @@ function OverviewTab({ vendor, users, canManage, busy, onSave, onReviewed }) {
         <StatCard
           label="Controls stated"
           value={vendor.control_count}
-          detail={`${vendor.open_risk_count} open risk(s)`}
+          detail={count(vendor.open_risk_count, "open risk")}
           tone={vendor.control_count ? "accent" : "warning"}
         />
       </div>
@@ -243,8 +218,8 @@ function OverviewTab({ vendor, users, canManage, busy, onSave, onReviewed }) {
         ) : (
           <dl className="grid gap-x-6 gap-y-3 text-[13px] sm:grid-cols-2">
             {[
-              ["Category", vendor.category], ["Website", vendor.website], ["Data handled", vendor.data_handled],
-              ["Services", vendor.services], ["Contact", [vendor.contact_name, vendor.contact_email].filter(Boolean).join(" · ")],
+              ["Category", vendor.category], ["Website", vendor.website], ["Data of ours they touch", vendor.data_handled],
+              ["Services in scope", vendor.services], ["Contact", [vendor.contact_name, vendor.contact_email].filter(Boolean).join(" · ")],
               ["Relationship owner", vendor.owner_name], ["Review cadence", CADENCES.find(([k]) => k === vendor.review_cadence)?.[1]],
               ["Onboarded", fmtInstant(vendor.created_at)],
             ].map(([k, v]) => (
@@ -280,11 +255,11 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
   return (
     <div className="space-y-4">
       <Panel className="overflow-hidden">
-        <PanelHeader title="Reports and attestations on file" meta={`${rows.length} filed`}>
+        <PanelHeader title="Assurance reports" meta={`${rows.length} on file`}>
           {canManage ? (
             <Button size="sm" variant={adding ? "secondary" : "primary"} aria-expanded={adding} onClick={() => setAdding((x) => !x)}
                     icon={<FileUpIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
-              File a report
+              Add report
             </Button>
           ) : null}
         </PanelHeader>
@@ -331,7 +306,7 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                     {RESULTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                   </select>
                 </Field>
-                <Field id="as-doc" label="Copy on file (document)">
+                <Field id="as-doc" label="Document">
                   <select id="as-doc" className="input input-sm" value={a.document} onChange={set("document")}>
                     <option value="">{docs ? "None, not uploaded yet" : "Loading documents…"}</option>
                     {(docs || []).map((d) => <option key={d.id} value={d.id}>{d.path} / {d.name}</option>)}
@@ -341,7 +316,7 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                   <textarea id="as-findings" className="input input-sm min-h-[56px]" value={a.findings} onChange={set("findings")} />
                 </Field>
                 <div className="flex gap-2 sm:col-span-2">
-                  <Button type="submit" size="sm" variant="primary" disabled={busy}>{busy ? "Filing…" : "File"}</Button>
+                  <Button type="submit" size="sm" variant="primary" disabled={busy}>{busy ? "Adding…" : "Add"}</Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
                 </div>
               </form>
@@ -349,7 +324,10 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
           ) : null}
         </AnimatePresence>
         {rows.length === 0 ? (
-          <Empty title="Nothing on file" />
+          <Empty
+            title="Nothing on file"
+            action={canManage && !adding ? <Button size="sm" variant="primary" onClick={() => setAdding(true)}>Add report</Button> : null}
+          />
         ) : (
           <ul className="divide-y divide-line">
             {rows.map((r) => (
@@ -359,7 +337,7 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                     {KIND_LABEL[r.kind] || r.kind_display}{r.title ? `, ${r.title}` : ""}
                   </p>
                   <Label className="mt-0.5 block whitespace-normal">
-                    {r.period_start || r.period_end ? `Period ${fmtDate(r.period_start)} → ${fmtDate(r.period_end)} · ` : ""}
+                    {r.period_start || r.period_end ? `Period ${fmtDate(r.period_start)} to ${fmtDate(r.period_end)} · ` : ""}
                     {r.issued_at ? `Issued ${fmtDate(r.issued_at)} · ` : ""}
                     {r.expires_at ? `${r.is_expired ? "Expired" : "Expires"} ${fmtDate(r.expires_at)}` : "No expiry"}
                     {r.reviewed_by_name ? ` · reviewed by ${r.reviewed_by_name}` : ""}
@@ -368,12 +346,12 @@ function AssessmentsTab({ vendor, docs, canManage, busy, onFile, onRemove, onOpe
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge tone={RESULT_TONE[r.result] || "muted"} dot>{r.result_display}</Badge>
-                  {r.is_expired ? <Badge tone="danger" mono>expired</Badge> : null}
+                  {r.is_expired ? <Badge tone="danger">Expired</Badge> : null}
                   {r.document ? (
                     <Button size="sm" variant="ghost" onClick={() => onOpen(r)}>Open {r.document_name}</Button>
                   ) : r.document_hidden ? (
-                    <Badge tone="muted" mono title="A copy is filed in a folder you cannot see">copy filed · not visible to you</Badge>
-                  ) : <Badge tone="faint" mono>no copy filed</Badge>}
+                    <Badge tone="muted">Document not visible to you</Badge>
+                  ) : <Badge tone="faint">No document</Badge>}
                   {canManage ? (
                     <Button
                       size="sm"
@@ -404,29 +382,45 @@ const answeredBy = (inv) => {
   return `${inv.respondent_name}${title} · ${fmtInstant(inv.submitted_at)}`;
 };
 
-function SendToVendor({ vendor, busy, act, refresh }) {
+function SendToVendor({ vendor, busy, act, refresh, ask }) {
   const invites = vendor.questionnaire_invites || [];
   const [sending, setSending] = useState(false);
   const [form, setForm] = useState({ email: vendor.contact_email || "", days: 14, message: "" });
   const [sent, setSent] = useState(null);
   const openCount = invites.filter((i) => i.status === "open").length;
 
-  const send = (e) => {
-    e.preventDefault();
-    return act(async () => {
+  const deliver = () =>
+    act(async () => {
       const { data } = await api.post(`/vendors/${vendor.id}/questionnaire/send/`, {
         email: form.email.trim(), days: Number(form.days) || 14, message: form.message,
       });
       setSent(data);
       setSending(false);
       await refresh();
-    }, "Questionnaire sent to the vendor.");
+    }, "Questionnaire sent to the vendor.", "Couldn't send the questionnaire.");
+  // A second send revokes the live link, so it asks first; the first send does not.
+  const send = (e) => {
+    e.preventDefault();
+    if (!openCount) return deliver();
+    return ask({
+      title: "Send a new link?",
+      description: "The link already sent to the vendor stops working.",
+      confirmLabel: "Send",
+      onConfirm: async () => { await deliver(); },
+    });
   };
   const revoke = (inv) =>
-    act(async () => {
-      await api.post(`/questionnaire-invites/${inv.id}/revoke/`);
-      await refresh();
-    }, "Link withdrawn.");
+    ask({
+      title: `Revoke the link sent to ${inv.sent_to}?`,
+      description: "The vendor can no longer open it. Send a new link if they still need to answer.",
+      confirmLabel: "Revoke link",
+      onConfirm: async () => {
+        await act(async () => {
+          await api.post(`/questionnaire-invites/${inv.id}/revoke/`);
+          await refresh();
+        }, "Link revoked.", "Couldn't revoke the link.");
+      },
+    });
 
   return (
     <Panel className="overflow-hidden" aria-label="Send to the vendor">
@@ -463,7 +457,6 @@ function SendToVendor({ vendor, busy, act, refresh }) {
           <div className="flex items-center gap-2 sm:col-span-2">
             <Button type="submit" size="sm" variant="primary" disabled={busy || !form.email.trim()}>Send</Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setSending(false)}>Cancel</Button>
-            <Label>A new link supersedes any open one.</Label>
           </div>
         </form>
       ) : null}
@@ -499,15 +492,17 @@ function SendToVendor({ vendor, busy, act, refresh }) {
                   <td className="py-2 pr-3 text-muted">{fmtInstant(inv.sent_at)}</td>
                   <td className="py-2 pr-3 text-muted">{fmtInstant(inv.expires_at)}</td>
                   <td className="py-2 pr-3">
-                    <Badge tone={INVITE_TONE[inv.status] || "muted"} dot>{inv.status}</Badge>
+                    <Badge tone={INVITE_TONE[inv.status] || "muted"} dot>{INVITE_LABEL[inv.status] || inv.status}</Badge>
                     {inv.status === "open" && inv.opened_at ? (
-                      <span className="block text-faint">opened {fmtInstant(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span>
+                      <span className="block text-faint">Opened {fmtInstant(inv.opened_at)}{inv.saved_at ? ", draft saved" : ""}</span>
                     ) : null}
                   </td>
                   <td className="py-2 pr-3 text-muted">{answeredBy(inv)}</td>
                   <td className="py-2 pr-5 text-right">
                     {inv.status === "open" ? (
-                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => revoke(inv)}>Revoke</Button>
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => revoke(inv)} aria-label={`Revoke the link sent to ${inv.sent_to}`}>
+                        Revoke
+                      </Button>
                     ) : null}
                   </td>
                 </tr>
@@ -516,13 +511,17 @@ function SendToVendor({ vendor, busy, act, refresh }) {
           </table>
         </div>
       ) : (
-        <p className="px-5 py-3 text-xs text-muted">Nothing sent yet.</p>
+        <Empty
+          title="Nothing sent yet"
+          className="py-6"
+          action={sending ? null : <Button size="sm" variant="primary" disabled={busy} onClick={() => { setSending(true); setSent(null); }}>Send to the vendor</Button>}
+        />
       )}
     </Panel>
   );
 }
 
-function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
+function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh, ask }) {
   const latest = (vendor.assessments || [])
     .filter((x) => x.kind === "questionnaire")
     .sort((x, y) => (x.created_at < y.created_at ? 1 : -1))[0];
@@ -550,7 +549,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {canManage ? <SendToVendor vendor={vendor} busy={busy} act={act} refresh={refresh} /> : null}
+      {canManage ? <SendToVendor vendor={vendor} busy={busy} act={act} refresh={refresh} ask={ask} /> : null}
       {returned ? (
         <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
           <span className="font-medium">
@@ -569,7 +568,7 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
                     act(async () => {
                       await api.patch(`/vendor-assessments/${latest.id}/`, { result: k });
                       await refresh();
-                    }, `Outcome recorded: ${l.toLowerCase()}.`)
+                    }, `Outcome recorded: ${l.toLowerCase()}.`, "Couldn't record the outcome.")
                   }
                 >
                   {l}
@@ -593,18 +592,20 @@ function QuestionnaireTab({ vendor, canManage, busy, onSubmit, act, refresh }) {
               <ul className="space-y-3">
                 {a.items.map((q) => (
                   <li key={q.id} className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
-                    <p className="text-[13px] text-ink">{q.text}</p>
+                    <p id={`vq-${q.id}`} className="text-[13px] text-ink">{q.text}</p>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
-                        <Chip
-                          key={k}
-                          active={answers[q.id]?.answer === k}
-                          disabled={!canManage}
-                          onClick={() => canManage && setAnswer(q.id, { answer: k })}
-                        >
-                          {l}
-                        </Chip>
-                      ))}
+                      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-labelledby={`vq-${q.id}`}>
+                        {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
+                          <Chip
+                            key={k}
+                            active={answers[q.id]?.answer === k}
+                            disabled={!canManage}
+                            onClick={() => canManage && setAnswer(q.id, { answer: k })}
+                          >
+                            {l}
+                          </Chip>
+                        ))}
+                      </div>
                       <input
                         className="input input-sm w-48"
                         placeholder="Note"
@@ -649,13 +650,10 @@ function RespPicker({ value, onChange, disabled, compact = false, label = "Respo
   return (
     <div className="flex flex-wrap gap-1" role="group" aria-label={label}>
       {RESP.map(([k, l]) => (
-        <button key={k} type="button" disabled={disabled} aria-pressed={value === k} onClick={() => onChange(value === k ? null : k)}
-                className={cn("rounded-md border px-2 py-0.5 text-2xs font-medium transition-colors duration-150",
-                  compact ? "" : "px-3 py-1.5 text-xs",
-                  value === k ? "border-accent bg-accent/10 text-accent" : "border-line text-muted hover:border-line-strong hover:text-ink",
-                  disabled && "opacity-60")}>
+        <Chip key={k} active={value === k} disabled={disabled} onClick={() => onChange(value === k ? null : k)}
+              className={cn(compact && "px-2 py-0.5 text-2xs", disabled && "opacity-60")}>
           {l}
-        </button>
+        </Chip>
       ))}
     </div>
   );
@@ -810,7 +808,6 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[13px] font-medium text-ink">Import {vendor.name}'s responsibility matrix</p>
-          <Label className="block">CSV or XLSX</Label>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="import-framework" className="sr-only">Framework in the file</label>
@@ -843,12 +840,8 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
           ) : null}
           <div className="flex flex-wrap gap-1.5" aria-label="How the columns were read">
             {review.columns.map((c) => (
-              <Badge
-                key={c.index}
-                tone={c.role ? (c.role === "control" ? "accent" : "info") : "faint"}
-                title={c.role ? `Read as ${c.role.replace("_", " ")} (${c.confidence}%)` : "Ignored"}
-              >
-                {c.column} → {c.role ? c.role.replace("_", " ") : "ignored"}
+              <Badge key={c.index} tone={c.role ? (c.role === "control" ? "accent" : "info") : "faint"}>
+                {c.column}: {c.role ? c.role.replace("_", " ") : "ignored"}
               </Badge>
             ))}
           </div>
@@ -949,9 +942,8 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
                     )
                   }
                 >
-                  {busy ? "Importing…" : `Import ${ready.length} row(s)`}
+                  {busy ? "Importing…" : `Import ${count(ready.length, "row")}`}
                 </Button>
-                <Label>Rows already stated for this vendor are replaced.</Label>
               </div>
             </>
           ) : null}
@@ -961,7 +953,7 @@ function ImportWizard({ vendor, framework, frameworks = [], controls, busy, onCo
   );
 }
 
-function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged }) {
+function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged, ask }) {
   const [data, setData] = useState(null);
   const [fw, setFw] = useState("");
   const [q, setQ] = useState("");
@@ -1041,8 +1033,21 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
   }
   const saveEdits = async () => {
     const rows = Object.entries(edits).map(([control, e]) => ({ control: Number(control), ...e }));
-    if (await put(rows, "manual", `${rows.length} control(s) saved.`)) setEdits({});
+    if (await put(rows, "manual", `${count(rows.length, "control")} saved.`)) setEdits({});
   };
+  // Clearing a stated responsibility deletes its row and statements, so saving that asks first.
+  const cleared = Object.entries(edits).filter(
+    ([control, e]) => !e.responsibility && (data?.rows || []).some((r) => String(r.control) === control && r.responsibility)
+  ).length;
+  const askSave = () =>
+    cleared
+      ? ask({
+          title: `Remove ${cleared === 1 ? "this row" : `${cleared} rows`} from the matrix?`,
+          description: "The responsibility and its statements are deleted.",
+          confirmLabel: "Remove",
+          onConfirm: async () => { await saveEdits(); },
+        })
+      : saveEdits();
   async function exportMatrix(theirLayout = false) {
     setMsg(null);
     try {
@@ -1086,8 +1091,19 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
           busy={busy}
           setMsg={setMsg}
           onCancel={() => setMode(null)}
-          onConfirm={async (rows, extra) => {
-            if (await put(rows, "import", `${rows.length} row(s) imported from ${vendor.name}'s matrix.`, extra)) setMode(null);
+          onConfirm={(rows, extra) => {
+            const run = async () => {
+              if (await put(rows, "import", `${count(rows.length, "row")} imported from ${vendor.name}'s matrix.`, extra)) setMode(null);
+            };
+            // A control that already has a statement takes the imported one, so importing over some asks first.
+            const replaced = rows.filter((r) => data.rows.some((m) => m.control === r.control && m.responsibility)).length;
+            if (!replaced) return run();
+            return ask({
+              title: `Replace ${replaced === 1 ? "1 stated responsibility" : `${replaced} stated responsibilities`}?`,
+              description: "Controls that already have a statement take the imported one instead.",
+              confirmLabel: "Import",
+              onConfirm: run,
+            });
           }}
         />
       ) : null}
@@ -1104,7 +1120,7 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
                   onClick={() => setMode(mode === "prompt" ? null : "prompt")}
                   icon={<SparklesIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                 >
-                  Walk me through {unstated.length ? `(${unstated.length})` : ""}
+                  Fill in responsibilities{unstated.length ? ` (${unstated.length})` : ""}
                 </Button>
                 <Button
                   size="sm"
@@ -1216,24 +1232,24 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged 
                     ) : <span className="block whitespace-pre-line text-muted">{r.customer_statement || "-"}</span>}
                   </td>
                   <td className="w-[90px] px-2 py-2">
-                    {r.dirty ? <Badge tone="accent" mono>unsaved</Badge> : r.source ? <Badge tone="faint" mono>{r.source}</Badge> : null}
+                    {r.dirty ? <Badge tone="accent">Unsaved</Badge> : r.source ? <Badge tone="faint">{SOURCE_LABEL[r.source] || r.source}</Badge> : null}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {canManage ? (
+        {canManage && dirtyCount > 0 ? (
           <div className="flex flex-wrap items-center gap-3 border-t border-line bg-surface-2 px-5 py-3">
-            <Button size="sm" variant="primary" disabled={busy || dirtyCount === 0 || orphaned.length > 0} onClick={saveEdits}>
-              {busy ? "Saving…" : dirtyCount ? `Save ${dirtyCount} change(s)` : "Nothing to save"}
+            <Button size="sm" variant="primary" disabled={busy || orphaned.length > 0} onClick={askSave}>
+              {busy ? "Saving…" : `Save ${count(dirtyCount, "change")}`}
             </Button>
-            {dirtyCount ? <Button size="sm" variant="ghost" onClick={() => setEdits({})} disabled={busy}>Discard</Button> : null}
+            <Button size="sm" variant="ghost" onClick={() => setEdits({})} disabled={busy}>Discard changes</Button>
             {orphaned.length ? (
               <span className="text-xs text-warning" role="status">
                 {orphaned.map((r) => r.control_id).join(", ")}: pick a responsibility for the statement, or clear it.
               </span>
-            ) : <Label className="whitespace-normal">Clearing a responsibility removes the row and its statements.</Label>}
+            ) : null}
           </div>
         ) : null}
       </Panel>
@@ -1262,7 +1278,7 @@ export default function Vendors({ me }) {
   const canManage = !!(me?.is_superuser || me?.capabilities?.manage_frameworks);
   // me.pro.features comes from an add-on; it is absent on a core-only install, so the portfolio link is not drawn.
   const hasPortfolio = Array.isArray(me?.pro?.features) && me.pro.features.includes("tprm.advanced");
-  // The Register button is hidden while the form is open: focus returns to it when the form closes.
+  // The New vendor button is hidden while the form is open: focus returns to it when the form closes.
   const registerRef = useRef(null);
   const wasCreating = useRef(false);
   useEffect(() => {
@@ -1332,7 +1348,7 @@ export default function Vendors({ me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, tab]);
 
-  async function act(fn, okText) {
+  async function act(fn, okText, failText = "Couldn't finish that. Try again.") {
     setBusy(true);
     setMsg(null);
     try {
@@ -1340,7 +1356,7 @@ export default function Vendors({ me }) {
       if (okText) setMsg({ ok: true, text: okText });
       return true;
     } catch (e) {
-      setMsg({ ok: false, text: errorText(e) });
+      setMsg({ ok: false, text: errorText(e, failText) });
       return false;
     } finally {
       setBusy(false);
@@ -1381,12 +1397,10 @@ export default function Vendors({ me }) {
           <Panel className="overflow-hidden">
             <PanelHeader title="Vendor register" meta={vendorsErr ? "- total" : `${vendors.length} total`}
                          className={hasPortfolio ? "flex-wrap gap-y-1" : undefined}>
-              {/* The visible label is short for the 300px column; aria-label keeps the full phrase for screen readers.
-                  Hidden while the form is open: a second click would close it and throw away what was typed. */}
+              {/* Hidden while the form is open: a second click would close it and throw away what was typed. */}
               {canManage && !creating ? (
-                <Button ref={registerRef} size="sm" variant="primary"
-                        aria-label="Register a vendor" onClick={() => setCreating(true)}>
-                  Register
+                <Button ref={registerRef} size="sm" variant="primary" onClick={() => setCreating(true)}>
+                  New vendor
                 </Button>
               ) : null}
               {hasPortfolio ? (
@@ -1397,14 +1411,14 @@ export default function Vendors({ me }) {
             </PanelHeader>
             {canManage && creating ? (
               <div className="border-b border-line bg-surface-2 px-4 py-4">
-                <VendorForm users={users} busy={busy} submitLabel="Register vendor" autoFocus onCancel={() => setCreating(false)}
+                <VendorForm users={users} busy={busy} submitLabel="Create vendor" autoFocus onCancel={() => setCreating(false)}
                             onSubmit={(body) => act(async () => {
                               const { data } = await api.post("/vendors/", body);
                               setCreating(false);
                               await loadVendors(data.id);
                               setTab("matrix");
                               setIntent("prompt");
-                            }, "Vendor registered.")} />
+                            }, "Vendor created.", "Couldn't create the vendor.")} />
               </div>
             ) : null}
             <div className="space-y-2 border-b border-line bg-surface-2 px-3 py-2.5">
@@ -1412,7 +1426,7 @@ export default function Vendors({ me }) {
               <input
                 id="vendor-search"
                 className="input input-sm"
-                placeholder="Search vendors, categories or data handled"
+                placeholder="Search vendors, categories or data they touch"
                 value={filter.q}
                 onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
               />
@@ -1433,7 +1447,16 @@ export default function Vendors({ me }) {
             {vendorsErr ? (
               <LoadError what="The vendor register" onRetry={() => { setMsg(null); loadRegister(); }} />
             ) : filtered.length === 0 ? (
-              <Empty title={vendors.length ? "No vendors match" : "No vendors yet"} />
+              <Empty
+                title={vendors.length ? "No vendors match" : "No vendors yet"}
+                action={
+                  vendors.length ? (
+                    <Button size="sm" onClick={() => setFilter({ q: "", tier: "" })}>Clear filters</Button>
+                  ) : canManage && !creating ? (
+                    <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New vendor</Button>
+                  ) : null
+                }
+              />
             ) : (
               <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto">
                 {filtered.map((v) => {
@@ -1454,9 +1477,9 @@ export default function Vendors({ me }) {
                           <span className="block truncate text-[13px] font-medium text-ink">{v.name}</span>
                         </span>
                         <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                          <Badge tone={TIER_TONE[v.tier]} mono>{v.tier}</Badge>
+                          <Badge tone={TIER_TONE[v.tier]}>Tier: {TIER_LABEL[v.tier] || v.tier}</Badge>
                           <Badge tone={rating.tone} dot>{rating.label} risk</Badge>
-                          {v.control_count === 0 && v.status !== "offboarded" ? <Badge tone="warning" mono>no matrix</Badge> : null}
+                          {v.control_count === 0 && v.status !== "offboarded" ? <Badge tone="warning">No matrix</Badge> : null}
                         </span>
                       </button>
                     </li>
@@ -1481,7 +1504,7 @@ export default function Vendors({ me }) {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          <Notice msg={msg} onClose={() => setMsg(null)} />
+          {msg ? <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)}>{msg.text}</Notice> : null}
           {!selectedId || !detail ? (
             <Panel>
               {!selectedId ? (
@@ -1499,7 +1522,7 @@ export default function Vendors({ me }) {
                   <div className="min-w-0">
                     <h2 className="truncate text-[15px] font-semibold text-ink">{detail.name}</h2>
                     <p className="mt-0.5 text-xs text-muted">
-                      {detail.category || "Third party"}{detail.website ? " · " : ""}
+                      {detail.category || "Vendor"}{detail.website ? " · " : ""}
                       {detail.website ? (
                         <a
                           href={detail.website}
@@ -1510,11 +1533,11 @@ export default function Vendors({ me }) {
                           {hostOf(detail.website)}
                         </a>
                       ) : null}
-                      {detail.owner_name ? ` · owned by ${detail.owner_name}` : ""}
+                      {detail.owner_name ? ` · Relationship owner: ${detail.owner_name}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge tone={TIER_TONE[detail.tier]} mono>{detail.tier} tier</Badge>
+                    <Badge tone={TIER_TONE[detail.tier]}>Tier: {TIER_LABEL[detail.tier] || detail.tier}</Badge>
                     <Badge tone={detail.status === "active" ? "success" : "muted"} dot>{detail.status_display}</Badge>
                     <Badge tone={detailPosture.tone} dot>{detailPosture.label}</Badge>
                   </div>
@@ -1529,7 +1552,7 @@ export default function Vendors({ me }) {
                           variant="primary"
                           onClick={() => { setTab("matrix"); setIntent("prompt"); }}
                         >
-                          Walk me through it
+                          Fill in responsibilities
                         </Button>
                         <Button size="sm" onClick={() => { setTab("matrix"); setIntent("import"); }}>Import their matrix</Button>
                       </span>
@@ -1551,13 +1574,13 @@ export default function Vendors({ me }) {
                     act(async () => {
                       await api.patch(`/vendors/${detail.id}/`, body);
                       await refresh();
-                    }, "Vendor updated.")
+                    }, "Vendor updated.", "Couldn't save the vendor.")
                   }
                   onReviewed={() =>
                     act(async () => {
                       await api.post(`/vendors/${detail.id}/mark_reviewed/`);
                       await refresh();
-                    }, "Review recorded.")
+                    }, "Review recorded.", "Couldn't record the review.")
                   }
                 />
               ) : tab === "assessments" ? (
@@ -1571,13 +1594,13 @@ export default function Vendors({ me }) {
                     act(async () => {
                       await api.post("/vendor-assessments/", body);
                       await refresh();
-                    }, "Filed.")
+                    }, "Report added.", "Couldn't add the report.")
                   }
                   onRemove={(r) =>
                     ask({
                       title: `Remove this ${KIND_LABEL[r.kind] || r.kind}?`,
                       description: `It comes off ${detail.name}'s file, and any assurance date it carried stops counting.`,
-                      confirmLabel: "Remove it",
+                      confirmLabel: "Remove",
                       // act() swallows failures, so a refused DELETE is rethrown to keep the dialog open with the error;
                       // a reload that fails after a successful DELETE is act's notice to report.
                       onConfirm: async () => {
@@ -1585,8 +1608,8 @@ export default function Vendors({ me }) {
                         await act(async () => {
                           try { await api.delete(`/vendor-assessments/${r.id}/`); } catch (e) { refused = e; throw e; }
                           await refresh();
-                        }, "Removed.");
-                        if (refused) throw new Error(errorText(refused));
+                        }, "Removed.", "Couldn't remove the report.");
+                        if (refused) throw new Error(errorText(refused, "Couldn't remove the report."));
                       },
                     })
                   }
@@ -1598,12 +1621,13 @@ export default function Vendors({ me }) {
                   canManage={canManage}
                   busy={busy}
                   act={act}
+                  ask={ask}
                   refresh={refresh}
                   onSubmit={(body) =>
                     act(async () => {
                       await api.post("/vendor-assessments/", body);
                       await refresh();
-                    }, "Questionnaire saved.")
+                    }, "Questionnaire saved.", "Couldn't save the questionnaire.")
                   }
                 />
               ) : (
@@ -1614,6 +1638,7 @@ export default function Vendors({ me }) {
                   onIntentDone={() => setIntent(null)}
                   setMsg={setMsg}
                   onChanged={refresh}
+                  ask={ask}
                 />
               )}
             </>

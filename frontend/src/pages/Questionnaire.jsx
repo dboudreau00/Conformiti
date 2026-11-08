@@ -8,9 +8,10 @@ import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
 import { Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
+import { errorText } from "../utils/a11y.js";
 import { QUESTIONNAIRE_ANSWERS } from "../utils/tone.js";
 
-const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
 const fmt = (iso) => {
   if (!iso) return "";
   const d = new Date(iso);
@@ -34,7 +35,7 @@ const CLOSED = {
   expired: ["This link has expired", "Ask your contact to send a new one."],
   revoked: ["This link was withdrawn", "Your contact has sent a newer link, or no longer needs the questionnaire."],
   submitted: ["Already submitted: thank you", "Your answers were received and are being reviewed."],
-  error: ["Something went wrong", "Try again in a moment."],
+  error: ["The questionnaire could not be loaded", "Check your connection and try again. A draft you saved is kept."],
 };
 
 // Public page behind the emailed link, outside the signed-in shell: the token is the only credential and opens only this.
@@ -47,6 +48,7 @@ export default function Questionnaire() {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const url = `/api/questionnaire/${encodeURIComponent(token || "")}/`;
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function Questionnaire() {
       })
       .catch((e) => live && setState({ status: e?.response?.status === 404 ? "unknown" : "error" }));
     return () => { live = false; };
-  }, [url]);
+  }, [url, attempt]);
 
   const data = state.data;
   const questions = data?.questions || [];
@@ -75,6 +77,11 @@ export default function Questionnaire() {
   const answered = questions.filter((q) => answers[q.id]?.answer).length;
   const setAnswer = (id, patch) => setAnswers((cur) => ({ ...cur, [id]: { ...(cur[id] || {}), ...patch } }));
 
+  function retry() {
+    setState({ status: "loading" });
+    setAttempt((n) => n + 1);
+  }
+
   async function saveDraft() {
     setMsg(null);
     setBusy(true);
@@ -82,7 +89,7 @@ export default function Questionnaire() {
       await axios.put(url, { answers });
       setMsg({ ok: true, text: "Draft saved." });
     } catch (e) {
-      setMsg({ ok: false, text: e?.response?.data?.detail || "The draft could not be saved." });
+      setMsg({ ok: false, text: errorText(e, "The draft could not be saved.") });
     } finally {
       setBusy(false);
     }
@@ -95,7 +102,7 @@ export default function Questionnaire() {
       await axios.post(`${url}submit/`, { answers, respondent_name: name.trim(), respondent_title: title.trim() });
       setState({ status: "done", data });
     } catch (err) {
-      setMsg({ ok: false, text: err?.response?.data?.detail || "The questionnaire could not be submitted." });
+      setMsg({ ok: false, text: errorText(err, "The questionnaire could not be submitted.") });
     } finally {
       setBusy(false);
     }
@@ -103,7 +110,12 @@ export default function Questionnaire() {
 
   let body;
   if (state.status === "loading") {
-    body = <Panel><Loading /></Panel>;
+    body = (
+      <Panel className="p-6">
+        <Header />
+        <Loading />
+      </Panel>
+    );
   } else if (state.status === "done") {
     body = (
       <Panel className="p-6">
@@ -121,6 +133,7 @@ export default function Questionnaire() {
         <Header vendor={data?.vendor} organisation={data?.organisation} />
         <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
         <p className="mt-2 text-[13px] leading-snug text-muted">{detail}</p>
+        {state.status === "error" ? <Button className="mt-4" onClick={retry}>Try again</Button> : null}
       </Panel>
     );
   } else {
@@ -152,7 +165,7 @@ export default function Questionnaire() {
                   {a.items.map((q) => (
                     <li key={q.id} className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
                       <p className="text-[13px] text-ink">{q.text}</p>
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <div role="group" aria-label={q.text} className="flex flex-wrap items-center gap-1.5">
                         {QUESTIONNAIRE_ANSWERS.map(([k, l]) => (
                           <Chip key={k} active={answers[q.id]?.answer === k} onClick={() => setAnswer(q.id, { answer: k })}>{l}</Chip>
                         ))}
@@ -222,7 +235,7 @@ export default function Questionnaire() {
           onClose={() => setConfirming(false)}
           title="Submit your answers?"
           description={`${answered} of ${questions.length} questions answered${answered < questions.length ? `, ${questions.length - answered} left blank` : ""}. You cannot change them after you submit.`}
-          confirmLabel="Submit"
+          confirmLabel="Submit answers"
           tone="primary"
           onConfirm={submit}
         />

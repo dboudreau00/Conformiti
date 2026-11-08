@@ -78,16 +78,20 @@ and free host port 8080, or another named in `CONFORMITI_PORT`
 ([Requirements](#requirements)).
 
 ```bash
-git clone https://github.com/dboudreau00/Conformiti.git && cd Conformiti
+git clone https://github.com/dboudreau00/Conformiti.git
+cd Conformiti
 git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n1)"   # the newest release
 docker compose up -d --build
 ```
 
 `main` is the development line and can carry changes no release has yet, so
-installs and upgrades follow release tags. The second line checks out the
+installs and upgrades follow release tags. The third line checks out the
 newest one and leaves the checkout on a detached HEAD, which is intended
 ([Upgrading](#upgrading)). In PowerShell it reads
 `git checkout (git tag --list 'v*' --sort=-v:refname | Select-Object -First 1)`.
+Clone into a plain local folder such as `C:\conformiti` on Windows, not
+Desktop or Documents, which OneDrive syncs by default and where pip, npm and
+Vite can fail part way or hang.
 
 The first build downloads the Python and Node dependencies and takes several
 minutes. `up -d` then waits for the API to report healthy before it starts
@@ -150,11 +154,13 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1           # Windows
 On Windows, `-ExecutionPolicy Bypass` applies to that one run and changes
 nothing on the machine. Without it, Windows PowerShell's default policy
 refuses to run any script, and a script extracted from a downloaded ZIP is
-refused under `RemoteSigned` as well.
+refused under `RemoteSigned` as well. `install.sh` is for macOS, Linux and
+WSL: it stops at once in Git Bash and Cygwin, so on Windows run
+`install.ps1` from PowerShell, or `install.sh` from a WSL terminal.
 
-> **Want the worked example instead of an empty installation?** Put
+> **Want demo data instead of an empty installation?** Put
 > `SEED_DEMO_DATA=true` in a `.env` file beside `docker-compose.yml` before
-> `docker compose up` for a seeded organisation and five personas sharing one
+> `docker compose up` for a demo organisation and five demo accounts sharing one
 > generated password, printed once in the backend log
 > (`docker compose logs backend`) until that container is recreated (as
 > `docker compose up` does after any change to `.env`), so note it. It is
@@ -211,7 +217,7 @@ uses it.
   </tr>
   <tr>
     <td align="center"><sub>217 controls with inline status, owners and linked evidence</sub></td>
-    <td align="center"><sub>Framework readiness, status mix, review load and ownership coverage</sub></td>
+    <td align="center"><sub>Share implemented by framework, status mix, review load and ownership coverage</sub></td>
   </tr>
   <tr>
     <td><img src="assets/screenshots/documents.png" alt="Documents" width="440"></td>
@@ -375,7 +381,7 @@ or `localhost`, so over plain HTTP the digest is not offered.
   superusers, accounts already inactive, accounts since deleted and the last
   active administrator, which are listed for you instead. A completed review is read-only evidence from that
   moment.
-- **Meeting cadences** with required-per-year tracking, where the status badge
+- **Meeting series** with required-per-year tracking, where the status badge
   compares minutes recorded against what the calendar demands *so far*, so a
   series is not marked behind in January for a meeting due in November.
 - **Champion groups** with an accountable owner and members tagged by
@@ -487,9 +493,9 @@ list, fetch or even reference another's rows.
 
 ### Interface and identity
 
-One top bar carries the whole interface: the Workspace tabs (Dashboard,
+One top bar carries the whole interface: the Compliance tabs (Dashboard,
 Analytics, Controls, Documents), a **Governance** menu holding the ten
-governance pages, search across controls, documents and people (**Ctrl K**, or
+governance pages, search across controls, documents and users (**Ctrl K**, or
 **Cmd K** on a Mac), an **Appearance** menu, the notification bell and the
 account menu with Settings and Sign out. Each page names itself at its own top.
 Under 768 pixels the tabs fold into a **Menu** button that lists every
@@ -663,7 +669,7 @@ access still sees and answers the lines assigned to them.**
 | # | Do this | Why |
 |---|---|---|
 | 1 | `docker compose up -d --build` | The stack comes up with `DEBUG` off, a generated secret key and only nginx reachable from the network. Set `POSTGRES_PASSWORD` and `REDIS_PASSWORD` in `.env` before the first start: otherwise the database password is `compliance` and Redis has none (neither publishes a port) |
-| 2 | `manage.py createsuperuser` | Your first real administrator, with a password that passes the policy (`PASSWORD_MIN_LENGTH`, 12 by default). No demo dataset is seeded unless you asked for one |
+| 2 | `manage.py createsuperuser` | Your first real administrator, with a password that passes the policy (`PASSWORD_MIN_LENGTH`, 12 by default). No demo data is loaded unless you asked for it |
 | 3 | `manage.py remove_demo_data` (`--delete` to remove rather than deactivate, `--dry-run` to see what it would change) | Only if you did ask: those accounts share one password and have no second factor. It refuses to run until the administrator from step 2 exists, and the retirement holds across restarts even with `SEED_DEMO_DATA=true` still set. It also takes back the demo's control program: controls a demo account owns are left with no owner, the statuses the demo set go back to *Not started* unless someone changed them since, and the demo's readiness history goes |
 | 4 | Set `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `PUBLIC_URL` | The moment you leave `localhost`. `DJANGO_ALLOWED_HOSTS` is your public host name(s); the Docker stack adds its own internal names itself. Sending a vendor questionnaire is refused until `PUBLIC_URL` is set, because the link carries a bearer token |
 | 5 | Put TLS in front and set `BEHIND_TLS=true` and `NUM_PROXIES=2` (the terminator and the shipped nginx are two hops) | Secure cookies, HTTPS redirect, `__Host-` prefixes, and rate limits keyed on the real client. The prefix only works over https. Have the terminator set `X-Forwarded-Proto` itself rather than pass on the client's |
@@ -789,7 +795,7 @@ documented in [`.env.example`](.env.example). The ones that matter most:
 | `CACHE_URL` | Where the rate-limit counters live. Compose points it at its own Redis; on bare metal set `redis://localhost:6379/2`, or each gunicorn worker counts separately |
 | `PUBLIC_URL` | The address links mailed outside the organisation point at. **Required off DEBUG:** a questionnaire link carries a bearer token, so rather than guess the host from the request, sending is refused until this is set |
 | `ORGANISATION_NAME` | Your name in outbound email and on the page a vendor sees |
-| `SEED_DEMO_DATA` | `true` to boot with the demo dataset. Off by default: an installation carrying it says so on its own sign-in page |
+| `SEED_DEMO_DATA` | `true` to boot with the demo data. Off by default: an installation carrying it says so on its own sign-in page |
 | `DJANGO_SUPERUSER_USERNAME` / `_PASSWORD` / `_EMAIL` | Docker only: create your first account on first boot. The password must pass the password policy, or no account is created and the backend log says why. Give it a real email address, and remove the password from `.env` once the account exists: it stays in the backend container's environment until you do and recreate the containers (the worker and beat blank it, and the single sign-on client secret too; they still load the rest of `.env`) |
 | `CONFORMITI_PORT`, `CONFORMITI_API_PORT` | Compose only: the host port for nginx (default 8080, every interface), and the host port the API takes when you publish it for debugging with the override in INSTALL.md (default 8000, 127.0.0.1 only; nothing is published without it) |
 | `CONFORMITI_DEV_PORT`, `CONFORMITI_DEV_API_PORT` | Local development only, read from the shell: the Vite dev server's port (default 5173), and the port `runserver` listens on and Vite proxies the API to (default 8000) |
@@ -1015,10 +1021,15 @@ release tags; `main` is the development line. After `git fetch --tags`,
 `git tag --list 'v*' --sort=-v:refname` lists the releases, newest first.
 
 ```bash
-scripts/backup.sh                 # first, always
-git fetch --tags && git checkout v0.9.5od
-docker compose pull && docker compose up -d --build
+scripts/backup.sh                 # first, always (Windows: from Git Bash or WSL)
+git fetch --tags
+git checkout v0.9.5od
+docker compose pull
+docker compose up -d --build
 ```
+
+The commands after the backup are one to a line so they also run in Windows
+PowerShell 5.1, which has no `&&`.
 
 Checking out the tag leaves the working copy on a detached HEAD at that
 release, which is intended: each upgrade names the release it moves to, where
@@ -1041,7 +1052,8 @@ back afterwards (after the backup, as always):
 
 ```bash
 git stash
-git fetch --tags && git checkout v0.9.5od
+git fetch --tags
+git checkout v0.9.5od
 git stash pop                     # settle any conflict it reports, then rebuild
 ```
 
@@ -1058,11 +1070,16 @@ sets them:
 
 ```bash
 scripts/backup.sh
-git fetch --tags && git checkout v0.9.5od
+git fetch --tags
+git checkout v0.9.5od
 unset CONFORMITI_VERSION          # an exported pin overrides the one in .env
 # In .env, move the pin to the new release: CONFORMITI_VERSION=0.9.5od
-docker compose pull && docker compose up -d
+docker compose pull
+docker compose up -d
 ```
+
+In Windows PowerShell, take the backup from Git Bash or WSL, and write the
+`unset` line as `$env:CONFORMITI_VERSION = $null`.
 
 Change the pin in `.env`, not on the command line. A version given inline
 (`CONFORMITI_VERSION=0.9.5od docker compose ...`) or exported lasts for that
@@ -1193,7 +1210,7 @@ sessions.
 columns in place. Two behaviour changes will look like faults if you are not
 expecting them: a workspace's webhook URLs are no longer returned by the API,
 so the settings screen shows whether a channel is configured rather than its
-address, and the demo dataset is no longer seeded, so a rebuilt installation
+address, and the demo data is no longer loaded, so a rebuilt installation
 comes up empty unless you set `SEED_DEMO_DATA=true`.
 
 **0.9.5** adds three small columns in two migrations (a score on each
@@ -1487,7 +1504,7 @@ end-to-end suite also runs locally with `npm test` in `e2e/`
 
 | Gate | What it proves |
 |---|---|
-| `tools/validate.py`: **20 static checks** | App and route wiring, the API contract between the SPA and the backend, that every app with models ships an initial migration and that no install path runs `makemigrations`, theme packs, tests and CI present, one release version wherever it is written, and no em or en dashes in the Markdown docs and the email templates. Runs on a **bare Python interpreter** so a missing package cannot defeat it |
+| `tools/validate.py`: **21 static checks** | App and route wiring, the API contract between the SPA and the backend, that every app with models ships an initial migration and that no install path runs `makemigrations`, theme packs, tests and CI present, one release version wherever it is written, no em or en dashes in the Markdown docs and the email templates, and one spelling of "program". Runs on a **bare Python interpreter** so a missing package cannot defeat it |
 | `manage.py test` | Workspace isolation, auth, MFA, token rotation, the auditor's reachable surface enumerated by walking the routers, RBAC and tree integrity, evidence RBAC, access reviews, risk import/export safety, the audit trail, reminder claims, outbound request checks, field encryption and key rotation, health, demo retirement, the boot guard, WebAuthn against virtual authenticators, SAML against locally signed assertions, Ed25519 against an RFC 8032 test vector and the `cryptography` library. The suite runs with `DJANGO_DEBUG=true`; settings that change with DEBUG are tested where a test overrides them, and the compose job runs the production defaults |
 | Backend matrix | Python 3.11 / 3.12 / 3.13 / 3.14 on SQLite, plus PostgreSQL 16. Each SQLite run also executes `manage.py makemigrations --check --dry-run`, which fails the job when a model change has no shipped migration |
 | Frontend | A production build that must succeed, plus `npm audit --omit=dev --audit-level=high` on the dependencies the built app ships. The full audit, build tools included, is reported without failing the job |

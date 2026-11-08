@@ -6,6 +6,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 METHOD_ACTION = {"POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}
+VERBS = {"create": "created", "update": "changed", "delete": "deleted"}
+
+# What a person calls the record behind an API path (the part after /api/). A path not listed here, such as an add-on's,
+# keeps the raw call as its detail rather than a guess.
+RESOURCE_NOUN = {
+    "access-review-items": "access review item", "access-reviews": "access review",
+    "calendar": "calendar event", "champion-groups": "champion group", "control-evidence": "evidence link",
+    "controls": "control", "crosswalk": "crosswalk mapping", "documents": "document",
+    "evidence-packages": "audit package", "folder-permissions": "folder permission", "folders": "folder",
+    "form-templates": "form template", "frameworks": "framework", "group-members": "group member",
+    "integrations/jira/boards": "Jira board", "meeting-minutes": "meeting minutes",
+    "meeting-series": "meeting series", "package-controls": "package control",
+    "package-evidence": "package document", "package-grants": "package grant", "package-samples": "package sample",
+    "pbc-items": "request item", "pbc-requests": "auditor request", "questionnaire-invites": "questionnaire invitation",
+    "responsibilities": "responsibility", "risk-notes": "risk note", "risks": "risk", "roles": "role",
+    "users": "member", "vendor-assessments": "vendor assessment", "vendors": "vendor", "workspaces": "workspace",
+}
+# Calls that are not the creation, change or deletion of one record.
+FIXED_PHRASE = {
+    "integrations/jira/config": "changed the Jira settings",
+    "integrations/jira/test": "tested the Jira connection",
+}
+FIELD_WORDS = {"is_active": "active status", "is_superuser": "administrator status", "is_staff": "staff status"}
 
 # UI-state and credential-bearing paths are never recorded here; auth events are written explicitly by events.py.
 SKIP_PREFIXES = ("/api/auth/", "/api/notifications/", "/api/health/")
@@ -110,8 +133,49 @@ def _applied_names(response):
     return _names(data.keys()) if isinstance(data, dict) else ""
 
 
+def _phrase(action, segment, object_id):
+    """A short sentence for an API write on a known record type ("created vendor 12", "seal on audit package 3"),
+    else None."""
+    path = "/".join(segment[1:])
+    for key, text in FIXED_PHRASE.items():
+        if path == key or path.startswith(key + "/"):
+            return text
+    key = max((k for k in RESOURCE_NOUN if path == k or path.startswith(k + "/")), key=len, default=None)
+    if key is None:
+        return None
+    rest = [s for s in path[len(key):].split("/") if s]
+    ident = rest.pop(0) if rest and rest[0].isdigit() else object_id
+    target = f"{RESOURCE_NOUN[key]} {ident}" if ident else RESOURCE_NOUN[key]
+    steps = " ".join(s.replace("_", " ").replace("-", " ") for s in rest if not s.isdigit())
+    return f"{steps} on {target}" if steps else f"{VERBS[action]} {target}"
+
+
+def _join(names):
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
 def _detail(base, fields):
-    """``base`` plus the field names, within MAX_DETAIL. Names that do not fit are counted, never dropped silently."""
+    """``base`` plus ", set" and the field names in words, within MAX_DETAIL. Names that do not fit are counted."""
+    names = [FIELD_WORDS.get(n) or n.replace("_", " ") for n in fields.split(",") if n]
+    if not names:
+        return base[:MAX_DETAIL]
+    head = f"{base}, set "
+    kept = []
+    for i, name in enumerate(names):
+        more = len(names) - i - 1
+        tail = f" and {more} more" if more else ""
+        if len(head) + len(", ".join(kept + [name])) + len(tail) > MAX_DETAIL:
+            break
+        kept.append(name)
+    left = len(names) - len(kept)
+    if left and not kept:
+        return (head + f"{left} fields")[:MAX_DETAIL]
+    return (head + _join(kept + ([f"{left} more"] if left else [])))[:MAX_DETAIL]
+
+
+def _call_detail(base, fields):
+    """``base`` plus the field names as sent, within MAX_DETAIL: the record of a call whose path this module cannot
+    put in words. Names that do not fit are counted, never dropped silently."""
     names = [n for n in fields.split(",") if n]
     if not names:
         return base[:MAX_DETAIL]
@@ -165,10 +229,13 @@ class AuditLogMiddleware:
 
         from .models import AuditLog
         names = [f for f in fields.split(",") if f and f not in ADMIN_FORM_NOISE and not f.startswith("_")]
-        detail = f"admin {request.method} {request.path}"
+        model = object_type.rsplit(".", 1)[-1].replace("_", " ")
         selected = request.POST.getlist("_selected_action")
         if selected:
-            detail += f" {request.POST.get('action', '')} rows={len(selected)}"
+            chosen = request.POST.get("action", "").replace("_", " ")
+            detail = f"{chosen} on {len(selected)} {model} records in the Django admin"
+        else:
+            detail = f"{VERBS[action]} {model}{' ' + object_id if object_id else ''} in the Django admin"
         AuditLog.objects.create(
             user=user, action=action, object_type=object_type[:80],
             object_id=object_id[:80], detail=_detail(detail, ",".join(names)), ip_address=_client_ip(request),
@@ -195,7 +262,9 @@ class AuditLogMiddleware:
             data = getattr(response, "data", None)
             if isinstance(data, dict) and isinstance(data.get("id"), int):
                 object_id = str(data["id"])
+        phrase = _phrase(action, segment, object_id)
+        detail = _detail(phrase, fields) if phrase else _call_detail(f"{request.method} {request.path}", fields)
         AuditLog.objects.create(
             user=user, action=action, object_type=object_type[:80],
-            object_id=object_id[:80], detail=_detail(f"{request.method} {request.path}", fields), ip_address=ip,
+            object_id=object_id[:80], detail=detail, ip_address=ip,
         )

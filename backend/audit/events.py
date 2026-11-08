@@ -39,9 +39,9 @@ def record_login_attempt(request, response):
         payload = getattr(response, "data", None) or {}
         detail_code = getattr(payload.get("detail"), "code", "") if isinstance(payload, dict) else ""
         if isinstance(payload, dict) and payload.get("mfa_required"):
-            reason = "password ok, second factor required"
+            reason = "password ok, two-factor code required"
         elif detail_code == "mfa_invalid":
-            reason = "invalid second factor"
+            reason = "invalid two-factor code"
         elif response.status_code == 429:
             reason = "throttled"
         else:
@@ -66,7 +66,7 @@ def record_admin_sign_in(request, username, reason=None):
             user=user if ok else None, action=LOGIN_OK if ok else LOGIN_FAILED,
             object_type="auth", object_id=str(user.pk) if (ok and user) else "",
             detail=(f"signed in to the Django admin: {username}" if ok
-                    else f"Django admin sign-in failed for {username or '<blank>'}: {reason}")[:255],
+                    else f"sign-in to the Django admin failed for {username or '<blank>'}: {reason}")[:255],
             ip_address=_client_ip(request) if request is not None else None,
             workspace_id=user.workspace_id if user else None,
         )

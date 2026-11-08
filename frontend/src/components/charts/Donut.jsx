@@ -34,6 +34,9 @@ export function Donut({ slices, size = 168, thickness = 18, centerValue, centerL
       return { ...slice, path };
     });
   const activeSlice = arcs.find((a) => a.label === active);
+  // What a screen reader gets in place of the picture: the centre figure, when a caller gave one, then every slice.
+  const centre = [centerValue, centerLabel].filter((v) => v !== undefined && v !== null && v !== "").join(" ");
+  const spoken = [centre, arcs.map((a) => `${a.label} ${a.value}`).join(", ")].filter(Boolean).join(": ") || "No data";
 
   function setActive(label) {
     setHovered(label);
@@ -42,7 +45,7 @@ export function Donut({ slices, size = 168, thickness = 18, centerValue, centerL
 
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} role="img" aria-label={`${centerValue} ${centerLabel}`}>
+      <svg width={size} height={size} role="img" aria-label={spoken}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={toneVar("grid")} strokeWidth={thickness} />
         {arcs.map((arc, i) => (
           <motion.path

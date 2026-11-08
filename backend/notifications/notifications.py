@@ -6,6 +6,14 @@ SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 MAX_ITEMS = 40
 
 
+def _in_days(n):
+    return "today" if n == 0 else f"in {count_of(n, 'day')}"
+
+
+def _days_ago(n):
+    return "today" if n == 0 else f"{count_of(n, 'day')} ago"
+
+
 def _n(key, category, severity, title, detail, to, as_of=None):
     return {
         "key": key,
@@ -35,14 +43,14 @@ def _document_items(user, today):
             items.append(_n(
                 f"doc-overdue:{d.id}", "doc_review", "high",
                 f"Review overdue: {d.name}",
-                f"Was due {d.next_review_date.isoformat()} ({-days}d ago)",
+                f"Was due {d.next_review_date.isoformat()} ({_days_ago(-days)})",
                 "/documents", d.next_review_date,
             ))
         elif days <= 14:
             items.append(_n(
                 f"doc-due:{d.id}", "doc_review", "medium",
                 f"Review due soon: {d.name}",
-                f"Due {d.next_review_date.isoformat()} ({days}d)",
+                f"Due {d.next_review_date.isoformat()} ({_in_days(days)})",
                 "/documents", d.next_review_date,
             ))
     return items
@@ -85,7 +93,7 @@ def _vendor_items(user, today):
             items.append(_n(
                 f"vendor-onboard:{v.id}", "vendor", severity,
                 f"New vendor: state responsibilities for {v.name}",
-                f"No shared responsibility matrix yet ({age}d since onboarding). "
+                f"No shared responsibility matrix yet ({count_of(age, 'day')} since onboarding). "
                 "Record which controls they cover, or import their matrix.",
                 f"/vendors?vendor={v.id}&tab=matrix", timezone.localtime(v.created_at).date(),
             ))
@@ -105,7 +113,7 @@ def _vendor_items(user, today):
         items.append(_n(
             f"vendor-expiry:{a.id}", "vendor", "medium",
             f"{a.get_kind_display()} expires for {a.vendor.name}",
-            f"Expires {a.expires_at.isoformat()} ({days}d)",
+            f"Expires {a.expires_at.isoformat()} ({_in_days(days)})",
             f"/vendors?vendor={a.vendor_id}&tab=assessments", a.expires_at,
         ))
     for vendor, report in bridge_letter_gaps(user):
@@ -183,14 +191,14 @@ def _event_items(user, today):
         if days < 0:
             items.append(_n(
                 f"event-overdue:{e.id}", "event", "high",
-                f"Task overdue: {e.title}",
+                f"Event overdue: {e.title}",
                 f"Was due {e.date.isoformat()}", "/", e.date,
             ))
         elif days <= 7:
             items.append(_n(
                 f"event-soon:{e.id}", "event", "low",
-                f"Upcoming: {e.title}",
-                f"{e.date.isoformat()} ({days}d)", "/", e.date,
+                f"Event coming up: {e.title}",
+                f"{e.date.isoformat()} ({_in_days(days)})", "/", e.date,
             ))
     return items
 
@@ -224,7 +232,8 @@ def _scanner_items(user, today):
             items.append(_n(
                 "scanner-down", "system", "critical",
                 "Malware scanner unreachable: uploads are being refused",
-                f"clamd has not answered since {since.isoformat(timespec='minutes') if since else 'the last check'}. "
+                f"The malware scanner has not answered since "
+                f"{since.isoformat(timespec='minutes') if since else 'the last check'}. "
                 "Evidence cannot be filed until it is back.",
                 "/documents", today,
             ))
@@ -232,7 +241,7 @@ def _scanner_items(user, today):
         if held:
             items.append(_n(
                 "digest-quarantined", "system", "high",
-                f"{held} document{'s' if held != 1 else ''} in quarantine",
+                f"{count_of(held, 'document')} in quarantine",
                 "The scanner matched a signature on a stored file; it cannot be opened until "
                 "a re-scan clears it or it is deleted.", "/documents", today,
             ))
@@ -252,14 +261,14 @@ def _register_digest_items(user, today):
         if overdue_risks:
             items.append(_n(
                 "digest-risks-overdue", "risk", "high",
-                f"{overdue_risks} risk{'s' if overdue_risks != 1 else ''} overdue across the register",
+                f"{count_of(overdue_risks, 'risk')} overdue across the register",
                 "Remediation past its target date", "/risks", today,
             ))
         no_eu = Control.objects.annotate(n=Count("evidence_links")).filter(n=0).count()
         if no_eu:
             items.append(_n(
                 "digest-evidence-gap", "evidence", "low",
-                f"{no_eu} control{'s' if no_eu != 1 else ''} have no evidence linked",
+                f"{count_of(no_eu, 'control')} {'has' if no_eu == 1 else 'have'} no evidence linked",
                 "Attach documents to close coverage gaps", "/controls", today,
             ))
     return items
@@ -277,7 +286,7 @@ def _document_backlog_items(user, today):
         if org_overdue:
             items.append(_n(
                 "digest-docs-overdue", "doc_review", "medium",
-                f"{org_overdue} document{'s' if org_overdue != 1 else ''} overdue for review org-wide",
+                f"{count_of(org_overdue, 'document')} past {'its' if org_overdue == 1 else 'their'} review date",
                 "Owned by other team members", "/documents", today,
             ))
     return items
@@ -306,14 +315,14 @@ def _pbc_items(user, today):
             items.append(_n(
                 f"pbc-overdue:{r.id}", "pbc", "high",
                 f"Auditor request overdue: {r.reference} {r.title}",
-                f"Was due {r.due_date.isoformat()} ({(today - r.due_date).days}d ago) · {r.package.name}",
+                f"Was due {r.due_date.isoformat()} ({_days_ago((today - r.due_date).days)}) · {r.package.name}",
                 "/packages", r.due_date,
             ))
         elif r.due_date and (r.due_date - today).days <= 7:
             items.append(_n(
                 f"pbc-due:{r.id}", "pbc", "medium",
                 f"Auditor request due soon: {r.reference} {r.title}",
-                f"Due {r.due_date.isoformat()} ({(r.due_date - today).days}d) · {r.package.name}",
+                f"Due {r.due_date.isoformat()} ({_in_days((r.due_date - today).days)}) · {r.package.name}",
                 "/packages", r.due_date,
             ))
     if getattr(user, "can_manage_frameworks", False):
@@ -323,7 +332,7 @@ def _pbc_items(user, today):
         if org_overdue:
             items.append(_n(
                 "digest-pbc-overdue", "pbc", "high",
-                f"{org_overdue} auditor request{'s' if org_overdue != 1 else ''} overdue",
+                f"{count_of(org_overdue, 'auditor request')} overdue",
                 "Assigned to other people, past their due date", "/packages", today,
             ))
         unassigned = PbcRequest.objects.filter(
@@ -332,7 +341,7 @@ def _pbc_items(user, today):
         if unassigned:
             items.append(_n(
                 "digest-pbc-unassigned", "pbc", "medium",
-                f"{unassigned} auditor request{'s' if unassigned != 1 else ''} nobody owns yet",
+                f"{count_of(unassigned, 'auditor request')} without an owner",
                 "Assign each one so it gets chased", "/packages", today,
             ))
     if getattr(user, "is_auditor", False):
@@ -341,7 +350,7 @@ def _pbc_items(user, today):
             if waiting:
                 items.append(_n(
                     f"pbc-awaiting:{pkg.id}", "pbc", "medium",
-                    f"{waiting} answer{'s' if waiting != 1 else ''} to review in {pkg.name}",
+                    f"{count_of(waiting, 'answer')} to review in {pkg.name}",
                     "Provided by the organisation; accept or return each one", "/packages", today,
                 ))
     return items
@@ -360,14 +369,14 @@ def _access_review_items(user, today):
                 items.append(_n(
                     f"access-review:{review.id}", "access_review", "medium",
                     f"Access review open: {review.name}",
-                    f"{pending} decision{'s' if pending != 1 else ''} pending",
+                    f"{count_of(pending, 'decision')} pending",
                     "/user-audit", today,
                 ))
             else:
                 items.append(_n(
                     f"access-review-audit:{review.id}", "access_review", "info",
                     f"Access review in progress: {review.name}",
-                    f"{pending} decision{'s' if pending != 1 else ''} pending",
+                    f"{count_of(pending, 'decision')} pending",
                     "/user-audit", today,
                 ))
     return items

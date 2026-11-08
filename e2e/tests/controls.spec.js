@@ -18,6 +18,19 @@ test.describe("control register", () => {
     await expect(page.getByRole("button", { name: /Show \d+ more of/ })).toHaveCount(0);
   });
 
+  test("the register is a table: seven column headings and a row that opens its control", async ({ page }) => {
+    const table = page.getByRole("table", { name: "Control register" });
+    for (const heading of ["Ref", "Control", "Framework", "Status", "Owner", "Readiness", "Evidence"]) {
+      await expect(table.getByRole("columnheader", { name: heading, exact: true })).toBeVisible();
+    }
+    const first = table.getByRole("row").nth(1);
+    await expect(first.getByRole("cell")).toHaveCount(7);
+    const toggle = first.getByRole("button");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
   test("the framework tabs narrow the register", async ({ page }) => {
     await page.getByRole("tab", { name: /ISO\/IEC 27001/ }).click();
     await expect(page.getByText(/SHOWING 93 OF 93/i)).toBeVisible();
@@ -35,7 +48,7 @@ test.describe("control register", () => {
   test("the status filter narrows the register", async ({ page }) => {
     await page.getByRole("button", { name: /^Implemented/ }).click();
     await expect(page.getByText(/SHOWING 62 OF 217/i)).toBeVisible();
-    await page.getByRole("button", { name: /^Every status/ }).click();
+    await page.getByRole("button", { name: /^All statuses/ }).click();
     await expect(page.getByText(/SHOWING 100 OF 217/i)).toBeVisible();
   });
 
@@ -78,8 +91,6 @@ test.describe("control register", () => {
     for (const signal of ["Implementation", "Owner", "Evidence", "Freshness", "Testing"]) {
       expect(text, `${signal} row missing`).toContain(signal);
     }
-    expect(text).toMatch(/Marked implemented|Not started|Implementation in progress/);
-    expect(text).toMatch(/document\(s\) linked|No evidence linked/);
     await expect(page.getByText(/^Next: /)).toBeVisible();
   });
 

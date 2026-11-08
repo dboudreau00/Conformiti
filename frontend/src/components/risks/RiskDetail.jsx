@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
 import { SendIcon, XIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
-import { displayName } from "../../utils/format.js";
+import { displayName, fmtDate } from "../../utils/format.js";
 import { RISK_RATING, RISK_STATUS } from "../../utils/tone.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button, IconButton } from "../ui/Button.jsx";
 import { Label, Loading, Panel } from "../ui/Panel.jsx";
 import { Field } from "./Field.jsx";
 import { IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, STATUSES, TREATMENTS, treatmentLabel } from "./vocab.js";
-
-const day = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
 /** `canManage` (a framework manager) edits every field; the risk's owner edits only status, plan, due date and
  * Jira key, as the server enforces, so the other fields are disabled for them. */
@@ -41,8 +39,12 @@ export function RiskDetail({
   const ratingTone = RISK_RATING[risk.rating] || "muted";
   const planDirty = planDraft !== (risk.mitigation_plan || "");
   const id = (suffix) => `risk-${risk.id}-${suffix}`;
-  // If the directory failed to load, the current owner alone keeps the select from dropping the assignment.
-  const ownerOptions = users.length ? users : risk.owner ? [{ id: risk.owner, full_name: risk.owner_name }] : [];
+  // The list holds active people only, and may be empty when the directory failed to load: the current owner is always
+  // an option, so the select cannot drop or hide the assignment.
+  const ownerOptions =
+    risk.owner && !users.some((u) => u.id === risk.owner)
+      ? [{ id: risk.owner, full_name: risk.owner_name }, ...users]
+      : users;
 
   function commitJira() {
     const next = jiraDraft.trim();
@@ -62,8 +64,8 @@ export function RiskDetail({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <Label className="block truncate">
-            #{risk.id} · identified {risk.identified_on || "-"} · by {risk.created_by_name || "-"}
-            {risk.closed_at ? ` · closed ${day(risk.closed_at)}` : ""}
+            #{risk.id} · identified {fmtDate(risk.identified_on)} · by {risk.created_by_name || "-"}
+            {risk.closed_at ? ` · closed ${fmtDate(risk.closed_at)}` : ""}
           </Label>
           <h3 id={id("title")} className="mt-1 text-[15px] font-semibold text-ink">
             {risk.title}
@@ -194,9 +196,6 @@ export function RiskDetail({
               <Badge tone={ratingTone} mono>
                 {risk.rating} · {risk.score}
               </Badge>
-              <span className="tabular font-mono text-2xs text-faint">
-                L{risk.likelihood} × I{risk.impact}
-              </span>
             </div>
           </div>
         </div>
@@ -212,9 +211,7 @@ export function RiskDetail({
           </div>
           <div>
             <dt><Label>Score</Label></dt>
-            <dd className="tabular mt-1 font-mono text-[13px] text-ink">
-              L{risk.likelihood} × I{risk.impact} = {risk.score}
-            </dd>
+            <dd className="tabular mt-1 font-mono text-[13px] text-ink">{risk.score}</dd>
           </div>
           <div>
             <dt><Label>Treatment</Label></dt>
@@ -229,7 +226,7 @@ export function RiskDetail({
           <div>
             <dt><Label>Due</Label></dt>
             <dd className={cn("tabular mt-1 font-mono text-[13px]", risk.is_overdue ? "text-danger" : "text-ink")}>
-              {risk.due_date || "-"}
+              {fmtDate(risk.due_date)}
             </dd>
           </div>
           <div>
@@ -249,10 +246,10 @@ export function RiskDetail({
           {canEdit && planDirty ? (
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" disabled={saving} onClick={() => setPlanDraft(risk.mitigation_plan || "")}>
-                Discard
+                Discard changes
               </Button>
               <Button size="sm" variant="primary" disabled={saving} onClick={() => onPatch({ mitigation_plan: planDraft })}>
-                {saving ? "Saving…" : "Save plan"}
+                {saving ? "Saving…" : "Save changes"}
               </Button>
             </div>
           ) : null}
@@ -296,7 +293,7 @@ export function RiskDetail({
             {notes.map((n) => (
               <li key={n.id} className="py-2.5">
                 <p className="font-mono text-2xs text-faint">
-                  <span className="text-muted">{n.author_name || "-"}</span> · {day(n.created_at) || "-"}
+                  <span className="text-muted">{n.author_name || "-"}</span> · {fmtDate(n.created_at)}
                 </p>
                 <p className="mt-0.5 whitespace-pre-line text-[13px] leading-relaxed text-ink">{n.text}</p>
               </li>

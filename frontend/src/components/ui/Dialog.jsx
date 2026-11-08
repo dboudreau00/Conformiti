@@ -2,9 +2,18 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { XIcon } from "lucide-react";
 import { EASE } from "../layout/PanelTransition.jsx";
+import { errorText } from "../../utils/a11y.js";
 import { cn } from "../../utils/cn.js";
 import { Button, IconButton } from "./Button.jsx";
 import { Label } from "./Panel.jsx";
+
+/** What a failed submit or confirm shows. A caller's own `throw new Error("a sentence")` is shown as written;
+ * anything that came off the network is read through errorText, so no status line, HTML page or "Network Error"
+ * reaches the screen. */
+function failText(err, fallback) {
+  if (err?.response || err?.isAxiosError) return errorText(err, fallback);
+  return err?.message || fallback;
+}
 
 const INITIAL_FOCUS = 'input, textarea, select, button:not([data-dialog-close]), [href], [tabindex]:not([tabindex="-1"])';
 const FOCUSABLE = 'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])';
@@ -82,7 +91,7 @@ export function Dialog({
       {open ? (
         <motion.div
           className={cn(
-            "fixed inset-0 z-50 flex justify-center bg-ink/40 p-4",
+            "fixed inset-0 z-50 flex justify-center bg-scrim/60 p-4 backdrop-blur-sm",
             placement === "top" ? "items-start overflow-y-auto pt-[10vh]" : "items-center"
           )}
           initial={{ opacity: 0 }}
@@ -155,7 +164,7 @@ export function TextDialog({
       await onSubmit(trimmed);
       onClose?.();
     } catch (err) {
-      setError(err?.message || "That could not be saved.");
+      setError(failText(err, "That could not be saved."));
     } finally {
       setBusy(false);
     }
@@ -196,10 +205,21 @@ export function TextDialog({
   );
 }
 
-export function ConfirmDialog({ open, title, description, confirmLabel = "Confirm", tone = "danger-solid", onConfirm, onClose, children }) {
+// A confirm button is primary when its label opens with one of these plain, constructive verbs. Anything else
+// (Delete, Remove, Revoke, Reset, Discard, Leave without saving, a label nobody has classified) is treated as
+// destructive and stays solid danger: an unclassified act warns rather than passes. A caller's `tone` always wins.
+const CONSTRUCTIVE = /^(send|save|import|export|submit|mark|complete|add|create|file|raise|run|record|reopen|install|schedule|approve|accept|continue|apply|publish|start|turn on|switch on|enable|download|open)\b/i;
+
+/** `confirmLabel` is required and names the act: the verb and the thing ("Delete folder", "Remove vendor"), never a bare
+ * "Confirm". `tone` is optional: without it the button is primary for a constructive verb and solid danger for
+ * everything else, so a caller that forgets it cannot make a destructive act look safe. */
+export function ConfirmDialog({ open, title, description, confirmLabel, tone, onConfirm, onClose, children }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => { if (open) { setBusy(false); setError(""); } }, [open]);
+  useEffect(() => {
+    if (open && !confirmLabel) console.error('ConfirmDialog needs a confirmLabel: the verb and the thing, such as "Delete folder".');
+  }, [open, confirmLabel]);
 
   async function confirm() {
     setBusy(true);
@@ -208,7 +228,7 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "Confir
       await onConfirm();
       onClose?.();
     } catch (err) {
-      setError(err?.message || "That did not work.");
+      setError(failText(err, "That did not work."));
     } finally {
       setBusy(false);
     }
@@ -219,7 +239,13 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "Confir
       {error ? <p className="notice notice-err mt-3" role="alert">{error}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button type="button" variant={tone} size="sm" onClick={confirm} busy={busy}>
+        <Button
+          type="button"
+          variant={tone || (CONSTRUCTIVE.test(confirmLabel || "") ? "primary" : "danger-solid")}
+          size="sm"
+          onClick={confirm}
+          busy={busy}
+        >
           {confirmLabel}
         </Button>
       </div>
@@ -228,7 +254,8 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "Confir
 }
 
 /** `ask({ title, description, confirmLabel, tone, children, onConfirm })` opens it; render `confirmDialog`
- * somewhere. `onConfirm` may be async: the dialog stays open and busy until it settles. */
+ * somewhere. `confirmLabel` and `tone` are ConfirmDialog's. `onConfirm` may be async: the dialog stays open and
+ * busy until it settles. */
 export function useConfirm() {
   const [request, setRequest] = useState(null);
   const confirmDialog = (
@@ -236,7 +263,7 @@ export function useConfirm() {
       open={!!request}
       title={request?.title || ""}
       description={request?.description}
-      confirmLabel={request?.confirmLabel || "Confirm"}
+      confirmLabel={request?.confirmLabel}
       tone={request?.tone}
       onClose={() => setRequest(null)}
       onConfirm={async () => { await request?.onConfirm?.(); }}

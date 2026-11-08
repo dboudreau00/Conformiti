@@ -6,7 +6,7 @@
 #   2. apply the shipped migrations (never makemigrations: the migration
 #      files are part of the release and are verified in CI)
 #   3. seed the control libraries + roles (idempotent)
-#   4. optionally seed the demo dataset (SEED_DEMO_DATA, default false; a
+#   4. optionally seed the demo data (SEED_DEMO_DATA, default false; a
 #      no-op once remove_demo_data has retired it) and/or create an initial
 #      superuser from DJANGO_SUPERUSER_* (no-op if it exists; a refusal is
 #      logged with its reason and the boot carries on)
@@ -83,7 +83,7 @@ case "${SEED_DEMO_DATA:-false}" in
     # Defaulted for the same reason as CLAMAV_ENABLED below: `set -u` makes a
     # bare expansion fatal, and this branch is the one an image run without any
     # environment at all takes.
-    log "Skipping demo dataset (SEED_DEMO_DATA=${SEED_DEMO_DATA:-unset})"
+    log "Skipping demo data (SEED_DEMO_DATA=${SEED_DEMO_DATA:-unset})"
     ;;
 esac
 

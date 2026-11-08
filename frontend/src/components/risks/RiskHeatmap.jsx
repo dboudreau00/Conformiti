@@ -32,6 +32,9 @@ export function RiskHeatmap({ risks, stats, loading, selectedId, onSelect }) {
         <div className="flex flex-wrap gap-6 p-5">
           <div className="min-w-[260px] flex-1">
             <div className="flex gap-2">
+              <span className="flex w-3 items-center justify-center" aria-hidden="true">
+                <Label className="rotate-180 [writing-mode:vertical-rl]">Impact</Label>
+              </span>
               <div className="flex w-4 flex-col" aria-hidden="true">
                 {IMPACT.map((i) => (
                   <span key={i} className="tabular flex min-h-[52px] flex-1 items-center justify-end font-mono text-2xs text-faint">
@@ -99,15 +102,15 @@ export function RiskHeatmap({ risks, stats, loading, selectedId, onSelect }) {
                 )}
               </div>
             </div>
-            <div className="mt-2 flex gap-1 pl-6" aria-hidden="true">
+            <div className="mt-2 flex gap-1 pl-11" aria-hidden="true">
               {LIKELIHOOD.map((l) => (
                 <span key={l} className="tabular flex-1 text-center font-mono text-2xs text-faint">
                   {l}
                 </span>
               ))}
             </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <Label>Impact ↑ · Likelihood →</Label>
+            <div className="mt-1 pl-11 text-center" aria-hidden="true">
+              <Label>Likelihood</Label>
             </div>
           </div>
 

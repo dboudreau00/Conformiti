@@ -11,8 +11,8 @@ Installation lives in [INSTALL.md](INSTALL.md); a guided first hour in
 **Framework → category → control.** SOC 2, ISO/IEC 27001:2022 and PCI DSS
 v4.0.1 ship pre-loaded (217 controls). Each control has a status (*not
 started*, *in progress*, *implemented*, *not applicable*), an owner, and a
-count of linked evidence. Readiness is *implemented ÷ applicable* (Analytics'
-*Overall readiness*); the Dashboard leads with the *readiness score*, the mean
+count of linked evidence. *Share implemented* (Analytics) is *implemented ÷
+applicable*; the Dashboard leads with the *readiness score*, the mean
 of every applicable control's own score out of 100 (implementation, an owner,
 evidence and its freshness, a test, less open risks).
 
@@ -88,24 +88,24 @@ page by anyone with *manage* on that folder.
 One bar runs across the top of every page, and nothing runs down the side.
 The page's own title opens the page, under the bar.
 
-- **Workspace tabs**: Dashboard, Analytics, Controls and Documents. The page
+- **Compliance tabs**: Dashboard, Analytics, Controls and Documents. The page
   you are on has an accent underline. A live badge on Controls counts the
   controls in progress.
 - **Governance**: a menu holding the ten governance pages (Users, User audit,
   Audit packages, Vendors, Responsibility matrix, Audit log, Meetings,
-  Champion groups, Risks, Jira), two to a row, each with its icon, a line on
-  what it is for and, where there is one, a live badge (open access reviews,
-  open risks). When you are on one of those pages the button also names it,
+  Champion groups, Risk register, Jira boards), two to a row, each with its
+  icon and, where there is one, a live badge (open access reviews, open risks). When you are on one of those pages the button also names it,
   so the bar still says where you are with the menu closed.
 - **Search**: press **Ctrl K** (**Cmd K** on a Mac) or select the search
   field. Type two or more characters and the palette lists the controls,
-  documents and people that match, up to six of each, the best match first.
+  documents and users that match, up to six of each, the best match first.
   **Up** and **Down** move, **Enter** goes to the page that holds the result,
   **Esc** closes. It asks only for what your role may list, so an auditor is
-  offered documents and nothing else, and people appear only for accounts that
+  offered documents and nothing else, and users appear only for accounts that
   can read the user directory.
 - **Appearance**: the four **theme packs** (Audit Ledger, Nimbus, Ledger Dark,
-  Obsidian), each with a swatch and a line describing it, and four **accent**
+  Obsidian), each with a swatch and, where the name does not say so, whether
+  it is light or dark, and four **accent**
   colours. Choosing one recolours the page at once and the menu stays open so
   a pack and an accent can be tried together. Theme and accent are remembered
   per browser; a custom accent colour and **Reset** are on the Settings page.
@@ -134,7 +134,7 @@ The page's own title opens the page, under the bar.
 
 ### Dashboard
 **Readiness score** (out of 100, the mean of the applicable controls' scores)
-with the share of controls marked implemented, the monthly trend line and
+with the monthly trend line and
 the readiness bands (Ready, Nearly there, At risk, Not ready), beside the
 **lead schedule**. Under them, the **coverage atlas**, then **Needs
 attention**, the compliance calendar and "Reviews coming up". A panel that
@@ -173,8 +173,8 @@ while the rest dim a little. There are no lines between squares.
   Home** and **Ctrl End** to the first and last control. Each square is named
   with its reference, title and status.
 - **A large program** shrinks the squares to a floor of nine pixels. Above
-  600 controls the atlas draws the four frameworks with the most applicable
-  controls and offers a chip per framework to draw the others, or **Draw all**.
+  600 controls the atlas shows the four frameworks with the most applicable
+  controls and offers a chip per framework to show the others, or **Show all**.
 - **The place card's score** is the one the register shows you, which counts
   only evidence in folders you can see. The schedule and the headline count
   every folder, so for someone with narrow folder access the two can differ.
@@ -183,23 +183,24 @@ while the rest dim a little. There are no lines between squares.
 fall due in the next 30 days and a link to the review queue. *Risk posture*
 gives open, mitigating and accepted risks and how many are overdue. *Evidence
 coverage* gives the share of controls with at least one document linked, as a
-bar, and the number of links. *Documents* gives how many are on file and how
+bar. *Documents* gives how many are on file and how
 many are approved, in review and expired. A figure whose source could not be
 loaded shows a dash, not a zero.
 
 The compliance calendar (filter by Review / Audit / Task / Other, click a day
 for details, arrows for other months) and "Reviews coming up" with **Mark
-reviewed** (managers and owners with edit access) close the page.
+reviewed** (managers and owners with edit access, after a confirmation) close
+the page.
 
 ### Analytics
-Framework readiness bars, control and document status donuts, review load for
+Share implemented (overall and by framework), control and document status donuts, review load for
 the next six months, ownership coverage (controls, documents, risks) and the
 most overdue documents.
 
 ### Controls
 Filter by framework and status, search by reference or title, **Export CSV**.
 Expand a row for the objective, the status and owner selects (managers), the
-linked evidence (with **Unlink** where you have edit rights on the document's
+evidence (with **Remove**, which asks first, where you have edit rights on the document's
 folder) and **Attach evidence** (multi-select, optional note). Bulk attach
 reports anything it skipped and why.
 
@@ -223,8 +224,8 @@ their documents and every archived version, and cannot be undone.
 Administrators and Compliance Managers hold manage on every folder.
 
 ### Risks
-Chips filter live / closed / all; the toolbar offers a CSV template, **Import
-CSV/XLSX** and **New risk** (managers) and **Export**. Select a row to edit
+Chips filter live / closed / all; the toolbar offers **Download template**, **Import
+CSV/XLSX** and **New risk** (managers) and **Export CSV**. Select a row to edit
 it and to add notes (anyone). A manager can change every field. The risk's
 owner, who is not necessarily a manager, can change only its status, mitigation
 plan, due date and Jira key; the title, scores, treatment, owner and control
@@ -245,7 +246,7 @@ refuses self-lockout and will never leave the organisation without an active
 administrator.
 
 ### User audit *(administrators; auditors read-only)*
-**Start new review** snapshots every account (role, last login, folder grants,
+**Create review** snapshots every account (role, last login, folder grants,
 capabilities). Record a decision and a note per row, **Export CSV**, then
 **Complete review**, which is refused while any row is pending. Completing
 deactivates every account marked Revoke and signs it out of its sessions. It
@@ -265,7 +266,7 @@ review semi-annually…) and the minutes recorded against them. The status
 badge compares minutes held this year with what the calendar demands so far.
 Anyone whose role manages documents (Administrator, Compliance Manager,
 Control Owner) adds, edits and deletes series and records minutes (with an
-optional attachment).
+optional file).
 
 ### Groups
 Champion groups with an accountable owner and members tagged by the

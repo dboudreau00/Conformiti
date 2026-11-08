@@ -113,6 +113,35 @@ class RiskRegisterTests(APITestBase):
         r = admin.patch(f"/api/access-review-items/{items[0]['id']}/", {"decision": "revoke"}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(AccessReviewItem.objects.get(pk=items[0]["id"]).decision, "keep")
+        self.assertEqual(r.data["detail"], "This review is completed and read-only.")
+
+    def test_every_route_refuses_a_completed_review_in_the_same_shape(self):
+        admin = self.client_for(self.admin)
+        rid = admin.post("/api/access-reviews/", {"name": "R"}, format="json").data["id"]
+        items = admin.get(f"/api/access-review-items/?review={rid}").data
+        for it in items:
+            admin.patch(f"/api/access-review-items/{it['id']}/", {"decision": "keep"}, format="json")
+        self.assertEqual(admin.post(f"/api/access-reviews/{rid}/complete/").status_code, 200)
+        answers = [
+            admin.patch(f"/api/access-review-items/{items[0]['id']}/", {"decision": "revoke"}, format="json"),
+            admin.patch(f"/api/access-reviews/{rid}/", {"name": "Edited"}, format="json"),
+            admin.delete(f"/api/access-reviews/{rid}/"),
+        ]
+        for r in answers:
+            self.assertEqual(r.status_code, 400)
+            self.assertEqual(r.data, {"detail": "This review is completed and read-only."})
+        again = admin.post(f"/api/access-reviews/{rid}/complete/")
+        self.assertEqual(again.data["detail"], "This review is already completed.")
+
+    def test_open_decisions_are_counted_in_words(self):
+        admin = self.client_for(self.admin)
+        rid = admin.post("/api/access-reviews/", {"name": "R"}, format="json").data["id"]
+        items = admin.get(f"/api/access-review-items/?review={rid}").data
+        for it in items[1:]:
+            admin.patch(f"/api/access-review-items/{it['id']}/", {"decision": "keep"}, format="json")
+        r = admin.post(f"/api/access-reviews/{rid}/complete/")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.data["detail"], "1 row still needs a decision.")
 
     def test_a_completed_review_cannot_be_renamed_or_deleted(self):
         admin = self.client_for(self.admin)
@@ -188,9 +217,10 @@ class RiskRegisterTests(APITestBase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["created"], 2)
         messages = " ".join(w["message"] for w in r.data["warnings"])
-        self.assertIn("likelihood", messages)
-        self.assertIn("Owner 'ghost'", messages)
-        self.assertIn("Control 'nope'", messages)
+        self.assertIn("Unrecognised likelihood \"banana\" (use 1 to 5, or low, medium or high)", messages)
+        self.assertIn("Owner \"ghost\" not found", messages)
+        self.assertIn("Control \"nope\" not found", messages)
+        self.assertNotIn("'", messages)
         first = Risk.objects.get(title="Vendor SOC report expired")
         self.assertEqual(first.owner, self.owner)
         self.assertEqual(first.control, self.tree.c1)

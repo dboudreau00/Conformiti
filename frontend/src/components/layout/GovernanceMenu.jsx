@@ -2,7 +2,6 @@ import { Link, useLocation } from "react-router-dom";
 import { ChevronDownIcon } from "lucide-react";
 import { useShell, useShellNav } from "../../shell.js";
 import { cn } from "../../utils/cn.js";
-import { Label } from "../ui/Panel.jsx";
 import { Popover } from "../ui/Popover.jsx";
 import { NavCount, TAB_CLASS } from "./NavParts.jsx";
 import { NavIcon } from "./NavIcon.jsx";
@@ -39,10 +38,6 @@ export function GovernanceMenu() {
         </button>
       )}
     >
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <Label>Governance</Label>
-        <Label>{governance.length} sections</Label>
-      </div>
       <ul className="grid grid-cols-2 gap-x-2.5 gap-y-0.5 p-2" data-popover-cols="2">
         {governance.map((item) => {
           const active = item.path === pathname;
@@ -78,11 +73,6 @@ export function GovernanceMenu() {
           );
         })}
       </ul>
-      <div className="flex items-center justify-end gap-3 border-t border-line bg-surface-2 px-4 py-2 text-xs text-muted">
-        <span>
-          <kbd className="rounded-[5px] border border-line-strong bg-surface px-1.5 font-mono text-[10.5px] leading-4">Esc</kbd> to close
-        </span>
-      </div>
     </Popover>
   );
 }

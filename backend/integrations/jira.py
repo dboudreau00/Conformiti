@@ -1,12 +1,14 @@
 import base64
 import http.client
 import json
+import logging
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from config import outbound
 
+logger = logging.getLogger(__name__)
 
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
@@ -76,13 +78,16 @@ def _request(config, path, params=None):
         if exc.code in (401, 403):
             raise JiraError("Jira rejected the credentials (check the email and API token).")
         if exc.code == 404:
-            raise JiraError("Jira returned 404. Check the base URL and board ID.")
-        raise JiraError(f"Jira returned HTTP {exc.code}.")
+            raise JiraError("Jira could not find that address. Check the base URL and board ID.")
+        logger.warning("Jira answered HTTP %s", exc.code)
+        raise JiraError("Jira could not complete the request. Try again shortly.")
     except urllib.error.URLError as exc:
-        raise JiraError(f"Could not reach Jira: {getattr(exc, 'reason', exc)}")
+        logger.warning("Could not reach Jira: %s", getattr(exc, "reason", exc))
+        raise JiraError("Could not reach Jira. Check the base URL and your connection, then try again.")
     except (OSError, http.client.HTTPException) as exc:
         # Neither a timeout while reading the body, IncompleteRead nor a garbled status line is a URLError.
-        raise JiraError(f"Could not reach Jira: {exc}")
+        logger.warning("Could not reach Jira: %s", exc)
+        raise JiraError("Could not reach Jira. Check the base URL and your connection, then try again.")
     except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
         raise JiraError("Jira returned a response that wasn't JSON. Check the base URL.")
 

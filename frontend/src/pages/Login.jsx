@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { ExternalLinkIcon } from "lucide-react";
 import axios from "axios";
 import { login, oidcConfig, redeemSso, samlConfig } from "../api/client.js";
 import { getAssertion, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
@@ -24,7 +25,7 @@ const SSO_ERRORS = {
   already_linked: "That account is linked to a different identity at your provider. Ask an administrator to link this one.",
   inactive: "That account is deactivated.",
   role: "The server's default single sign-on role is misconfigured.",
-  mfa_required: "This server requires a second factor for single sign-on. Sign in with your password once and enrol an authenticator, or have your identity provider assert one.",
+  mfa_required: "This server requires two-factor for single sign-on. Sign in with your password once and set up two-factor, or have your identity provider assert it.",
 };
 
 // Own keys only: a code like "constructor" would resolve to an inherited function, and rendering that blanks the page.
@@ -35,23 +36,14 @@ function ssoErrorText(code) {
 
 const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0, backup_codes: false };
 
-// As INSTALL.md gives them: a bare "manage.py createsuperuser" is not runnable as typed on a local install.
-const CREATE_ADMIN = [
-  ["Local install (Linux, macOS)", "cd backend && ../.venv/bin/python manage.py createsuperuser"],
-  ["Local install (Windows)", "cd backend; ..\\.venv\\Scripts\\python.exe manage.py createsuperuser"],
-  ["Docker", "docker compose exec backend python manage.py createsuperuser"],
-];
+const INSTALL_URL = "https://github.com/dboudreau00/Conformiti/blob/main/INSTALL.md";
 
-function CreateAdminCommands({ label }) {
+function InstallGuide() {
   return (
-    <ul className="mt-2 space-y-1.5 text-left text-2xs text-faint" aria-label={label}>
-      {CREATE_ADMIN.map(([where, command]) => (
-        <li key={where}>
-          <span className="block">{where}:</span>
-          <code className="block break-words font-mono text-muted">{command}</code>
-        </li>
-      ))}
-    </ul>
+    <a href={INSTALL_URL} target="_blank" rel="noreferrer" className="link">
+      Install guide
+      <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+    </a>
   );
 }
 
@@ -67,36 +59,29 @@ function serverRefusal(ex) {
   const { status, data } = res;
   const detail = typeof data?.detail === "string" ? data.detail : "";
   if (status >= 500) {
-    // 502 to 504: a proxy with no backend behind it; 500: the backend itself failing.
-    return `The server could not complete the sign-in (HTTP ${status}). Try again in a moment. `
-      + "If it keeps happening, tell your administrator"
-      + (status >= 502 && status <= 504 ? ": the backend may be down." : ".");
+    return "The server could not sign you in. Try again in a moment. If it keeps happening, tell your administrator.";
   }
   if (status === 403) {
-    // Django's CSRF origin check, or its Referer form: this address is not among CSRF_TRUSTED_ORIGINS.
-    if (/origin checking failed|does not match any trusted origins/i.test(detail)) {
-      return `This server does not trust the address you opened it from (${window.location.origin}), `
-        + "so it refused the sign-in. An administrator decides which addresses it accepts: "
-        + "its allowed origins, set in CSRF_TRUSTED_ORIGINS.";
+    // Django's CSRF origin check, or its Referer form: this address is not one the server accepts. Its own text is not shown.
+    if (data?.code === "csrf_origin" || /origin checking failed|does not match any trusted origins/i.test(detail)) {
+      return `This server does not accept sign-ins from the address you opened it from (${window.location.origin}). `
+        + "Ask your administrator to add that address to the ones the server accepts.";
     }
-    if (/referer checking failed/i.test(detail)) {
-      return `The server refused the sign-in (${detail.replace(/\.$/, "")}). `
-        + "Your browser did not send a usable referrer with it, which the server requires over https. "
+    if (data?.code === "csrf_referer" || /referer checking failed/i.test(detail)) {
+      return "The server refused the sign-in because your browser did not send a usable referrer, which it requires over https. "
         + "A privacy setting or extension that strips referrers usually does this: allow them for this site "
         + "and try again.";
     }
-    return `The server refused the sign-in (${detail.replace(/\.$/, "") || "HTTP 403"}). `
-      + "Reload the page and try again. If it keeps happening, tell your administrator"
-      + (/csrf/i.test(detail) ? ": the server's security settings may not match this address." : ".");
+    return "The server refused the sign-in. Reload the page and try again. If it keeps happening, tell your administrator"
+      + (data?.code === "csrf_failed" || /csrf/i.test(detail) ? ": the server's security settings may not match this address." : ".");
   }
   if (status === 400 && (data === null || typeof data !== "object")) {
-    return "The server refused the request before checking your password (HTTP 400). "
-      + "The address you opened it from is probably not one of its allowed host names "
-      + "(DJANGO_ALLOWED_HOSTS), which an administrator sets.";
+    return "The server refused the request before checking your password. "
+      + "The address you opened it from is probably not one the server accepts. Ask your administrator to add it.";
   }
   // No status at all is the refusal finish() builds for a wrong step-up code.
   if (!status || status === 400 || status === 401 || status === 429) return null;
-  return `Sign-in failed (HTTP ${status}). Try again in a moment. If it keeps happening, tell your administrator.`;
+  return "Sign-in failed. Try again in a moment. If it keeps happening, tell your administrator.";
 }
 
 export default function Login({ onDone }) {
@@ -255,9 +240,9 @@ export default function Login({ onDone }) {
       } else if (mfaStep) {
         setErr(data?.detail && !/invalid authentication code/i.test(String(data.detail))
           ? String(data.detail)
-          : "That authentication code isn't valid. Try again, or use a backup code.");
+          : "That code isn't valid. Try again, or use a backup code.");
       } else if (ex?.response?.status === 401 && /workspace is archived/i.test(String(data?.detail || ""))) {
-        // The password was right; the organisation it belongs to is closed.
+        // The password was right; the workspace it belongs to is closed.
         setErr(String(data.detail));
       } else {
         setErr("Incorrect username or password.");
@@ -276,18 +261,18 @@ export default function Login({ onDone }) {
   let intro = "";
   if (lockedOut) {
     intro = "Your only passkey was disabled because it may have been cloned, and there is no "
-      + "authenticator app or backup code left on this account. Ask an administrator to reset your second factor.";
+      + "authenticator app or backup code left on this account. Ask an administrator to reset your two-factor.";
   } else if (mfaStep && showCode && !factors.totp) {
     intro = ssoTicket
-      ? "Your identity provider signed you in, but did not assert a second factor. Enter one of your backup codes."
+      ? "Your identity provider signed you in, but did not assert two-factor. Enter one of your backup codes."
       : "Enter one of your backup codes.";
   } else if (showPasskey) {
     intro = ssoTicket
-      ? "Your identity provider signed you in, but did not assert a second factor. Confirm with your passkey."
+      ? "Your identity provider signed you in, but did not assert two-factor. Confirm with your passkey."
       : "Confirm it's you with your passkey or security key.";
   } else if (mfaStep) {
     intro = ssoTicket
-      ? "Your identity provider signed you in, but did not assert a second factor. Enter the code from your authenticator app, or a backup code."
+      ? "Your identity provider signed you in, but did not assert two-factor. Enter the code from your authenticator app, or a backup code."
       : "Enter the 6-digit code from your authenticator app, or a backup code.";
   }
 
@@ -388,7 +373,7 @@ export default function Login({ onDone }) {
             ) : null}
             {mfaStep && !lockedOut && factors.passkey && !canPasskey && !codeWorks ? (
               <p className="mt-3 text-xs text-muted">
-                This browser cannot use passkeys. Sign in from a browser that can, or ask an administrator to reset your second factor.
+                This browser cannot use passkeys. Sign in from a browser that can, or ask an administrator to reset your two-factor.
               </p>
             ) : null}
             {(sso.enabled || samlSso.enabled) && !mfaStep ? (
@@ -427,27 +412,16 @@ export default function Login({ onDone }) {
                 {ssoTicket ? "← Start over" : "← Back to password"}
               </button>
             ) : health?.demo_accounts ? (
-              <div className="mt-4 text-xs text-muted">
-                <p className="text-center">
-                  This installation still has its demo accounts.
-                  <span className="block text-2xs text-faint">
-                    Their shared password is in the backend log, on the line that starts <span className="font-mono">Sign in as</span>.
-                    Before real use, create an administrator of your own, then run <span className="font-mono">manage.py remove_demo_data</span>.
-                  </span>
-                </p>
-                <CreateAdminCommands label="Create an administrator of your own" />
-              </div>
+              <p className="mt-4 text-center text-xs text-muted">
+                This server still has its demo accounts. Create an administrator of your own and remove them before real use.{" "}
+                <InstallGuide />
+              </p>
             ) : health?.first_admin_needed === true ? (
               // Only while no active account exists, so a working deployment never shows it.
-              <div className="mt-4 text-xs text-muted">
-                <p className="text-center">
-                  No account can sign in on this installation.
-                  <span className="block text-2xs text-faint">
-                    Create an administrator on the server, or reactivate an existing account there, then sign in here.
-                  </span>
-                </p>
-                <CreateAdminCommands label="Create an administrator" />
-              </div>
+              <p className="mt-4 text-center text-xs text-muted">
+                No account can sign in on this server. Create an administrator on the server, or reactivate an existing account there.{" "}
+                <InstallGuide />
+              </p>
             ) : null}
             {!mfaStep && health?.first_admin_needed !== true ? (
               <p className="mt-4 text-center text-xs text-muted">Forgotten your password? Ask an administrator.</p>

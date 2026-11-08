@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from audit.events import record_package_event
 from compliance.models import Control
 from notifications import webhooks
+from notifications.wording import count_of
 from documents.downloads import serve_stored_file
 
 from . import access, bundle, rollforward, signing
@@ -104,7 +105,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         if prior is None:
             return
         if prior not in access.readable_packages(self.request.user):
-            raise ValidationError({"prior_package": "Unknown package."})
+            raise ValidationError({"prior_package": "That package is not available to you."})
         if prior.status == EvidencePackage.Status.DRAFT:
             raise ValidationError({"prior_package": "Roll forward from a sealed package, not a draft."})
         if package is not None and rollforward.would_cycle(package, prior):
@@ -118,7 +119,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             created_by_name=(user.get_full_name() or user.get_username())[:200],
         )
         record_package_event(self.request, package, "create",
-                             f"opened evidence package {package.pk}: {package.name}")
+                             f"opened audit package {package.pk}: {package.name}")
 
     def perform_update(self, serializer):
         # Lock and re-read: DRF loaded the instance before this lock, and a seal that committed meanwhile would be
@@ -134,7 +135,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
     def roll_forward(self, request, pk=None):
         prior = self.get_object()
         if not access.can_assemble(request.user):
-            raise PermissionDenied("You need the frameworks capability to roll a package forward.")
+            raise PermissionDenied("Only framework managers can roll an audit package forward. Ask an administrator.")
         engagement = request.data.get("engagement")
         if engagement is not None and not isinstance(engagement, str):
             raise ValidationError({"engagement": "Give the engagement as text."})
@@ -165,7 +166,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             package = lock_open(instance)
             record_package_event(self.request, package, "delete",
-                                 f"deleted draft evidence package {package.pk}: {package.name}")
+                                 f"deleted draft audit package {package.pk}: {package.name}")
             package.delete()
 
     @action(detail=True, methods=["post"])
@@ -175,7 +176,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         package = self.get_object()
         assert_open(package)
         if not access.can_assemble(request.user):
-            raise PermissionDenied("You need the frameworks capability to assemble a package.")
+            raise PermissionDenied("Only framework managers can add controls to an audit package. Ask an administrator.")
 
         ids = request.data.get("controls") or []
         if not isinstance(ids, list) or not ids:
@@ -219,7 +220,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
                     pin_document(row, document, request.user, link=link)
 
         record_package_event(request, package, "update",
-                             f"added {len(added)} control(s) to package {package.pk}")
+                             f"added {count_of(len(added), 'control')} to package {package.pk}")
         return Response({"added": len(added), "skipped": skipped},
                         status=status.HTTP_201_CREATED)
 
@@ -228,7 +229,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         package = self.get_object()
         assert_open(package)
         if not access.can_assemble(request.user):
-            raise PermissionDenied("You need the frameworks capability to seal a package.")
+            raise PermissionDenied("Only framework managers can seal an audit package. Ask an administrator.")
 
         assertion = str(request.data.get("assertion") or package.assertion or "").strip()
         if len(assertion) < MIN_ASSERTION:
@@ -277,13 +278,13 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         record_package_event(
             request, package, "seal",
             f"sha256={package.manifest_sha256} sealed package {package.pk} "
-            f"with {package.evidence_count} item(s)"
+            f"with {count_of(package.evidence_count, 'item')}"
             f"{f', signed key={signed_by}' if signed_by else ', unsigned'}: {package.name[:50]}",
         )
         webhooks.post_event(
             "package.sealed", f"Package sealed: {package.name}",
-            f"{package.get_assurance_type_display()} · {package.controls.count()} control(s), "
-            f"{package.evidence_count} evidence file(s). Sealed by {package.sealed_by_name}.",
+            f"{package.get_assurance_type_display()} · {count_of(package.controls.count(), 'control')}, "
+            f"{count_of(package.evidence_count, 'document')}. Sealed by {package.sealed_by_name}.",
             facts=[("Manifest sha256", package.manifest_sha256[:16] + "…"),
                    ("Signing key", signed_by or "unsigned")],
             path="/packages", severity="info")
@@ -309,14 +310,14 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
     def withdraw(self, request, pk=None):
         package = self.get_object()
         if not access.can_assemble(request.user):
-            raise PermissionDenied("You need the frameworks capability to withdraw a package.")
+            raise PermissionDenied("Only framework managers can withdraw an audit package. Ask an administrator.")
 
         with transaction.atomic():
             # Held for update and re-read: a seal in progress finishes first, so the withdrawn row carries its manifest
             # rather than being written over by a copy read before it.
             package = EvidencePackage.objects.select_for_update().get(pk=package.pk)
             if package.status == EvidencePackage.Status.WITHDRAWN:
-                raise ValidationError({"detail": "Already withdrawn."})
+                raise ValidationError({"detail": "This package is already withdrawn."})
             now = timezone.now()
             revoked = package.grants.filter(revoked_at__isnull=True).update(
                 revoked_at=now, revoked_by=request.user)
@@ -325,10 +326,10 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
             stamp(package, request.user, "withdrawn")
             package.save()
         record_package_event(request, package, "withdraw",
-                             f"withdrew package {package.pk}, revoking {revoked} grant(s)")
+                             f"withdrew package {package.pk}, revoking {count_of(revoked, 'grant')}")
         webhooks.post_event(
             "package.withdrawn", f"Package withdrawn: {package.name}",
-            f"{revoked} grant(s) revoked by {package.withdrawn_by_name}."
+            f"{count_of(revoked, 'grant')} revoked by {package.withdrawn_by_name}."
             f"{' Reason: ' + package.withdrawn_reason if package.withdrawn_reason else ''}",
             path="/packages", severity="medium")
         return Response(EvidencePackageSerializer(package, context={"request": request}).data)
@@ -375,12 +376,12 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
         record_package_event(
             request, package, "export",
-            f"exported package {package.pk} ({summary['items']} item(s), "
+            f"exported package {package.pk} ({count_of(summary['items'], 'item')}, "
             f"{summary['altered']} altered, {summary['missing']} missing)",
         )
         slug = "".join(ch if ch.isalnum() else "-" for ch in package.name).strip("-")[:60]
         response = FileResponse(handle, as_attachment=True,
-                                filename=f"{slug or 'evidence-package'}-{package.pk}.zip")
+                                filename=f"{slug or 'audit-package'}-{package.pk}.zip")
         response["X-Conformiti-Integrity"] = (
             "ok" if not (summary["altered"] or summary["missing"])
             else f"discrepancies={summary['altered'] + summary['missing']}"
@@ -409,8 +410,8 @@ class SigningKeysView(APIView):
         if not slug:
             if active.count() > 1:
                 return Response(
-                    {"detail": "This installation serves several organisations. "
-                               "Name the one whose keys you want: ?workspace=<slug>."},
+                    {"detail": "This server holds several workspaces. "
+                               "Name the one whose signing keys you want: ?workspace=<slug>."},
                     status=status.HTTP_400_BAD_REQUEST)
             # Resolve to the one organisation: scoping to None is unscoped, so the query below would return every key on
             # the server, archived organisations' slugs included.
@@ -543,19 +544,19 @@ class PackageControlViewSet(viewsets.ModelViewSet):
 
         row = self.get_object()
         if not access.can_assemble(request.user):
-            raise PermissionDenied("You need the frameworks capability to raise a risk.")
+            raise PermissionDenied("Only framework managers can raise a risk. Ask an administrator.")
         if PackageControl.Conclusion.EXCEPTIONS not in (
             row.design_conclusion, row.operating_conclusion
         ):
             raise ValidationError(
-                {"detail": "Only a control with exceptions noted can be raised as a finding."}
+                {"detail": "Only a control with exceptions noted can be raised as a risk."}
             )
         with transaction.atomic():
             lock_not_withdrawn(row.package)
             # Read again under the lock: two requests that both found no risk must not both make one.
             row = type(row).objects.select_for_update().get(pk=row.pk)
             if row.risk_id:
-                raise ValidationError({"detail": "This finding is already tracked as a risk."})
+                raise ValidationError({"detail": "This control is already tracked as a risk."})
             risk = Risk.objects.create(
                 title=f"Audit finding: {row.control_ref} {row.title}"[:200],
                 description=(row.auditor_note or "Exception noted during the audit.")[:2000],
@@ -590,7 +591,7 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
     @staticmethod
     def _check_evidence(row, evidence):
         if evidence is not None and evidence.package_control_id != row.pk:
-            raise ValidationError({"evidence": "Pick an artefact pinned to this control."})
+            raise ValidationError({"evidence": "Pick evidence pinned to this control."})
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -598,12 +599,12 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         row = data["package_control"]
         package = row.package
         if package not in access.readable_packages(user):
-            raise PermissionDenied("Unknown package.")
+            raise PermissionDenied("That package is not available to you.")
         self._check_evidence(row, data.get("evidence"))
         extra = {"evidence_name": data["evidence"].document_name if data.get("evidence") else ""}
         if package.is_open:
             if not access.can_assemble(user):
-                raise PermissionDenied("You need the frameworks capability to list sample items.")
+                raise PermissionDenied("Only framework managers can list sample items. Ask an administrator.")
             if data.get("result", PackageSample.Result.PENDING) != PackageSample.Result.PENDING:
                 raise ValidationError({"result": "Results are recorded by the auditor after sealing."})
         elif package.status == EvidencePackage.Status.SEALED:
@@ -635,7 +636,7 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         # A sample stays on the control it was listed on: moving it would write it into another package's manifest at
         # seal. Evidence rows refuse the same move.
         if "package_control" in data and data["package_control"].pk != row.pk:
-            raise ValidationError({"package_control": "A sample cannot be moved to another control."})
+            raise ValidationError({"detail": "A sample cannot be moved to another control."})
         touching_result = bool(self.RESULT_FIELDS & set(data))
         touching_item = bool(self.ITEM_FIELDS & set(data))
         if package.status == EvidencePackage.Status.WITHDRAWN:
@@ -705,7 +706,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         row = serializer.validated_data["package_control"]
         document = serializer.validated_data.get("document")
         if row.package not in access.readable_packages(self.request.user):
-            raise PermissionDenied("Unknown package.")
+            raise PermissionDenied("That package is not available to you.")
         if document is None:
             raise ValidationError({"document": "A document is required."})
         access.assert_pinnable(self.request.user, document)
@@ -728,11 +729,11 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
         moved = data.get("package_control")
         if moved is not None and moved.pk != row.package_control_id:
             raise ValidationError(
-                {"package_control": "Pin a new artefact instead of moving this one."})
+                {"detail": "Pin new evidence instead of moving this one."})
         repointed = data.get("document")
         if repointed is not None and repointed.pk != row.document_id:
             raise ValidationError(
-                {"document": "Pin a new artefact instead of re-pointing this one."})
+                {"document": "Pin new evidence instead of changing which document this one points to."})
         with transaction.atomic():
             lock_open(row.package_control.package)
             serializer.instance = type(row).objects.select_for_update().get(pk=row.pk)
@@ -749,12 +750,12 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
     def _sealed_bytes(row):
         """What /file/ and /preview/ serve: the bytes the row pinned (``pinned_file``), never a later version's."""
         if row.document is None or not row.document.file:
-            raise ValidationError({"detail": "This evidence file is no longer available."})
+            raise ValidationError({"detail": "This document is no longer available."})
         refuse_if_pin_quarantined(row)
         source, version = pinned_file(row)
         if source is None:
-            raise ValidationError({"detail": "The file pinned here is no longer stored, "
-                                             "and no other file is served in its place."})
+            raise ValidationError({"detail": "The file pinned here is no longer stored. "
+                                             "Pin the document again to show a current file."})
         return source, version
 
     def _touch_grant(self, request, package):
@@ -813,22 +814,21 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
         from django.conf import settings
 
         if not access.can_assemble(self.request.user):
-            raise PermissionDenied("You need the frameworks capability to issue a package.")
+            raise PermissionDenied("Only framework managers can issue an audit package. Ask an administrator.")
         package = serializer.validated_data["package"]
         if package not in access.readable_packages(self.request.user):
-            raise PermissionDenied("Unknown package.")
+            raise PermissionDenied("That package is not available to you.")
         if package.status != EvidencePackage.Status.SEALED:
             raise ValidationError(
-                {"detail": "Seal the package before issuing it. A grant on a draft would "
-                           "widen silently as rows were added."}
+                {"detail": "Seal the audit package first, then issue it."}
             )
         recipient = serializer.validated_data.get("user")
         if recipient is None:
             raise ValidationError({"user": "Name the person this package is issued to."})
         if not recipient.is_active or not recipient.is_auditor:
             raise ValidationError(
-                {"user": "Evidence packages can only be issued to an active account "
-                         "holding the Auditor role."}
+                {"user": "Audit packages can only be issued to an active person "
+                         "with the Auditor role."}
             )
         expires = serializer.validated_data.get("expires_at")
         default_days = getattr(settings, "ATTESTATION_GRANT_DAYS", 45)
@@ -888,7 +888,7 @@ class PackageGrantViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         """Revoke by marking the row; it is kept as the record of the grant."""
         if not access.can_assemble(self.request.user):
-            raise PermissionDenied("You need the frameworks capability to revoke access.")
+            raise PermissionDenied("Only framework managers can revoke an auditor's access. Ask an administrator.")
         if instance.revoked_at is not None:
             # A second revoke (stale tab, or after Withdraw) must not overwrite who revoked it, or log it twice.
             raise ValidationError({"detail": "This access was already revoked."})

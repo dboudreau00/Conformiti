@@ -140,9 +140,17 @@ class VendorSideTests(APITestBase):
         bad = self.anon.put(f"/api/questionnaire/{self.token}/",
                             {"answers": {"made_up": {"answer": "yes"}}}, format="json")
         self.assertEqual(bad.status_code, 400)
+        self.assertNotIn("made_up", str(bad.data))
         bad = self.anon.put(f"/api/questionnaire/{self.token}/",
                             {"answers": {"soc2": {"answer": "maybe"}}}, format="json")
         self.assertEqual(bad.status_code, 400)
+        # The vendor is shown the question itself and what to choose, never its internal id.
+        self.assertTrue(bad.data["detail"].startswith("Does the vendor hold a current SOC 2 Type II report"))
+        self.assertTrue(bad.data["detail"].endswith("Choose Yes, No, Partial or N/A."))
+        self.assertNotIn("soc2:", bad.data["detail"])
+        long_note = self.anon.put(f"/api/questionnaire/{self.token}/",
+                                  {"answers": {"soc2": {"answer": "yes", "note": "x" * 1001}}}, format="json")
+        self.assertIn("The note is too long (1000 characters at most).", long_note.data["detail"])
         self.assertFalse(VendorAssessment.objects.exists())
 
     def test_submitting_files_a_pending_assessment_notifies_and_closes_the_link(self):
@@ -231,7 +239,8 @@ class VendorSideTests(APITestBase):
                 f"/api/vendors/{self.vendor.pk}/questionnaire/send/",
                 {}, HTTP_ORIGIN="https://phish.example", format="json")
         self.assertEqual(r.status_code, 400, r.data)
-        self.assertIn("PUBLIC_URL", str(r.data))
+        self.assertIn("link cannot be built", r.data["detail"])
+        self.assertNotIn("PUBLIC_URL", str(r.data))
         # Nothing happened: the live link was not revoked to make room for one that could not be built.
         self.assertEqual(QuestionnaireInvite.objects.filter(
             vendor=self.vendor, revoked_at__isnull=True).count(), live)

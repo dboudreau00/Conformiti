@@ -47,11 +47,11 @@ MESSAGES = {
     "unknown_user": "No account is linked to that identity. Ask an administrator to link it.",
     "already_linked": "That account is linked to a different identity at your provider. "
                       "Ask an administrator to link this one.",
-    "inactive": "That account is deactivated.",
+    "inactive": "That account is deactivated. Ask an administrator.",
     "role": "The server's default single sign-on role is misconfigured.",
-    "mfa_required": "This server requires a second factor for single sign-on. Sign in with your "
-                    "password once and enrol an authenticator, or have your identity provider assert one.",
-    "mfa_invalid": "That authentication code isn't valid.",
+    "mfa_required": "This server requires two-factor for single sign-on. Sign in with your "
+                    "password once and set up two-factor, or have your identity provider require it.",
+    "mfa_invalid": "That code isn't valid. Check the code and try again.",
 }
 
 
@@ -104,7 +104,7 @@ def config():
         client_id=str(getattr(settings, "OIDC_CLIENT_ID", "") or "").strip(),
         client_secret=str(getattr(settings, "OIDC_CLIENT_SECRET", "") or ""),
         scopes=str(getattr(settings, "OIDC_SCOPES", "openid email profile") or "openid email profile"),
-        label=str(getattr(settings, "OIDC_LABEL", "Single sign-on") or "Single sign-on"),
+        label=str(getattr(settings, "OIDC_LABEL", "Sign in with SSO") or "Sign in with SSO"),
         redirect_uri=str(getattr(settings, "OIDC_REDIRECT_URI", "") or "").strip(),
         allowed_domains=tuple(d.strip().lower().lstrip("@") for d in domains if d and d.strip()),
         auto_provision=bool(getattr(settings, "OIDC_AUTO_PROVISION", False)),
@@ -289,8 +289,8 @@ def step_up_needed(user, asserted):
     if user.mfa_enabled:
         return True
     if policy == "required":
-        raise OidcError("mfa_required", f"{user.get_username()} has no authenticator and the "
-                                        "provider asserted no second factor")
+        raise OidcError("mfa_required", f"{user.get_username()} has no two-factor method and the "
+                                        "provider asserted none")
     return False
 
 

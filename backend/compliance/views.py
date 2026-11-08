@@ -185,7 +185,7 @@ def _document_id(value):
             pass
     # Past the database's integer type the query raises OverflowError, a 500 for what is only a wrong id.
     if number is None or abs(number) >= 2 ** 63:
-        raise ValidationError({"documents": f"{value!r} is not a document id."})
+        raise ValidationError({"documents": f"\"{str(value)[:40]}\" is not a document in the library."})
     return number
 
 
@@ -212,8 +212,8 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
 
     def _deny(self):
         raise PermissionDenied(
-            "You need edit access to that document's folder (or the frameworks "
-            "capability) to change its evidence links."
+            "Only framework managers, or people who can edit that document's folder, can change its "
+            "evidence links. Ask an administrator."
         )
 
     def perform_create(self, serializer):

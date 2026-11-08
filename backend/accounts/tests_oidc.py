@@ -128,6 +128,12 @@ class OidcFlowTests(APITestBase):
             r = self.anon.get("/api/auth/oidc/start/")
             self.assertEqual(r["Location"], "/login?sso_error=disabled")
 
+    def test_the_button_without_a_label_reads_like_the_saml_one(self):
+        # Both sign-in buttons say "Sign in with ..." (SAML's default is "Sign in with SAML").
+        with override_settings(OIDC_LABEL=""):
+            r = self.anon.get("/api/auth/config/")
+        self.assertEqual(r.data["oidc"], {"enabled": True, "label": "Sign in with SSO"})
+
     def test_a_verified_email_links_an_existing_account_and_signs_it_in(self):
         ticket = self.sign_in()
         self.assertEqual(self.idp.last_token_request["grant_type"], ["authorization_code"])

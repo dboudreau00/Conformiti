@@ -65,7 +65,7 @@ def _feed_window(params):
     if end < start:
         raise ValidationError({"end": "The end date is before the start date."})
     if (end - start).days > FEED_MAX_DAYS:
-        raise ValidationError({"end": f"Ask for at most {FEED_MAX_DAYS} days at a time."})
+        raise ValidationError({"end": f"Choose a period of at most {FEED_MAX_DAYS} days."})
     return start, end
 
 

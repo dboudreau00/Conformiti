@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "../../utils/cn.js";
+import { toneVar } from "../../utils/tone.js";
 
 /** options: [{id, label, count?}]. With more than `collapseAfter` options only the first few and the
- * selected one show, behind a "+N more" button. */
-export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel, className, collapseAfter }) {
+ * selected one show, behind a "Show N more" button. A tablist: one tab stop (the selected tab), the arrow keys,
+ * Home and End move to and select a neighbour, and `controls` (the id of the panel the tabs switch) is
+ * announced on the selected tab. */
+export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel, className, collapseAfter, controls }) {
   const [open, setOpen] = useState(false);
   const collapsible = collapseAfter && options.length > collapseAfter + 1;
   let shown = options;
@@ -15,7 +18,25 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
     if (selected && !shown.includes(selected)) shown = [...shown, selected];
     hidden = options.length - shown.length;
   }
-  // The tablist holds only tabs, so the "+N more" button sits beside it, not inside.
+  // With nothing selected among the visible tabs, the first one is the tab stop.
+  const stop = shown.some((o) => o.id === value) ? value : shown[0]?.id;
+
+  function onKeyDown(e) {
+    const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    if (!(e.key in keys) && e.key !== "Home" && e.key !== "End") return;
+    const tabs = Array.from(e.currentTarget.querySelectorAll('[role="tab"]'));
+    const from = tabs.indexOf(document.activeElement);
+    if (from < 0) return;
+    e.preventDefault();
+    let to = from;
+    if (e.key === "Home") to = 0;
+    else if (e.key === "End") to = tabs.length - 1;
+    else to = (from + keys[e.key] + tabs.length) % tabs.length;
+    tabs[to].focus();
+    if (shown[to]) onChange(shown[to].id);
+  }
+
+  // The tablist holds only tabs, so the "Show N more" button sits beside it, not inside.
   return (
     <div
       className={cn(
@@ -24,7 +45,12 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
         className
       )}
     >
-      <div role="tablist" aria-label={ariaLabel} className={cn("flex items-center gap-0.5", collapsible && open && "flex-wrap")}>
+      <div
+        role="tablist"
+        aria-label={ariaLabel}
+        onKeyDown={onKeyDown}
+        className={cn("flex items-center gap-0.5", collapsible && open && "flex-wrap")}
+      >
         {shown.map((opt) => {
           const active = opt.id === value;
           return (
@@ -32,6 +58,8 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
               key={opt.id}
               role="tab"
               aria-selected={active}
+              aria-controls={active ? controls : undefined}
+              tabIndex={opt.id === stop ? 0 : -1}
               type="button"
               title={opt.label}
               onClick={() => onChange(opt.id)}
@@ -62,7 +90,7 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
           onClick={() => setOpen((v) => !v)}
           className="relative flex h-7 shrink-0 items-center rounded-md px-2.5 text-[13px] font-medium text-accent transition-colors duration-150 ease-out hover:text-ink"
         >
-          {open ? "Show fewer" : `+${hidden} more`}
+          {open ? "Show fewer" : `Show ${hidden} more`}
         </button>
       ) : null}
     </div>
@@ -83,7 +111,7 @@ export function Chip({ active, onClick, tone, count, disabled, children, classNa
         className
       )}
     >
-      {tone ? <span className="h-2 w-2 rounded-[3px]" style={{ backgroundColor: `rgb(var(--${tone}))` }} aria-hidden="true" /> : null}
+      {tone ? <span className="h-2 w-2 rounded-[3px]" style={{ backgroundColor: toneVar(tone) }} aria-hidden="true" /> : null}
       {children}
       {count !== undefined ? <span className="tabular font-mono text-2xs text-faint">{count}</span> : null}
     </button>

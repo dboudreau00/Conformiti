@@ -13,7 +13,7 @@
           </td>
         </tr>
         <tr><td style="padding:28px;">
-          <p style="margin:0 0 14px;font-size:15px;">Hi {{ owner_name }},</p>
+          <p style="margin:0 0 14px;font-size:15px;">Hello {{ owner_name }},</p>
           {% if overdue %}
             <p style="margin:0 0 16px;font-size:15px;line-height:1.55;">
               The document below is <strong>past its review date</strong> and has been marked expired.
@@ -36,6 +36,9 @@
               </div>
             </td></tr>
           </table>
+          <p style="margin:0 0 16px;font-size:14px;line-height:1.55;">
+            Record the review in Conformiti (<em>Documents &rsaquo; {{ document.name }} &rsaquo; Mark reviewed</em>).
+          </p>
           <p style="margin:0;font-size:12px;color:#8a94a3;">
             You receive this because you own this document or belong to the compliance team.
           </p>

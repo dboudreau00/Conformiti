@@ -26,13 +26,13 @@ class AdminLoginTests(APITestBase):
 
     def test_the_form_asks_for_the_second_factor(self):
         r = Client().get(self.URL)
-        self.assertContains(r, "Authentication code")
+        self.assertContains(r, "Two-factor code")
 
     def test_an_enrolled_account_cannot_sign_in_with_the_password_alone(self):
         self.enrol()
         r = self.post()
         self.assertEqual(r.status_code, 200)  # redisplayed, not redirected
-        self.assertContains(r, "authenticator app")
+        self.assertContains(r, "Enter a two-factor code or a backup code.")
         self.assertNotIn("_auth_user_id", Client().session)
 
     def test_the_right_code_gets_in(self):

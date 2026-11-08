@@ -7,7 +7,8 @@ import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
 import { Label, LoadError, Loading, Panel, PanelHeader } from "../ui/Panel.jsx";
 
-export function AddControls({ packageId, inScope, onAdded, onError }) {
+/** `openRequest` is a counter: each increase after mount opens the picker, for the empty state's Add controls button. */
+export function AddControls({ packageId, inScope, onAdded, onError, openRequest = 0 }) {
   const [frameworks, setFrameworks] = useState(null);
   const [framework, setFramework] = useState("all");
   const [controls, setControls] = useState(null);
@@ -18,6 +19,12 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
   const [withEvidence, setWithEvidence] = useState(true);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const seenRequest = useRef(openRequest);
+  useEffect(() => {
+    if (openRequest === seenRequest.current) return;
+    seenRequest.current = openRequest;
+    setOpen(true);
+  }, [openRequest]);
 
   // Latest onError via a ref: as an effect dependency it would re-fetch on every parent render, and a failing fetch would loop.
   const onErrorRef = useRef(onError);
@@ -107,7 +114,7 @@ export function AddControls({ packageId, inScope, onAdded, onError }) {
   return (
     <Panel className="p-5" aria-label="Add controls to the package">
       <PanelHeader title="Add controls" meta={`${inScopeIds.size} already in scope`}>
-        <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setChosen(new Set()); }}>Done</Button>
+        <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setChosen(new Set()); }}>Cancel</Button>
       </PanelHeader>
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <div className="min-w-[180px]">

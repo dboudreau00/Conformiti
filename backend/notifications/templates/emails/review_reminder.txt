@@ -1,4 +1,4 @@
-Hi {{ owner_name }},
+Hello {{ owner_name }},
 
 {% if overdue %}The document below is PAST its review date and has been marked expired.
 Please review it and record the review to bring it back into good standing.
@@ -9,5 +9,7 @@ Location:     {{ folder_path }}
 Owner:        {{ owner_name }}
 Cadence:      {{ document.get_review_cadence_display }}
 Next review:  {{ document.next_review_date }}
+
+Record the review in Conformiti (Documents > {{ document.name }} > Mark reviewed).
 
 You receive this because you own this document or belong to the compliance team.

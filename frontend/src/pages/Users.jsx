@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { PlusIcon, SearchIcon } from "lucide-react";
 import api, { fetchAll, passwordMinLength } from "../api/client.js";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { useConfirm } from "../components/ui/Dialog.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { BLANK_USER_FORM, NewUserForm } from "../components/users/NewUserForm.jsx";
 import { cn } from "../utils/cn.js";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { useDeepLink } from "../utils/deepLink.js";
 
 const CAP_LABELS = [
@@ -28,7 +29,7 @@ const USER_COLS = [
   { id: "role", label: "Role", className: "w-[190px]" },
   { id: "login", label: "Last login", className: "w-[115px]" },
   { id: "status", label: "Status", className: "w-[95px]" },
-  { id: "mfa", label: "2FA", className: "w-[80px]" },
+  { id: "mfa", label: "Two-factor", className: "w-[110px]" },
   { id: "actions", label: "", className: "w-[340px]" },
 ];
 
@@ -52,6 +53,12 @@ const FIELD_LABELS = {
   detail: "",
 };
 
+// A key the form does not show is spelled out from its own letters, never printed as the API names it.
+const fieldWords = (key) => {
+  const words = String(key).replace(/_/g, " ").trim();
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+};
+
 const cell = "px-5 py-3 align-middle";
 // relative contains the sr-only header text: with no positioned ancestor it escapes the scroll wrapper and stretches the page.
 const headCell = "table-head relative px-5 py-2 text-left font-normal";
@@ -62,6 +69,9 @@ export default function Users({ me }) {
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  // A failed list is not an empty one: { reason } while the last load of each list failed, else null.
+  const [loadFailed, setLoadFailed] = useState(null);
+  const [rolesLoading, setRolesLoading] = useState(true);
   const [rolesErr, setRolesErr] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [banner, setBanner] = useState(null);
@@ -77,24 +87,36 @@ export default function Users({ me }) {
 
   async function loadUsers() {
     setLoading(true);
+    setLoadFailed(null);
     try {
       setUsers(await fetchAll("/users/"));
     } catch (e) {
       if (e?.response?.status === 403) setDenied(true);
-      else setBanner({ kind: "err", text: errorText(e, "Couldn't load users.") });
+      else {
+        // Rows from before a failed refresh would describe accounts that may have changed, so none are kept.
+        setUsers([]);
+        setLoadFailed({ reason: loadFailReason(e) });
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    loadUsers();
-    api
+  function loadRoles() {
+    setRolesLoading(true);
+    setRolesErr(null);
+    return api
       .get("/roles/")
       .then((r) => setRoles(r.data.results || r.data))
       .catch((e) => {
-        if (e?.response?.status !== 403) setRolesErr(errorText(e, "Couldn't load roles."));
-      });
+        if (e?.response?.status !== 403) setRolesErr({ reason: loadFailReason(e) });
+      })
+      .finally(() => setRolesLoading(false));
+  }
+
+  useEffect(() => {
+    loadUsers();
+    loadRoles();
   }, []);
 
   // The search box links here as ?search=<username>.
@@ -126,7 +148,7 @@ export default function Users({ me }) {
     ask({
       title: `Delete ${u.username}?`,
       description: "This cannot be undone. Deactivating keeps their history and stops them signing in.",
-      confirmLabel: "Delete the account",
+      confirmLabel: "Delete user",
       onConfirm: async () => {
         setBusyId(u.id);
         try {
@@ -160,16 +182,16 @@ export default function Users({ me }) {
   function resetMfa(u) {
     ask({
       title: `Reset two-factor for ${u.username}?`,
-      description: "Their authenticator and backup codes stop working. They set it up again the next time they sign in.",
+      description: "Their two-factor setup and backup codes stop working. They set it up again the next time they sign in.",
       confirmLabel: "Reset two-factor",
       onConfirm: async () => {
         setBusyId(u.id);
         try {
           await api.post(`/users/${u.id}/reset_mfa/`);
-          ok(`MFA reset for ${u.username}.`);
+          ok(`Two-factor reset for ${u.username}.`);
           await loadUsers();
         } catch (e) {
-          fail(e, "Couldn't reset MFA.");
+          fail(e, "Couldn't reset two-factor.");
         } finally {
           setBusyId(null);
         }
@@ -198,17 +220,20 @@ export default function Users({ me }) {
       setForm(BLANK_USER_FORM);
       await loadUsers();
     } catch (err) {
-      const d = err?.response?.data;
-      setFormErr(
-        d && typeof d === "object"
-          ? Object.entries(d)
-              .map(([k, v]) => {
-                const label = FIELD_LABELS[k] ?? k;
-                return `${label ? `${label}: ` : ""}${[].concat(v).join(" ")}`;
-              })
-              .join(" ")
-          : errorText(err, "Could not create the user.")
-      );
+      const r = err?.response;
+      const d = r?.data;
+      // Field errors read one by one under their labels; a throttle, a server fault or a page of markup reads as errorText says it.
+      const byField = r && r.status < 500 && r.status !== 429 && d && typeof d === "object" && !Array.isArray(d);
+      const lines = byField
+        ? Object.entries(d)
+            .filter(([k]) => k !== "code")
+            .map(([k, v]) => {
+              const label = FIELD_LABELS[k] ?? fieldWords(k);
+              return `${label ? `${label}: ` : ""}${[].concat(v).join(" ")}`;
+            })
+            .join(" ")
+        : "";
+      setFormErr(lines || errorText(err, "Couldn't create the user."));
     } finally {
       setCreating(false);
     }
@@ -238,6 +263,7 @@ export default function Users({ me }) {
   }
 
   const total = users.length;
+  const unknown = loading || !!loadFailed;
   const active = users.filter((u) => u.is_active).length;
   const superusers = users.filter((u) => u.is_superuser).length;
   const mfaOn = users.filter((u) => u.mfa_enabled).length;
@@ -252,33 +278,25 @@ export default function Users({ me }) {
       <Stack className="flex flex-col gap-4">
         <StackItem className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard
-            label="Members"
-            value={loading ? "-" : total}
-            detail={loading ? "Loading…" : `${active} active · ${total - active} inactive`}
+            label="Users"
+            value={unknown ? "-" : total}
+            detail={loading ? "Loading…" : unknown ? undefined : `${active} active · ${total - active} inactive`}
           />
           <StatCard
             label="Superusers"
-            value={loading ? "-" : superusers}
+            value={unknown ? "-" : superusers}
           />
           <StatCard
             label="Two-factor"
-            value={loading ? "-" : mfaOn}
-            suffix={loading ? undefined : `/ ${total}`}
-            tone={!loading && total > 0 && mfaOn < total ? "warning" : undefined}
+            value={unknown ? "-" : mfaOn}
+            suffix={unknown ? undefined : `/ ${total}`}
+            tone={!unknown && total > 0 && mfaOn < total ? "warning" : undefined}
           />
         </StackItem>
 
         {banner ? (
           <StackItem>
-            <div
-              role={banner.kind === "err" ? "alert" : "status"}
-              className={cn("notice flex items-center justify-between gap-3", banner.kind === "err" ? "notice-err" : "notice-ok")}
-            >
-              <span>{banner.text}</span>
-              <button type="button" className="link shrink-0" onClick={() => setBanner(null)}>
-                Dismiss
-              </button>
-            </div>
+            <Notice kind={banner.kind} onDismiss={() => setBanner(null)}>{banner.text}</Notice>
           </StackItem>
         ) : null}
 
@@ -296,6 +314,8 @@ export default function Users({ me }) {
                     onCancel={toggleNew}
                     busy={creating}
                     error={formErr}
+                    rolesFailed={!!rolesErr}
+                    onRetryRoles={loadRoles}
                   />
                 </div>
               </Collapse>
@@ -304,25 +324,16 @@ export default function Users({ me }) {
 
           <Panel className="overflow-hidden">
             <PanelHeader title="Users">
-              <div className="flex items-center gap-3">
-                <Label className="hidden sm:inline">{loading ? "Loading…" : `${active} active · ${total} total`}</Label>
-                <Button
-                  size="sm"
-                  variant={showNew ? "secondary" : "primary"}
-                  aria-expanded={showNew}
-                  aria-controls={showNew ? "new-user-panel" : undefined}
-                  onClick={toggleNew}
-                  icon={
-                    showNew ? (
-                      <XIcon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />
-                    ) : (
-                      <PlusIcon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />
-                    )
-                  }
-                >
-                  {showNew ? "Cancel" : "New user"}
-                </Button>
-              </div>
+              <Button
+                size="sm"
+                variant={showNew ? "secondary" : "primary"}
+                aria-expanded={showNew}
+                aria-controls={showNew ? "new-user-panel" : undefined}
+                onClick={toggleNew}
+                icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />}
+              >
+                New user
+              </Button>
             </PanelHeader>
             {users.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-5 py-2.5">
@@ -349,13 +360,15 @@ export default function Users({ me }) {
             ) : null}
             {loading ? (
               <Loading>Loading users…</Loading>
+            ) : loadFailed ? (
+              <LoadError what="The user list" reason={loadFailed.reason} onRetry={loadUsers} />
             ) : users.length === 0 ? (
               <Empty title="No users yet" />
             ) : shown.length === 0 ? (
               <Empty title="No users match" />
             ) : (
               <div className="overflow-x-auto" role="region" aria-label="Users" tabIndex={0}>
-                <table className="w-full min-w-[1080px] border-collapse text-[13px]">
+                <table className="w-full min-w-[1110px] border-collapse text-[13px]">
                   <thead>
                     <tr className="border-b border-line bg-surface-2">
                       {USER_COLS.map((c) => (
@@ -405,10 +418,10 @@ export default function Users({ me }) {
         <StackItem>
           <Panel className="overflow-hidden">
             <PanelHeader title="Roles & permissions" />
-            {rolesErr ? (
-              <div className="p-5">
-                <div className="notice notice-err" role="alert">{rolesErr}</div>
-              </div>
+            {rolesLoading ? (
+              <Loading>Loading roles…</Loading>
+            ) : rolesErr ? (
+              <LoadError what="Roles" reason={rolesErr.reason} onRetry={loadRoles} />
             ) : roles.length === 0 ? (
               <Empty title="No roles defined" />
             ) : (
@@ -467,11 +480,13 @@ function UserRow({
   const initial = (u.full_name || u.username || "?").trim().charAt(0).toUpperCase();
   const pwMin = passwordMinLength();
   const pwValid = pwValue.length >= pwMin;
+  // A disabled control takes no focus, so the reason is text beside it, not a tooltip.
   const roleHint = self
-    ? "You cannot change your own role, ask another administrator."
+    ? "Ask another administrator to change your role."
     : !touchable
-      ? "Only a superuser can modify a superuser account."
+      ? "Only an administrator who works across workspaces can change this account."
       : undefined;
+  const hintId = `role-hint-${u.id}`;
 
   return (
     <motion.tr
@@ -509,14 +524,21 @@ function UserRow({
           aria-label={`Role for ${u.username}`}
           value={u.role || ""}
           disabled={self || !touchable || busy}
-          title={roleHint}
-          onChange={(e) => onRole(e.target.value || null)}
+          aria-describedby={roleHint ? hintId : undefined}
+          onChange={(e) => onRole(e.target.value)}
         >
-          <option value="">No role</option>
+          {/* A new account needs a role, so none is offered to pick; one that has none (its role was deleted) still reads true. */}
+          {!u.role ? <option value="" disabled>No role</option> : null}
+          {/* Until the roles arrive (or fail) the current role is not among the options, and a select whose value matches
+              none shows the first one. */}
+          {u.role && !roles.some((r) => r.id === u.role) ? (
+            <option value={u.role}>{u.role_detail?.name || "Current role"}</option>
+          ) : null}
           {roles.map((r) => (
             <option key={r.id} value={r.id}>{r.name}</option>
           ))}
         </select>
+        {roleHint ? <span id={hintId} className="mt-1 block text-2xs text-faint">{roleHint}</span> : null}
       </td>
       <td className={cn(cell, "tabular font-mono text-xs text-muted")}>{u.last_login ? u.last_login.slice(0, 10) : "never"}</td>
       <td className={cell}>
@@ -550,7 +572,7 @@ function UserRow({
               }}
             />
             <Button size="sm" variant="primary" disabled={!pwValid || busy} onClick={onPwSave}>
-              {busy ? "Saving…" : "Save"}
+              {busy ? "Saving…" : "Save changes"}
             </Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={onPwClose}>Cancel</Button>
           </div>
@@ -565,7 +587,7 @@ function UserRow({
               </Button>
             ) : null}
             {touchable && u.mfa_enabled ? (
-              <Button size="sm" variant="ghost" disabled={busy} onClick={onResetMfa}>Reset 2FA</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onResetMfa}>Reset two-factor</Button>
             ) : null}
             {touchable && !self && !u.is_superuser ? (
               <Button

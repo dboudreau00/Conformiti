@@ -1,18 +1,39 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "../../utils/cn.js";
 import { toneVar } from "../../utils/tone.js";
 
-/** points: [{label, value}] */
+// Drawn until the box has been measured.
+const FIRST_WIDTH = 320;
+
+/** points: [{label, value}]. The graphic is drawn in the pixels it occupies, so a dot stays round, and each label
+ * sits in the same column as its dot. The spoken name always carries the values. */
 export function TrendLine({ points, tone = "accent", height = 96, className, ariaLabel }) {
-  const w = 320;
+  const box = useRef(null);
+  const [w, setW] = useState(FIRST_WIDTH);
   const h = height;
   const pad = 8;
   const pts = points && points.length ? points : [];
   const max = Math.max(...pts.map((p) => p.value), 1) * 1.15;
-  const step = pts.length > 1 ? (w - pad * 2) / (pts.length - 1) : 0;
+  const cell = w / (pts.length || 1);
+  const spoken = [ariaLabel, pts.map((p) => `${p.label} ${p.value}`).join(", ")].filter(Boolean).join(": ") || "No data";
+
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return undefined;
+    const read = () => {
+      const next = Math.round(el.getBoundingClientRect().width);
+      if (next > 0) setW(next);
+    };
+    read();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
 
   const coords = pts.map((p, i) => ({
-    x: pts.length > 1 ? pad + i * step : w / 2,
+    x: (i + 0.5) * cell,
     y: h - pad - (p.value / max) * (h - pad * 2),
     ...p,
   }));
@@ -21,8 +42,8 @@ export function TrendLine({ points, tone = "accent", height = 96, className, ari
   const area = coords.length > 1 ? `${line} L ${coords[coords.length - 1].x} ${h} L ${coords[0].x} ${h} Z` : "";
 
   return (
-    <div className={cn("w-full", className)}>
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
+    <div ref={box} className={cn("w-full", className)}>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} role="img" aria-label={spoken}>
         {area ? (
           <motion.path
             d={area}
@@ -60,9 +81,9 @@ export function TrendLine({ points, tone = "accent", height = 96, className, ari
           />
         ))}
       </svg>
-      <div className="mt-1 flex justify-between">
+      <div className="mt-1 grid" style={{ gridTemplateColumns: `repeat(${pts.length || 1}, minmax(0, 1fr))` }} aria-hidden="true">
         {pts.map((p, i) => (
-          <span key={`${p.label}-${i}`} className="font-mono text-2xs uppercase tracking-label text-faint">
+          <span key={`${p.label}-${i}`} className="whitespace-nowrap text-center font-mono text-2xs uppercase tracking-label text-faint">
             {p.label}
           </span>
         ))}

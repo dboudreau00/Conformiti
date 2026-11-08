@@ -15,7 +15,7 @@ test.describe("when the account lookup fails", () => {
     failing = false;
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(topHeading(page, "Dashboard")).toBeVisible();
-    await expect(page.getByText(/^(Readiness score|Overall readiness)$/)).toBeVisible();
+    await expect(page.getByText(/^(Readiness score|Share implemented)$/)).toBeVisible();
     await expect(page.getByText("Your account could not be loaded")).toHaveCount(0);
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { DownloadIcon, FileTextIcon, PaperclipIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll, isTruncated } from "../../api/client.js";
 import { errorText } from "../../utils/a11y.js";
+import { fmtDate } from "../../utils/format.js";
 import { Badge } from "../ui/Badge.jsx";
 import { Button, IconButton } from "../ui/Button.jsx";
 import { TextDialog, useConfirm } from "../ui/Dialog.jsx";
@@ -15,7 +16,17 @@ const STATUS = {
   withdrawn: { label: "Withdrawn", tone: "muted" },
 };
 const EMPTY = { title: "", description: "", package_control: "", assignee: "", due_date: "", priority: "normal" };
-const DATE = (iso) => (iso ? String(iso).slice(0, 10) : "");
+
+/** A document pinned to a package or attached to a request, as the button that opens it. */
+export function EvidenceChip({ onClick, title, children }) {
+  return (
+    <button type="button" onClick={onClick} title={title}
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2 py-1 text-2xs text-muted transition-colors duration-150 ease-out hover:border-line-strong hover:text-ink">
+      <FileTextIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+      {children}
+    </button>
+  );
+}
 
 /** Request list for `pkg`, or with `mine` every line assigned to the signed-in person. Buttons follow the
  * server's per-line `can` flags. */
@@ -97,7 +108,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
       });
       setForm(EMPTY);
       setAdding(false);
-    }, "Request raised.");
+    }, "Request added.");
   };
 
   const [asking, setAsking] = useState(null);
@@ -127,7 +138,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   const withdraw = (r) => ask({
     title: `Withdraw ${r.reference}?`,
     description: "The line stays on the list, marked withdrawn.",
-    confirmLabel: "Withdraw the request",
+    confirmLabel: "Withdraw request",
     // Rethrown like the notes: act resolves on failure, which would close the dialog as if the withdrawal went through.
     onConfirm: async () => {
       let failed = null;
@@ -145,7 +156,19 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
       setAttachTo(null);
     }, "Document attached.");
   };
-  const detach = (r, item) => act(`detach-${item.id}`, () => api.delete(`/pbc-items/${item.id}/`));
+  const removeItem = (r, item) => ask({
+    title: `Remove ${item.document_name} from ${r.reference}?`,
+    description: "The request no longer lists this document, which stays in the library.",
+    confirmLabel: "Remove",
+    // Rethrown like the withdrawal: act resolves on failure, which would close the dialog as if the removal went through.
+    onConfirm: async () => {
+      let failed = null;
+      await act(`detach-${item.id}`, async () => {
+        try { await api.delete(`/pbc-items/${item.id}/`); } catch (e) { failed = e; throw e; }
+      }, `Document removed from ${r.reference}.`);
+      if (failed) throw new Error(errorText(failed));
+    },
+  });
   const exportCsv = async () => {
     try {
       await downloadFile(`/pbc-requests/export/?package=${pkg.id}`, "pbc-requests.csv");
@@ -172,7 +195,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     facts: [
       { label: "Version when attached", value: `v${item.version}` },
       { label: "Digest at attachment (SHA-256)", value: item.content_sha256 || "-", mono: true },
-      { label: "Attached by", value: `${item.attached_by_name} · ${DATE(item.attached_at)}` },
+      { label: "Attached by", value: `${item.attached_by_name} · ${fmtDate(item.attached_at)}` },
     ],
   });
 
@@ -269,7 +292,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
             </select>
           </div>
           <div className="flex items-center gap-2 sm:col-span-2">
-            <Button type="submit" size="sm" variant="primary" disabled={busy === "raise" || !form.title.trim()}>Raise</Button>
+            <Button type="submit" size="sm" variant="primary" disabled={busy === "raise" || !form.title.trim()}>Add</Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
           </div>
         </form>
@@ -280,7 +303,10 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
       ) : failed ? (
         <LoadError what="The request list" onRetry={reload} />
       ) : rows.length === 0 ? (
-        <Empty title="Nothing requested yet" />
+        <Empty
+          title="Nothing requested yet"
+          action={canRaise && !adding ? <Button size="sm" variant="primary" onClick={() => setAdding(true)}>Add request</Button> : null}
+        />
       ) : (
         <ul className="divide-y divide-line">
           {rows.map((r) => {
@@ -300,7 +326,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                       {r.control_ref ? `${r.control_ref} · ` : ""}
                       raised by {r.requested_by_name} ({r.requested_by_side})
                       {r.assignee_name ? ` · assigned to ${r.assignee_name}` : " · unassigned"}
-                      {r.due_date ? ` · due ${r.due_date}` : ""}
+                      {r.due_date ? ` · due ${fmtDate(r.due_date)}` : ""}
                     </Label>
                     {r.description ? <span className="mt-1 block text-xs leading-snug text-muted">{r.description}</span> : null}
                   </span>
@@ -318,7 +344,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                 ) : null}
                 {r.accepted_at ? (
                   <Label className="mt-1 block whitespace-normal">
-                    Accepted by {r.accepted_by_name} · {DATE(r.accepted_at)}
+                    Accepted by {r.accepted_by_name} · {fmtDate(r.accepted_at)}
                   </Label>
                 ) : null}
 
@@ -326,15 +352,13 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                   <ul className="mt-2 flex flex-wrap gap-1.5">
                     {r.items.map((item) => (
                       <li key={item.id} className="flex items-center gap-1">
-                        <button type="button" onClick={() => open(r, item)}
-                                className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2 py-1 text-2xs text-muted transition-colors duration-150 ease-out hover:border-line-strong hover:text-ink"
-                                title={`Open · v${item.version}${item.content_sha256 ? ` · ${item.content_sha256.slice(0, 16)}…` : ""}`}>
-                          <FileTextIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+                        <EvidenceChip onClick={() => open(r, item)}
+                                      title={`Open · v${item.version}${item.content_sha256 ? ` · ${item.content_sha256.slice(0, 16)}…` : ""}`}>
                           {item.document_name}
-                        </button>
+                        </EvidenceChip>
                         {can.attach ? (
-                          <IconButton label={`Detach ${item.document_name}`} className="h-6 w-6"
-                                      disabled={busy === `detach-${item.id}`} onClick={() => detach(r, item)}>
+                          <IconButton label={`Remove ${item.document_name} from this request`} className="h-6 w-6"
+                                      disabled={busy === `detach-${item.id}`} onClick={() => removeItem(r, item)}>
                             <XIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
                           </IconButton>
                         ) : null}

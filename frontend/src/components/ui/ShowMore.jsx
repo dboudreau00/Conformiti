@@ -17,7 +17,8 @@ export function usePage(rows, size = 100, resetOn = []) {
   };
 }
 
-/** `children` is a render function given the number of rows to show. */
+/** `children` is a render function given the number of rows to show. The expander reads "Show N more <noun>" and
+ * "Show fewer", the same pair every collapsed list uses. */
 export function ShowMore({ total, initial = 8, noun = "rows", className, buttonClassName, children }) {
   const [open, setOpen] = useState(false);
   const hidden = Math.max(0, total - initial);
@@ -35,7 +36,7 @@ export function ShowMore({ total, initial = 8, noun = "rows", className, buttonC
             buttonClassName
           )}
         >
-          {open ? "Show fewer" : `Show all ${total} ${noun}`}
+          {open ? "Show fewer" : `Show ${hidden} more ${noun}`}
         </button>
       ) : null}
     </div>

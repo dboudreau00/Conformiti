@@ -11,12 +11,12 @@ import {
   FILTERS, IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, TEMPLATE_CSV, TYPES, deriveSummary, filterRisks,
 } from "../components/risks/vocab.js";
 import { Button } from "../components/ui/Button.jsx";
-import { Empty, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { Empty, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
 import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
-import { errorText } from "../utils/a11y.js";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { useDeepLink } from "../utils/deepLink.js";
 import { displayName } from "../utils/format.js";
 
@@ -32,7 +32,8 @@ export default function Risks({ me }) {
   const [risks, setRisks] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // null, or { reason } once the register failed to load: the matrix and the counts must not read it as an empty one.
+  const [error, setError] = useState(null);
   const [users, setUsers] = useState([]);
   const [usersErr, setUsersErr] = useState("");
   // null until the choices arrive: [] is a workspace with no controls, which the picker must not show as loading.
@@ -69,13 +70,13 @@ export default function Risks({ me }) {
 
   const loadRisks = useCallback(async () => {
     setLoading(true);
-    setError("");
+    setError(null);
     try {
       const all = await fetchAll("/risks/");
       setRisks(all);
       await loadSummary(all);
     } catch (e) {
-      setError(errorText(e, "Couldn't load the risk register."));
+      setError({ reason: loadFailReason(e) });
     } finally {
       setLoading(false);
     }
@@ -83,7 +84,10 @@ export default function Risks({ me }) {
 
   useEffect(() => {
     loadRisks();
-    fetchAll("/users/").then(setUsers).catch((e) => setUsersErr(errorText(e, "Owner directory unavailable.")));
+    // Only active people can be picked; the open risk's own owner is added back by its select.
+    fetchAll("/users/")
+      .then((list) => setUsers(list.filter((u) => u.is_active)))
+      .catch((e) => setUsersErr(errorText(e, "Couldn't load the owners.")));
     api.get("/control-evidence/choices/").then((r) => setControls(r.data.controls || [])).catch(() => setControls([]));
   }, [loadRisks]);
 
@@ -138,7 +142,7 @@ export default function Risks({ me }) {
       applyUpdate(data);
       await loadSummary();
       refreshCounts();
-      setNotice({ ok: true, text: "Saved." });
+      setNotice({ ok: true, text: "Changes saved." });
     } catch (e) {
       setNotice({ ok: false, text: errorText(e, "Couldn't save that change.") });
     } finally {
@@ -212,7 +216,7 @@ export default function Risks({ me }) {
       await loadRisks();
       refreshCounts();
     } catch (err) {
-      setImportResult({ error: errorText(err, "Import failed.") });
+      setImportResult({ error: errorText(err, "Couldn't import the risks.") });
     } finally {
       setImporting(false);
     }
@@ -241,12 +245,14 @@ export default function Risks({ me }) {
 
   const stats = summary || deriveSummary(risks);
   const shown = filterRisks(risks, filter);
+  // A register that did not load has no counts: zeros would read as "nothing is live".
+  const counted = (n) => (error ? undefined : n);
   const chipMeta = {
-    live: { label: "live", count: stats.open + stats.mitigating },
-    overdue: { label: "overdue", count: stats.overdue, tone: stats.overdue ? "danger" : undefined },
-    severe: { label: "high / critical", count: (stats.by_rating?.high || 0) + (stats.by_rating?.critical || 0), tone: "warning" },
-    closed: { label: "closed", count: stats.closed, tone: "success" },
-    all: { label: "all", count: risks.length },
+    live: { label: "Live", count: counted(stats.open + stats.mitigating) },
+    overdue: { label: "Overdue", count: counted(stats.overdue), tone: stats.overdue ? "danger" : undefined },
+    severe: { label: "High or critical", count: counted((stats.by_rating?.high || 0) + (stats.by_rating?.critical || 0)), tone: "warning" },
+    closed: { label: "Closed", count: counted(stats.closed), tone: "success" },
+    all: { label: "All risks", count: counted(risks.length) },
   };
 
   return (
@@ -274,7 +280,7 @@ export default function Risks({ me }) {
                   onClick={downloadTemplate}
                   icon={<FileSpreadsheetIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
                 >
-                  Import template
+                  Download template
                 </Button>
                 <input
                   ref={fileRef}
@@ -299,7 +305,7 @@ export default function Risks({ me }) {
               onClick={exportCsv}
               icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
             >
-              Export
+              Export CSV
             </Button>
             {canManage ? (
               <Button
@@ -309,7 +315,7 @@ export default function Risks({ me }) {
                 aria-expanded={showNew}
                 icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />}
               >
-                {showNew ? "Cancel" : "New risk"}
+                New risk
               </Button>
             ) : null}
           </div>
@@ -409,16 +415,19 @@ export default function Risks({ me }) {
                       {users.map((u) => <option key={u.id} value={u.id}>{displayName(u)}</option>)}
                     </select>
                   </Field>
-                  <Field id="new-control" label="Related control (optional)">
+                  <div className="min-w-0">
+                    {/* Not a <label>: once a control is chosen there is no box left for it to point at. */}
+                    <span id="new-control-label" className="field-label">Related control (optional)</span>
                     <input type="hidden" name="control" value={riskControl?.id ?? ""} />
                     {riskControl ? (
-                      <div className="flex items-baseline gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5">
+                      <div role="group" aria-labelledby="new-control-label" className="flex items-baseline gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5">
                         <span className="shrink-0 font-mono text-xs text-accent">{riskControl.label}</span>
                         <span className="truncate text-xs text-ink">{riskControl.title}</span>
                         <button
                           type="button"
                           className="ml-auto shrink-0 text-2xs text-muted underline underline-offset-4 hover:text-ink"
                           onClick={() => setRiskControl(null)}
+                          aria-label="Clear the related control"
                         >
                           Clear
                         </button>
@@ -426,13 +435,13 @@ export default function Risks({ me }) {
                     ) : (
                       <ControlPicker
                         id="new-control"
-                        label="Related control"
+                        labelledBy="new-control-label"
                         placeholder="Find a control, or leave this empty"
                         controls={controls}
                         onPick={setRiskControl}
                       />
                     )}
-                  </Field>
+                  </div>
                   <Field id="new-description" label="Description" className="md:col-span-4">
                     <textarea
                       id="new-description"
@@ -462,32 +471,49 @@ export default function Risks({ me }) {
         </AnimatePresence>
 
         <StackItem className="grid grid-cols-12 gap-4">
-          <div className="col-span-12 xl:col-span-7">
+          <div className={cn("col-span-12", !error && "xl:col-span-7")}>
             <Panel className="overflow-hidden">
-              <PanelHeader title="Risk register" meta={loading ? "Loading" : `${shown.length} shown · ${risks.length} total`} />
+              <PanelHeader
+                title="Risk register"
+                meta={loading ? "Loading" : error ? undefined : `${shown.length} shown · ${risks.length} total`}
+              />
               {loading ? (
                 <Loading>Loading risks…</Loading>
               ) : error ? (
-                <div className="p-5">
-                  <div className="notice notice-err" role="alert">{error}</div>
-                  <Button size="sm" className="mt-3" onClick={loadRisks}>Try again</Button>
-                </div>
+                <LoadError what="The risk register" reason={error.reason} onRetry={loadRisks} />
               ) : shown.length === 0 ? (
-                <Empty title="No risks in this view" />
+                risks.length === 0 ? (
+                  <Empty
+                    title="No risks yet"
+                    action={
+                      canManage ? (
+                        <Button size="sm" variant="primary" onClick={() => setShowNew(true)}>New risk</Button>
+                      ) : null
+                    }
+                  />
+                ) : (
+                  <Empty
+                    title="No risks in this view"
+                    action={<Button size="sm" onClick={() => setFilter("all")}>Show all risks</Button>}
+                  />
+                )
               ) : (
                 <RiskTable risks={shown} selectedId={selectedId} onSelect={(r) => setSelectedId((cur) => (cur === r.id ? null : r.id))} />
               )}
             </Panel>
           </div>
-          <div className="col-span-12 xl:col-span-5">
-            <RiskHeatmap
-              risks={risks}
-              stats={stats}
-              loading={loading}
-              selectedId={selectedId}
-              onSelect={(r) => setSelectedId(r.id)}
-            />
-          </div>
+          {/* Without a register the matrix would plot an empty one and say "0 live". */}
+          {error ? null : (
+            <div className="col-span-12 xl:col-span-5">
+              <RiskHeatmap
+                risks={risks}
+                stats={stats}
+                loading={loading}
+                selectedId={selectedId}
+                onSelect={(r) => setSelectedId(r.id)}
+              />
+            </div>
+          )}
         </StackItem>
 
         <AnimatePresence initial={false} mode="wait">

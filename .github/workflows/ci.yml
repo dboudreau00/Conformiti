@@ -432,7 +432,7 @@ jobs:
           fi
           echo "no browsable API (HTTP ${code})"
 
-      - name: Backend image boots and answers /api/health/ (demo dataset seeded)
+      - name: Backend image boots and answers /api/health/ (demo data loaded)
         run: |
           docker run -d --name api -p 8001:8000 \
             -e DJANGO_DEBUG=false -e DJANGO_SECRET_KEY_FILE=/app/secrets/key \

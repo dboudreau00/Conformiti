@@ -103,7 +103,7 @@ export function appearanceButton(page) {
   return page.getByRole("button", { name: /^Appearance:/ });
 }
 export function searchButton(page) {
-  return page.getByRole("button", { name: "Jump to a control, document or person" });
+  return page.getByRole("button", { name: "Search", exact: true });
 }
 
 export async function openMenu(button) {

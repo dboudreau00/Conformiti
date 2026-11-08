@@ -20,7 +20,11 @@ package:
 under Docker Desktop or WSL 2, for development and evaluation. Run production
 on a Linux host, with Docker (§1) or on bare metal (§3). The bare-metal recipe
 in §3 is Linux-only (gunicorn does not run on Windows), and this repository
-ships no Windows service setup.
+ships no Windows service setup. Use `install.ps1` from PowerShell:
+`install.sh` is for macOS, Linux and WSL, and stops at once in Git Bash and
+Cygwin. Clone into a plain local folder such as `C:\conformiti`, not Desktop
+or Documents, which OneDrive syncs by default; a synced folder makes pip, npm
+and Vite fail part way or hang.
 
 ---
 
@@ -47,7 +51,7 @@ all digits, and not too close to the username or email. The policy has no
 bypass: `createsuperuser` refuses a password that fails it, says why and asks
 for another.
 
-To look around a worked example instead, put `SEED_DEMO_DATA=true` in `.env`
+To look around with demo data instead, put `SEED_DEMO_DATA=true` in `.env`
 (create the file if there is none) before you run `docker compose up`, or use
 `--demo` with the scripted variant below. That seeds five accounts sharing one
 password, generated on first boot and printed once
@@ -73,7 +77,7 @@ What happens on first boot:
    seeds the three control libraries (217 controls, and 249 folders in the
    app's document tree, one per framework, category and control: the boot
    log says `App folders created: 249`) and the built-in roles, seeds the
-   demo dataset only if you asked for it (`SEED_DEMO_DATA=true`), writes the
+   demo data only if you asked for it (`SEED_DEMO_DATA=true`), writes the
    evidence tree on disk (1,117 folders: those 249, plus `policies`,
    `procedures`, `evidence` and `forms` under each control), collects static
    files and starts gunicorn as an unprivileged user.
@@ -129,7 +133,7 @@ don't have one (DEBUG off, your hostname in `DJANGO_ALLOWED_HOSTS`, the
 origin lists for its port, and no secret key: the container generates its
 own and keeps it in the `secrets` volume, as on the plain path above),
 builds and starts the stack, **waits until `/api/health/` reports `ok`**, and
-prints the URLs. Flags: `--demo` / `-Demo` (load the sample organisation),
+prints the URLs. Flags: `--demo` / `-Demo` (load the demo data),
 `--open` / `-Open`, `--port N` / `-Port N`.
 
 With a `.env` already in place, the script leaves it alone unless a flag
@@ -349,7 +353,7 @@ pulls what it pushed and boots it before the run is allowed to pass.
    leaves the readiness history alone. A demo first seeded by an older release
    kept no such records, so its first retirement still goes by the demo's
    names and by rows with no creator. A second run changes none of the rows
-   made since the first. The dataset is off by default.
+   made since the first. The demo data is off by default.
 
    To have an account to sign in with from the first boot instead, put
    `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_PASSWORD` and
@@ -510,9 +514,8 @@ Two things to know:
 
 A key whose signature counter goes backwards is treated as cloned: it is
 disabled and the sign-in refused, and the person needs their other factor.
-`manage.py`-free recovery is an administrator's *Reset 2FA* on the Users page
-(its confirmation reads *Reset two-factor*), which removes the authenticator
-app, every passkey and the backup codes.
+`manage.py`-free recovery is an administrator's *Reset two-factor* on the Users
+page, which removes the authenticator app, every passkey and the backup codes.
 
 On the local development servers the Vite proxy rewrites `Host` to the
 backend's, so pin the relying party there too:
@@ -734,7 +737,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows
 On Windows the bypass is what lets the script run where the default policy
 refuses it (*running scripts is disabled on this system*); it lasts for that
 one run and changes no setting. §1's scripted variant explains the execution
-policy. For a trial, run it from a checkout of the newest release tag, as §1
+policy. `install.sh` stops in Git Bash and Cygwin; on Windows use `install.ps1`
+from PowerShell, or `install.sh` in a WSL terminal. For a trial, run it from a checkout of the newest release tag, as §1
 shows; to work on the code, from a branch of `main`
 ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
@@ -745,7 +749,10 @@ Ubuntu, install Python's `venv` module first
 created. The `nodejs` package of Debian 12 and Ubuntu 24.04 (18) or Ubuntu
 22.04 (12) is too old, and the installer stops on it: install Node 22 LTS
 from NodeSource's repository (§3 shows the commands) or with nvm, and check
-`node --version`. Other requirements are in
+`node --version`. Ubuntu 22.04's `python3` is 3.10 and macOS's is 3.9, both
+too old: install Python 3.12 from python.org, with Homebrew
+(`brew install python@3.12`) or, on Ubuntu 22.04, from the deadsnakes PPA
+(`python3.12` and `python3.12-venv`). Other requirements are in
 [PREREQUISITES.md](PREREQUISITES.md). The
 installer then creates `.env` with a generated secret key, builds `.venv`,
 installs backend and frontend
@@ -753,7 +760,8 @@ dependencies, applies migrations, seeds the control libraries, and starts the
 API on **:8000** and the Vite dev server on **:5173** (`CONFORMITI_DEV_API_PORT`
 and `CONFORMITI_DEV_PORT` move them: see *Moving the ports*). A failing step
 stops the installer, with one exception on Windows: a failure to write the
-folder tree on disk (`generate_folder_tree`) is ignored there.
+folder tree on disk (`generate_folder_tree`) is reported as a warning there,
+with the command to run it again, and the installer carries on.
 
 This path runs with `DJANGO_DEBUG=true` from `.env.example`. Django then
 serves uploaded files at `/media/` with no access check and no audit row, the
@@ -770,8 +778,8 @@ cd backend && ../.venv/bin/python manage.py createsuperuser
 # Windows: cd backend; ..\.venv\Scripts\python.exe manage.py createsuperuser
 ```
 
-To look around a worked example instead, run the installer with `--demo` /
-`-Demo`. It loads the sample organisation, and the run that creates the demo
+To look around with demo data instead, run the installer with `--demo` /
+`-Demo`. It loads the demo data, and the run that creates the demo
 accounts prints their password in the seeding step's output (the line
 starting `Sign in as`) and again in the closing *Setup complete* banner. A
 re-run keeps the password, and the banner says it is unchanged. After
@@ -793,7 +801,7 @@ Useful flags:
 |---|---|
 | `--setup-only` / `-SetupOnly` | install and seed, don't start servers |
 | `--test` / `-Test` | run the validator, the backend test suite and a production frontend build |
-| `--demo` / `-Demo` | also load the sample organisation and its five demo accounts |
+| `--demo` / `-Demo` | also load the demo data and its five demo accounts |
 | `--reset` / `-Reset` | wipe the SQLite database and the uploads the application is set to use (`db.sqlite3` and `media/` unless `SQLITE_PATH` or `MEDIA_ROOT` say otherwise, and only inside the checkout) and reseed, without starting the servers. It names what it will delete and asks you to type `reset` first |
 | `--yes` / `-Yes` | answer that question for a script |
 | `--no-demo` / `-NoDemo` | the default (no demo data); kept because older notes use it |
@@ -845,6 +853,10 @@ Redis 7, nginx, git, curl (for the NodeSource step below), Python 3.11 to
   sudo bash nodesource_setup.sh
   sudo apt install nodejs
   ```
+- **Python**: Debian 12 (3.11) and Ubuntu 24.04 (3.12) are fine. Ubuntu
+  22.04's `python3` is 3.10, too old: install `python3.12` and
+  `python3.12-venv` from the deadsnakes PPA, and create the virtual
+  environment below with `python3.12 -m venv .venv`.
 
 Create the user with a home directory, and the checkout as that user:
 
@@ -1201,7 +1213,7 @@ Move the ring to a file before you ever rotate it:
 | Every `/api/` request answers `301` to `https://` (bare metal, plain http) | With `DJANGO_DEBUG=false`, `BEHIND_TLS` is on unless `.env` says otherwise. Set `BEHIND_TLS=false` until TLS is in front (§3). |
 | Downloads and previews arrive empty (bare metal) | `MEDIA_INTERNAL` is on and the web server in front is not nginx, so nothing acts on the API's `X-Accel-Redirect`. Set `MEDIA_INTERNAL=false` (§3). Behind nginx, a download that is a 404 means the `/protected-media/` alias does not point at `MEDIA_ROOT`. |
 | `/api/health/` says `"database": "unavailable"` | PostgreSQL is not up, or the credentials differ between the `db` and `backend` services. The usual cause is `POSTGRES_PASSWORD` changed in `.env` after the first boot: the database volume keeps the password it was created with. Put the old value back, or change it in the database as §1 *Going to production* step 1 shows, then `docker compose up -d` (with the same `-f` files you started with). |
-| Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser` (the password must pass the policy in §1), or seed the sample data with `manage.py bootstrap_demo`. Or the web app runs on a port or host name missing from `CSRF_TRUSTED_ORIGINS` in `.env` (see *Moving the ports*). |
+| Login always fails on the local path | No account exists: `cd backend && ../.venv/bin/python manage.py createsuperuser` (the password must pass the policy in §1), or load the demo data with `manage.py bootstrap_demo`. Or the web app runs on a port or host name missing from `CSRF_TRUSTED_ORIGINS` in `.env` (see *Moving the ports*). |
 | `Too many attempts` at sign-in | The per-client login throttle (8/min). Wait a minute. |
 | Uploads rejected as too large | Raise `MAX_UPLOAD_MB` in `.env` **and** `client_max_body_size` in `frontend/nginx.conf`. With malware scanning on, a file larger than `CLAMAV_MAX_MB` (40 by default) is refused as not fully inspected whatever `MAX_UPLOAD_MB` says; raise it too, and clamd's `StreamMaxLength` and `MaxFileSize` with it (`docker/clamd.conf` in the Docker stack). nginx's configuration is built into the frontend image: after the edit, a source build needs `docker compose up -d --build`, and the published images need the edited file mounted (*Without a build*, above). `frontend/nginx.conf` is a tracked file, so the edit has to be set aside for each upgrade's `git checkout` ([README, Upgrading](README.md#upgrading)). Bare metal: edit your own copy and reload nginx. |
 | Port in use | Docker needs host port 8080 (`CONFORMITI_PORT`), and `127.0.0.1:8000` (`CONFORMITI_API_PORT`) only if you published the API for debugging; the local path needs 8000 and 5173 (`CONFORMITI_DEV_API_PORT`, `CONFORMITI_DEV_PORT`). Every one of them can move: see *Moving the ports* below. |

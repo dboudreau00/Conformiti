@@ -123,7 +123,7 @@ class MfaTests(APITestBase):
         self.assertEqual(r.status_code, 200)
         r = anon.post("/api/auth/token/", {"username": "mia", "password": PASSWORD, "otp": codes[0]}, format="json")
         self.assertEqual(r.status_code, 401)
-        self.assertTrue(AuditLog.objects.filter(action="login_failed", detail__contains="second factor").exists())
+        self.assertTrue(AuditLog.objects.filter(action="login_failed", detail__contains="two-factor code").exists())
 
     def test_wrong_code_does_not_enable(self):
         c = self.client_for(self.owner)
@@ -392,6 +392,21 @@ class CookieAuthTests(APITestBase):
         # Not /api/auth/: that prefix covers the MFA routes that return the TOTP secret and backup codes.
         self.assertEqual(refresh["path"], "/api/auth/token/")
 
+    def test_a_sign_in_without_the_csrf_token_is_a_plain_sentence_with_a_code(self):
+        client = APIClient(enforce_csrf_checks=True)
+        _, r = self.login(client, HTTP_X_CSRFTOKEN="not-the-token")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.data["detail"], "Your session could not be verified. Reload the page and sign in again.")
+        self.assertEqual(r.data["code"], "csrf_failed")
+
+    def test_a_deactivated_account_with_a_live_token_is_told_who_to_ask(self):
+        client, _ = self.login()
+        self.manager.is_active = False
+        self.manager.save()
+        r = client.get("/api/users/me/")
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(r.data["detail"], "This account is deactivated. Ask an administrator.")
+
     def test_the_cookie_alone_authenticates_a_read(self):
         client, _ = self.login()
         r = client.get("/api/users/me/")
@@ -403,6 +418,8 @@ class CookieAuthTests(APITestBase):
         token = login.cookies["csrftoken"].value
         r = client.patch("/api/users/me/", {"job_title": "No token"}, format="json")
         self.assertEqual(r.status_code, 403, "a cookie-authenticated write needs CSRF")
+        self.assertEqual(r.data["detail"], "Your session could not be verified. Reload the page and sign in again.")
+        self.assertNotIn("CSRF", str(r.data["detail"]))
         r = client.patch("/api/users/me/", {"job_title": "With token"},
                          format="json", HTTP_X_CSRFTOKEN=token)
         self.assertEqual(r.status_code, 200, r.data)

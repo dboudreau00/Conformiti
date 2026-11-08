@@ -90,7 +90,7 @@ class PasskeyDetailView(APIView):
         # Not a bare check_password: an SSO-provisioned account has no usable password, and a backup code or an
         # authenticator code proves the same thing.
         if not reauthenticated(request):
-            return Response({"detail": "Confirm your password, or a code from a factor you still have.",
+            return Response({"detail": "Confirm your password, or enter a two-factor code.",
                              "code": "reauth_required"}, status=403)
         name = row.name
         row.delete()

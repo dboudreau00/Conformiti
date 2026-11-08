@@ -131,10 +131,10 @@ class VendorViewSet(viewsets.ModelViewSet):
         rows = request.data.get("rows")
         source = "import" if request.data.get("source") == "import" else "manual"
         if not isinstance(rows, list):
-            raise ValidationError({"rows": "Send a list of rows."})
+            raise ValidationError({"detail": "Send a list of rows."})
         if len(rows) > 2000:
-            raise ValidationError({"rows": "Too many rows in one save."})
-        valid_ids = set(Control.objects.values_list("pk", flat=True))
+            raise ValidationError({"detail": "Too many rows in one save."})
+        refs = dict(Control.objects.values_list("pk", "control_id"))
         clean, clear = [], []
         for i, row in enumerate(rows):
             try:
@@ -144,20 +144,20 @@ class VendorViewSet(viewsets.ModelViewSet):
                     raise ValueError(raw)
                 control_id = int(raw)
             except (TypeError, ValueError, AttributeError):
-                raise ValidationError({"rows": f"row {i}: control id is required"})
-            if control_id not in valid_ids:
-                raise ValidationError({"rows": f"row {i}: unknown control {control_id}"})
+                raise ValidationError({"detail": f"Row {i + 1}: the control is missing."})
+            if control_id not in refs:
+                raise ValidationError({"detail": f"Row {i + 1}: that control was not found."})
+            # Named by its own reference ("CC6.1"), which is what the person sees in the matrix.
+            where = f"Control {refs[control_id]}"
             resp = row.get("responsibility")
             if resp in (None, ""):
                 if str(row.get("provider_statement") or "").strip() or str(row.get("customer_statement") or "").strip():
-                    raise ValidationError({"rows": f"row {i}: a statement needs a responsibility "
-                                                   "(provider, customer, shared or N/A) to belong to; "
-                                                   "pick one or clear the statement"})
+                    raise ValidationError({"detail": f"{where}: choose Provider, Customer, Shared or Not applicable "
+                                                     "for the statement, or clear the statement."})
                 clear.append(control_id)
                 continue
             if not isinstance(resp, str) or resp not in RESPONSIBILITY_VALUES:
-                raise ValidationError({"rows": f"row {i}: responsibility must be one of "
-                                                f"{sorted(RESPONSIBILITY_VALUES)}"})
+                raise ValidationError({"detail": f"{where}: choose Provider, Customer, Shared or Not applicable."})
             clean.append((control_id, resp,
                           str(row.get("provider_statement") or "")[:4000],
                           str(row.get("customer_statement") or "")[:4000]))
@@ -251,7 +251,8 @@ class VendorViewSet(viewsets.ModelViewSet):
                 request.data.get("days"), request.data.get("message") or "",
             )
         except questionnaire_lib.QuestionnaireError as exc:
-            raise ValidationError({exc.code: exc.message})
+            # Keyed to a field only where the send form has that field; the rest answer as plain messages.
+            raise ValidationError({exc.code if exc.code in ("email", "days") else "detail": exc.message})
         data = QuestionnaireInviteSerializer(invite).data
         data["link"] = link
         return Response(data, status=201)

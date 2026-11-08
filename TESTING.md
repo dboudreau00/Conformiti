@@ -10,7 +10,7 @@ walkthrough with exact expected values from the seeded demo data.
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Test     # Windows
 ```
 
-Runs, in order: `tools/validate.py` (20 static checks), `manage.py check`,
+Runs, in order: `tools/validate.py` (21 static checks), `manage.py check`,
 `makemigrations --check`, the backend suite (by far the longest step on
 SQLite), and a production frontend build. CI runs the same plus the
 undeclared-name check on the frontend source, the installer runs on Windows
@@ -28,7 +28,7 @@ cd backend
 
 ## Manual walkthrough (~30 min)
 
-Needs the demo dataset, which is **not** seeded by default: on the local path
+Needs the demo data, which is **not** loaded by default: on the local path
 use `./install.sh --demo` (Windows:
 `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Demo`) or
 `manage.py bootstrap_demo`; on the Docker stack set `SEED_DEMO_DATA=true` in
@@ -72,9 +72,9 @@ Risk Review 1/2.
 - Account menu (your initials, top right). **Expect:** your name and role,
   *Settings* and *Sign out*.
 - **Ctrl K** (**Cmd K** on a Mac), or the search field. Type `CC6.1`. **Expect:**
-  a *Controls* group with `CC6.1`. Type `owen`: a *People* group with Owen
+  a *Controls* group with `CC6.1`. Type `owen`: a *Users* group with Owen
   Owner. Type `zzzz`: *Nothing matches*. **Up**, **Down**, **Enter** and **Esc**
-  work. As `aria`: no *Controls* or *People* group, and no request to
+  work. As `aria`: no *Controls* or *Users* group, and no request to
   `/api/controls/` or `/api/users/` (an auditor is refused both).
 - Keyboard: on a fresh page load the first **Tab** shows *Skip to content*;
   **Enter** moves focus to the page without changing the address.
@@ -85,9 +85,9 @@ Risk Review 1/2.
 
 ### 2 · Dashboard
 **Expect:** the title *Dashboard* at the top of the page, not in the bar.
-*Readiness score* out of 100, and beneath it the share of controls marked
-implemented, matching *Overall readiness* on *Analytics*, the six-month trend
-and the four readiness bands.
+*Readiness score* out of 100, the six-month trend and the four readiness
+bands. *Share implemented* on *Analytics* is a different figure: the
+percentage of applicable controls marked implemented.
 
 **Lead schedule**, beside it: three framework rows in name order and a *Total*
 row (a single rule above it, a double rule below); the panel header says
@@ -118,7 +118,7 @@ the atlas: it is one Tab stop, the arrow keys move inside it, and **Shift+Tab**
 returns to the same square.
 
 **Needs attention**: Reviews overdue **1** (4 due in the next 30 days), Risk
-posture *3 open · 1 overdue*, Evidence coverage *20/217* (22 links), Documents
+posture *3 open · 1 overdue*, Evidence coverage *20/217*, Documents
 **9** on file (9 approved). Calendar: the overdue *Incident Response Plan* is
 red; filter chips narrow by type; clicking a day lists its items. "Reviews
 coming up" lists the eight documents due within 120 days, most urgent first,
@@ -127,17 +127,18 @@ with **Mark reviewed**.
 ### 3 · Analytics
 **Expect:** three framework bars; donut centres **217** and **9**; review load
 for the next six months; ownership *Documents with an owner 9/9*;
-most-overdue list shows *3d*, *Incident Response Plan*, *Owen Owner*.
+most-overdue list shows *3 days overdue*, *Incident Response Plan*, *Owen Owner*.
 
 ### 4 · Close the overdue review
-Dashboard → **Mark reviewed** on *Incident Response Plan*. **Expect:** it leaves
-the list, Reviews overdue → **0**, Analytics' overdue list is empty, the audit
+Dashboard → **Mark reviewed** on *Incident Response Plan*. **Expect:** a
+confirmation asks first (**Cancel** records nothing); after **Mark reviewed** it
+leaves the list, Reviews overdue → **0**, Analytics' overdue list is empty, the audit
 log gains an `update` on `documents`.
 
 ### 5 · Controls
 **Expect:** segmented control *All frameworks 217 · SOC 2 61 · ISO 27001 93 ·
 PCI DSS 63*; status chips with counts. Search `CC6.1`, expand → objective,
-selects (as admin), linked evidence *Access Control Policy* with **Unlink**,
+selects (as admin), evidence *Access Control Policy* with **Remove** (it asks first),
 attach form. Set a control to *Implemented* → the Dashboard's lead schedule
 follows, that control's square in the atlas fills solid, and the badge on the
 *Controls* tab moves if the control was or became *In progress*. **Export CSV** → `controls.csv` opens in a spreadsheet.
@@ -160,7 +161,7 @@ Dashboard link lands on *Audit packages*; Audit log and User audit readable,
 every write control absent.
 
 ### 8 · Risks
-As `mia`: chips *3 live · 1 overdue · 2 high/critical · 1 closed*. Open the IR
+As `mia`: chips *Live 3 · Overdue 1 · High or critical 2 · Closed 1*. Open the IR
 risk → set **Closed** (closed_at appears) → **Open** (cleared). Add a note.
 Import `docs/sample-risk-import.csv` → *4 created, 0 warnings*; again → *0
 created, 4 skipped*. Export → a cell whose first character, after any leading
@@ -168,7 +169,7 @@ whitespace, is `=`, `+`, `-` or `@` gets an apostrophe in front, so a
 spreadsheet shows it as text instead of evaluating it.
 
 ### 9 · User audit
-As `admin`: **Start new review** → 5 rows. Set decisions (Revoke turns red),
+As `admin`: **Create review** → 5 rows. Set decisions (Revoke turns red),
 notes, **Export CSV**. **Complete review** stays disabled, with a count, while
 any row is pending. Completing it deactivates every account marked Revoke and
 ends its sessions. Your own row, superusers and accounts that are already
@@ -193,7 +194,7 @@ As `mia`: Settings → Security → enable (you are asked to confirm your
 password), confirm a code, save the 10 backup codes. Sign out/in → code
 prompt; wrong code rejected; a backup code works once. Regenerating the backup
 codes and disabling ask for the password, or a current code from the
-authenticator app, or an unused backup code. As `admin`: **Reset 2FA**.
+authenticator app, or an unused backup code. As `admin`: **Reset two-factor**.
 
 ### 13 · Sign-out revokes the session
 Cookie mode is the default, so the refresh token is an HttpOnly cookie that
@@ -225,7 +226,7 @@ prints the emails (console provider); second run → 0.
 administrator: `remove_demo_data` refuses until one exists), then
 `docker compose exec backend python manage.py remove_demo_data` → the login
 page stops showing the demo hint and `demo_accounts` is `false`. Without
-`--demo` the dataset is never created and `demo_accounts` is `false` from the
+`--demo` the demo data is never created and `demo_accounts` is `false` from the
 start, which is what a real deployment gets.
 
 ### 17 · Themes and reduced motion

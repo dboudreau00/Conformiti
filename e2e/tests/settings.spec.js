@@ -294,9 +294,9 @@ test.describe("multi-factor authentication", () => {
     await section(page, "Security").click();
     await page.waitForLoadState("networkidle");
 
-    // The block renders a loading placeholder first: wait for it, or the Enable button is not there yet.
+    // The block renders a loading placeholder first: wait for it, or the Turn on button is not there yet.
     await expect(page.getByText("Authenticator app").first()).toBeVisible();
-    const enable = page.getByRole("button", { name: "Enable", exact: true });
+    const enable = page.getByRole("button", { name: "Turn on", exact: true });
     await expect(enable).toBeVisible();
 
     // Enrolling a factor takes the same proof removing one does: a session someone else holds must not be
@@ -318,7 +318,7 @@ test.describe("multi-factor authentication", () => {
     await page.reload();
     await page.waitForLoadState("networkidle");
     await section(page, "Security").click();
-    await expect(page.getByRole("button", { name: "Enable", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Turn on", exact: true })).toBeVisible();
   });
 
   test("enrolment without the password is refused", async ({ page }) => {
@@ -327,7 +327,7 @@ test.describe("multi-factor authentication", () => {
     await expect(page.getByText("Authenticator app").first()).toBeVisible();
 
     expectBrowserError(page, /status of 403/);
-    await page.getByRole("button", { name: "Enable", exact: true }).click();
+    await page.getByRole("button", { name: "Turn on", exact: true }).click();
     await page.waitForLoadState("networkidle");
 
     await expect(page.locator("#mfa-uri")).toHaveCount(0);
@@ -341,7 +341,7 @@ test.describe("workspace chat channels", () => {
   async function save(page) {
     const patched = page.waitForResponse((r) =>
       r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Save changes", exact: true }).click();
     return patched;
   }
 
@@ -373,9 +373,19 @@ test.describe("workspace chat channels", () => {
       await expect(page.getByText(/Configured\. Type a new URL to replace it\./).first())
         .toBeVisible();
 
+      // Removing the channel asks first, and cancelling leaves it configured.
+      await page.getByRole("button", { name: "Remove Slack channel" }).click();
+      const confirm = page.getByRole("dialog", { name: "Remove the Slack channel?" });
+      await expect(confirm).toContainText("stop going to Slack");
+      await confirm.getByRole("button", { name: "Cancel" }).click();
+      await expect(confirm).toHaveCount(0);
+      await expect(page.getByText(/Configured\. Type a new URL to replace it\./).first())
+        .toBeVisible();
+
       const removed = page.waitForResponse((r) =>
         r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
-      await page.getByRole("button", { name: "Remove", exact: true }).first().click();
+      await page.getByRole("button", { name: "Remove Slack channel" }).click();
+      await confirm.getByRole("button", { name: "Remove channel" }).click();
       expect((await removed).status()).toBe(200);
       await expect(page.getByText(/Configured\. Type a new URL to replace it\./))
         .toHaveCount(0);
@@ -394,7 +404,7 @@ test.describe("workspace chat channels", () => {
       const slack = page.locator("#workspace-slack");
       await expect(slack).toBeVisible();
       await slack.fill("https://hooks.slack.com/services/T000/B000/e2eslow");
-      const saveButton = page.getByRole("button", { name: "Save", exact: true });
+      const saveButton = page.getByRole("button", { name: "Save changes", exact: true });
       await expect(saveButton).toBeDisabled();
 
       await expect(saveButton).toBeEnabled({ timeout: 10_000 });
@@ -410,7 +420,9 @@ test.describe("workspace chat channels", () => {
 
       const removed = page.waitForResponse((r) =>
         r.request().method() === "PATCH" && r.url().includes("/api/workspaces/"));
-      await page.getByRole("button", { name: "Remove", exact: true }).first().click();
+      await page.getByRole("button", { name: "Remove Slack channel" }).click();
+      await page.getByRole("dialog", { name: "Remove the Slack channel?" })
+        .getByRole("button", { name: "Remove channel" }).click();
       expect((await removed).status()).toBe(200);
     });
 

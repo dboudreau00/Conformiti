@@ -117,9 +117,9 @@ def workspace_id_for(user, wanted=None):
         if ws is None and str(wanted).isdigit():
             ws = Workspace.objects.filter(pk=int(wanted)).first()
         if ws is None:
-            raise PermissionDenied(f"No workspace named {wanted!r}.")
+            raise PermissionDenied(f"No workspace named \"{wanted}\".")
         if not ws.is_active:
-            raise PermissionDenied(f"Workspace {ws.name!r} is archived.")
+            raise PermissionDenied(f"The workspace \"{ws.name}\" is archived.")
         return ws.pk
     if user.workspace_id:
         return user.workspace_id

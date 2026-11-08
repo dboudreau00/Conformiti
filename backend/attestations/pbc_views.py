@@ -18,6 +18,7 @@ from documents import monitor
 from documents.access import accessible_folder_ids
 from documents.downloads import serve_stored_file
 from notifications import webhooks
+from notifications.wording import count_of
 
 from . import access
 import django_filters as filters
@@ -96,12 +97,12 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
         package = data["package"]
         if package not in access.readable_packages(user):
-            raise PermissionDenied("Unknown package.")
+            raise PermissionDenied("That package is not available to you.")
         _require_list_open(package)
         side = _side(user, package)
         if side is None:
-            raise PermissionDenied("You need the frameworks capability, or a live grant on this "
-                                   "package, to raise a request.")
+            raise PermissionDenied("Only framework managers, or an auditor with live access to this audit package, "
+                                   "can add a request. Ask an administrator.")
         row = data.get("package_control")
         if row is not None and row.package_id != package.pk:
             raise ValidationError({"package_control": "Pick a control in this package."})
@@ -142,9 +143,8 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         # The serializer drops read-only fields silently: say so, so a client PATCHing status learns to use the actions.
         stray = set(getattr(self.request.data, "keys", lambda: [])()) - self.EDITABLE
         if stray:
-            raise ValidationError({"detail": "Only the line itself can be edited here "
-                                             f"({', '.join(sorted(stray))} cannot be set); use the "
-                                             "actions to provide, accept, return or withdraw."})
+            raise ValidationError({"detail": "Only the request's own details can be changed here. "
+                                             "Use Mark provided, Accept, Return or Withdraw to move it on."})
         _require_list_open(req.package)
         if not self._may_edit(user, req):
             raise PermissionDenied("You cannot change this request.")
@@ -172,7 +172,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
                 and req.status in (PbcRequest.Status.OPEN, PbcRequest.Status.RETURNED))
 
     def perform_destroy(self, instance):
-        raise ValidationError({"detail": "Requests are withdrawn, not deleted; the list is a record."})
+        raise ValidationError({"detail": "A request cannot be deleted. Withdraw it instead."})
 
     @action(detail=True, methods=["post"])
     @_atomic
@@ -181,7 +181,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         req = self._locked()
         user = request.user
         if not (access.can_assemble(user) or req.assignee_id == user.pk):
-            raise PermissionDenied("Only the organisation, or the person this request is assigned to, "
+            raise PermissionDenied("Only framework managers, or the person this request is assigned to, "
                                    "can answer it.")
         _require_list_open(req.package)
         if not req.is_actionable:
@@ -194,7 +194,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         stamp(req, user, "provided")
         req.save()
         record_package_event(request, req.package, "update",
-                             f"{req.reference} provided by {_name(user)} ({req.items.count()} item(s))")
+                             f"{req.reference} provided by {_name(user)} ({count_of(req.items.count(), 'item')})")
         return Response(self.get_serializer(req).data)
 
     @action(detail=True, methods=["post"])
@@ -202,8 +202,8 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
     def accept(self, request, pk=None):
         req = self._locked()
         if not self._may_judge(request.user, req):
-            raise PermissionDenied("Only the issued auditor, or the organisation closing a transcribed "
-                                   "request, can accept an answer.")
+            raise PermissionDenied("Only the auditor this package was issued to, or a framework manager "
+                                   "closing a request they entered for the auditor, can accept an answer.")
         _require_list_open(req.package)
         if req.status != PbcRequest.Status.PROVIDED:
             raise ValidationError({"detail": "Only a provided request can be accepted."})
@@ -219,8 +219,8 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
     def return_(self, request, pk=None):
         req = self._locked()
         if not self._may_judge(request.user, req):
-            raise PermissionDenied("Only the issued auditor, or the organisation closing a transcribed "
-                                   "request, can return an answer.")
+            raise PermissionDenied("Only the auditor this package was issued to, or a framework manager "
+                                   "closing a request they entered for the auditor, can return an answer.")
         _require_list_open(req.package)
         if req.status != PbcRequest.Status.PROVIDED:
             raise ValidationError({"detail": "Only a provided request can be returned."})
@@ -248,7 +248,7 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
         user = request.user
         own = access.live_grant(user, req.package) is not None and req.requested_by_id == user.pk
         if not (access.can_assemble(user) or own):
-            raise PermissionDenied("Only the organisation, or the auditor who raised it, can withdraw a request.")
+            raise PermissionDenied("Only framework managers, or the auditor who raised it, can withdraw a request.")
         _require_list_open(req.package)
         if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
             raise ValidationError({"detail": f"This request is already {req.get_status_display().lower()}."})
@@ -309,9 +309,9 @@ class PbcItemViewSet(viewsets.ModelViewSet):
         req = serializer.validated_data["request"]
         document = serializer.validated_data.get("document")
         if req not in access.readable_pbc_requests(user):
-            raise PermissionDenied("Unknown request.")
+            raise PermissionDenied("That request is not available to you.")
         if not self._may_answer(user, req):
-            raise PermissionDenied("Only the organisation, or the person this request is assigned to, "
+            raise PermissionDenied("Only framework managers, or the person this request is assigned to, "
                                    "can attach documents to it.")
         _require_list_open(req.package)
         if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
@@ -375,7 +375,7 @@ class PbcItemViewSet(viewsets.ModelViewSet):
     def _stored_for_read(self, request, item):
         stored = self._attached_file(item)
         if stored is None:
-            raise ValidationError({"detail": "This file is no longer available."})
+            raise ValidationError({"detail": "This document is no longer available."})
         monitor.refuse_if_quarantined(item.document)
         if item.document.version != item.version:
             # The bytes served are an archived version, which the sweep quarantines on its own.

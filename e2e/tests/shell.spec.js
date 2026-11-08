@@ -1,5 +1,5 @@
 import {
-  test, expect, DEMO, forgetSession, signIn, topHeading, navLink, open, primaryNav, openMenu,
+  test, expect, DEMO, expectBrowserError, forgetSession, signIn, topHeading, navLink, open, primaryNav, openMenu,
   governanceButton, accountButton, appearanceButton, searchButton, GOVERNANCE_ROUTES,
 } from "../fixtures.js";
 
@@ -97,6 +97,26 @@ test.describe("application shell", () => {
     }
   });
 
+  test("a tray that could not load says so and offers Try again, instead of passing for empty", async ({ page }) => {
+    const feed = /\/api\/notifications\/(\?.*)?$/;
+    expectBrowserError(page, /status of 500/);
+    await page.route(feed, (route) => route.fulfill({
+      status: 500,
+      contentType: "text/html",
+      body: "<h1>Server Error (500)</h1>",
+    }));
+    await open(page, "/", "Dashboard");
+    await page.getByRole("button", { name: /^Notifications/ }).click();
+    const tray = page.getByRole("group", { name: "Notifications" });
+    await expect(tray.getByText("Notifications could not be loaded.")).toBeVisible();
+    await expect(tray.getByText("You're all caught up.")).toHaveCount(0);
+    await expect(tray).not.toContainText("500");
+
+    await page.unroute(feed);
+    await tray.getByRole("button", { name: "Try again" }).click();
+    await expect(tray.getByText("Notifications could not be loaded.")).toHaveCount(0);
+  });
+
   test("dismissing a notification removes it from the tray", async ({ page }) => {
     await open(page, "/", "Dashboard");
     await page.getByRole("button", { name: /^Notifications/ }).click();
@@ -119,8 +139,8 @@ const GOVERNANCE_LABELS = {
   "/audit-log": "Audit log",
   "/meetings": "Meetings",
   "/groups": "Champion groups",
-  "/risks": "Risks",
-  "/jira": "Jira",
+  "/risks": "Risk register",
+  "/jira": "Jira boards",
 };
 
 test.describe("the top bar", () => {
@@ -145,7 +165,7 @@ test.describe("the top bar", () => {
     for (const path of ["/", "/analytics", "/controls", "/documents"]) {
       await expect(await navLink(page, path)).not.toHaveAttribute("aria-current");
     }
-    await expect(governanceButton(page)).toHaveAccessibleName(/^Governance\s+Risks$/);
+    await expect(governanceButton(page)).toHaveAccessibleName(/^Governance\s+Risk register$/);
   });
 
   test("Skip to content is the first tab stop and moves focus to the page without changing the address", async ({ page }) => {
@@ -329,6 +349,9 @@ test.describe("the Appearance menu", () => {
 
     const radios = menu.getByRole("menuitemradio");
     await expect(radios).toHaveCount(8);
+    // A pack whose name does not say its mode says it beside the name.
+    await expect(menu.getByRole("menuitemradio", { name: /^Nimbus\s*Light$/ })).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: /^Obsidian\s*Dark$/ })).toBeVisible();
     await expect(menu.getByRole("menuitemradio", { name: /Ledger Dark/ })).toHaveAttribute("aria-checked", "true");
     await expect(menu.getByRole("menuitemradio", { name: "Azure", exact: true })).toHaveAttribute("aria-checked", "true");
 
@@ -368,5 +391,27 @@ test.describe("an external auditor's top bar", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("complementary")).toHaveCount(0);
     await expect(searchButton(page)).toBeVisible();
+  });
+});
+
+test.describe("a segmented control of tabs", () => {
+  test("is one tab stop, and the arrow keys move to and select the next tab", async ({ page }) => {
+    await open(page, "/controls", "Controls");
+    const all = page.getByRole("tab", { name: /All frameworks/i });
+    await expect(all).toHaveAttribute("aria-selected", "true");
+    await expect(all).toHaveAttribute("tabindex", "0");
+    await expect(page.getByRole("tab", { name: /SOC 2/ })).toHaveAttribute("tabindex", "-1");
+
+    await all.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(all).toHaveAttribute("aria-selected", "false");
+    const chosen = page.locator('[role="tab"][aria-selected="true"]');
+    await expect(chosen).toHaveCount(1);
+    await expect(chosen).toBeFocused();
+    await expect(chosen).toHaveAttribute("tabindex", "0");
+
+    await page.keyboard.press("Home");
+    await expect(all).toHaveAttribute("aria-selected", "true");
+    await expect(all).toBeFocused();
   });
 });

@@ -8,7 +8,7 @@ import { PanelTransition } from "./components/layout/PanelTransition.jsx";
 import { SideMenu } from "./components/layout/SideMenu.jsx";
 import { SkipLink } from "./components/layout/SkipLink.jsx";
 import { TopBar } from "./components/layout/TopBar.jsx";
-import { LoadError } from "./components/ui/Panel.jsx";
+import { Loading, LoadError } from "./components/ui/Panel.jsx";
 import { openToAuditor } from "./nav.js";
 import { ShellContext } from "./shell.js";
 import Login from "./pages/Login.jsx";
@@ -28,6 +28,15 @@ import Users from "./pages/Users.jsx";
 import Vendors from "./pages/Vendors.jsx";
 import Responsibilities from "./pages/Responsibilities.jsx";
 import Questionnaire from "./pages/Questionnaire.jsx";
+
+/** Before the shell exists: the auth config or the session is still being asked for. */
+function Waiting() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-bg">
+      <Loading />
+    </div>
+  );
+}
 
 function Protected({ me, setMe }) {
   const nav = useNavigate();
@@ -122,7 +131,7 @@ function Protected({ me, setMe }) {
     nav("/login");
   }
 
-  if (signedIn === null) return null;   // still asking
+  if (signedIn === null) return <Waiting />;   // still asking
   if (!signedIn) return <Navigate to="/login" replace />;
 
   // A page waits for the session before it is drawn and asks for anything.
@@ -131,7 +140,7 @@ function Protected({ me, setMe }) {
   // either way, and the page used to show that refusal twice under a Try
   // again that could not succeed.
   const page = (path, element) => {
-    if (!me && !meKnown) return null;
+    if (!me && !meKnown) return <PanelTransition><Loading /></PanelTransition>;
     return me?.capabilities?.auditor && !openToAuditor(path) ? <NotForAuditors /> : element;
   };
 
@@ -196,7 +205,7 @@ export default function App() {
     loadAuthConfig().finally(() => setBooted(true));
   }, []);
 
-  if (!booted) return null;
+  if (!booted) return <Waiting />;
   return (
     <Routes>
       <Route path="/login" element={<Login onDone={setMe} />} />

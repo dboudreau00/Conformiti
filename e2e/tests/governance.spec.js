@@ -70,7 +70,7 @@ test.describe("access review", () => {
     for (const name of ["Ada Admin", "Aria Auditor", "Mia Manager", "Owen Owner", "Val Viewer"]) {
       await expect(page.getByRole("radiogroup", { name: `Decision for ${name}` })).toBeVisible();
     }
-    await expect(page.getByText(/5 users . 4 decided/i)).toBeVisible();
+    await expect(page.getByText(/4\/5 decided/i)).toBeVisible();
   });
 
   test("recording the last decision completes the attestation", async ({ page }) => {
@@ -78,7 +78,7 @@ test.describe("access review", () => {
     await expect(decision.getByRole("radio", { name: "Keep" })).not.toBeChecked();
     await decision.getByRole("radio", { name: "Keep" }).click();
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText(/5 users . 5 decided/i)).toBeVisible();
+    await expect(page.getByText(/5\/5 decided/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /complete review/i })).toBeEnabled();
   });
 
@@ -88,9 +88,36 @@ test.describe("access review", () => {
     expect((await download).suggestedFilename()).toMatch(/\.csv$/);
   });
 
-  test("starting a new review snapshots every account again", async ({ page }) => {
+  test("the decision is one radio group: a single tab stop, and the arrow keys choose", async ({ page }) => {
+    const group = page.getByRole("radiogroup", { name: "Decision for Owen Owner" });
+    const modify = group.getByRole("radio", { name: "Modify" });
+    const revoke = group.getByRole("radio", { name: "Revoke" });
+    await expect(modify).toBeChecked();
+    await expect(group.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
+    await expect(modify).toHaveAttribute("tabindex", "0");
+
+    await modify.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(revoke).toBeChecked();
+    await expect(revoke).toBeFocused();
+    // Back to the seeded choice, so the rest of the suite sees the review as it was.
+    await page.keyboard.press("ArrowLeft");
+    await expect(modify).toBeChecked();
+    await expect(modify).toBeFocused();
+    await page.waitForLoadState("networkidle");
+  });
+
+  test("the rows are a table with a header for each column", async ({ page }) => {
+    const table = page.getByRole("table");
+    for (const name of ["User", "Role", "Capabilities", "Decision", "Notes"]) {
+      await expect(table.getByRole("columnheader", { name, exact: true })).toBeVisible();
+    }
+    await expect(table.getByRole("row", { name: /Ada Admin/ }).first()).toBeVisible();
+  });
+
+  test("creating a review snapshots every account again", async ({ page }) => {
     await page.getByRole("textbox", { name: /new review name/i }).fill("E2E interim review");
-    await page.getByRole("button", { name: /start new review/i }).click();
+    await page.getByRole("button", { name: /create review/i }).click();
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("combobox", { name: /access review/i }))
       .toContainText("E2E interim review");
@@ -116,6 +143,103 @@ test.describe("users, meetings and groups", () => {
   test("champion groups list their members", async ({ page }) => {
     await open(page, "/groups", "Champion groups");
     await expect(page.getByText("Security Champions").first()).toBeVisible();
+  });
+
+  test("an inline champion edit saves on Enter and closes on Escape", async ({ page }) => {
+    await open(page, "/groups", "Champion groups");
+    const edit = page.getByRole("button", { name: /^Edit Val Viewer in / });
+    const note = page.getByRole("textbox", { name: "Note for Val Viewer" });
+
+    await edit.click();
+    await note.fill("typed, then abandoned");
+    await note.press("Escape");
+    await expect(note).toHaveCount(0);
+    await expect(page.getByText("typed, then abandoned")).toHaveCount(0);
+
+    await edit.click();
+    await note.fill("E2E keyboard save");
+    await note.press("Enter");
+    await expect(note).toHaveCount(0);
+    await expect(page.getByText("E2E keyboard save")).toBeVisible();
+
+    // Back to the seeded (empty) note, by the same keys.
+    await edit.click();
+    await note.fill("");
+    await note.press("Enter");
+    await expect(note).toHaveCount(0);
+    await expect(page.getByText("E2E keyboard save")).toHaveCount(0);
+  });
+});
+
+test.describe("when a list fails to load", () => {
+  // Chrome logs one console error for every non-2xx response, so the suite is told to expect it.
+  async function failUntilHealed(page, pattern) {
+    expectBrowserError(page, /status of 500/);
+    let failing = true;
+    await page.route(pattern, (route) => {
+      if (!failing || route.request().method() !== "GET") return route.continue();
+      return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
+    });
+    return () => { failing = false; };
+  }
+
+  test("the user list says so, not that there are no users, and Try again recovers", async ({ page }) => {
+    const heal = await failUntilHealed(page, /\/api\/users\/(\?.*)?$/);
+    await page.goto("/users");
+    await expect(page.getByText("The user list could not be loaded")).toBeVisible();
+    await expect(page.getByText("No users yet")).toHaveCount(0);
+
+    heal();
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("region", { name: "Users", exact: true })).toBeVisible();
+    await expect(page.getByText("The user list could not be loaded")).toHaveCount(0);
+  });
+
+  test("the champion groups say so, not that there are none, and Try again recovers", async ({ page }) => {
+    const heal = await failUntilHealed(page, /\/api\/champion-groups\/(\?.*)?$/);
+    await page.goto("/groups");
+    await expect(page.getByText("The champion groups could not be loaded")).toBeVisible();
+    await expect(page.getByText("No champion groups yet")).toHaveCount(0);
+    await expect(page.getByText("No group selected")).toHaveCount(0);
+
+    heal();
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByText("Security Champions").first()).toBeVisible();
+  });
+
+  test("the access reviews say so, not that there are none, and Try again recovers", async ({ page }) => {
+    const heal = await failUntilHealed(page, /\/api\/access-reviews\/(\?.*)?$/);
+    await page.goto("/user-audit");
+    await expect(page.getByText("The access reviews could not be loaded")).toBeVisible();
+    await expect(page.getByText("No access reviews yet")).toHaveCount(0);
+
+    heal();
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("radiogroup", { name: "Decision for Ada Admin" })).toBeVisible();
+  });
+
+  test("the rows of a review say so, not that it has none, and Try again recovers", async ({ page }) => {
+    const heal = await failUntilHealed(page, /\/api\/access-review-items\/\?review=\d+$/);
+    await page.goto("/user-audit");
+    await expect(page.getByText("The review rows could not be loaded")).toBeVisible();
+    await expect(page.getByText("No rows in this review")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /complete review/i })).toBeDisabled();
+
+    heal();
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("radiogroup", { name: "Decision for Ada Admin" })).toBeVisible();
+  });
+
+  test("a failed first page of the audit trail is told once", async ({ page }) => {
+    const heal = await failUntilHealed(page, /\/api\/audit-log\/\?page=1/);
+    await page.goto("/audit-log");
+    await expect(page.getByText("The audit trail could not be loaded")).toBeVisible();
+    // The reason is in the panel; a banner above it would say the same again.
+    await expect(page.getByText("The server had a problem. Try again in a moment.")).toHaveCount(1);
+
+    heal();
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("table")).toBeVisible();
   });
 });
 

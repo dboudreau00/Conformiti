@@ -8,6 +8,8 @@ const VARIANTS = {
     "bg-accent text-accent-ink border border-accent/0 hover:brightness-110 active:brightness-95 shadow-[0_1px_2px_rgb(0_0_0/0.12)]",
   secondary: "bg-surface text-ink border border-line hover:border-line-strong hover:bg-surface-2",
   ghost: "bg-transparent text-muted border border-transparent hover:bg-surface-2 hover:text-ink",
+  // `danger` (tinted) is the trigger: the row or toolbar button that opens a confirm. `danger-solid` is the confirm
+  // step only: ConfirmDialog's last button, for an act that destroys, revokes or removes. Never use it to open one.
   danger: "bg-danger/[0.12] text-danger border border-danger/25 hover:bg-danger/20",
   // Ink is the danger-ink token: white measures under 3:1 on the dark packs' danger colours.
   "danger-solid":

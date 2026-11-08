@@ -56,6 +56,15 @@ class SampleTests(PackageTestBase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("evidence", r.data)
 
+    def test_a_move_the_caller_can_see_is_refused_as_a_plain_message(self):
+        self.add_control(self.tree.c2)
+        other = self.package.controls.get(control=self.tree.c2)
+        mine = self.list_item(evidence=None).data["id"]
+        r = self.manager_client.patch(f"/api/package-samples/{mine}/", {"package_control": other.pk}, format="json")
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertEqual(r.data["detail"], "A sample cannot be moved to another control.")
+        self.assertEqual(PackageSample.objects.get(pk=mine).package_control_id, self.row.pk)
+
     def test_results_cannot_be_recorded_before_sealing(self):
         r = self.list_item(result="pass")
         self.assertEqual(r.status_code, 400)
@@ -198,7 +207,7 @@ class SampleTests(PackageTestBase):
         sums = zf.read("SHA256SUMS").decode("utf-8")
         self.assertIn("samples.csv", sums)
         readme = zf.read("README.txt").decode("utf-8")
-        self.assertIn("Sample items     1 (1 exception(s))", readme)
+        self.assertIn("Sample items     1 (1 exception)", readme)
 
     def test_a_document_pinned_elsewhere_is_not_a_valid_sample_artefact(self):
         other_doc = make_doc(self.tree.ctrl2, owner=self.owner, name="Other")
@@ -209,3 +218,5 @@ class SampleTests(PackageTestBase):
         self.assertEqual(r.status_code, 201, r.data)
         r = self.list_item(evidence=r.data["id"])
         self.assertEqual(r.status_code, 400)
+        # The screen says evidence; "artefact" is not a word a person reads there.
+        self.assertIn("Pick evidence pinned to this control.", str(r.data))

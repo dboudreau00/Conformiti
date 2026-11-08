@@ -1,5 +1,6 @@
 import { test, expect, open } from "../fixtures.js";
 
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -76,7 +77,7 @@ test.describe("calendar events that span days", () => {
 
       await cell(2).click();
       await expect(calendar.getByRole("listitem").filter({ hasText: title }))
-        .toContainText(`until ${ymd(new Date(target.getFullYear(), target.getMonth(), 2))}`);
+        .toContainText(`until ${DAYS[new Date(target.getFullYear(), target.getMonth(), 2).getDay()]} 2 ${MONTHS[target.getMonth()]} ${target.getFullYear()}`);
     } finally {
       await call(page, "DELETE", `/calendar/${created.data.id}/`);
     }

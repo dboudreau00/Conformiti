@@ -1,7 +1,7 @@
 import { test, expect, DEMO, signIn, forgetSession, open, searchButton } from "../fixtures.js";
 
-const palette = (page) => page.getByRole("dialog", { name: "Jump to" });
-const field = (page) => palette(page).getByRole("combobox", { name: "Jump to a control, document or person" });
+const palette = (page) => page.getByRole("dialog", { name: "Search", exact: true });
+const field = (page) => palette(page).getByRole("combobox", { name: "Search", exact: true });
 const options = (page) => palette(page).getByRole("option");
 const results = (page) => palette(page).getByRole("listbox", { name: "Results" });
 
@@ -35,8 +35,8 @@ test.describe("search palette", () => {
     await page.keyboard.press("Control+k");
     await expect(palette(page)).toBeVisible();
     await expect(field(page)).toBeFocused();
-    await expect(results(page)).toContainText("Type 2 or more characters.");
-    await expect(palette(page).getByRole("status")).toHaveText("Type 2 or more characters.");
+    await expect(options(page)).toHaveCount(0);
+    await expect(palette(page).getByRole("status")).toHaveText("");
     await page.keyboard.press("Escape");
     await expect(palette(page)).toBeHidden();
   });
@@ -96,7 +96,7 @@ test.describe("search palette", () => {
     await page.keyboard.press("Control+k");
     await field(page).fill("Ada Admin");
 
-    const person = palette(page).getByRole("group", { name: "People" }).getByRole("option", { name: /Ada Admin/ });
+    const person = palette(page).getByRole("group", { name: "Users" }).getByRole("option", { name: /Ada Admin/ });
     await expect(person).toBeVisible();
     await person.click();
     await expect(palette(page)).toBeHidden();
@@ -110,7 +110,8 @@ test.describe("search palette", () => {
     await open(page, "/", "Dashboard");
     await page.keyboard.press("Control+k");
     await field(page).fill("q");
-    await expect(results(page)).toContainText("Type 2 or more characters.");
+    await expect(options(page)).toHaveCount(0);
+    await expect(palette(page).getByRole("status")).toHaveText("");
     await page.waitForTimeout(500);
     expect(searched).toEqual([]);
 
@@ -127,7 +128,7 @@ test.describe("search palette", () => {
     await page.keyboard.press("Control+k");
     await field(page).fill("access");
     await expect(palette(page).getByRole("group", { name: "Controls" })).toBeVisible();
-    await expect(palette(page).getByRole("group", { name: "People" })).toHaveCount(0);
+    await expect(palette(page).getByRole("group", { name: "Users" })).toHaveCount(0);
     // Documents are asked for but come back empty (the viewer has no folder holding a match) and are left out
     // of the list; the user directory is not asked for at all.
     expect([...searched].sort()).toEqual(["/api/controls/", "/api/documents/"]);
@@ -141,7 +142,7 @@ test.describe("search palette", () => {
     await field(page).fill("policy");
     await expect(palette(page).getByRole("group", { name: "Documents" })).toBeVisible();
     await expect(palette(page).getByRole("group", { name: "Controls" })).toHaveCount(0);
-    await expect(palette(page).getByRole("group", { name: "People" })).toHaveCount(0);
+    await expect(palette(page).getByRole("group", { name: "Users" })).toHaveCount(0);
     expect(searched).toEqual(["/api/documents/"]);
   });
 });

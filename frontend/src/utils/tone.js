@@ -97,6 +97,22 @@ export function dueLabel(days) {
   return `${days}d`;
 }
 
+/** `dueLabel` in words, for a badge wide enough to hold them: "12 days overdue", "today", "in 5 days". */
+export function dueWords(days) {
+  if (days == null) return "no review";
+  const n = Math.abs(days);
+  const span = `${n} ${n === 1 ? "day" : "days"}`;
+  if (days < 0) return `${span} overdue`;
+  return days === 0 ? "today" : `in ${span}`;
+}
+
+/** The month-on-month change in readiness points, as the tone and words every screen shows for it. */
+export function monthDelta(delta) {
+  if (delta > 0) return { tone: "success", text: `+${delta} pts this month` };
+  if (delta < 0) return { tone: "danger", text: `${delta} pts this month` };
+  return { tone: "muted", text: "No change this month" };
+}
+
 // Labels avoid "Not started" and "Not applicable": CONTROL_STATUS uses them, and both render as buttons on one row.
 export const READINESS_BAND = {
   not_started: { label: "Not ready", tone: "faint" },

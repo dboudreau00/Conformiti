@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { MessageSquareIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
-import { onActivate } from "../../utils/a11y.js";
+import { fmtDate } from "../../utils/format.js";
 import { RISK_RATING, RISK_STATUS, dueLabel } from "../../utils/tone.js";
 import { Badge } from "../ui/Badge.jsx";
 import { daysUntil, isLive, typeLabel } from "./vocab.js";
@@ -11,13 +11,13 @@ const HEAD = "table-head px-3 py-2 font-normal";
 export function RiskTable({ risks, selectedId, onSelect }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[740px] table-fixed border-collapse text-left">
+      <table className="w-full min-w-[760px] table-fixed border-collapse text-left">
         <thead>
           <tr className="border-b border-line bg-surface-2">
             <th scope="col" className={cn(HEAD, "px-5")}>Risk</th>
             <th scope="col" className={cn(HEAD, "w-[118px]")}>Rating</th>
             <th scope="col" className={cn(HEAD, "w-[140px]")}>Owner</th>
-            <th scope="col" className={cn(HEAD, "w-[104px]")}>Due</th>
+            <th scope="col" className={cn(HEAD, "w-[124px]")}>Due</th>
             <th scope="col" className={cn(HEAD, "w-[118px]")}>Status</th>
             <th scope="col" className={cn(HEAD, "w-[72px] px-5 text-right")}>Notes</th>
           </tr>
@@ -37,14 +37,12 @@ function RiskRow({ risk, active, onSelect }) {
   const days = isLive(risk) ? daysUntil(risk.due_date) : null;
 
   return (
+    // The row keeps its table semantics (cells read against their column headings); the title is the real control, and a
+    // click anywhere on the row is the same toggle for a pointer.
     <tr
-      role="button"
-      tabIndex={0}
-      aria-pressed={active}
       onClick={onSelect}
-      onKeyDown={onActivate(onSelect)}
       className={cn(
-        "cursor-pointer transition-colors duration-150 ease-out hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:-outline-offset-2",
+        "cursor-pointer transition-colors duration-150 ease-out hover:bg-surface-2 has-[:focus-visible]:bg-surface-2",
         active && "bg-surface-2"
       )}
     >
@@ -57,9 +55,14 @@ function RiskRow({ risk, active, onSelect }) {
             aria-hidden="true"
           />
         ) : null}
-        <span className="block truncate text-[13px] font-medium text-ink" title={risk.title}>
+        <button
+          type="button"
+          aria-pressed={active}
+          title={risk.title}
+          className="block w-full truncate text-left text-[13px] font-medium text-ink"
+        >
           {risk.title}
-        </span>
+        </button>
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted">
           <span className="tabular font-mono text-faint">#{risk.id}</span>
           <span>{typeLabel(risk.risk_type)}</span>
@@ -89,7 +92,7 @@ function RiskRow({ risk, active, onSelect }) {
       </td>
 
       <td className={cn("tabular px-3 py-3 align-middle font-mono text-xs", risk.is_overdue ? "text-danger" : "text-muted")}>
-        {risk.due_date || "-"}
+        {fmtDate(risk.due_date)}
         {days != null ? (
           <span className={cn("block text-2xs", risk.is_overdue ? "text-danger" : "text-faint")}>{dueLabel(days)}</span>
         ) : null}

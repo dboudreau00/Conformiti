@@ -33,6 +33,9 @@
   --danger-ink: 32 9 6;
   --info: 108 160 245;
   --grid: 32 36 44;
+  /* The dim behind a dialog or the document viewer: one dark in every pack. --ink is near white on the dark packs, so
+     a veil made from it would lighten the page instead of dimming it. Set here only, never in a pack. */
+  --scrim: 8 10 14;
   --accent: 92 150 250;
   --accent-ink: 6 14 30;
   --accent-deep: 29 111 224;
@@ -169,11 +172,14 @@ body {
 @layer components {
   .input {
     @apply h-9 w-full rounded-lg border border-line bg-surface px-3 text-[13px] text-ink placeholder:text-faint;
-    @apply transition-colors duration-150 ease-out focus:border-accent focus:outline-none disabled:opacity-60;
+    @apply transition-colors duration-150 ease-out focus:border-accent focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-60;
   }
   .input-sm { @apply h-8 text-xs px-2.5; }
-  select.input { @apply pr-8 appearance-none bg-no-repeat; background-position: right 0.6rem center; background-size: 12px 12px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa1ae' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+  /* The arrow is two gradients in --muted, so it follows the theme pack (a data-URI image cannot read a token). */
+  select.input { @apply pr-8 appearance-none bg-no-repeat;
+    background-image: linear-gradient(45deg, transparent 50%, rgb(var(--muted)) 50%), linear-gradient(135deg, rgb(var(--muted)) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+    background-size: 5px 5px, 5px 5px; }
   textarea.input { @apply h-auto py-2 leading-snug; }
   .field-label { @apply mb-1.5 block font-mono text-2xs uppercase tracking-label text-faint; }
   .table-head { @apply font-mono text-2xs uppercase tracking-label text-faint; }

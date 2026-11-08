@@ -25,7 +25,7 @@ def refuse_a_slug_that_holds_a_signing_key(sender, instance, update_fields=None,
 class AttestationsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "attestations"
-    verbose_name = "Evidence packages"
+    verbose_name = "Audit packages"
 
     def ready(self):
         pre_save.connect(refuse_a_slug_that_holds_a_signing_key, sender="accounts.Workspace",

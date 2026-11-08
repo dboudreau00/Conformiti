@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from accounts.permissions import is_external_auditor
 from documents.models import FolderPermission
 from documents.serializers import person_name
+from notifications.wording import count_of
 
 from .models import (
     AccessReview,
@@ -27,6 +28,7 @@ from .serializers import (
     GroupMemberSerializer,
     MeetingMinuteSerializer,
     MeetingSeriesSerializer,
+    ReviewIsCompleted,
 )
 
 
@@ -131,7 +133,7 @@ def _apply_revocations(request, review):
         sessions = _blacklist_all(user)
         record_auth_event(
             request, user, "deactivated",
-            f"access revoked by review \"{review.name}\" ({sessions} refresh token(s) revoked)")
+            f"access revoked by review \"{review.name}\" ({count_of(sessions, 'refresh token')} revoked)")
         revoked.append(user.username)
     return {"revoked": revoked, "skipped": skipped}
 
@@ -153,7 +155,7 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             locked = AccessReview.objects.select_for_update().get(pk=serializer.instance.pk)
             if locked.status == AccessReview.Status.COMPLETED:
-                raise ValidationError({"detail": "This review is completed and read-only."})
+                raise ReviewIsCompleted()
             # Save the row as it is now: the loaded copy would write an older name or notes over a concurrent edit.
             serializer.instance = locked
             serializer.save()
@@ -164,7 +166,7 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             locked = AccessReview.objects.select_for_update().get(pk=instance.pk)
             if locked.status == AccessReview.Status.COMPLETED:
-                raise ValidationError({"detail": "This review is completed and read-only."})
+                raise ReviewIsCompleted()
             locked.delete()
 
     @action(detail=True, methods=["post"])
@@ -175,11 +177,11 @@ class AccessReviewViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             review = AccessReview.objects.select_for_update().get(pk=pk)
             if review.status == AccessReview.Status.COMPLETED:
-                return Response({"detail": "Already completed."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "This review is already completed."}, status=status.HTTP_400_BAD_REQUEST)
             pending = review.items.filter(decision=AccessReviewItem.Decision.PENDING).count()
             if pending:
                 return Response(
-                    {"detail": f"{pending} row(s) still pending a decision."},
+                    {"detail": f"{count_of(pending, 'row')} still {'needs' if pending == 1 else 'need'} a decision."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             applied = _apply_revocations(request, review)
@@ -231,7 +233,7 @@ class AccessReviewItemViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             review = AccessReview.objects.select_for_update().get(pk=serializer.instance.review_id)
             if review.status == AccessReview.Status.COMPLETED:
-                raise ValidationError({"detail": "This review is completed and read-only."})
+                raise ReviewIsCompleted()
             # Reload the row under the lock: saving the copy loaded before it would write back a decision that a
             # concurrent request has since changed.
             serializer.instance = AccessReviewItem.objects.select_for_update().get(pk=serializer.instance.pk)
@@ -451,7 +453,7 @@ class RiskViewSet(viewsets.ModelViewSet):
                         reason = ("matches more than one person, use a username or email" if len(named) > 1
                                   else "not found")
                         issues.append({"row": rec["row"], "field": "owner",
-                                       "message": f"Owner {rec['owner']!r} {reason}, left unassigned"})
+                                       "message": f"Owner \"{rec['owner']}\" {reason}, left unassigned"})
                 control = None
                 if rec["control"]:
                     matches = control_lookup.get(rec["control"].lower(), [])
@@ -460,7 +462,7 @@ class RiskViewSet(viewsets.ModelViewSet):
                     else:
                         reason = "not found" if not matches else "ambiguous, prefix with framework key like soc2:CC6.1"
                         issues.append({"row": rec["row"], "field": "control",
-                                       "message": f"Control {rec['control']!r} {reason}"})
+                                       "message": f"Control \"{rec['control']}\" {reason}"})
                 risk = Risk.objects.create(
                     title=rec["title"],
                     description=rec["description"],

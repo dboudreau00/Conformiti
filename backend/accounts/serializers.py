@@ -4,6 +4,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.crypto import get_random_string
 from rest_framework import serializers
 
+from notifications.wording import count_of
+
 from .models import Role
 from .tenancy import CurrentWorkspaceDefault
 
@@ -167,7 +169,7 @@ class UserWriteSerializer(serializers.ModelSerializer):
                 by = request.user.get_username() if request.user.is_authenticated else "?"
                 record_auth_event(
                     request, instance, "password",
-                    f"password set by {by}; {revoked} refresh token(s) revoked")
+                    f"password set by {by}; {count_of(revoked, 'refresh token')} revoked")
         return instance
 
 
@@ -258,7 +260,7 @@ class MFATokenObtainPairSerializer(TokenObtainPairSerializer):
         if otp:
             # An authenticator code, or a backup code (a passkey-only person holds those too).
             if not ((totp_on and device.verify(otp)) or user.verify_backup_code(otp)):
-                raise AuthenticationFailed("Invalid authentication code.", "mfa_invalid")
+                raise AuthenticationFailed("That code isn't valid. Check the code and try again.", "mfa_invalid")
             return self._issue()
         if assertion is not None:
             try:

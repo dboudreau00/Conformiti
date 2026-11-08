@@ -5,6 +5,8 @@ from django.contrib.auth.admin import UserAdmin
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 
+from notifications.wording import count_of
+
 from .models import Role, User, WebAuthnCredential, Workspace
 
 
@@ -13,9 +15,9 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
     authenticates the whole API. Adds the second factor, the archived-workspace refusal and a per-client rate limit."""
 
     otp = forms.CharField(
-        label="Authentication code", required=False, strip=True,
+        label="Two-factor code", required=False, strip=True,
         widget=forms.TextInput(attrs={"autocomplete": "one-time-code", "inputmode": "numeric"}),
-        help_text="From your authenticator app, or one of your backup codes.",
+        help_text="From your two-factor app, or one of your backup codes.",
     )
 
     ATTEMPTS = 8
@@ -61,9 +63,9 @@ class MfaAdminAuthenticationForm(AdminAuthenticationForm):
                     from audit.events import record_auth_event
 
                     record_auth_event(self.request, user, "mfa",
-                                      "admin sign-in refused: second factor missing or wrong")
+                                      "admin sign-in refused: two-factor code missing or wrong")
                     raise ValidationError(
-                        "Enter the code from your authenticator app, or a backup code."
+                        "Enter a two-factor code or a backup code."
                     )
         record_admin_sign_in(self.request, username)
         return cleaned
@@ -111,5 +113,5 @@ class CustomUserAdmin(UserAdmin):
                 revoked = end_all_sessions(user)
                 record_auth_event(request, user, "password",
                                   f"password set in the admin by {request.user.get_username()}; "
-                                  f"{revoked} refresh token(s) revoked and issued access tokens refused")
+                                  f"{count_of(revoked, 'refresh token')} revoked and issued access tokens refused")
         return response

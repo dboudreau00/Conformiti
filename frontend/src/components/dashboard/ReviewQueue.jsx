@@ -4,23 +4,36 @@ import { CheckIcon } from "lucide-react";
 import api from "../../api/client.js";
 import { useShell } from "../../shell.js";
 import { errorText } from "../../utils/a11y.js";
-import { dueLabel, dueTone } from "../../utils/tone.js";
+import { dueTone, dueWords } from "../../utils/tone.js";
 import { EASE } from "../layout/PanelTransition.jsx";
 import { Badge } from "../ui/Badge.jsx";
 import { Button } from "../ui/Button.jsx";
-import { Empty, Label, Panel } from "../ui/Panel.jsx";
+import { useConfirm } from "../ui/Dialog.jsx";
+import { Empty, Label, Panel, PanelHeader } from "../ui/Panel.jsx";
 
 const PAGE = 8;
 // Mirrors REVIEWS_CAP in backend/documents/views.py: a full list means more are due than the queue shows.
 const REVIEWS_CAP = 500;
 
+/** What `useConfirm().ask` takes to mark one document reviewed; the calendar asks the same question. */
+export function reviewRequest(name, onConfirm) {
+  return {
+    title: `Mark ${name} reviewed?`,
+    description: "Today becomes the review date and the document is set to Approved. This is written to the audit trail.",
+    confirmLabel: "Mark reviewed",
+    tone: "primary",
+    onConfirm,
+  };
+}
+
 /** `reviews`: rows of GET /documents/reviews/?days=120. The API refuses Mark reviewed without edit access to the
  * folder, so it is offered only to those who can manage documents or folders, and a refusal is shown. */
 export function ReviewQueue({ me, reviews = [], onChanged }) {
   const { refreshCounts } = useShell();
+  const { ask, confirmDialog } = useConfirm();
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
-  const [attested, setAttested] = useState(0);
+  const [reviewed, setReviewed] = useState(0);
   const [showAll, setShowAll] = useState(false);
 
   const canReview = !!(me?.capabilities?.manage_documents || me?.capabilities?.manage_folders);
@@ -33,11 +46,11 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
     setBusyId(doc.id);
     try {
       await api.post(`/documents/${doc.id}/mark_reviewed/`);
-      setAttested((n) => n + 1);
+      setReviewed((n) => n + 1);
       await onChanged?.();
       refreshCounts();
     } catch (e) {
-      setError(errorText(e, `Couldn't mark "${doc.name}" reviewed. Please try again.`));
+      setError(errorText(e, `"${doc.name}" could not be marked reviewed. Try again.`));
     } finally {
       setBusyId(null);
     }
@@ -45,13 +58,9 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
 
   return (
     <Panel className="flex h-full flex-col overflow-hidden">
-      <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
-        <div className="flex items-baseline gap-3">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Reviews coming up</h2>
-          <Label>Next 120 days</Label>
-        </div>
+      <PanelHeader inline title="Reviews coming up" meta="Next 120 days">
         <Label className="tabular">{sorted.length}{sorted.length >= REVIEWS_CAP ? "+" : ""} open</Label>
-      </header>
+      </PanelHeader>
 
       {error ? (
         <div className="notice notice-err mx-4 mt-3" role="alert">
@@ -71,8 +80,8 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
               transition={{ duration: 0.22, ease: EASE }}
               className="flex items-center gap-3 px-4 py-2.5"
             >
-              <Badge tone={dueTone(r.days_until_review)} dot mono className="tabular w-[76px] shrink-0 justify-center">
-                {dueLabel(r.days_until_review)}
+              <Badge tone={dueTone(r.days_until_review)} dot className="tabular min-w-[112px] shrink-0 justify-center">
+                {dueWords(r.days_until_review)}
               </Badge>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-medium leading-tight text-ink">{r.name}</p>
@@ -87,7 +96,7 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
                   className="shrink-0"
                   disabled={busyId != null}
                   aria-label={`Mark reviewed: ${r.name}`}
-                  onClick={() => markReviewed(r)}
+                  onClick={() => ask(reviewRequest(r.name, () => markReviewed(r)))}
                   icon={<CheckIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />}
                 >
                   {busyId === r.id ? "Marking…" : "Mark reviewed"}
@@ -104,7 +113,7 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
             className="flex flex-col items-center pt-8"
           >
             <CheckIcon className="h-5 w-5 text-success" strokeWidth={2} aria-hidden="true" />
-            <Empty className="py-3" title="Every scheduled review is attested" />
+            <Empty className="py-3" title="Nothing left to review" />
           </motion.li>
         ) : null}
       </ul>
@@ -118,9 +127,9 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
       ) : null}
 
       <AnimatePresence initial={false}>
-        {attested > 0 ? (
+        {reviewed > 0 ? (
           <motion.footer
-            key="attested"
+            key="reviewed"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -129,12 +138,13 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
           >
             <div className="flex items-center justify-between px-4 py-2.5">
               <Label className="text-muted">
-                {attested} attested this session
+                {reviewed} reviewed this session
               </Label>
             </div>
           </motion.footer>
         ) : null}
       </AnimatePresence>
+      {confirmDialog}
     </Panel>
   );
 }

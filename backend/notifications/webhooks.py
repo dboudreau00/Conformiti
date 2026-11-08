@@ -152,13 +152,24 @@ def _attempt(request, timeout, pinned):
         with _open(request, timeout, pinned) as response:
             code = getattr(response, "status", 200)
             return 200 <= code < 300, code, "", False
-    except outbound.OutboundError as exc:  # a redirect, after every check passed
-        return False, None, f"refused: {exc}", False
+    except outbound.OutboundError:  # a redirect, after every check passed
+        return False, None, "The webhook address redirects elsewhere, which is not allowed. Check the webhook address.", False
     except urllib.error.HTTPError as exc:
-        return False, exc.code, f"HTTP {exc.code}", exc.code >= 500 or exc.code in _RETRYABLE_HTTP
+        return False, exc.code, _http_reason(exc.code), exc.code >= 500 or exc.code in _RETRYABLE_HTTP
     except (urllib.error.URLError, OSError, ValueError) as exc:
         # A connection failure or timeout may pass, so it is retryable; a ValueError (a bad request) is not.
-        return False, None, str(exc), not isinstance(exc, ValueError)
+        logger.warning("Webhook post failed: %s", exc)
+        return False, None, "Could not reach the channel. Check the webhook address.", not isinstance(exc, ValueError)
+
+
+def _http_reason(code):
+    """What a person reads in the delivery log for the channel's HTTP answer: what happened and what to do. The code
+    itself stays in ``response_code``."""
+    if code == 429:
+        return "The channel is limiting posts. Try again shortly."
+    if code >= 500:
+        return "The channel had a problem. Try again shortly."
+    return "The channel rejected the post. Check the webhook address."
 
 
 def _post(channel, url, payload, event, retry=False):
@@ -166,13 +177,13 @@ def _post(channel, url, payload, event, retry=False):
     first failure may be transient; only the delivery thread sets it, as a synchronous caller wants its answer now."""
     timeout = float(getattr(settings, "WEBHOOK_TIMEOUT", 5))
     if not url.lower().startswith("https://"):
-        _record(event, channel, False, None, "refused: webhook URL is not https")
+        _record(event, channel, False, None, "The webhook address must start with https://.")
         return False
     # Keep the validated address: the connection is pinned to it, so DNS cannot re-point it before the socket.
     try:
         pinned = check_url(channel, url)
     except outbound.OutboundError as exc:
-        _record(event, channel, False, None, f"refused: {exc}")
+        _record(event, channel, False, None, f"{exc} Check the webhook address.")
         return False
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, method="POST", headers={
@@ -182,7 +193,7 @@ def _post(channel, url, payload, event, retry=False):
         time.sleep(RETRY_DELAY_SECONDS)
         ok, code, error, _ = _attempt(request, timeout, pinned)
         if not ok:
-            error = f"{error} (after one retry)"
+            error = f"{error} It was tried twice."
     _record(event, channel, ok, code, error)
     return ok
 
