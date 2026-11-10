@@ -29,7 +29,7 @@ export function UserMenu({ onSignOut }) {
   const { account } = useShellNav();
   const { pathname } = useLocation();
   const name = me?.full_name || me?.username || "…";
-  const role = me?.role_detail?.name || (me?.is_superuser ? "Superuser" : "No role");
+  const role = me?.role_detail?.name || (me?.is_superuser ? "Administrator" : "No role");
   const note = workspaceNote(me);
 
   return (

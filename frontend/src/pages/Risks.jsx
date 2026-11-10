@@ -11,9 +11,12 @@ import {
   FILTERS, IMPACT_WORDS, LIKELIHOOD_WORDS, SCALE, TEMPLATE_CSV, TYPES, deriveSummary, filterRisks,
 } from "../components/risks/vocab.js";
 import { Button } from "../components/ui/Button.jsx";
+import { useConfirm } from "../components/ui/Dialog.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
+import { usePage } from "../components/ui/ShowMore.jsx";
 import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
 import { errorText, loadFailReason } from "../utils/a11y.js";
@@ -52,19 +55,25 @@ export default function Risks({ me }) {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const fileRef = useRef(null);
   const detailRef = useRef(null);
+  const newFormRef = useRef(null);
+  // Whether the open risk holds an unsaved plan or note; RiskDetail reports it.
+  const detailDirty = useRef(false);
+  const { ask, confirmDialog } = useConfirm();
 
   const canManage = !!me?.capabilities?.manage_frameworks;
   const canEditRisk = (r) => canManage || (r?.owner != null && r.owner === me?.id);
   const selected = risks.find((r) => r.id === selectedId) || null;
 
-  const loadSummary = useCallback(async (fallbackRisks) => {
+  // Without a summary the counts are worked out from the loaded register (see `stats`).
+  const loadSummary = useCallback(async () => {
     try {
       const { data } = await api.get("/risks/summary/");
       setSummary(data);
     } catch {
-      setSummary(deriveSummary(fallbackRisks || []));
+      setSummary(null);
     }
   }, []);
 
@@ -74,7 +83,7 @@ export default function Risks({ me }) {
     try {
       const all = await fetchAll("/risks/");
       setRisks(all);
-      await loadSummary(all);
+      await loadSummary();
     } catch (e) {
       setError({ reason: loadFailReason(e) });
     } finally {
@@ -121,9 +130,8 @@ export default function Risks({ me }) {
     setNotesErr("");
     setNotesLoading(true);
     setNotice(null);
-    api
-      .get(`/risk-notes/?risk=${selectedId}`)
-      .then((r) => alive && setNotes(r.data.results || r.data))
+    fetchAll(`/risk-notes/?risk=${selectedId}`)
+      .then((rows) => alive && setNotes(rows))
       .catch((e) => alive && setNotesErr(errorText(e, "Couldn't load the notes.")))
       .finally(() => alive && setNotesLoading(false));
     return () => { alive = false; };
@@ -192,7 +200,8 @@ export default function Risks({ me }) {
       setShowNew(false);
       f.reset();
       setRiskControl(null);
-      setSelectedId(data.id);
+      // An open risk with an unsaved plan or note stays open; the new one is in the register.
+      if (!detailDirty.current) setSelectedId(data.id);
       setBanner({ ok: true, text: `Risk #${data.id} created.` });
     } catch (err) {
       setBanner({ ok: false, text: errorText(err, "Couldn't create the risk.") });
@@ -236,15 +245,45 @@ export default function Risks({ me }) {
 
   async function exportCsv() {
     setBanner(null);
+    setExporting(true);
     try {
       await downloadFile("/risks/export/", "risk-register.csv");
     } catch (err) {
       setBanner({ ok: false, text: errorText(err, "Couldn't export the register.") });
+    } finally {
+      setExporting(false);
     }
+  }
+
+  // Typed input is not dropped without a word: `go` runs at once when nothing is unsaved, after a yes otherwise.
+  function discardFirst(dirty, description, go) {
+    if (!dirty) {
+      go();
+      return;
+    }
+    ask({ title: "Discard changes?", description, confirmLabel: "Discard changes", cancelLabel: "Keep editing", onConfirm: go });
+  }
+
+  function closeNew() {
+    const f = newFormRef.current;
+    const typed = !!f && [f.title, f.description, f.plan].some((el) => el.value.trim());
+    discardFirst(typed, "What you typed for the new risk will be lost.", () => {
+      setShowNew(false);
+      setRiskControl(null);
+    });
+  }
+
+  function select(id) {
+    if (id === selectedId) return;
+    discardFirst(detailDirty.current, "The unsaved mitigation plan or note on this risk will be lost.", () => {
+      detailDirty.current = false;
+      setSelectedId(id);
+    });
   }
 
   const stats = summary || deriveSummary(risks);
   const shown = filterRisks(risks, filter);
+  const page = usePage(shown, 100, [filter]);
   // A register that did not load has no counts: zeros would read as "nothing is live".
   const counted = (n) => (error ? undefined : n);
   const chipMeta = {
@@ -303,15 +342,16 @@ export default function Risks({ me }) {
             <Button
               size="sm"
               onClick={exportCsv}
+              disabled={exporting}
               icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
             >
-              Export CSV
+              {exporting ? "Exporting…" : "Export CSV"}
             </Button>
             {canManage ? (
               <Button
                 size="sm"
                 variant="primary"
-                onClick={() => setShowNew((v) => !v)}
+                onClick={() => (showNew ? closeNew() : setShowNew(true))}
                 aria-expanded={showNew}
                 icon={<PlusIcon className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />}
               >
@@ -323,9 +363,7 @@ export default function Risks({ me }) {
 
         {banner ? (
           <StackItem>
-            <div className={cn("notice", banner.ok ? "notice-ok" : "notice-err")} role={banner.ok ? "status" : "alert"}>
-              {banner.text}
-            </div>
+            <Notice kind={banner.ok ? "ok" : "err"} onDismiss={() => setBanner(null)}>{banner.text}</Notice>
           </StackItem>
         ) : null}
 
@@ -357,6 +395,9 @@ export default function Risks({ me }) {
                       {importResult.skipped?.slice(0, 8).map((s, i) => (
                         <p key={`s${i}`} className="mt-1.5 text-xs text-muted">Row {s.row}: {s.title}, {s.reason}</p>
                       ))}
+                      {importResult.skipped?.length > 8 ? (
+                        <p className="mt-1.5 text-2xs text-muted">+{importResult.skipped.length - 8} more</p>
+                      ) : null}
                       {importResult.warnings?.length ? (
                         <div className="notice notice-warn mt-3">
                           {importResult.warnings.slice(0, 10).map((w, i) => (
@@ -380,7 +421,7 @@ export default function Risks({ me }) {
             <Collapse key="new" open>
               <Panel>
                 <PanelHeader title="New risk" />
-                <form onSubmit={createRisk} className="grid grid-cols-1 gap-3 p-5 md:grid-cols-4" aria-busy={creating}>
+                <form ref={newFormRef} onSubmit={createRisk} className="grid grid-cols-1 gap-3 p-5 md:grid-cols-4" aria-busy={creating}>
                   <Field id="new-title" label="Title" className="md:col-span-2">
                     <input
                       id="new-title"
@@ -462,7 +503,7 @@ export default function Risks({ me }) {
                   </Field>
                   <div className="flex gap-2 md:col-span-4">
                     <Button type="submit" variant="primary" disabled={creating}>{creating ? "Creating…" : "Create risk"}</Button>
-                    <Button type="button" variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
+                    <Button type="button" variant="ghost" onClick={closeNew}>Cancel</Button>
                   </div>
                 </form>
               </Panel>
@@ -474,8 +515,8 @@ export default function Risks({ me }) {
           <div className={cn("col-span-12", !error && "xl:col-span-7")}>
             <Panel className="overflow-hidden">
               <PanelHeader
-                title="Risk register"
-                meta={loading ? "Loading" : error ? undefined : `${shown.length} shown · ${risks.length} total`}
+                title="Risks"
+                meta={loading ? "Loading" : error ? undefined : `${page.shown} shown · ${risks.length} total`}
               />
               {loading ? (
                 <Loading>Loading risks…</Loading>
@@ -498,7 +539,16 @@ export default function Risks({ me }) {
                   />
                 )
               ) : (
-                <RiskTable risks={shown} selectedId={selectedId} onSelect={(r) => setSelectedId((cur) => (cur === r.id ? null : r.id))} />
+                <>
+                  <RiskTable risks={page.visible} selectedId={selectedId} onSelect={(r) => select(selectedId === r.id ? null : r.id)} />
+                  {page.remaining ? (
+                    <div className="border-t border-line px-5 py-3 text-center">
+                      <Button size="sm" variant="secondary" onClick={page.more}>
+                        Show {Math.min(page.size, page.remaining)} more of {page.remaining.toLocaleString()}
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </Panel>
           </div>
@@ -510,7 +560,7 @@ export default function Risks({ me }) {
                 stats={stats}
                 loading={loading}
                 selectedId={selectedId}
-                onSelect={(r) => setSelectedId(r.id)}
+                onSelect={(r) => select(r.id)}
               />
             </div>
           )}
@@ -538,7 +588,8 @@ export default function Risks({ me }) {
                 saving={saving}
                 notice={notice}
                 onPatch={patch}
-                onClose={() => setSelectedId(null)}
+                onClose={() => select(null)}
+                onDirty={(dirty) => { detailDirty.current = dirty; }}
                 notes={notes}
                 notesLoading={notesLoading}
                 notesErr={notesErr}
@@ -549,6 +600,7 @@ export default function Risks({ me }) {
           ) : null}
         </AnimatePresence>
       </Stack>
+      {confirmDialog}
     </PanelTransition>
   );
 }

@@ -184,7 +184,7 @@ class FolderPermission(TenantModel):
 
     def clean(self):
         if bool(self.role) == bool(self.user):
-            raise ValidationError("Set exactly one of role or user.")
+            raise ValidationError("Choose a role or a person, not both.")
 
     def __str__(self):
         who = self.role or self.user

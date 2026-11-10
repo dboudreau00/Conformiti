@@ -97,3 +97,39 @@ test.describe("a questionnaire link that cannot be loaded", () => {
     await expect(page.getByRole("heading", { name: "This link is not valid" })).toBeVisible();
   });
 });
+
+test.describe("a questionnaire link that closes while the form is open", () => {
+  test("saving a draft on a revoked link shows the closed screen, not a form that cannot be sent", async ({ page }) => {
+    expectBrowserError(page, /status of 400/);
+    await page.route("**/api/questionnaire/**", (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            status: "open",
+            vendor: "Brightline Security Ltd",
+            organisation: "Lumen Works",
+            sender: "Mia Manager",
+            message: "",
+            expires_at: "2099-01-01T00:00:00Z",
+            saved_at: null,
+            answers: {},
+            questions: [{ id: "q1", area: "Access", text: "Is two-factor required for staff?" }],
+          }),
+        });
+      }
+      return route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "This link was withdrawn.", code: "revoked" }),
+      });
+    });
+    await page.goto("/questionnaire/a-link-token-that-is-mocked-000000000000000000");
+    await expect(page.getByRole("heading", { name: /Security questionnaire for Brightline Security/ })).toBeVisible();
+    await page.getByRole("button", { name: "Yes", exact: true }).click();
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByRole("heading", { name: "This link was withdrawn" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
+  });
+});

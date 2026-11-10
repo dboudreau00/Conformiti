@@ -376,4 +376,39 @@ test.describe("risk register", () => {
     await page.getByRole("button", { name: "Export CSV", exact: true }).click();
     expect((await download).suggestedFilename()).toMatch(/\.(csv|xlsx)$/);
   });
+
+  test("the list panel is not titled after the page", async ({ page }) => {
+    const main = page.getByRole("main");
+    await expect(main.getByRole("heading", { name: "Risks", exact: true, level: 2 })).toBeVisible();
+    await expect(main.getByRole("heading", { name: "Risk register", exact: true, level: 2 })).toHaveCount(0);
+  });
+
+  test("a typed new risk is not dropped without asking", async ({ page }) => {
+    await page.getByRole("button", { name: "New risk", exact: true }).click();
+    const title = page.getByLabel("Title", { exact: true });
+    await title.fill("Unpatched build agents");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Discard changes?" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Keep editing", exact: true }).click();
+    await expect(title).toHaveValue("Unpatched build agents");
+
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await dialog.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await expect(title).toHaveCount(0);
+  });
+
+  test("an unsaved progress note is not dropped when the risk is closed", async ({ page }) => {
+    await page.getByText("MFA not enforced for contractor accounts").click();
+    const note = page.getByLabel("Add a progress note");
+    await note.fill("Contractor accounts moved to the SSO group");
+    await page.getByRole("button", { name: "Close details", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Discard changes?" });
+    await dialog.getByRole("button", { name: "Keep editing", exact: true }).click();
+    await expect(note).toHaveValue("Contractor accounts moved to the SSO group");
+
+    await page.getByRole("button", { name: "Close details", exact: true }).click();
+    await dialog.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await expect(note).toHaveCount(0);
+  });
 });

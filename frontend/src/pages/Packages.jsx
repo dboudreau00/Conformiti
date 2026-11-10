@@ -17,6 +17,7 @@ import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { ConfirmDialog, TextDialog, useConfirm } from "../components/ui/Dialog.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { errorText, loadFailReason } from "../utils/a11y.js";
@@ -51,19 +52,7 @@ const ASSURANCE = [
   ["internal", "Internal audit"],
 ];
 
-function Notice({ msg, onDismiss }) {
-  if (!msg) return null;
-  return (
-    <div className={cn("notice mb-4 flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")}
-         role={msg.ok ? "status" : "alert"}>
-      <span>{msg.text}</span>
-      <button type="button" aria-label="Dismiss" onClick={onDismiss}
-              className="shrink-0 opacity-70 transition-opacity hover:opacity-100">
-        <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 export default function Packages({ me }) {
   const [packages, setPackages] = useState(null);
@@ -322,7 +311,7 @@ export default function Packages({ me }) {
   return (
     <PanelTransition>
     {/* Above both columns: on a phone the detail column stacks under the list, and a message there is off screen. */}
-    <Notice msg={msg} onDismiss={() => setMsg(null)} />
+    {msg ? <Notice kind={msg.ok ? "ok" : "err"} className="mb-4" onDismiss={() => setMsg(null)}>{msg.text}</Notice> : null}
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <div className="flex flex-col gap-4">
         <Panel className="overflow-hidden">
@@ -394,7 +383,7 @@ export default function Packages({ me }) {
                       <span className="block truncate text-[13px] font-medium text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center gap-2">
                         <Badge tone={tone.tone} dot>{tone.label}</Badge>
-                        <Label>{p.control_count} controls · {p.evidence_count} evidence</Label>
+                        <Label>{count(p.control_count, "control", "controls")} · {p.evidence_count} evidence</Label>
                       </span>
                     </button>
                   </li>
@@ -586,7 +575,7 @@ export default function Packages({ me }) {
             ) : null}
 
             <Panel className="overflow-hidden">
-              <PanelHeader title="Controls in scope" meta={detailErr || detailLoading ? "- rows" : `${rows.length} rows`} />
+              <PanelHeader title="Controls in scope" meta={detailErr || detailLoading ? "- rows" : count(rows.length, "row", "rows")} />
               {detailErr ? (
                 <LoadError what="This package's controls" onRetry={retryDetail} />
               ) : detailLoading ? (
@@ -672,7 +661,7 @@ export default function Packages({ me }) {
                             </Button>
                           )) : null}
                           {canAssemble && row.operating_conclusion === "exceptions" && !row.risk ? (
-                            <Button size="sm" variant="danger"
+                            <Button size="sm" variant="danger" disabled={busy === `row-${row.id}`}
                                     onClick={() => act(`row-${row.id}`, async () => {
                                       await api.post(`/package-controls/${row.id}/promote/`);
                                       setRows(await fetchAll(`/package-controls/?package=${selectedId}`));
@@ -991,7 +980,7 @@ function SampleSection({ row, pkg, canAssemble, isGrantee, busy, act, reload, on
             </select>
           </div>
           <div className="flex items-end gap-1.5">
-            <Button size="sm" variant="primary" type="submit">Save</Button>
+            <Button size="sm" variant="primary" type="submit" disabled={busy === `pop-${row.id}`}>Save changes</Button>
             <Button size="sm" variant="ghost" type="button" onClick={() => setPop(null)}>Cancel</Button>
           </div>
         </form>
@@ -1142,6 +1131,7 @@ function IssueForm({ packageId, canAddAuditor, onDone, onError, openRequest = 0 
   const [busy, setBusy] = useState(false);
   // An empty list has two causes, nobody holding the Auditor role or a failed load; state tells them apart.
   const [state, setState] = useState("loading");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -1155,7 +1145,7 @@ function IssueForm({ packageId, canAddAuditor, onDone, onError, openRequest = 0 
         setAuditors([]);
         setState("error");
       });
-  }, [open]);
+  }, [open, attempt]);
 
   if (!open) {
     return (
@@ -1189,7 +1179,10 @@ function IssueForm({ packageId, canAddAuditor, onDone, onError, openRequest = 0 
           {canAddAuditor ? <> <Link to="/users" className="link">Go to Users</Link></> : null}
         </p>
       ) : state === "error" ? (
-        <p className="text-xs text-danger" role="alert">The list of auditors could not be loaded. Cancel and try again.</p>
+        <p className="text-xs text-danger" role="alert">
+          The list of auditors could not be loaded.{" "}
+          <button type="button" className="link" onClick={() => setAttempt((n) => n + 1)}>Try again</button>
+        </p>
       ) : (
         <select className="input input-sm" required value={user}
                 aria-label="Auditor to issue to"

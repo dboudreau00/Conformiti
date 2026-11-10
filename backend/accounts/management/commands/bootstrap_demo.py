@@ -15,6 +15,7 @@ from accounts.models import Role
 from calendar_app.models import CalendarEvent
 from compliance.models import Control
 from documents.models import VIEW, EDIT, Document, Folder, FolderPermission
+from notifications.wording import count_of
 
 User = get_user_model()
 
@@ -364,8 +365,8 @@ class Command(BaseCommand):
                          .exclude(workspace=workspace).values_list("username", flat=True))
         if taken:
             raise CommandError(
-                f"Nothing was seeded in workspace {workspace.slug!r}: the username(s) {', '.join(sorted(taken))} "
-                f"belong to another workspace, and a username is unique across the installation. Seed the demo "
+                f"Nothing was seeded in workspace {workspace.slug!r}: another workspace already "
+                f"has {', '.join(sorted(taken))}, and a username is unique across the installation. Seed the demo "
                 f"in the workspace that holds those accounts, or rename them first."
             )
 
@@ -899,7 +900,7 @@ class Command(BaseCommand):
             )
         self.stdout.write(
             f"  Evidence package: '{DEMO_PACKAGE_NAME}' sealed "
-            f"({package.controls.count()} control(s), {package.evidence_count} item(s)) "
+            f"({count_of(package.controls.count(), 'control')}, {count_of(package.evidence_count, 'item')}) "
             f"and issued to aria"
         )
         self._pbc_requests(package, aria, mia or admin)
@@ -948,7 +949,7 @@ class Command(BaseCommand):
         line(3, "Evidence of quarterly access reviews for the period",
              "Sign-off for each quarter, and the exceptions raised.",
              priority=PbcRequest.Priority.HIGH, due_date=today + timedelta(days=5))
-        self.stdout.write("  PBC request list: 3 line(s) on the demo package")
+        self.stdout.write("  PBC request list: 3 lines on the demo package")
 
     def _control_program(self):
         """A spread of statuses and owners across the control libraries, applied only while every control is untouched

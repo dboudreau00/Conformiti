@@ -38,6 +38,7 @@ MIN_ASSERTION = 40
 class CanAssemble(BasePermission):
     """Write access to packages. Reads are filtered by the queryset: a user with no packages gets an empty 200, not a
     403, because the sidebar shows the nav item to everyone."""
+    message = "Only framework managers can change an audit package. Ask an administrator."
 
     def has_permission(self, request, view):
         if request.method in ("GET", "HEAD", "OPTIONS"):
@@ -158,7 +159,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
         if result is None:
             raise ValidationError({"detail": "This package has no predecessor."})
         if package.prior_package not in access.readable_packages(request.user):
-            raise PermissionDenied("You cannot read the predecessor package.")
+            raise PermissionDenied("The package this one was rolled forward from is not available to you.")
         return Response(result)
 
     def perform_destroy(self, instance):
@@ -180,7 +181,7 @@ class EvidencePackageViewSet(viewsets.ModelViewSet):
 
         ids = request.data.get("controls") or []
         if not isinstance(ids, list) or not ids:
-            raise ValidationError({"controls": "Give a list of control ids."})
+            raise ValidationError({"controls": "Choose at least one control."})
         # Whole numbers that fit the database's integer, as the bulk attach insists.
         try:
             if any(isinstance(i, (bool, float)) or abs(int(i)) >= 2 ** 63 for i in ids):
@@ -502,7 +503,7 @@ class PackageControlViewSet(viewsets.ModelViewSet):
             )
         if snapshot_fields:
             if not access.can_assemble(user):
-                raise PermissionDenied("You cannot change this row.")
+                raise PermissionDenied(CanAssemble.message)
             assert_open(row.package)
 
         extra = {}
@@ -531,7 +532,7 @@ class PackageControlViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
-            raise PermissionDenied("You cannot change this package.")
+            raise PermissionDenied(CanAssemble.message)
         # Same lock as sealing: a control removed mid-build would leave the bundle listing a row it no longer contains.
         with transaction.atomic():
             lock_open(instance.package)
@@ -644,7 +645,7 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         # A body with neither a result nor an item field would reach save() unchecked, letting any reader of the package
         # rewrite its sampling rows.
         if not (touching_result or touching_item) and not access.can_assemble(user):
-            raise PermissionDenied("You cannot change this package.")
+            raise PermissionDenied(CanAssemble.message)
         extra = {}
         if touching_result:
             if access.live_grant(user, package) is None:
@@ -656,7 +657,7 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         if touching_item:
             if package.is_open:
                 if not access.can_assemble(user):
-                    raise PermissionDenied("You cannot change this package.")
+                    raise PermissionDenied(CanAssemble.message)
             else:
                 # Sealed: the manifest's items are fixed; an auditor may still correct their own selections.
                 if sample.sealed_in or access.live_grant(user, package) is None:
@@ -679,7 +680,7 @@ class PackageSampleViewSet(viewsets.ModelViewSet):
         package = instance.package_control.package
         if package.is_open:
             if not access.can_assemble(user):
-                raise PermissionDenied("You cannot change this package.")
+                raise PermissionDenied(CanAssemble.message)
         elif package.status == EvidencePackage.Status.SEALED:
             if instance.sealed_in or access.live_grant(user, package) is None:
                 raise PermissionDenied("Sample items in the sealed manifest cannot be removed.")
@@ -721,7 +722,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         row = self.get_object()
         if not access.can_assemble(self.request.user):
-            raise PermissionDenied("You cannot change this package.")
+            raise PermissionDenied(CanAssemble.message)
         assert_open(row.package_control.package)
         # What a row points AT is fixed once pinned: re-pointing would skip pinning's folder-permission check, and
         # moving a row could add evidence to an already-sealed package.
@@ -741,7 +742,7 @@ class PackageEvidenceViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         if not access.can_assemble(self.request.user):
-            raise PermissionDenied("You cannot change this package.")
+            raise PermissionDenied(CanAssemble.message)
         with transaction.atomic():
             lock_open(instance.package_control.package)
             instance.delete()

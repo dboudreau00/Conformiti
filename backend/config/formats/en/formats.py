@@ -1,0 +1,5 @@
+"""Dates a template writes read as the server's own sentences, tray text and exports do: 2026-11-09."""
+DATE_FORMAT = "Y-m-d"
+SHORT_DATE_FORMAT = "Y-m-d"
+DATETIME_FORMAT = "Y-m-d H:i"
+SHORT_DATETIME_FORMAT = "Y-m-d H:i"

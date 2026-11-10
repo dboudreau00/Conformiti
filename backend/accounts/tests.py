@@ -601,3 +601,39 @@ class PasswordPolicyConfigTests(APITestBase):
             # What it reports is what is enforced: 13 characters now fail.
             with self.assertRaises(ValidationError):
                 validate_password("Tq8#vLm2@Rz5k")
+
+
+class RefusalNamesWhoCanTests(APITestBase):
+    """A 403 says who can do the thing; DRF's own sentence ("You do not have permission...") does not."""
+
+    def _refused(self, user, method, url, data=None):
+        r = getattr(self.client_for(user), method)(url, data or {}, format="json")
+        self.assertEqual(r.status_code, 403, getattr(r, "data", None))
+        return str(r.data["detail"])
+
+    def test_capability_routes_name_the_role_that_can(self):
+        control = f"/api/controls/{self.tree.c1.pk}/"
+        for user, method, url, words in (
+            (self.viewer, "post", "/api/roles/", "Only administrators can do that."),
+            (self.viewer, "patch", control, "Only framework managers can do that. Ask an administrator."),
+            (self.viewer, "post", "/api/calendar/", "Only document managers can do that. Ask an administrator."),
+            (self.viewer, "post", "/api/champion-groups/", "Only administrators can do that."),
+            (self.viewer, "post", "/api/risks/", "Only framework managers can add risks. Ask an administrator."),
+            (self.owner, "get", "/api/access-reviews/", "Only administrators and auditors can read access reviews."),
+            (self.owner, "get", "/api/audit-log/",
+             "Only administrators, auditors and people whose role can view everything can read the audit log."),
+            (self.manager, "post", "/api/workspaces/",
+             "Only an administrator who works across workspaces can add or change a workspace."),
+        ):
+            with self.subTest(url=url, user=user.username):
+                self.assertEqual(self._refused(user, method, url), words)
+
+    def test_an_auditor_is_told_it_is_outside_their_access_and_changes_nothing(self):
+        control = f"/api/controls/{self.tree.c1.pk}/"
+        for method, url in (("patch", control), ("post", "/api/calendar/"), ("post", "/api/risks/"),
+                            ("post", "/api/champion-groups/")):
+            with self.subTest(url=url):
+                self.assertEqual(self._refused(self.auditor, method, url, {"title": "Changed"}),
+                                 "That is outside an external auditor's access.")
+        self.tree.c1.refresh_from_db()
+        self.assertEqual(self.tree.c1.title, "First control")

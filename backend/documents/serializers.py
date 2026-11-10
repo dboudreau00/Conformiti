@@ -81,7 +81,7 @@ class FolderPermissionSerializer(serializers.ModelSerializer):
         role = attrs.get("role", getattr(self.instance, "role", None))
         user = attrs.get("user", getattr(self.instance, "user", None))
         if bool(role) == bool(user):
-            raise serializers.ValidationError("Set exactly one of role or user.")
+            raise serializers.ValidationError("Choose a role or a person, not both.")
         return attrs
 
 

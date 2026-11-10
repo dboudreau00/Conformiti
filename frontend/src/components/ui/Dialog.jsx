@@ -64,7 +64,8 @@ export function Dialog({
         closeRef.current?.();
       } else if (e.key === "Tab" && frame.current) {
         // The page behind is not inert, so focus outside the dialog's controls is pulled back in.
-        let nodes = Array.from(frame.current.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled);
+        // tabIndex -1 (the unselected buttons of a roving group) is not a Tab stop, so it cannot be the first or last one.
+        let nodes = Array.from(frame.current.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled && n.tabIndex >= 0);
         if (!nodes.length) nodes = [frame.current];
         const first = nodes[0];
         const last = nodes[nodes.length - 1];
@@ -146,6 +147,8 @@ export function TextDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const fieldId = useId();
+  const hintId = useId();
+  const countId = useId();
 
   useEffect(() => {
     if (open) { setValue(initial); setError(""); setBusy(false); }
@@ -183,12 +186,14 @@ export function TextDialog({
           placeholder={placeholder}
           maxLength={maxLength}
           disabled={busy}
+          aria-required={required || undefined}
+          aria-describedby={[hint ? hintId : "", minLength > 0 ? countId : ""].filter(Boolean).join(" ") || undefined}
           onChange={(e) => setValue(e.target.value)}
         />
         <div className="mt-1 flex items-baseline justify-between gap-3">
-          <span className="text-2xs text-faint">{hint}</span>
+          <span id={hintId} className="text-2xs text-faint">{hint}</span>
           {minLength > 0 ? (
-            <Label className={cn("tabular", short ? "text-danger" : "text-faint")}>
+            <Label id={countId} className={cn("tabular", short ? "text-danger" : "text-faint")}>
               {trimmed.length}/{minLength} minimum
             </Label>
           ) : null}
@@ -213,7 +218,7 @@ const CONSTRUCTIVE = /^(send|save|import|export|submit|mark|complete|add|create|
 /** `confirmLabel` is required and names the act: the verb and the thing ("Delete folder", "Remove vendor"), never a bare
  * "Confirm". `tone` is optional: without it the button is primary for a constructive verb and solid danger for
  * everything else, so a caller that forgets it cannot make a destructive act look safe. */
-export function ConfirmDialog({ open, title, description, confirmLabel, tone, onConfirm, onClose, children }) {
+export function ConfirmDialog({ open, title, description, confirmLabel, cancelLabel = "Cancel", tone, onConfirm, onClose, children }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => { if (open) { setBusy(false); setError(""); } }, [open]);
@@ -238,7 +243,7 @@ export function ConfirmDialog({ open, title, description, confirmLabel, tone, on
       {children}
       {error ? <p className="notice notice-err mt-3" role="alert">{error}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>{cancelLabel}</Button>
         <Button
           type="button"
           variant={tone || (CONSTRUCTIVE.test(confirmLabel || "") ? "primary" : "danger-solid")}
@@ -253,7 +258,7 @@ export function ConfirmDialog({ open, title, description, confirmLabel, tone, on
   );
 }
 
-/** `ask({ title, description, confirmLabel, tone, children, onConfirm })` opens it; render `confirmDialog`
+/** `ask({ title, description, confirmLabel, cancelLabel, tone, children, onConfirm })` opens it; render `confirmDialog`
  * somewhere. `confirmLabel` and `tone` are ConfirmDialog's. `onConfirm` may be async: the dialog stays open and
  * busy until it settles. */
 export function useConfirm() {
@@ -264,6 +269,7 @@ export function useConfirm() {
       title={request?.title || ""}
       description={request?.description}
       confirmLabel={request?.confirmLabel}
+      cancelLabel={request?.cancelLabel || undefined}
       tone={request?.tone}
       onClose={() => setRequest(null)}
       onConfirm={async () => { await request?.onConfirm?.(); }}

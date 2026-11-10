@@ -74,6 +74,8 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
 
 class IsSuperuserOrReadOwn(IsAuthenticated):
+    message = "Only an administrator who works across workspaces can add or change a workspace."
+
     def has_permission(self, request, view):
         if not super().has_permission(request, view):
             return False

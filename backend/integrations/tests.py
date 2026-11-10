@@ -39,6 +39,16 @@ class JiraConfigTests(APITestBase):
         self.assertIn("detail", r.data)
 
 
+class JiraBoardDuplicateTests(APITestBase):
+    def test_a_board_already_tracked_is_refused_in_words(self):
+        a = self.client_for(self.admin)
+        body = {"board_id": 12, "name": "Security backlog"}
+        self.assertEqual(a.post("/api/integrations/jira/boards/", body, format="json").status_code, 201)
+        r = a.post("/api/integrations/jira/boards/", body, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.data, {"non_field_errors": ["That board is already tracked."]})
+
+
 class JiraIssueRowTests(APITestBase):
     def setUp(self):
         super().setUp()

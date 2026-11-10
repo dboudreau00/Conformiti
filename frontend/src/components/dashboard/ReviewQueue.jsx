@@ -121,7 +121,7 @@ export function ReviewQueue({ me, reviews = [], onChanged }) {
       {hidden > 0 || showAll ? (
         <div className="border-t border-line px-4 py-2.5">
           <button type="button" className="link" aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
-            {showAll ? "Show fewer" : `Show ${hidden} more`}
+            {showAll ? "Show fewer" : `Show ${hidden} more ${hidden === 1 ? "review" : "reviews"}`}
           </button>
         </div>
       ) : null}

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ExternalLinkIcon } from "lucide-react";
 import axios from "axios";
-import { login, oidcConfig, redeemSso, samlConfig } from "../api/client.js";
+import { forgetSessionEnded, login, oidcConfig, redeemSso, samlConfig, sessionEndedAt } from "../api/client.js";
 import { getAssertion, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
 import { ConformitiLogo } from "../components/brand/ConformitiLogo.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -99,6 +99,10 @@ export default function Login({ onDone }) {
   // The SSO ticket waits here, never in the URL, while the person types the second factor.
   const [ssoTicket, setSsoTicket] = useState(null);
   const [ssoNext, setSsoNext] = useState("/");
+  // Where this tab was when the server ended its session ("" otherwise): read once, then forgotten, so the line and
+  // the way back belong to this visit to the screen only.
+  const [endedAt] = useState(sessionEndedAt);
+  useEffect(() => { forgetSessionEnded(); }, []);
   const sso = oidcConfig();
   const samlSso = samlConfig();
   const canPasskey = passkeysSupported();
@@ -141,7 +145,13 @@ export default function Login({ onDone }) {
         onDone?.(null);
         nav(safeNext);
       })
-      .catch((ex) => setErr(ex?.response?.data?.detail || SSO_ERRORS.state))
+      .catch((ex) => {
+        // A dropped connection or a server fault is not an expired link, and the server's own detail is the last resort.
+        const data = ex?.response?.data;
+        setErr(ex?.response?.status === 429
+          ? "Too many attempts. Wait a minute and try again."
+          : serverRefusal(ex) || ssoErrorText(data?.code) || (typeof data?.detail === "string" && data.detail) || SSO_ERRORS.state);
+      })
       .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -165,7 +175,7 @@ export default function Login({ onDone }) {
     }
     await login(username.trim(), password, second);
     onDone?.(null);
-    nav("/");
+    nav(endedAt || "/");
   }
 
   /** A passkey challenge answers once; after a refusal, ask for a fresh one. */
@@ -196,7 +206,9 @@ export default function Login({ onDone }) {
       } else if (ssoTicket && data?.code && data.code !== "mfa_invalid") {
         resetToStart(ssoErrorText(data.code) || data.detail || SSO_ERRORS.state);
       } else {
-        setErr(data?.detail || passkeyErrorText(ex));
+        // Off the network (not the browser's passkey prompt): a dropped connection or a server fault says so.
+        const refused = ex?.response || ex?.isAxiosError ? serverRefusal(ex) : null;
+        setErr(refused || data?.detail || passkeyErrorText(ex));
         await refreshChallenge();
       }
     } finally {
@@ -224,7 +236,7 @@ export default function Login({ onDone }) {
       }
       await login(username.trim(), password);
       onDone?.(null);
-      nav("/");
+      nav(endedAt || "/");
     } catch (ex) {
       const data = ex?.response?.data;
       const refused = serverRefusal(ex);
@@ -289,6 +301,9 @@ export default function Login({ onDone }) {
             <ConformitiLogo colour="accent" size={40} />
             <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
             {intro ? <p className="mt-1 text-[13px] leading-snug text-muted">{intro}</p> : null}
+            {endedAt && !mfaStep && !err ? (
+              <p className="notice notice-warn mt-4" role="status">Your session ended. Sign in again.</p>
+            ) : null}
             {err ? <div className="notice notice-err mt-4" role="alert">{err}</div> : null}
             {!mfaStep ? (
               <>

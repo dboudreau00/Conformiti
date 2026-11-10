@@ -8,7 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.response import Response
 
-from accounts.permissions import is_external_auditor
+from accounts.permissions import AUDITOR_REFUSED, ONLY, ONLY_ADMINISTRATORS, is_external_auditor
 from documents.models import FolderPermission
 from documents.serializers import person_name
 from notifications.wording import count_of
@@ -41,7 +41,9 @@ class AccessAuditPermission(BasePermission):
         if not (u and u.is_authenticated):
             return False
         if request.method in SAFE_METHODS:
+            self.message = "Only administrators and auditors can read access reviews."
             return u.can_manage_users or u.is_auditor
+        self.message = "Only administrators can run an access review."
         return u.can_manage_users
 
 
@@ -51,16 +53,24 @@ class ManageDocumentsOrReadOnly(BasePermission):
 
     def has_permission(self, request, view):
         u = request.user
-        if not (u and u.is_authenticated) or is_external_auditor(u):
+        if not (u and u.is_authenticated):
             return False
+        if is_external_auditor(u):
+            self.message = AUDITOR_REFUSED
+            return False
+        self.message = ONLY["can_manage_documents"]
         return True if request.method in SAFE_METHODS else u.can_manage_documents
 
 
 class ManageUsersOrReadOnly(BasePermission):
     def has_permission(self, request, view):
         u = request.user
-        if not (u and u.is_authenticated) or is_external_auditor(u):
+        if not (u and u.is_authenticated):
             return False
+        if is_external_auditor(u):
+            self.message = AUDITOR_REFUSED
+            return False
+        self.message = ONLY_ADMINISTRATORS
         return True if request.method in SAFE_METHODS else u.can_manage_users
 
 
@@ -120,7 +130,8 @@ def _apply_revocations(request, review):
             continue
         if user.is_superuser:
             skipped.append({"username": user.username,
-                            "reason": "superusers are deactivated by hand, never by a review"})
+                            "reason": "an administrator who works across workspaces is deactivated by hand, "
+                                      "never by a review"})
             continue
         if not user.is_active:
             skipped.append({"username": user.username, "reason": "already inactive"})
@@ -316,12 +327,16 @@ class RiskPermission(BasePermission):
 
     def has_permission(self, request, view):
         user = request.user
-        if not (user and user.is_authenticated) or is_external_auditor(user):
+        if not (user and user.is_authenticated):
+            return False
+        if is_external_auditor(user):
             # An outside auditor gets the findings that reach a package, not the whole register.
+            self.message = AUDITOR_REFUSED
             return False
         if request.method in SAFE_METHODS:
             return True
         if view.action in ("create", "import_file"):
+            self.message = "Only framework managers can add risks. Ask an administrator."
             return user.can_manage_frameworks
         return True  # PATCH/DELETE decided per-object below
 
@@ -330,7 +345,9 @@ class RiskPermission(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         if request.method == "DELETE":
+            self.message = "Only framework managers can delete a risk. Ask an administrator."
             return user.can_manage_frameworks
+        self.message = "Only framework managers, or the risk's owner, can change a risk."
         return user.can_manage_frameworks or obj.owner_id == user.id
 
 

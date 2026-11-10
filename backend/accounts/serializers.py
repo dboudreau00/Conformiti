@@ -34,10 +34,12 @@ class RoleSerializer(serializers.ModelSerializer):
             getattr(self.instance, c) for c in self.CAPABILITIES)
         if already:
             return attrs
-        held = ", ".join(c for c in self.CAPABILITIES if merged.get(c))
+        # The words the Users screen shows for each capability, not the field names.
+        held = ", ".join(c.removeprefix("can_").removeprefix("manage_").replace("_", " ")
+                         for c in self.CAPABILITIES if merged.get(c))
         raise serializers.ValidationError({
             "is_auditor": "An auditor role holds no capabilities of its own: the "
-                          f"engagement is what an auditor is granted. Remove {held}, "
+                          f"engagement is what an auditor is granted. Turn off {held}, "
                           "or make this an ordinary role."})
 
     class Meta:

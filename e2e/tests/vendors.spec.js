@@ -124,7 +124,7 @@ test.describe("vendor register", () => {
     await page.getByRole("button", { name: /Amazon Web Services/ }).click();
     await tab(page, "Responsibility matrix").click();
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
     expect((await download).suggestedFilename()).toMatch(/^responsibility-matrix-.*\.csv$/);
   });
 

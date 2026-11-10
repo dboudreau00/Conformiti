@@ -49,8 +49,7 @@ class ResponsibilitySerializer(serializers.ModelSerializer):
         user = self._merged(attrs, "user")
         vendor = self._merged(attrs, "vendor")
         if bool(user) == bool(vendor):
-            raise ValidationError({"party": "Name exactly one of user or vendor "
-                                            "(clear the other when switching)."})
+            raise ValidationError({"party": "Choose a person or a vendor, not both."})
         self.check_single_accountable(attrs)
         return attrs
 

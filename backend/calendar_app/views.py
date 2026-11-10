@@ -8,7 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from accounts.permissions import is_external_auditor
+from accounts.permissions import AUDITOR_REFUSED, ONLY, is_external_auditor
 from documents.access import accessible_folder_ids
 from documents.models import Document
 from documents.serializers import person_name
@@ -24,8 +24,12 @@ class ManageCalendarOrReadOnly(BasePermission):
 
     def has_permission(self, request, view):
         u = request.user
-        if not (u and u.is_authenticated) or is_external_auditor(u):
+        if not (u and u.is_authenticated):
             return False
+        if is_external_auditor(u):
+            self.message = AUDITOR_REFUSED
+            return False
+        self.message = ONLY["can_manage_documents"]
         return True if request.method in SAFE_METHODS else u.can_manage_documents
 
 

@@ -134,6 +134,39 @@ test.describe("users, meetings and groups", () => {
     }
   });
 
+  test("the Users and Champion groups pages do not repeat their title as a panel heading", async ({ page }) => {
+    await open(page, "/users", "Users");
+    await expect(page.getByRole("region", { name: "Users", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Users", exact: true })).toHaveCount(1);
+    await open(page, "/groups", "Champion groups");
+    await expect(page.getByRole("button", { name: "Create group", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Champion groups", exact: true })).toHaveCount(1);
+  });
+
+  test("deactivating a user asks first, and Cancel leaves the account active", async ({ page }) => {
+    await open(page, "/users", "Users");
+    const row = page.getByRole("region", { name: "Users", exact: true }).getByRole("row").filter({ hasText: /\bval\b/ }).first();
+    await row.getByRole("button", { name: "Deactivate", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Deactivate val?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Deactivate user", exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(row.getByRole("button", { name: "Deactivate", exact: true })).toBeVisible();
+  });
+
+  test("a refused username is shown under the Username field", async ({ page }) => {
+    await open(page, "/users", "Users");
+    await page.getByRole("button", { name: "New user", exact: true }).click();
+    await page.locator("#nu-username").fill("admin");
+    await page.locator("#nu-role").selectOption({ index: 1 });
+    await page.locator("#nu-password").fill("E2e-Refused-Name-4821!");
+    expectBrowserError(page, /status of 400/);
+    await page.getByRole("button", { name: "Create user", exact: true }).click();
+    await expect(page.locator("#nu-username-error")).toHaveText("A user with that username already exists.");
+    await expect(page.locator("#nu-username")).toHaveAttribute("aria-invalid", "true");
+  });
+
   test("meetings show the seeded series and their minutes", async ({ page }) => {
     await open(page, "/meetings", "Meetings");
     await expect(page.getByText("Security Steering Committee").first()).toBeVisible();

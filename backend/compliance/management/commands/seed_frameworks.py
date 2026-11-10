@@ -57,7 +57,7 @@ class Command(BaseCommand):
                 with transaction.atomic():
                     self._seed_one(workspace, opts)
                 count += 1
-            self.stdout.write(self.style.SUCCESS(f"Seeding complete in {count} workspace(s)."))
+            self.stdout.write(self.style.SUCCESS(f"Seeding complete in {count} workspace{'' if count == 1 else 's'}."))
             return
         workspace = tenancy.from_option(opts)
         with tenancy.scoped(workspace), transaction.atomic():

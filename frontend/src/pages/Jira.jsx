@@ -7,9 +7,13 @@ import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Notice } from "../components/ui/Notice.jsx";
-import { Empty, Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
-import { errorText } from "../utils/a11y.js";
+import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
+import { fmtDate } from "../utils/format.js";
+
+const CONFIG_NAMES = { base_url: "Base URL", email: "Account email", api_token: "API token", enabled: "Integration on" };
+const BOARD_NAMES = { board_id: "Board ID", name: "Name" };
 
 const EMPTY_FORM = { base_url: "", email: "", api_token: "", enabled: false };
 const CELL = "px-2.5 py-3 align-middle first:pl-5 last:pr-5";
@@ -42,6 +46,7 @@ export default function Jira({ me }) {
   const [busy, setBusy] = useState(null); // "save" | "test" | "add" | "remove"
   const [newBoard, setNewBoard] = useState({ board_id: "", name: "" });
   const [removing, setRemoving] = useState(null);
+  const [configTry, setConfigTry] = useState(0);
   const issueReq = useRef(0);
 
   useEffect(() => {
@@ -60,12 +65,12 @@ export default function Jira({ me }) {
         setForm({ base_url: r.data.base_url || "", email: r.data.email || "", api_token: "", enabled: !!r.data.enabled });
       })
       .catch((e) => {
-        if (!cancelled) setConfigErr(errorText(e, "Couldn't load the Jira configuration."));
+        if (!cancelled) setConfigErr({ reason: loadFailReason(e) });
       });
     return () => {
       cancelled = true;
     };
-  }, [isManager]);
+  }, [isManager, configTry]);
 
   function loadBoards(selectId) {
     setBoardsErr(null);
@@ -82,7 +87,7 @@ export default function Jira({ me }) {
       })
       .catch((e) => {
         setBoards([]);
-        setBoardsErr(errorText(e, "Couldn't load the tracked boards."));
+        setBoardsErr({ reason: loadFailReason(e) });
       });
   }
 
@@ -113,10 +118,10 @@ export default function Jira({ me }) {
       // The server switches the integration off and drops the token when the base URL moves to another host: show what it kept.
       setForm((f) => ({ ...f, api_token: "", enabled: !!data.enabled }));
       setMsg(data.enabled === !!form.enabled
-        ? { ok: true, text: "Configuration saved." }
-        : { ok: true, text: "Configuration saved. The integration was switched off because the host changed: enter the API token again and re-enable it." });
+        ? { ok: true, text: "Changes saved." }
+        : { ok: true, text: "Changes saved. The integration was turned off because the host changed: enter the API token again and turn it on." });
     } catch (err) {
-      setMsg({ ok: false, text: errorText(err, "Couldn't save. Check the base URL format.") });
+      setMsg({ ok: false, text: errorText(err, "Couldn't save. Check the base URL format.", CONFIG_NAMES) });
     } finally {
       setBusy(null);
     }
@@ -137,8 +142,13 @@ export default function Jira({ me }) {
 
   async function addBoard(e) {
     e.preventDefault();
-    setBusy("add");
     setBoardMsg(null);
+    const twin = (boards || []).find((b) => Number(b.board_id) === Number(newBoard.board_id));
+    if (twin) {
+      setBoardMsg({ ok: false, text: `Board #${twin.board_id} is already tracked as ${twin.name}.` });
+      return;
+    }
+    setBusy("add");
     try {
       const { data } = await api.post("/integrations/jira/boards/", {
         board_id: Number(newBoard.board_id),
@@ -148,17 +158,23 @@ export default function Jira({ me }) {
       setBoardMsg({ ok: true, text: `Added ${data.name}.` });
       await loadBoards(data.id);
     } catch (err) {
-      setBoardMsg({ ok: false, text: errorText(err, "Couldn't add that board.") });
+      setBoardMsg({ ok: false, text: errorText(err, "Couldn't add that board.", BOARD_NAMES) });
     } finally {
       setBusy(null);
     }
   }
 
+  // Rethrows a refusal so the confirm dialog stays open and shows it.
   async function removeBoard(b) {
     setBusy("remove");
     setBoardMsg(null);
     try {
-      await api.delete(`/integrations/jira/boards/${b.id}/`);
+      try {
+        await api.delete(`/integrations/jira/boards/${b.id}/`);
+      } catch (err) {
+        throw new Error(errorText(err, "Couldn't remove that board."));
+      }
+      setBoardMsg({ ok: true, text: `Removed ${b.name}.` });
       if (active && b.id !== active.id) {
         // Another board went: keep the open one rather than jumping to the first and asking Jira again.
         setBoards((list) => (list || []).filter((x) => x.id !== b.id));
@@ -168,8 +184,6 @@ export default function Jira({ me }) {
         setIssueErr(null);
         await loadBoards();
       }
-    } catch (err) {
-      setBoardMsg({ ok: false, text: errorText(err, "Couldn't remove that board.") });
     } finally {
       setBusy(null);
     }
@@ -195,7 +209,7 @@ export default function Jira({ me }) {
         title="Jira isn't connected yet"
         action={<Button size="sm" onClick={() => focusField("jira-base-url")}>Configure Jira</Button>}
       />
-    );;
+    );
   } else if (connected) {
     noBoard = <Empty title="No board selected" />;
   } else if (isManager && !configErr) {
@@ -216,11 +230,7 @@ export default function Jira({ me }) {
                 </Badge>
               </PanelHeader>
               {configErr ? (
-                <div className="p-5">
-                  <div className="notice notice-err" role="alert">
-                    {configErr}
-                  </div>
-                </div>
+                <LoadError what="The Jira configuration" reason={configErr.reason} onRetry={() => setConfigTry((n) => n + 1)} />
               ) : !config ? (
                 <Loading>Loading configuration…</Loading>
               ) : (
@@ -275,14 +285,19 @@ export default function Jira({ me }) {
                       checked={form.enabled}
                       onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
                     />
-                    Integration enabled
+                    Integration on
                   </label>
                   {msg ? <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)}>{msg.text}</Notice> : null}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Button type="submit" variant="primary" size="sm" disabled={!!busy}>
-                      {busy === "save" ? "Saving…" : "Save configuration"}
+                      {busy === "save" ? "Saving…" : "Save changes"}
                     </Button>
-                    <Button size="sm" onClick={testConnection} disabled={!!busy || dirty}>
+                    <Button
+                      size="sm"
+                      onClick={testConnection}
+                      disabled={!!busy || dirty}
+                      title={dirty && !busy ? "Save your changes first" : undefined}
+                    >
                       {busy === "test" ? "Testing…" : "Test connection"}
                     </Button>
                     <AnimatePresence>
@@ -314,11 +329,7 @@ export default function Jira({ me }) {
             {boards === null ? (
               <Loading>Loading boards…</Loading>
             ) : boardsErr ? (
-              <div className="p-5">
-                <div className="notice notice-err" role="alert">
-                  {boardsErr}
-                </div>
-              </div>
+              <LoadError what="The tracked boards" reason={boardsErr.reason} onRetry={() => { setBoards(null); loadBoards(); }} />
             ) : boards.length === 0 ? (
               <Empty
                 title="No boards tracked yet"
@@ -436,7 +447,11 @@ export default function Jira({ me }) {
               {active ? (
                 <div className="flex items-center gap-3">
                   <Label>
-                    {issues ? `#${active.board_id} · ${issues.total} issue${issues.total === 1 ? "" : "s"}` : `#${active.board_id}`}
+                    {!issues
+                      ? `#${active.board_id}`
+                      : issues.total > issues.issues.length
+                        ? `#${active.board_id} · Showing ${issues.issues.length} of ${issues.total} issues`
+                        : `#${active.board_id} · ${issues.total} issue${issues.total === 1 ? "" : "s"}`}
                   </Label>
                   <Button
                     size="sm"
@@ -462,11 +477,7 @@ export default function Jira({ me }) {
             ) : !active ? (
               noBoard
             ) : issueErr ? (
-              <div className="p-5">
-                <div className="notice notice-err" role="alert">
-                  {issueErr}
-                </div>
-              </div>
+              <LoadError what="The issues" reason={issueErr} onRetry={() => openBoard(active)} />
             ) : !issues ? (
               <Loading>Fetching issues from Jira…</Loading>
             ) : issues.issues.length === 0 ? (
@@ -528,7 +539,7 @@ export default function Jira({ me }) {
                         <td className={cn(CELL, "truncate text-xs text-muted")} title={i.assignee || undefined}>
                           {i.assignee || <span className="text-faint">Unassigned</span>}
                         </td>
-                        <td className={cn(CELL, "tabular font-mono text-xs text-muted")}>{(i.updated || "").slice(0, 10)}</td>
+                        <td className={cn(CELL, "tabular font-mono text-xs text-muted")}>{fmtDate(i.updated)}</td>
                       </motion.tr>
                     ))}
                   </tbody>

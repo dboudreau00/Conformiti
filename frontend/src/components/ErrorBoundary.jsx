@@ -24,10 +24,10 @@ export default class ErrorBoundary extends Component {
         <Panel className="p-5">
           <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">Something went wrong</h2>
           <p className="mt-2 text-[13px] leading-snug text-muted">
-            This page hit an unexpected error. Reload it. If it keeps happening, tell your administrator.
+            This page hit an unexpected error. Try again. If it keeps happening, tell your administrator.
           </p>
           <div className="mt-4 flex gap-2">
-            <Button variant="primary" onClick={() => window.location.reload()}>Reload</Button>
+            <Button variant="primary" onClick={() => window.location.reload()}>Try again</Button>
             <Button onClick={() => { window.location.href = "/"; }}>Go to dashboard</Button>
           </div>
         </Panel>
@@ -40,7 +40,7 @@ export function ChromeFallback() {
   return (
     <header className="flex h-[60px] items-center justify-between gap-3 border-b border-line bg-surface px-4 text-[13px] text-muted">
       <span>The navigation could not be drawn.</span>
-      <Button size="sm" onClick={() => window.location.reload()}>Reload</Button>
+      <Button size="sm" onClick={() => window.location.reload()}>Try again</Button>
     </header>
   );
 }

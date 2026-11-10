@@ -88,7 +88,7 @@ function MapEditor({ doc, choices, busy, onAdd, onRemove }) {
                 aria-label={`Remove ${s.label} from this document`}
                 title="Remove"
                 disabled={busy}
-                onClick={() => onRemove(s.link_id)}
+                onClick={() => onRemove(s)}
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-accent/70 transition-colors duration-150 ease-out hover:bg-accent/15 hover:text-accent disabled:opacity-50"
               >
                 <XIcon className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />
@@ -119,7 +119,7 @@ function RenameEditor({ doc, value, onChange, onSubmit, onCancel, busy }) {
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2 border-t border-line bg-surface-2 px-5 py-3">
       <label htmlFor={id} className="field-label mb-0 shrink-0">New name</label>
       <input id={id} className="input input-sm max-w-md" value={value} onChange={(e) => onChange(e.target.value)} autoFocus required />
-      <Button size="sm" variant="primary" type="submit" disabled={busy || !value.trim()}>Save</Button>
+      <Button size="sm" variant="primary" type="submit" disabled={busy || !value.trim()}>Save changes</Button>
       <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
     </form>
   );
@@ -608,9 +608,18 @@ export default function Documents({ me }) {
     await run(() => api.post("/control-evidence/", { control: Number(controlId), document: d.id }), "Control linked.");
     refreshDocs(); // always refresh: a duplicate or race is best resolved with server truth
   }
-  async function removeLink(linkId) {
-    const ok = await run(() => api.delete(`/control-evidence/${linkId}/`), "Control removed from this document.");
-    if (ok) refreshDocs();
+  // Asks first, as the Controls screen does for the same link: the control may lose readiness points.
+  function removeLink(d, s) {
+    ask({
+      title: `Remove ${s.label} from ${d.name}?`,
+      description: `The document stays in the library, but ${s.label} may lose readiness points.`,
+      confirmLabel: "Remove",
+      onConfirm: async () => {
+        await api.delete(`/control-evidence/${s.link_id}/`);
+        setMsg({ ok: true, text: "Control removed from this document." });
+        refreshDocs();
+      },
+    });
   }
 
   function toggleRename(d) {
@@ -1239,7 +1248,7 @@ export default function Documents({ me }) {
                                           choices={controlChoices}
                                           busy={busy}
                                           onAdd={(id) => addLink(d, id)}
-                                          onRemove={removeLink}
+                                          onRemove={(s) => removeLink(d, s)}
                                         />
                                       </div></div>
                                     </Collapse>

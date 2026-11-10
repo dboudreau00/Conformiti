@@ -38,6 +38,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [users, setUsers] = useState(null);
+  const [usersFailed, setUsersFailed] = useState(false);
   const [docs, setDocs] = useState(null);
   const [docsFailed, setDocsFailed] = useState(false);
   const [attachTo, setAttachTo] = useState(null);
@@ -61,10 +62,10 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   }, [query]);
 
   useEffect(() => {
-    if (canAssemble && (adding || editing) && users === null) {
-      fetchAll("/users/").then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setUsers([]));
+    if (canAssemble && (adding || editing) && users === null && !usersFailed) {
+      fetchAll("/users/").then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setUsersFailed(true));
     }
-  }, [canAssemble, adding, editing, users]);
+  }, [canAssemble, adding, editing, users, usersFailed]);
 
   useEffect(() => {
     if (attachTo !== null && docs === null && !docsFailed) {
@@ -170,10 +171,13 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
     },
   });
   const exportCsv = async () => {
+    setBusy("export");
     try {
       await downloadFile(`/pbc-requests/export/?package=${pkg.id}`, "pbc-requests.csv");
     } catch (e) {
       onMessage?.({ ok: false, text: errorText(e, "Couldn't export the request list.") });
+    } finally {
+      setBusy(null);
     }
   };
   const saveEdit = (e, r) => {
@@ -208,6 +212,13 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
   }, { overdue: 0 });
   const title = mine ? "Auditor requests assigned to you" : "Request list";
   const id = (k) => `pbc-${k}`;
+  // A failed load of the people to assign to must not read as a workspace with nobody in it.
+  const usersNote = usersFailed ? (
+    <p className="mt-1 text-xs text-danger" role="alert">
+      The list of people could not be loaded.{" "}
+      <button type="button" className="link" onClick={() => setUsersFailed(false)}>Try again</button>
+    </p>
+  ) : null;
   let meta = "";
   if (failed) meta = "- lines";
   else if (rows) meta = `${rows.length} line${rows.length === 1 ? "" : "s"}${summary.overdue ? ` · ${summary.overdue} overdue` : ""}`;
@@ -218,9 +229,9 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
       <PanelHeader className="flex-wrap" title={title} meta={meta}>
         <span className="flex items-center gap-2">
           {!mine && rows && rows.length ? (
-            <Button size="sm" variant="ghost" onClick={exportCsv}
+            <Button size="sm" variant="ghost" onClick={exportCsv} disabled={busy === "export"}
                     icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
-              CSV
+              Export CSV
             </Button>
           ) : null}
           {canRaise ? (
@@ -277,6 +288,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                 <option value="">Nobody yet</option>
                 {(users || []).map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
               </select>
+              {usersNote}
             </div>
           ) : null}
           <div>
@@ -437,6 +449,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                         <option value="">Nobody</option>
                         {(users || []).map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
                       </select>
+                      {usersNote}
                     </div>
                     <div>
                       <label htmlFor={id(`edit-priority-${r.id}`)} className="field-label">Priority</label>
@@ -451,7 +464,7 @@ export function PbcList({ pkg, mine = false, controls = [], canRaise = false, ca
                       </select>
                     </div>
                     <div className="flex items-end gap-1.5">
-                      <Button type="submit" size="sm" variant="primary" disabled={busy === `edit-${r.id}`}>Save</Button>
+                      <Button type="submit" size="sm" variant="primary" disabled={busy === `edit-${r.id}`}>Save changes</Button>
                       <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
                     </div>
                   </form>

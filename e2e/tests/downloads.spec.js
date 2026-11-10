@@ -97,7 +97,7 @@ test.describe("a CSV export the server fails", () => {
     await open(page, "/vendors", "Vendors");
     await page.getByRole("button", { name: /Amazon Web Services/ }).click();
     await page.getByRole("tab", { name: "Responsibility matrix", exact: true }).click();
-    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
     await expect(alertSaying(page, "Couldn't export the responsibility matrix.")).toBeVisible();
   });
 
@@ -105,7 +105,7 @@ test.describe("a CSV export the server fails", () => {
     await failing(page, /\/api\/pbc-requests\/export\//);
     await open(page, "/packages", "Audit packages");
     const list = page.getByRole("region", { name: "Request list", exact: true });
-    await list.getByRole("button", { name: "CSV", exact: true }).click();
+    await list.getByRole("button", { name: "Export CSV", exact: true }).click();
     await expect(alertSaying(page, "Couldn't export the request list.")).toBeVisible();
   });
 });

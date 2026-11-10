@@ -109,7 +109,8 @@ function PaletteBody({ onClose }) {
         if (rows.length) groups.push({ ...section, rows });
       });
       setActive(0);
-      setState({ status: failed === sections.length ? "error" : "done", groups });
+      // A section that failed may hold the match: with no rows to show, "Nothing matches" would not be known to be true.
+      setState({ status: failed === sections.length || (failed > 0 && !groups.length) ? "error" : "done", groups });
     }, DEBOUNCE_MS);
     return () => {
       live = false;

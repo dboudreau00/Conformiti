@@ -48,7 +48,7 @@ def _assert_safe_base_url(base_url):
 
 def _request(config, path, params=None):
     if not config.enabled:
-        raise JiraError("The Jira integration is turned off. Enable it in the configuration first.")
+        raise JiraError("The Jira integration is turned off. Turn it on in the connection settings first.")
     if not (config.base_url and config.email and config.api_token):
         raise JiraError("Jira is not fully configured: base URL, email and API token are all required.")
     pinned_ip = _assert_safe_base_url(config.base_url)

@@ -255,6 +255,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # --- i18n / static ----------------------------------------------------------
 LANGUAGE_CODE = "en-us"
+# Mail and admin dates in the form every other server-written date has (config/formats/en/formats.py).
+FORMAT_MODULE_PATH = ["config.formats"]
 TIME_ZONE = os.getenv("TIME_ZONE", "UTC")
 USE_I18N = True
 USE_TZ = True

@@ -1,6 +1,6 @@
 Hello {{ owner_name }},
 
-{% if overdue %}The document below is PAST its review date and has been marked expired.
+{% if overdue %}The document below is past its review date and has been marked expired.
 Please review it and record the review to bring it back into good standing.
 {% else %}The document below is due for review in {{ days }} day{{ days|pluralize }}. Please review it before the due date.
 {% endif %}

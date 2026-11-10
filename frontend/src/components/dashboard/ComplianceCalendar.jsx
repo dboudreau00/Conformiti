@@ -167,7 +167,7 @@ export function ComplianceCalendar({ refreshKey = 0, me, onChanged }) {
       <PanelHeader
         inline
         title="Compliance calendar"
-        meta={loading ? "Loading…" : unknown ? "- items this month" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}
+        meta={loading ? "Loading…" : unknown ? "Unavailable" : `${monthCount} ${monthCount === 1 ? "item" : "items"} this month`}
         className="flex-wrap gap-3"
       >
         <div className="flex flex-wrap items-center gap-3">

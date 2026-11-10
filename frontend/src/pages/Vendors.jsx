@@ -397,7 +397,7 @@ function SendToVendor({ vendor, busy, act, refresh, ask }) {
       setSent(data);
       setSending(false);
       await refresh();
-    }, "Questionnaire sent to the vendor.", "Couldn't send the questionnaire.");
+    }, "Questionnaire link created.", "Couldn't send the questionnaire.");
   // A second send revokes the live link, so it asks first; the first send does not.
   const send = (e) => {
     e.preventDefault();
@@ -461,7 +461,7 @@ function SendToVendor({ vendor, busy, act, refresh, ask }) {
         </form>
       ) : null}
       {sent ? (
-        <div className="notice notice-ok m-4" role="status">
+        <div className={cn("notice m-4", sent.email_sent ? "notice-ok" : "notice-warn")} role="status">
           <span className="block font-medium">
             {sent.email_sent ? `Emailed to ${sent.sent_to}.` : "The email could not be sent, paste the link into your own message."}
           </span>
@@ -1048,8 +1048,10 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged,
           onConfirm: async () => { await saveEdits(); },
         })
       : saveEdits();
+  const [exporting, setExporting] = useState(false);
   async function exportMatrix(theirLayout = false) {
     setMsg(null);
+    setExporting(true);
     try {
       await downloadFile(
         `/vendors/${vendor.id}/matrix/export/${theirLayout ? "?layout=vendor" : ""}`,
@@ -1057,6 +1059,8 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged,
       );
     } catch (e) {
       setMsg({ ok: false, text: errorText(e, "Couldn't export the responsibility matrix.") });
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -1133,13 +1137,13 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged,
                 </Button>
               </>
             ) : null}
-            <Button size="sm" variant="ghost" onClick={() => exportMatrix()}
+            <Button size="sm" variant="ghost" disabled={exporting} onClick={() => exportMatrix()}
                     icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
-              Export
+              Export CSV
             </Button>
             {vendor.matrix_layout ? (
               <Button size="sm" variant="ghost" title={`Columns from ${vendor.matrix_layout.file || "their last file"}`}
-                      onClick={() => exportMatrix(true)}
+                      disabled={exporting} onClick={() => exportMatrix(true)}
                       icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
                 Export in their layout
               </Button>
@@ -1244,7 +1248,20 @@ function MatrixTab({ vendor, canManage, intent, onIntentDone, setMsg, onChanged,
             <Button size="sm" variant="primary" disabled={busy || orphaned.length > 0} onClick={askSave}>
               {busy ? "Saving…" : `Save ${count(dirtyCount, "change")}`}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEdits({})} disabled={busy}>Discard changes</Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => ask({
+                title: "Discard changes?",
+                description: `${count(dirtyCount, "unsaved change")} to this matrix will be lost.`,
+                confirmLabel: "Discard changes",
+                cancelLabel: "Keep editing",
+                onConfirm: () => setEdits({}),
+              })}
+            >
+              Discard changes
+            </Button>
             {orphaned.length ? (
               <span className="text-xs text-warning" role="status">
                 {orphaned.map((r) => r.control_id).join(", ")}: pick a responsibility for the statement, or clear it.
@@ -1273,6 +1290,7 @@ export default function Vendors({ me }) {
   const [filter, setFilter] = useState({ q: "", tier: "" });
   const [users, setUsers] = useState([]);
   const [docs, setDocs] = useState(null);
+  const [choicesErr, setChoicesErr] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [intent, setIntent] = useState(null);
   const canManage = !!(me?.is_superuser || me?.capabilities?.manage_frameworks);
@@ -1316,12 +1334,16 @@ export default function Vendors({ me }) {
     }
   }
 
+  // A failed load of the pick lists must not read as "nobody to assign" or "nothing uploaded".
+  function loadChoices() {
+    setChoicesErr(false);
+    fetchAll("/users/").then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setChoicesErr(true));
+    api.get("/control-evidence/choices/").then((r) => setDocs(r.data.documents || []))
+      .catch(() => { setDocs([]); setChoicesErr(true); });
+  }
   useEffect(() => {
     loadRegister();
-    if (canManage) {
-      fetchAll("/users/").then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setUsers([]));
-      api.get("/control-evidence/choices/").then((r) => setDocs(r.data.documents || [])).catch(() => setDocs([]));
-    }
+    if (canManage) loadChoices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -1505,6 +1527,12 @@ export default function Vendors({ me }) {
 
         <div className="flex min-w-0 flex-col gap-4">
           {msg ? <Notice kind={msg.ok ? "ok" : "err"} onDismiss={() => setMsg(null)}>{msg.text}</Notice> : null}
+          {choicesErr ? (
+            <Notice kind="err">
+              The people and documents to choose from could not be loaded.{" "}
+              <button type="button" className="link" onClick={loadChoices}>Try again</button>
+            </Notice>
+          ) : null}
           {!selectedId || !detail ? (
             <Panel>
               {!selectedId ? (
@@ -1608,7 +1636,7 @@ export default function Vendors({ me }) {
                         await act(async () => {
                           try { await api.delete(`/vendor-assessments/${r.id}/`); } catch (e) { refused = e; throw e; }
                           await refresh();
-                        }, "Removed.", "Couldn't remove the report.");
+                        }, "Report removed.", "Couldn't remove the report.");
                         if (refused) throw new Error(errorText(refused, "Couldn't remove the report."));
                       },
                     })

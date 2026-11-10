@@ -46,7 +46,7 @@ test.describe("passkeys", () => {
       const list = page.getByRole("list", { name: "Enrolled passkeys" });
       await expect(list.getByText("E2E key")).toBeVisible();
       await expect(list.getByText("On", { exact: true })).toBeVisible();
-      await expect(page.getByText(/Passkey enrolled/)).toBeVisible();
+      await expect(page.getByText(/Passkey added/)).toBeVisible();
 
       await signOut(page);
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
@@ -60,7 +60,7 @@ test.describe("passkeys", () => {
       await page.goto(`${BASE}/settings`);
       await section(page, "Security").click();
       await expect(list.getByText("E2E key")).toBeVisible();
-      await expect(list.getByText(/last used \d{4}-\d{2}-\d{2}/)).toBeVisible();
+      await expect(list.getByText(/last used \d{2} \w{3} \d{4}/)).toBeVisible();
       await list.getByRole("button", { name: "Remove" }).click();
       const confirm = page.getByRole("dialog", { name: /Remove .E2E key.\?/ });
       await expect(confirm).toContainText("It can no longer be used to sign in.");

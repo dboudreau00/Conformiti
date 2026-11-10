@@ -47,7 +47,7 @@ class SeedEveryWorkspaceTests(APITestBase):
         call_command("seed_frameworks", "--all-workspaces", stdout=out)
         text = out.getvalue()
         self.assertIn("beta-ltd", text)
-        self.assertIn("complete in 2 workspace(s)", text)
+        self.assertIn("complete in 2 workspaces.", text)
         with tenancy.scoped(beta):
             self.assertTrue(Framework.objects.filter(key="soc2").exists())
             self.assertTrue(Role.objects.filter(name="Auditor").exists())

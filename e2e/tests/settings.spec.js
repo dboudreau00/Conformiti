@@ -321,6 +321,20 @@ test.describe("multi-factor authentication", () => {
     await expect(page.getByRole("button", { name: "Turn on", exact: true })).toBeVisible();
   });
 
+  test("an account that holds a passkey is still asked for its proof before adding an authenticator", async ({ page }) => {
+    // A passkey makes second_factor true while the authenticator stays off: the proof field must not go with it.
+    await page.route(/\/api\/auth\/mfa\/status\/$/, (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ enabled: false, pending: false, second_factor: true, passkeys: 1, backup_codes_remaining: 8 }),
+    }));
+    await open(page, "/settings", "Settings");
+    await section(page, "Security").click();
+    await expect(page.getByText("Authenticator app").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Turn on", exact: true })).toBeVisible();
+    await expect(page.locator("#mfa-enable-password")).toBeVisible();
+  });
+
   test("enrolment without the password is refused", async ({ page }) => {
     await open(page, "/settings", "Settings");
     await section(page, "Security").click();

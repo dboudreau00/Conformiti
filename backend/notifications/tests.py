@@ -342,3 +342,18 @@ class SesClientTests(SimpleTestCase):
         config = make.call_args.kwargs["config"]
         self.assertEqual((config.connect_timeout, config.read_timeout), (5, 15))
         self.assertEqual(config.retries["total_max_attempts"], 1)
+
+
+class EmailDateTests(SimpleTestCase):
+    def test_a_date_in_a_mail_reads_as_the_server_writes_dates_elsewhere(self):
+        import datetime
+
+        document = SimpleNamespace(name="Access policy", get_review_cadence_display="Annual",
+                                   next_review_date=datetime.date(2026, 10, 1))
+        for name in ("emails/review_reminder.txt", "emails/review_reminder.html"):
+            with self.subTest(name=name):
+                text = render_to_string(name, {"owner_name": "Owen", "overdue": True, "days": 0,
+                                               "document": document, "folder_path": "Policies"})
+                self.assertIn("2026-10-01", text)
+                self.assertNotIn("Oct.", text)
+                self.assertNotIn("PAST", text)

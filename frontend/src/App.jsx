@@ -54,12 +54,18 @@ function Protected({ me, setMe }) {
   const [meKnown, setMeKnown] = useState(!!me);
   // Bumped to ask /users/me/ again after it failed.
   const [meTry, setMeTry] = useState(0);
+  // Cookie mode: the session question got no answer (no response, or a 5xx). That is not "signed out".
+  const [unreachable, setUnreachable] = useState(false);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       if (cookieMode() && signedIn === null) {
-        const state = await session().catch(() => ({ authenticated: false }));
+        let noAnswer = false;
+        const state = await session().catch((ex) => {
+          noAnswer = !ex?.response || ex.response.status >= 500;
+          return { authenticated: false };
+        });
         if (!alive) return;
         let authenticated = !!state.authenticated;
         // The 60-minute access cookie lapses long before the 7-day refresh cookie. The probe cannot see that cookie,
@@ -67,6 +73,10 @@ function Protected({ me, setMe }) {
         if (!authenticated) {
           authenticated = await renewSession();
           if (!alive) return;
+        }
+        if (!authenticated && noAnswer) {
+          setUnreachable(true);
+          return;
         }
         setSignedIn(authenticated);
         if (!authenticated) return;
@@ -118,6 +128,7 @@ function Protected({ me, setMe }) {
   useEffect(() => { refreshCounts(); }, [refreshCounts, location.pathname]);
 
   const retryMe = () => {
+    setUnreachable(false);
     setMeKnown(false);
     setMeTry((n) => n + 1);
   };
@@ -131,6 +142,13 @@ function Protected({ me, setMe }) {
     nav("/login");
   }
 
+  if (unreachable) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+        <LoadError what="Your account" onRetry={retryMe} />
+      </div>
+    );
+  }
   if (signedIn === null) return <Waiting />;   // still asking
   if (!signedIn) return <Navigate to="/login" replace />;
 

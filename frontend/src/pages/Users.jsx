@@ -7,12 +7,14 @@ import { Button } from "../components/ui/Button.jsx";
 import { useConfirm } from "../components/ui/Dialog.jsx";
 import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
+import { usePage } from "../components/ui/ShowMore.jsx";
 import { StatCard } from "../components/ui/StatCard.jsx";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { BLANK_USER_FORM, NewUserForm } from "../components/users/NewUserForm.jsx";
 import { cn } from "../utils/cn.js";
 import { errorText, loadFailReason } from "../utils/a11y.js";
 import { useDeepLink } from "../utils/deepLink.js";
+import { fmtDate } from "../utils/format.js";
 
 const CAP_LABELS = [
   ["can_manage_users", "users"],
@@ -53,6 +55,17 @@ const FIELD_LABELS = {
   detail: "",
 };
 
+// API field name to the create form's own key: a refusal for one of these is shown under its input.
+const FORM_FIELDS = {
+  username: "username",
+  email: "email",
+  password: "password",
+  role: "role",
+  first_name: "first",
+  last_name: "last",
+  job_title: "job",
+};
+
 // A key the form does not show is spelled out from its own letters, never printed as the API names it.
 const fieldWords = (key) => {
   const words = String(key).replace(/_/g, " ").trim();
@@ -80,8 +93,14 @@ export default function Users({ me }) {
   const [busyId, setBusyId] = useState(null);
   const [form, setForm] = useState(BLANK_USER_FORM);
   const [formErr, setFormErr] = useState(null);
+  const [fieldErrs, setFieldErrs] = useState({});
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? users.filter((u) => [u.username, u.full_name, u.email, u.job_title].some((v) => v && String(v).toLowerCase().includes(needle)))
+    : users;
+  const page = usePage(shown, 100, [needle]);
 
   const isAdmin = !!me?.capabilities?.manage_users;
 
@@ -138,10 +157,23 @@ export default function Users({ me }) {
       if (doneMsg) ok(doneMsg);
       await loadUsers();
     } catch (e) {
-      fail(e, "Update failed.");
+      fail(e, "Couldn't update the user.");
     } finally {
       setBusyId(null);
     }
+  }
+
+  function toggleActive(u) {
+    if (!u.is_active) {
+      patchUser(u, { is_active: true }, `${u.username} activated.`);
+      return;
+    }
+    ask({
+      title: `Deactivate ${u.username}?`,
+      description: "They are signed out and cannot sign in until the account is activated again. Their history is kept.",
+      confirmLabel: "Deactivate user",
+      onConfirm: () => patchUser(u, { is_active: false }, `${u.username} deactivated.`),
+    });
   }
 
   function removeUser(u) {
@@ -156,7 +188,7 @@ export default function Users({ me }) {
           ok(`Deleted ${u.username}.`);
           await loadUsers();
         } catch (e) {
-          fail(e, "Delete failed.");
+          fail(e, "Couldn't delete the user.");
         } finally {
           setBusyId(null);
         }
@@ -169,11 +201,11 @@ export default function Users({ me }) {
     setBusyId(u.id);
     try {
       await api.patch(`/users/${u.id}/`, { password: pwValue });
-      ok(`Password set for ${u.username}.`);
+      ok(`Password set for ${u.username}. Their sessions are signed out.`);
       setPwFor(null);
       setPwValue("");
     } catch (e) {
-      fail(e, "Password rejected.");
+      setBanner({ kind: "err", text: errorText(e, "Couldn't set the password.", { password: "New password" }) });
     } finally {
       setBusyId(null);
     }
@@ -202,6 +234,7 @@ export default function Users({ me }) {
   async function createUser(e) {
     e.preventDefault();
     setFormErr(null);
+    setFieldErrs({});
     const payload = {
       username: form.username.trim(),
       first_name: form.first.trim(),
@@ -222,18 +255,23 @@ export default function Users({ me }) {
     } catch (err) {
       const r = err?.response;
       const d = r?.data;
-      // Field errors read one by one under their labels; a throttle, a server fault or a page of markup reads as errorText says it.
+      // A refused field reads under its own input; anything else reads once below the form. A throttle, a server fault
+      // or a page of markup reads as errorText says it.
       const byField = r && r.status < 500 && r.status !== 429 && d && typeof d === "object" && !Array.isArray(d);
-      const lines = byField
-        ? Object.entries(d)
-            .filter(([k]) => k !== "code")
-            .map(([k, v]) => {
-              const label = FIELD_LABELS[k] ?? fieldWords(k);
-              return `${label ? `${label}: ` : ""}${[].concat(v).join(" ")}`;
-            })
-            .join(" ")
-        : "";
-      setFormErr(lines || errorText(err, "Couldn't create the user."));
+      const entries = byField ? Object.entries(d).filter(([k]) => k !== "code") : [];
+      const onField = {};
+      for (const [k, v] of entries) {
+        if (FORM_FIELDS[k]) onField[FORM_FIELDS[k]] = [].concat(v).join(" ");
+      }
+      const lines = entries
+        .filter(([k]) => !FORM_FIELDS[k])
+        .map(([k, v]) => {
+          const label = FIELD_LABELS[k] ?? fieldWords(k);
+          return `${label ? `${label}: ` : ""}${[].concat(v).join(" ")}`;
+        })
+        .join(" ");
+      setFieldErrs(onField);
+      setFormErr(lines || (Object.keys(onField).length ? null : errorText(err, "Couldn't create the user.")));
     } finally {
       setCreating(false);
     }
@@ -242,6 +280,7 @@ export default function Users({ me }) {
   function toggleNew() {
     setShowNew((v) => !v);
     setFormErr(null);
+    setFieldErrs({});
   }
 
   if (!me) {
@@ -267,10 +306,6 @@ export default function Users({ me }) {
   const active = users.filter((u) => u.is_active).length;
   const superusers = users.filter((u) => u.is_superuser).length;
   const mfaOn = users.filter((u) => u.mfa_enabled).length;
-  const needle = query.trim().toLowerCase();
-  const shown = needle
-    ? users.filter((u) => [u.username, u.full_name, u.email, u.job_title].some((v) => v && String(v).toLowerCase().includes(needle)))
-    : users;
 
   return (
     <PanelTransition>
@@ -314,6 +349,7 @@ export default function Users({ me }) {
                     onCancel={toggleNew}
                     busy={creating}
                     error={formErr}
+                    fieldErrors={fieldErrs}
                     rolesFailed={!!rolesErr}
                     onRetryRoles={loadRoles}
                   />
@@ -323,7 +359,8 @@ export default function Users({ me }) {
           </AnimatePresence>
 
           <Panel className="overflow-hidden">
-            <PanelHeader title="Users">
+            {/* The page heading already says "Users"; this row holds only the action. */}
+            <PanelHeader>
               <Button
                 size="sm"
                 variant={showNew ? "secondary" : "primary"}
@@ -365,8 +402,12 @@ export default function Users({ me }) {
             ) : users.length === 0 ? (
               <Empty title="No users yet" />
             ) : shown.length === 0 ? (
-              <Empty title="No users match" />
+              <Empty
+                title="No users match"
+                action={<Button size="sm" variant="secondary" onClick={() => setQuery("")}>Clear search</Button>}
+              />
             ) : (
+              <>
               <div className="overflow-x-auto" role="region" aria-label="Users" tabIndex={0}>
                 <table className="w-full min-w-[1110px] border-collapse text-[13px]">
                   <thead>
@@ -379,7 +420,7 @@ export default function Users({ me }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {shown.map((u, i) => (
+                    {page.visible.map((u, i) => (
                       <UserRow
                         key={u.id}
                         index={i}
@@ -401,9 +442,7 @@ export default function Users({ me }) {
                         }}
                         onPwSave={() => savePassword(u)}
                         onRole={(role) => patchUser(u, { role }, `Role updated for ${u.username}.`)}
-                        onToggleActive={() =>
-                          patchUser(u, { is_active: !u.is_active }, `${u.username} ${u.is_active ? "deactivated" : "activated"}.`)
-                        }
+                        onToggleActive={() => toggleActive(u)}
                         onResetMfa={() => resetMfa(u)}
                         onDelete={() => removeUser(u)}
                       />
@@ -411,6 +450,14 @@ export default function Users({ me }) {
                   </tbody>
                 </table>
               </div>
+              {page.remaining ? (
+                <div className="border-t border-line px-5 py-3 text-center">
+                  <Button size="sm" variant="secondary" onClick={page.more}>
+                    Show {Math.min(page.size, page.remaining)} more of {page.remaining.toLocaleString()}
+                  </Button>
+                </div>
+              ) : null}
+              </>
             )}
           </Panel>
         </StackItem>
@@ -454,7 +501,7 @@ export default function Users({ me }) {
                                 ))}
                               </span>
                             ) : (
-                              <span className="text-xs text-faint">read-only</span>
+                              <span className="text-xs text-faint">Read-only</span>
                             )}
                           </td>
                         </tr>
@@ -508,7 +555,7 @@ function UserRow({
             <span className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-[13px] font-medium text-ink">{u.username}</span>
               {u.is_superuser ? <Badge tone="faint" mono>superuser</Badge> : null}
-              {self ? <Badge tone="accent" dot>you</Badge> : null}
+              {self ? <Badge tone="accent" dot>You</Badge> : null}
             </span>
             <span className="block truncate text-xs text-muted">
               {u.full_name || "-"}
@@ -540,12 +587,12 @@ function UserRow({
         </select>
         {roleHint ? <span id={hintId} className="mt-1 block text-2xs text-faint">{roleHint}</span> : null}
       </td>
-      <td className={cn(cell, "tabular font-mono text-xs text-muted")}>{u.last_login ? u.last_login.slice(0, 10) : "never"}</td>
+      <td className={cn(cell, "tabular font-mono text-xs text-muted")}>{u.last_login ? fmtDate(u.last_login) : "Never"}</td>
       <td className={cell}>
-        <Badge tone={u.is_active ? "success" : "faint"} dot>{u.is_active ? "active" : "inactive"}</Badge>
+        <Badge tone={u.is_active ? "success" : "faint"} dot>{u.is_active ? "Active" : "Inactive"}</Badge>
       </td>
       <td className={cell}>
-        <Badge tone={u.mfa_enabled ? "success" : "faint"} dot={u.mfa_enabled}>{u.mfa_enabled ? "on" : "off"}</Badge>
+        <Badge tone={u.mfa_enabled ? "success" : "faint"} dot={u.mfa_enabled}>{u.mfa_enabled ? "On" : "Off"}</Badge>
       </td>
       <td className={cn(cell, "text-right")}>
         {pwOpen ? (
@@ -600,7 +647,6 @@ function UserRow({
                 Delete
               </Button>
             ) : null}
-            {!touchable ? <span className="text-2xs text-faint">superuser only</span> : null}
           </div>
         )}
       </td>

@@ -391,7 +391,7 @@ def main(root, allow_unsigned=False, trusted=()):
             print(f"exported by  : {sums_fp[:16]}  fingerprint sha256:{sums_fp}  (a different key)")
 
     if problems:
-        print(f"\nFAIL: {len(problems)} problem(s):")
+        print(f"\nFAIL: {len(problems)} problem{'' if len(problems) == 1 else 's'}:")
         for problem in problems:
             print(f"  - {_safe(problem)}")
         return 1

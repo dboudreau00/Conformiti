@@ -17,15 +17,15 @@ export function Panel({ children, className, padded = false, as: Tag = "section"
   );
 }
 
-/** `inline` sets a caption `meta` beside the title (baseline-aligned) and leaves `children` at the right edge. */
+/** No `title` (the page heading already says it) leaves a row that holds only the actions. `inline` sets a caption `meta` beside the title (baseline-aligned) and leaves `children` at the right edge. */
 export function PanelHeader({ title, meta, children, className, inline = false }) {
   const caption = typeof meta === "string" || typeof meta === "number";
   const metaNode = meta === null || meta === undefined || meta === false || meta === ""
     ? null
     : caption ? <Label>{meta}</Label> : meta;
-  const heading = <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>;
+  const heading = title ? <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h2> : null;
   return (
-    <header className={cn("flex items-center justify-between gap-4 border-b border-line px-5 py-3.5", className)}>
+    <header className={cn("flex items-center gap-4 border-b border-line px-5 py-3.5", title ? "justify-between" : "justify-end", className)}>
       {inline ? (
         <div className="flex items-baseline gap-3">
           {heading}

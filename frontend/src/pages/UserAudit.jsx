@@ -11,6 +11,7 @@ import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../compone
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { errorText, loadFailReason } from "../utils/a11y.js";
 import { cn } from "../utils/cn.js";
+import { fmtDate, localDay } from "../utils/format.js";
 import { toneVar } from "../utils/tone.js";
 
 const DECISION_TONE = { keep: "success", modify: "warning", revoke: "danger", pending: "muted" };
@@ -28,9 +29,7 @@ const GRID = "grid-cols-[minmax(220px,1.4fr)_minmax(130px,0.9fr)_minmax(150px,1f
 // GRID_MIN_W is GRID's narrowest width (tracks 940px + four 16px gaps + 2 x 20px padding): change them together.
 const GRID_MIN_W = "min-w-[1044px]";
 
-function fmtDate(s) {
-  return s ? s.slice(0, 10) : "never";
-}
+const lastLogin = (s) => (s ? fmtDate(s) : "never");
 
 const REVIEW_KEY_STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
 const reviewStatus = (s) => REVIEW_STATUS[s] || REVIEW_STATUS.open;
@@ -177,14 +176,14 @@ export default function UserAudit({ me }) {
 
   async function startReview(e) {
     e?.preventDefault();
-    const name = newName.trim() || `Access review: ${new Date().toISOString().slice(0, 10)}`;
+    const name = newName.trim() || `Access review: ${localDay()}`;
     setBusy("start");
     setMsg(null);
     try {
       const { data } = await api.post("/access-reviews/", { name });
       setNewName("");
       await loadReviews(data.id);
-      setMsg({ kind: "ok", text: `Created "${data.name}".` });
+      setMsg({ kind: "ok", text: `Created ${data.name}.` });
     } catch (ex) {
       setMsg({ kind: "err", text: errorText(ex, "Couldn't create the review.") });
     } finally {
@@ -441,7 +440,7 @@ export default function UserAudit({ me }) {
         ) : !review ? (
           <StackItem>
             <Panel>
-              <Empty title="No access reviews yet" />
+              <Empty title="No access reviews yet">{canWrite ? "Create one above." : null}</Empty>
             </Panel>
           </StackItem>
         ) : (
@@ -493,7 +492,7 @@ export default function UserAudit({ me }) {
                         {items.map((it, i) => {
                           const name = it.full_name || it.username;
                           const rowBusy = savingId === it.id;
-                          const activity = `${it.is_active ? "active" : "inactive"} · last login ${fmtDate(it.last_login)}`;
+                          const activity = `${it.is_active ? "active" : "inactive"} · last login ${lastLogin(it.last_login)}`;
                           const grants = it.folder_grants ?? 0;
                           return (
                             <motion.div

@@ -6,6 +6,7 @@ import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { ConfirmDialog } from "../components/ui/Dialog.jsx";
 import { Meter } from "../components/ui/Meter.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Label, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip } from "../components/ui/SegmentedControl.jsx";
 import { errorText } from "../utils/a11y.js";
@@ -82,14 +83,24 @@ export default function Questionnaire() {
     setAttempt((n) => n + 1);
   }
 
+  // A link that closed while the form was open (revoked, expired, already submitted) shows the closed screen, not a
+  // form that can never be sent.
+  function closedBy(e) {
+    const code = e?.response?.status === 404 ? "unknown" : e?.response?.data?.code;
+    if (!["unknown", "expired", "revoked", "submitted"].includes(code)) return false;
+    setState((s) => ({ status: code, data: s.data }));
+    return true;
+  }
+
   async function saveDraft() {
     setMsg(null);
     setBusy(true);
     try {
-      await axios.put(url, { answers });
+      const r = await axios.put(url, { answers });
+      if (r.data?.saved_at) setState((s) => ({ ...s, data: { ...s.data, saved_at: r.data.saved_at } }));
       setMsg({ ok: true, text: "Draft saved." });
     } catch (e) {
-      setMsg({ ok: false, text: errorText(e, "The draft could not be saved.") });
+      if (!closedBy(e)) setMsg({ ok: false, text: errorText(e, "The draft could not be saved.") });
     } finally {
       setBusy(false);
     }
@@ -102,7 +113,7 @@ export default function Questionnaire() {
       await axios.post(`${url}submit/`, { answers, respondent_name: name.trim(), respondent_title: title.trim() });
       setState({ status: "done", data });
     } catch (err) {
-      setMsg({ ok: false, text: errorText(err, "The questionnaire could not be submitted.") });
+      if (!closedBy(err)) setMsg({ ok: false, text: errorText(err, "The questionnaire could not be submitted.") });
     } finally {
       setBusy(false);
     }
@@ -187,11 +198,7 @@ export default function Questionnaire() {
         </Panel>
 
         <Panel className="p-5">
-          {msg ? (
-            <div className={msg.ok ? "notice notice-ok mb-4" : "notice notice-err mb-4"} role={msg.ok ? "status" : "alert"}>
-              {msg.text}
-            </div>
-          ) : null}
+          {msg ? <Notice kind={msg.ok ? "ok" : "err"} className="mb-4">{msg.text}</Notice> : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="q-name" className="field-label">Your name</label>
@@ -224,6 +231,7 @@ export default function Questionnaire() {
               variant="primary"
               onClick={() => setConfirming(true)}
               disabled={busy || !name.trim() || answered === 0}
+              title={busy ? undefined : answered === 0 ? "Answer at least one question first" : !name.trim() ? "Enter your name first" : undefined}
             >
               {busy ? "Sending…" : "Submit questionnaire"}
             </Button>

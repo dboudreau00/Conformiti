@@ -59,7 +59,7 @@ function CoverageRow({ label, owned, total, delay }) {
       <div className="mb-1.5 flex items-baseline justify-between gap-3">
         <span className="text-[13px] text-ink">{label}</span>
         <span className={cn("tabular shrink-0 font-mono text-2xs", TONE_TEXT[tone])}>
-          {pct == null ? "none tracked" : `${owned}/${total} · ${pct}%`}
+          {pct == null ? "None tracked" : `${owned}/${total} · ${pct}%`}
         </span>
       </div>
       <Meter value={owned} total={total} tone={tone} delay={delay} ariaLabel={label} />

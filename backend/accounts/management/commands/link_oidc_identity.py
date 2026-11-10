@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from accounts.models import OidcIdentity
 from accounts.oidc import config
 from audit.models import AuditLog
+from notifications.wording import count_of
 
 
 class Command(BaseCommand):
@@ -27,7 +28,7 @@ class Command(BaseCommand):
             AuditLog.objects.create(user=None, action="delete", object_type="auth",
                                     object_id=str(user.pk), workspace_id=user.workspace_id,
                                     detail=f"sso identities unlinked from {user.get_username()} (CLI)")
-            self.stdout.write(self.style.SUCCESS(f"Removed {n} identity record(s) from {user.get_username()}."))
+            self.stdout.write(self.style.SUCCESS(f"Removed {count_of(n, 'identity record')} from {user.get_username()}."))
             return
         subject = (opts["subject"] or "").strip()
         if not subject:

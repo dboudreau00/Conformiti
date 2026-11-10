@@ -23,6 +23,8 @@ class AuditLogFilter(filters.FilterSet):
 
 
 class CanViewAuditLog(BasePermission):
+    message = "Only administrators, auditors and people whose role can view everything can read the audit log."
+
     def has_permission(self, request, view):
         u = request.user
         return bool(

@@ -59,7 +59,8 @@ export default function NotificationBell() {
   async function dismiss(e, key) {
     e.stopPropagation();
     setItems((cur) => cur.filter((i) => i.key !== key));
-    try { await api.post("/notifications/dismiss/", { key }); } catch { /* ignore */ }
+    // A refused dismissal comes back on the next poll; ask now so the row does not look dismissed for a minute.
+    try { await api.post("/notifications/dismiss/", { key }); } catch { load(); }
   }
 
   function go(item) {
@@ -126,7 +127,7 @@ export default function NotificationBell() {
               <button
                 type="button"
                 onClick={(e) => dismiss(e, i.key)}
-                aria-label="Dismiss"
+                aria-label={`Dismiss: ${i.title}`}
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-ink"
               >
                 <XIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />

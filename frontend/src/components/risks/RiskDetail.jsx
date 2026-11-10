@@ -21,6 +21,7 @@ export function RiskDetail({
   notice,
   onPatch,
   onClose,
+  onDirty,
   notes,
   notesLoading,
   notesErr,
@@ -38,6 +39,13 @@ export function RiskDetail({
   const status = RISK_STATUS[risk.status] || { label: risk.status, tone: "muted" };
   const ratingTone = RISK_RATING[risk.rating] || "muted";
   const planDirty = planDraft !== (risk.mitigation_plan || "");
+  // The page asks before it closes or swaps a risk that holds an unsaved plan or note.
+  const dirty = (canEdit && planDirty) || !!noteText.trim();
+  useEffect(() => {
+    onDirty?.(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
+  const managerOnly = canManage ? undefined : "Only a framework manager can change this.";
   const id = (suffix) => `risk-${risk.id}-${suffix}`;
   // The list holds active people only, and may be empty when the directory failed to load: the current owner is always
   // an option, so the select cannot drop or hide the assignment.
@@ -114,6 +122,7 @@ export function RiskDetail({
               className="input input-sm"
               value={risk.treatment}
               disabled={saving || !canManage}
+              title={managerOnly}
               onChange={(e) => onPatch({ treatment: e.target.value })}
             >
               {TREATMENTS.map(([v, l]) => (
@@ -127,6 +136,7 @@ export function RiskDetail({
               className="input input-sm"
               value={risk.likelihood}
               disabled={saving || !canManage}
+              title={managerOnly}
               onChange={(e) => onPatch({ likelihood: Number(e.target.value) })}
             >
               {SCALE.map((n) => (
@@ -140,6 +150,7 @@ export function RiskDetail({
               className="input input-sm"
               value={risk.impact}
               disabled={saving || !canManage}
+              title={managerOnly}
               onChange={(e) => onPatch({ impact: Number(e.target.value) })}
             >
               {SCALE.map((n) => (
@@ -153,6 +164,7 @@ export function RiskDetail({
               className="input input-sm"
               value={risk.owner ?? ""}
               disabled={saving || !canManage}
+              title={managerOnly}
               onChange={(e) => onPatch({ owner: e.target.value ? Number(e.target.value) : null })}
             >
               <option value="">Unassigned</option>
@@ -160,7 +172,7 @@ export function RiskDetail({
                 <option key={u.id} value={u.id}>{displayName(u)}</option>
               ))}
             </select>
-            {usersErr ? <p className="mt-1 text-2xs text-danger">{usersErr}</p> : null}
+            {usersErr && canManage ? <p className="mt-1 text-2xs text-danger">{usersErr}</p> : null}
           </Field>
           <Field id={id("due")} label="Due date">
             <input

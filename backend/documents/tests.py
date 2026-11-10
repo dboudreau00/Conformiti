@@ -1236,3 +1236,27 @@ class PreviewTests(APITestBase):
         self.assertEqual(r["Content-Type"], "application/pdf")
         self.assertTrue(AuditLog.objects.filter(object_type="evidence-packages",
                                                 detail__contains="previewed").exists())
+
+
+class RefusalNamesTheAccessNeededTests(APITestBase):
+    def test_deleting_a_document_says_manage_access_is_needed(self):
+        grant(self.tree.ctrl1, user=self.owner, level=EDIT)
+        doc = make_doc(self.tree.ctrl1, self.owner)
+        r = self.client_for(self.owner).delete(f"/api/documents/{doc.pk}/")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(str(r.data["detail"]), "You need manage access on a document's folder to delete it.")
+        self.assertTrue(Document.objects.filter(pk=doc.pk).exists())
+
+    def test_changing_a_document_names_who_can(self):
+        grant(self.tree.ctrl1, user=self.viewer, level=VIEW)
+        doc = make_doc(self.tree.ctrl1, self.owner)
+        r = self.client_for(self.viewer).patch(f"/api/documents/{doc.pk}/", {"name": "Renamed"}, format="json")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(str(r.data["detail"]),
+                         "Only a document's owner, or people with edit access to its folder, can change it.")
+
+    def test_a_missing_version_is_a_refusal_in_words(self):
+        doc = make_doc(self.tree.ctrl1, self.manager)
+        r = self.client_for(self.manager).get(f"/api/documents/{doc.pk}/versions/999999/download/")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(str(r.data["detail"]), "That version was not found.")

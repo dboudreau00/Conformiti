@@ -23,11 +23,12 @@ let loads = 0;
 
 // One worker runs every spec, so the fakes this file installs must not outlive it.
 const ORIGINAL = {
-  localStorage: globalThis.localStorage, document: globalThis.document, window: globalThis.window,
+  localStorage: globalThis.localStorage, sessionStorage: globalThis.sessionStorage,
+  document: globalThis.document, window: globalThis.window,
   adapter: axios.defaults.adapter,
 };
 test.afterAll(() => {
-  for (const name of ["localStorage", "document", "window"]) {
+  for (const name of ["localStorage", "sessionStorage", "document", "window"]) {
     if (ORIGINAL[name] === undefined) delete globalThis[name];
     else globalThis[name] = ORIGINAL[name];
   }
@@ -39,6 +40,7 @@ test.afterAll(() => {
 async function load({ routes, storage = {}, cookies = "csrftoken=tok", mode = "header" }) {
   const calls = [];
   globalThis.localStorage = new FakeStorage(storage);
+  globalThis.sessionStorage = new FakeStorage();
   globalThis.document = { cookie: cookies };
   globalThis.window = { location: { pathname: "/controls", href: "/controls" } };
   const adapter = async (config) => {
@@ -231,6 +233,40 @@ test.describe("a refused request", () => {
     expect([storage.getItem("access"), storage.getItem("refresh")]).toEqual([null, null]);
     expect(storage.getItem("workspace")).toBe("acme");
     expect(window.location.href).toBe("/login");
+  });
+
+  test("a session the server ended leaves the page it ended on for the sign-in screen, until the next sign-in", async () => {
+    const { client, window } = await load({
+      storage: { access: "A1", refresh: "R1" },
+      routes: {
+        "GET /api/controls/": () => [401, {}],
+        "POST /api/auth/token/refresh/": () => [401, { detail: "Token is blacklisted" }],
+        "POST /api/auth/token/": () => [200, { access: "A2", refresh: "R2" }],
+      },
+    });
+    expect(client.sessionEndedAt()).toBe("");
+    await expect(client.default.get("/controls/")).rejects.toBeTruthy();
+    expect(window.location.href).toBe("/login");
+    expect(client.sessionEndedAt()).toBe("/controls");
+    await client.login("admin", "right");
+    expect(client.sessionEndedAt()).toBe("");
+  });
+
+  test("the way back after a session ended is only ever an address inside the app", async () => {
+    const { client } = await load({ routes: {} });
+    for (const [stored, back] of [["//evil.example/x", "/"], ["https://evil.example", "/"], ["/login", "/"], ["/risks?search=a", "/risks?search=a"]]) {
+      sessionStorage.setItem("session-ended", stored);
+      expect(client.sessionEndedAt()).toBe(back);
+    }
+  });
+
+  test("a dropped connection during the refresh is not a session that ended", async () => {
+    const { client } = await load({
+      storage: { access: "A1", refresh: "R1" },
+      routes: { "GET /api/controls/": () => [401, {}], "POST /api/auth/token/refresh/": dropped },
+    });
+    await expect(client.default.get("/controls/")).rejects.toBeTruthy();
+    expect(client.sessionEndedAt()).toBe("");
   });
 
   test("WEB-05: in cookie mode a refusal that another tab already answered retries the request", async () => {

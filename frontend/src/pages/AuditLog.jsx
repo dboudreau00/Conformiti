@@ -8,6 +8,7 @@ import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { errorText, loadFailReason } from "../utils/a11y.js";
+import { fmtDateTime } from "../utils/format.js";
 
 const ACTION_TONE = {
   create: "success",
@@ -27,10 +28,6 @@ const DAY_RANGES = [
 
 const EMPTY_FILTERS = { action: "", type: "", user: "", days: "30", q: "" };
 const EMPTY_FACETS = { actions: [], object_types: [], users: [] };
-
-function fmtWhen(ts) {
-  return ts ? ts.slice(0, 16).replace("T", " ") : "";
-}
 
 // The trail stores the address segment a record was changed under. Each is shown as a person would name the record;
 // the filter still sends the stored value.
@@ -198,7 +195,12 @@ export default function AuditLog({ me }) {
   if (loadFailed) {
     emptyState = <LoadError what="The audit trail" reason={loadFailed.reason} onRetry={() => load(1)} />;
   } else if (filtered) {
-    emptyState = <Empty title="No entries match these filters" />;
+    emptyState = (
+      <Empty
+        title="No entries match these filters"
+        action={<Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button>}
+      />
+    );
   } else if (f.days) {
     emptyState = (
       <Empty
@@ -270,7 +272,7 @@ export default function AuditLog({ me }) {
               <input
                 type="text"
                 aria-label="Search audit log"
-                placeholder="Search detail, record, user, IP…"
+                placeholder="Search detail, record, actor, IP…"
                 className="input input-sm w-[280px] pl-8"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -295,7 +297,7 @@ export default function AuditLog({ me }) {
 
         {err ? (
           <StackItem>
-            <Notice kind="err">{err}</Notice>
+            <Notice kind="err" onDismiss={() => setErr(null)}>{err}</Notice>
           </StackItem>
         ) : null}
 
@@ -341,7 +343,7 @@ export default function AuditLog({ me }) {
                           className="align-middle transition-colors duration-150 ease-out hover:bg-surface-2/60"
                         >
                           <td className="tabular whitespace-nowrap px-5 py-2.5 font-mono text-xs text-muted">
-                            {fmtWhen(r.timestamp)}
+                            {fmtDateTime(r.timestamp)}
                           </td>
                           <td className="max-w-0 px-5 py-2.5">
                             <span className="block truncate text-[13px] font-medium text-ink">{actor}</span>

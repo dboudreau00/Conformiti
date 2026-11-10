@@ -64,8 +64,8 @@ class RoleViewSet(viewsets.ModelViewSet):
             }
             if changed:
                 raise PermissionDenied(
-                    "Capability flags on built-in roles are fixed. Create a custom role "
-                    "with the flags you need and assign it instead."
+                    "The capabilities of built-in roles are fixed. Create a custom role "
+                    "with the capabilities you need and assign it instead."
                 )
         # No change may leave the workspace without an active administrator; dropping can_manage_users from a custom
         # role would otherwise bypass the user-level guard.

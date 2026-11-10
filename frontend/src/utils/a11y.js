@@ -32,6 +32,10 @@ function fieldLabel(key, names) {
 /** What a person reads after a failed call. Never a raw body (HTML, a throttle line), a status number, or an
  * unnamed field key; `names` maps the keys a form shows to the labels it shows. */
 const GENERIC = "Something went wrong. Please try again.";
+const GONE = "That no longer exists. Reload the page and try again.";
+// The framework's own sentences for a missing record name the model class and the id.
+const NO_MATCH = /^No .+ matches the given query\.$/;
+const BAD_PK = /Invalid pk "[^"]*" - object does not exist\./g;
 
 export function errorText(e, fallback = GENERIC, names) {
   const r = e?.response;
@@ -42,18 +46,18 @@ export function errorText(e, fallback = GENERIC, names) {
   const d = r.data;
   if (r.status === 429) return TOO_OFTEN;
   if (typeof d === "string" && d.trim() && !d.trim().startsWith("<")) return r.status >= 500 ? (own ? fallback : SERVER_FAULT) : d;
-  if (d?.detail) return String(d.detail);
+  if (d?.detail) return NO_MATCH.test(String(d.detail)) ? GONE : String(d.detail);
   if (d && typeof d === "object" && !Array.isArray(d)) {
     const first = Object.entries(d).find(([k]) => k !== "code");
     if (first) {
       const [k, v] = first;
-      const msg = Array.isArray(v) ? v.join(" ") : String(v);
+      const msg = (Array.isArray(v) ? v.join(" ") : String(v)).replace(BAD_PK, "That item was not found.");
       return k === "non_field_errors" ? msg : `${fieldLabel(k, names)}: ${msg}`;
     }
   }
   if (r.status === 413) return "That file is too large to upload.";
   if (r.status === 403) return "You don't have permission to do that.";
-  if (r.status === 404) return "That no longer exists. Reload the page and try again.";
+  if (r.status === 404) return GONE;
   if (r.status >= 500) return own ? fallback : SERVER_FAULT;
   return fallback;
 }

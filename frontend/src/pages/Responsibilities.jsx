@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DownloadIcon, XIcon } from "lucide-react";
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import { PanelTransition } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { useConfirm } from "../components/ui/Dialog.jsx";
+import { Notice } from "../components/ui/Notice.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
 import { Chip, SegmentedControl } from "../components/ui/SegmentedControl.jsx";
 import { ControlPicker } from "../components/controls/ControlPicker.jsx";
@@ -70,23 +71,36 @@ export default function Responsibilities({ me }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(EMPTY);
+  const [exporting, setExporting] = useState(false);
+  const [choicesFailed, setChoicesFailed] = useState(false);
+  const [choicesTry, setChoicesTry] = useState(0);
+  const loadSeq = useRef(0);
 
+  // A slow answer for a framework the person has since left must not overwrite the one now chosen.
   async function load(framework = fw) {
+    const seq = ++loadSeq.current;
     setLoadErr(false);
     try {
       const { data: d } = await api.get(`/responsibilities/matrix/${framework ? `?framework=${encodeURIComponent(framework)}` : ""}`);
-      setData(d);
+      if (seq === loadSeq.current) setData(d);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setData(null);
       setLoadErr({ reason: loadFailReason(e) });
     }
   }
   useEffect(() => { load(fw); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [fw]);
   useEffect(() => {
-    api.get("/control-evidence/choices/").then((r) => setControls(r.data.controls || [])).catch(() => setControls([]));
-    fetchAll("/vendors/").then(setVendors).catch(() => setVendors([]));
-    if (canManage) fetchAll("/users/").then((u) => setUsers(u.filter((x) => x.is_active))).catch(() => setUsers([]));
-  }, [canManage]);
+    let live = true;
+    const failed = () => { if (live) setChoicesFailed(true); };
+    setChoicesFailed(false);
+    api.get("/control-evidence/choices/")
+      .then((r) => { if (live) setControls(r.data.controls || []); })
+      .catch(() => { if (live) setControls([]); failed(); });
+    fetchAll("/vendors/").then((v) => { if (live) setVendors(v); }).catch(failed);
+    if (canManage) fetchAll("/users/").then((u) => { if (live) setUsers(u.filter((x) => x.is_active)); }).catch(failed);
+    return () => { live = false; };
+  }, [canManage, choicesTry]);
 
   const frameworks = useMemo(() => {
     const seen = new Map();
@@ -132,10 +146,13 @@ export default function Responsibilities({ me }) {
   }
   async function exportCsv() {
     setMsg(null);
+    setExporting(true);
     try {
       await downloadFile(`/responsibilities/export/${fw ? `?framework=${encodeURIComponent(fw)}` : ""}`, "responsibility-matrix.csv");
     } catch (e) {
       setMsg({ ok: false, text: errorText(e, "Couldn't export the responsibility matrix.") });
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -143,20 +160,7 @@ export default function Responsibilities({ me }) {
     <PanelTransition>
       {confirmDialog}
       {msg && msg.at !== "assign" ? (
-        <div
-          className={cn("notice mb-4 flex items-start justify-between gap-3", msg.ok ? "notice-ok" : "notice-err")}
-          role={msg.ok ? "status" : "alert"}
-        >
-          <span>{msg.text}</span>
-          <button
-            type="button"
-            aria-label="Dismiss"
-            onClick={() => setMsg(null)}
-            className="shrink-0 opacity-70 hover:opacity-100"
-          >
-            <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
+        <Notice kind={msg.ok ? "ok" : "err"} className="mb-4" onDismiss={() => setMsg(null)}>{msg.text}</Notice>
       ) : null}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -178,13 +182,15 @@ export default function Responsibilities({ me }) {
         <Panel className="overflow-hidden">
           <PanelHeader
             className="flex-wrap"
-            title="Responsibility matrix"
+            title="Controls"
             meta={data ? `Showing ${page.shown.toLocaleString()} of ${rows.length.toLocaleString()}` : "-"}
           >
             <Button
               size="sm"
               icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}
               onClick={exportCsv}
+              busy={exporting}
+              disabled={exporting}
             >
               Export CSV
             </Button>
@@ -308,6 +314,12 @@ export default function Responsibilities({ me }) {
           {canManage ? (
             <Panel className="p-4">
               <Label className="mb-3 block">Assign a responsibility</Label>
+              {choicesFailed ? (
+                <Notice kind="err" className="mb-3">
+                  The controls, people or vendors to choose from could not be loaded.{" "}
+                  <button type="button" className="link" onClick={() => setChoicesTry((n) => n + 1)}>Try again</button>
+                </Notice>
+              ) : null}
               <form
                 className="space-y-3"
                 onSubmit={async (e) => {
@@ -390,11 +402,9 @@ export default function Responsibilities({ me }) {
                   />
                 </div>
                 <Button type="submit" size="sm" variant="primary" className="w-full" disabled={busy || !form.control || !form.party}>
-                  {busy ? "Saving…" : "Assign"}
+                  {busy ? "Assigning…" : "Assign"}
                 </Button>
-                {msg?.at === "assign" ? (
-                  <div className={cn("notice", msg.ok ? "notice-ok" : "notice-err")} role={msg.ok ? "status" : "alert"}>{msg.text}</div>
-                ) : null}
+                {msg?.at === "assign" ? <Notice kind={msg.ok ? "ok" : "err"}>{msg.text}</Notice> : null}
               </form>
             </Panel>
           ) : null}

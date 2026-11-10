@@ -96,7 +96,9 @@ class FolderViewSet(viewsets.ModelViewSet):
             raise ValidationError({"parent": _missing_pk(parent.pk)})
         allowed = user.can_manage_folders or (parent and parent.can_edit(user))
         if not allowed:
-            raise PermissionDenied("You cannot create a folder here.")
+            raise PermissionDenied(
+                "You need edit access to a folder to create a folder in it." if parent
+                else "Only folder managers can create top-level folders.")
         # Ownership does not reach below the folder it is set on: whoever owns the parent owns what they make in it, or
         # they would create a folder they cannot see. Manage through a grant already reaches below, and ends with it.
         extra = {}
@@ -202,7 +204,7 @@ class FolderPermissionViewSet(viewsets.ModelViewSet):
 
     def _check_manage(self, folder):
         if not folder.can_manage(self.request.user):
-            raise PermissionDenied("You must be able to manage this folder to change its access.")
+            raise PermissionDenied("You need manage access on a folder to change who can reach it.")
 
     def perform_create(self, serializer):
         folder = serializer.validated_data["folder"]
@@ -392,7 +394,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             version = doc.versions.get(pk=version_pk)
         except (DocumentVersion.DoesNotExist, ValueError):
             # ValueError: the URL pattern accepts any text, so a non-numeric id reaches the query.
-            raise ValidationError({"version": "Not found."})
+            raise ValidationError({"detail": "That version was not found."})
         # The parent can be clean while this archived file matched newer definitions.
         monitor.refuse_if_quarantined(version)
         record_evidence_read(request, doc, version=version.version)

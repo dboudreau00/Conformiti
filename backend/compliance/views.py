@@ -235,12 +235,12 @@ class ControlEvidenceViewSet(viewsets.ModelViewSet):
         try:
             control = Control.objects.get(pk=request.data.get("control"))
         except (Control.DoesNotExist, TypeError, ValueError):
-            raise ValidationError({"control": "Control not found."})
+            raise ValidationError({"control": "That control was not found."})
         raw_ids = request.data.get("documents")
         if not isinstance(raw_ids, list) or not raw_ids:
-            raise ValidationError({"documents": "Provide a non-empty list of document ids."})
+            raise ValidationError({"documents": "Choose at least one document."})
         if len(raw_ids) > MAX_BULK_DOCUMENTS:
-            raise ValidationError({"documents": f"At most {MAX_BULK_DOCUMENTS} documents per call."})
+            raise ValidationError({"documents": f"Attach at most {MAX_BULK_DOCUMENTS} documents at a time."})
         doc_ids = []
         for value in raw_ids:
             number = _document_id(value)

@@ -147,7 +147,8 @@ class PbcRequestViewSet(viewsets.ModelViewSet):
                                              "Use Mark provided, Accept, Return or Withdraw to move it on."})
         _require_list_open(req.package)
         if not self._may_edit(user, req):
-            raise PermissionDenied("You cannot change this request.")
+            raise PermissionDenied("Only framework managers, or the auditor who raised it while it is open or returned, "
+                                   "can change this request.")
         extra = {}
         if "package_control" in data:
             row = data.get("package_control")
@@ -338,7 +339,8 @@ class PbcItemViewSet(viewsets.ModelViewSet):
             req = (PbcRequest.objects.select_for_update(of=("self",))
                    .select_related("package").get(pk=instance.request_id))
             if not self._may_answer(self.request.user, req):
-                raise PermissionDenied("You cannot change this request's answer.")
+                raise PermissionDenied("Only framework managers, or the person this request is assigned to, "
+                                       "can change its answer.")
             _require_list_open(req.package)
             if req.status in (PbcRequest.Status.ACCEPTED, PbcRequest.Status.WITHDRAWN):
                 raise ValidationError({"detail": f"This request is {req.get_status_display().lower()}."})

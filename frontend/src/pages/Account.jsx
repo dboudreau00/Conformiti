@@ -20,6 +20,7 @@ import { ACCENT_PACKS, THEME_PACKS, accentHex, useTheme } from "../theme.js";
 import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
+import { fmtDate } from "../utils/format.js";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -500,7 +501,7 @@ function MfaBlock() {
       loadStatus();
       setMsg({ ok: true, text: data.backup_codes
         ? "Two-factor authentication is on."
-        : `Two-factor authentication is on. Your existing ${data.backup_codes_remaining} backup codes still work.` });
+        : `Two-factor authentication is on. Your existing ${data.backup_codes_remaining === 1 ? "backup code still works" : `${data.backup_codes_remaining} backup codes still work`}.` });
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "That code isn't valid.") });
     } finally {
@@ -602,7 +603,7 @@ function MfaBlock() {
       {codes ? <BackupCodes codes={codes} /> : null}
 
       {/* Same proof as removing a factor: a hijacked session must not be able to enrol its own authenticator. */}
-      {status && !status.enabled && !status.second_factor && !setup ? (
+      {status && !status.enabled && !setup ? (
         <div className="mt-4 max-w-[640px]">
           <Field id="mfa-enable-password" label="Confirm your password to add an authenticator">
             <input
@@ -715,8 +716,8 @@ function PasskeysBlock() {
       setCodes(done.data?.backup_codes || null);
       load();
       setMsg({ ok: true, text: done.data?.backup_codes
-        ? "Passkey enrolled. Save the backup codes below."
-        : "Passkey enrolled." });
+        ? "Passkey added. Save the backup codes below."
+        : "Passkey added." });
     } catch (err) {
       setMsg({ ok: false, text: passkeyErrorText(err) });
     } finally {
@@ -731,7 +732,7 @@ function PasskeysBlock() {
       throw new Error(errorText(err, "Couldn't remove the passkey."));
     });
     load();
-    setMsg({ ok: true, text: `Removed "${row.name}".` });
+    setMsg({ ok: true, text: `Removed ${row.name}.` });
   }
   const [proofAsk, setProofAsk] = useState(null);
   const askRemove = (row) =>
@@ -789,8 +790,8 @@ function PasskeysBlock() {
                   <span className="block text-[13px] font-medium text-ink">{r.name}</span>
                   <span className="block text-xs text-muted">
                     {r.algorithm}{r.backup_eligible ? " · synced passkey" : " · device-bound"}
-                    {" · added "}{String(r.created_at).slice(0, 10)}
-                    {r.last_used_at ? ` · last used ${String(r.last_used_at).slice(0, 10)}` : " · never used"}
+                    {" · added "}{fmtDate(r.created_at)}
+                    {r.last_used_at ? ` · last used ${fmtDate(r.last_used_at)}` : " · never used"}
                   </span>
                 </span>
                 <Badge tone={r.usable ? "success" : "danger"} dot>{r.usable ? "On" : "Off"}</Badge>
@@ -1088,6 +1089,14 @@ function AccessSection({ me }) {
   );
 }
 
+const WORKSPACE_FIELDS = {
+  name: "Workspace name",
+  slug: "Workspace name",
+  notification_email: "Reminder address",
+  slack_webhook_url: "Slack incoming webhook",
+  teams_webhook_url: "Teams incoming webhook",
+};
+
 function WorkspacesBlock({ me }) {
   const { ask, confirmDialog } = useConfirm();
   const [current, setCurrent] = useState(null);
@@ -1149,10 +1158,10 @@ function WorkspacesBlock({ me }) {
     try {
       const { data } = await api.post("/workspaces/", { name: name.trim(), with_frameworks: withFrameworks });
       setName("");
-      setMsg({ ok: true, text: `Workspace “${data.name}” created${withFrameworks ? " with the framework library" : ""}.` });
+      setMsg({ ok: true, text: `Created ${data.name}${withFrameworks ? " with the framework library" : ""}.` });
       load();
     } catch (err) {
-      setMsg({ ok: false, text: errorText(err, "Couldn't create the workspace.") });
+      setMsg({ ok: false, text: errorText(err, "Couldn't create the workspace.", WORKSPACE_FIELDS) });
     } finally {
       setBusy(false);
     }
@@ -1178,7 +1187,7 @@ function WorkspacesBlock({ me }) {
         : `Reminders for ${current.name} fall back to the default address.` });
       load();
     } catch (err) {
-      setMsg({ ok: false, text: errorText(err, "Couldn't save the workspace settings.") });
+      setMsg({ ok: false, text: errorText(err, "Couldn't save the workspace settings.", WORKSPACE_FIELDS) });
     } finally {
       setBusy(false);
     }
@@ -1212,8 +1221,8 @@ function WorkspacesBlock({ me }) {
 
   function archive(ws) {
     ask({
-      title: `Archive “${ws.name}”?`,
-      description: "Its people can no longer sign in. Nothing is deleted, and it can be made active again.",
+      title: `Archive ${ws.name}?`,
+      description: "Its people can no longer sign in. Nothing is deleted.",
       confirmLabel: "Archive workspace",
       onConfirm: () => reallyArchive(ws),
     });
@@ -1223,7 +1232,7 @@ function WorkspacesBlock({ me }) {
     setMsg(null);
     try {
       await api.patch(`/workspaces/${ws.id}/`, { is_active: false });
-      setMsg({ ok: true, text: `“${ws.name}” archived.` });
+      setMsg({ ok: true, text: `Archived ${ws.name}.` });
       load();
     } catch (err) {
       setMsg({ ok: false, text: errorText(err, "Couldn't archive the workspace.") });
@@ -1278,7 +1287,7 @@ function WorkspacesBlock({ me }) {
               ) : null}
             </Field>
             <div className="sm:col-span-2">
-              <Button type="submit" size="sm" variant="secondary" disabled={busy || !current}>Save changes</Button>
+              <Button type="submit" size="sm" variant="secondary" disabled={busy || !current}>{busy ? "Saving…" : "Save changes"}</Button>
             </div>
           </form>
           <ul className="mt-4 divide-y divide-line rounded-xl border border-line bg-surface-2">
@@ -1289,11 +1298,11 @@ function WorkspacesBlock({ me }) {
                 <span className="text-xs text-muted">· {ws.users} {ws.users === 1 ? "person" : "people"}</span>
                 <span className="ml-auto flex items-center gap-1.5">
                   {current?.id === ws.id ? (
-                    <Badge tone="accent">current</Badge>
+                    <Badge tone="accent">Current</Badge>
                   ) : ws.is_active ? (
                     <Button size="sm" variant="secondary" onClick={() => switchTo(ws.slug)} disabled={busy}>Switch</Button>
                   ) : (
-                    <Badge tone="muted">archived</Badge>
+                    <Badge tone="muted">Archived</Badge>
                   )}
                   {ws.is_active && ws.slug !== "default" && current?.id !== ws.id ? (
                     <Button size="sm" variant="ghost" onClick={() => archive(ws)} disabled={busy}>Archive</Button>
@@ -1304,10 +1313,10 @@ function WorkspacesBlock({ me }) {
             {list && !list.length ? <li className="px-3 py-2 text-xs text-muted">No workspaces.</li> : null}
           </ul>
           {listErr ? (
-            <p className="notice notice-err mt-2" role="alert">
-              {listErr}{" "}
-              <Button size="sm" variant="secondary" onClick={load}>Try again</Button>
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <div className="notice notice-err flex-1" role="alert">{listErr}</div>
+              <Button size="sm" onClick={load}>Try again</Button>
+            </div>
           ) : null}
           <form onSubmit={create} className="mt-3 flex flex-wrap items-end gap-2">
             <Field id="new-workspace" label="New workspace" className="min-w-[220px] flex-1">
@@ -1324,7 +1333,7 @@ function WorkspacesBlock({ me }) {
               <input type="checkbox" checked={withFrameworks} onChange={(e) => setWithFrameworks(e.target.checked)} disabled={busy} />
               Seed the framework library
             </label>
-            <Button type="submit" size="sm" disabled={busy || !name.trim()}>{busy ? "Working…" : "Create"}</Button>
+            <Button type="submit" size="sm" disabled={busy || !name.trim()}>{busy ? "Creating…" : "Create"}</Button>
           </form>
         </>
       ) : null}
@@ -1346,22 +1355,26 @@ function AboutSection() {
   const [frameworks, setFrameworks] = useState(null);
   const [err, setErr] = useState(null);
 
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     let alive = true;
     if (auditor) return undefined;
+    setErr(null);
     fetchAll("/frameworks/")
       .then((list) => {
         if (alive) setFrameworks(list);
       })
       .catch((e) => {
         if (!alive) return;
+        // A failed read is not an empty library: the row shows a dash, never "0 loaded".
+        setFrameworks(null);
         setErr(errorText(e, "Couldn't load frameworks."));
-        setFrameworks([]);
       });
     return () => {
       alive = false;
     };
-  }, [auditor]);
+  }, [auditor, attempt]);
 
   // /health/ has no workspace, so on a multi-organisation install it names no key: ask as the signed-in person.
   // An auditor is refused and keeps the health figures, as does anyone if the call fails.
@@ -1390,7 +1403,7 @@ function AboutSection() {
     ["Version", health?.version ? `v${health.version}` : "-"],
     ["Core licence", "AGPL-3.0"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
-    ...(auditor ? [] : [["Frameworks", frameworks ? `${frameworks.length} loaded` : "Loading…"]]),
+    ...(auditor ? [] : [["Frameworks", frameworks ? `${frameworks.length} loaded` : err ? "-" : "Loading…"]]),
     ["Malware scanning", scannerLabel],
     ["Package signing", signingLabel(signingKey)],
     ...(signingKey?.fingerprint ? [["Signing key fingerprint", `sha256:${signingKey.fingerprint}`]] : []),
@@ -1423,8 +1436,13 @@ function AboutSection() {
         <>
           <Label as="p" className="mb-2.5 mt-6">Frameworks</Label>
           {err ? (
-            <div className="notice notice-err max-w-[720px]" role="alert">
-              {err}
+            <div className="flex max-w-[720px] flex-wrap items-center gap-3">
+              <div className="notice notice-err flex-1" role="alert">
+                {err}
+              </div>
+              <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                Try again
+              </Button>
             </div>
           ) : frameworks === null ? (
             <Loading className="py-6 text-left" />

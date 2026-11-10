@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.validators import UniqueTogetherValidator
 
 from accounts.tenancy import CurrentWorkspaceDefault
 
@@ -47,3 +48,9 @@ class JiraBoardSerializer(serializers.ModelSerializer):
     class Meta:
         model = JiraBoard
         fields = ["id", "board_id", "name", "created_at", "workspace"]
+        validators = [
+            UniqueTogetherValidator(
+                queryset=JiraBoard.objects.all(), fields=["workspace", "board_id"],
+                message="That board is already tracked.",
+            ),
+        ]

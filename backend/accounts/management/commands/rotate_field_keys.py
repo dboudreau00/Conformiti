@@ -5,6 +5,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from config import fieldcrypto
+from notifications.wording import count_of
 
 
 def encrypted_columns():
@@ -29,7 +30,7 @@ class Command(BaseCommand):
         ids = fieldcrypto.key_ids()
         newest = ids[0]
         self.stdout.write(
-            f"Key ring: {len(ids)} key(s), newest first: {', '.join(ids)}"
+            f"Key ring: {count_of(len(ids), 'key')}, newest first: {', '.join(ids)}"
         )
 
         total_rotated = 0
@@ -76,12 +77,12 @@ class Command(BaseCommand):
                     instance.save(update_fields=[attname])
                     rotated += 1
             total_rotated += rotated
-            self.stdout.write(f"    rotated {rotated} row(s) onto {newest}")
+            self.stdout.write(f"    rotated {count_of(rotated, 'row')} onto {newest}")
 
         if opts["status"]:
             self.stdout.write("Status only: nothing was changed.")
         else:
             self.stdout.write(self.style.SUCCESS(
-                f"Rotation complete: {total_rotated} row(s) now on key {newest}. "
+                f"Rotation complete: {count_of(total_rotated, 'row')} now on key {newest}. "
                 "Re-run with --status, and only then drop the old key."
             ))

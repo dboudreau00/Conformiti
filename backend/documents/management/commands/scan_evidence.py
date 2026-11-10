@@ -53,4 +53,5 @@ class Command(BaseCommand):
         if held:
             self.stdout.write(self.style.WARNING(f"Quarantined files now: {held}"))
         if counts["infected"]:
-            raise CommandError(f"{counts['infected']} infected file(s) quarantined; see the audit log.")
+            raise CommandError(f"{counts['infected']} infected file{'' if counts['infected'] == 1 else 's'} quarantined; "
+                               "see the audit log.")

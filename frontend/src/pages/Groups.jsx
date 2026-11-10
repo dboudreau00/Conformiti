@@ -43,6 +43,7 @@ export default function Groups({ me }) {
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersFailed, setMembersFailed] = useState(null);
   const [users, setUsers] = useState([]);
+  const [usersFailed, setUsersFailed] = useState(false);
 
   // Guards against a slow members response landing after the user switched groups.
   const membersReq = useRef(0);
@@ -143,9 +144,16 @@ export default function Groups({ me }) {
   }, []);
 
   // /users/ is manage_users-only and only feeds the editor pickers, so only editors fetch it.
+  function loadUsers() {
+    setUsersFailed(false);
+    fetchAll("/users/").then(setUsers).catch(() => {
+      setUsers([]);
+      setUsersFailed(true);
+    });
+  }
+
   useEffect(() => {
-    if (!canEdit) return;
-    fetchAll("/users/").then(setUsers).catch(() => setUsers([]));
+    if (canEdit) loadUsers();
   }, [canEdit]);
 
   async function addGroup(e) {
@@ -160,7 +168,7 @@ export default function Groups({ me }) {
       setGName("");
       setGPurpose("");
       setGOwner("");
-      setGNotice({ kind: "ok", text: `Created “${data.name}”.` });
+      setGNotice({ kind: "ok", text: `Created ${data.name}.` });
       await loadGroups(data.id);
     } catch (ex) {
       setGNotice({ kind: "err", text: groupErrorText(ex) });
@@ -190,6 +198,7 @@ export default function Groups({ me }) {
       setActive(data);
       setGroups((list) => list.map((g) => (g.id === data.id ? data : g)));
       setEditingGroup(false);
+      setMNotice({ kind: "ok", text: `Saved ${data.name}.` });
       await loadGroups(data.id);
     } catch (ex) {
       setEgNotice({ kind: "err", text: groupErrorText(ex) });
@@ -261,6 +270,7 @@ export default function Groups({ me }) {
       const { data } = await api.patch(`/group-members/${m.id}/`, { department: emDept.trim(), note: emNote.trim() });
       setMembers((list) => list.map((x) => (x.id === data.id ? data : x)));
       setEditingMemberId(null);
+      setMNotice({ kind: "ok", text: `Saved ${m.user_name || m.username}.` });
       await loadGroups(active.id);
     } catch (ex) {
       setMNotice({ kind: "err", text: memberErrorText(ex) });
@@ -280,7 +290,8 @@ export default function Groups({ me }) {
       e.preventDefault();
       setEditingMemberId(null);
     }
-  };  // A save ends by reselecting the group and reports in its panel, so the list is disabled until the save lands.
+  };
+  // A save ends by reselecting the group and reports in its panel, so the list is disabled until the save lands.
   const saving = egBusy || emBusy || mBusy;
 
   return (
@@ -288,10 +299,12 @@ export default function Groups({ me }) {
       <Stack className="grid grid-cols-12 gap-4">
         <StackItem className="col-span-12 lg:col-span-4">
           <Panel className="overflow-hidden">
-            <PanelHeader
-              title="Champion groups"
-              meta={!loading && !loadFailed ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : undefined}
-            />
+            {/* The page heading already says "Champion groups"; this row holds only the count. */}
+            {!loading && !loadFailed && groups.length > 0 ? (
+              <div className="border-b border-line px-5 py-3.5">
+                <Label>{groups.length} {groups.length === 1 ? "group" : "groups"}</Label>
+              </div>
+            ) : null}
 
             {loading ? (
               <Loading />
@@ -419,7 +432,7 @@ export default function Groups({ me }) {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <Label className="flex items-center gap-1">
                         <UserIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
-                        Owner: {active.owner_name || "unassigned"}
+                        Owner: {active.owner_name || "Unassigned"}
                       </Label>
                       {canEdit ? (
                         <div className="flex items-center gap-1.5">
@@ -504,6 +517,8 @@ export default function Groups({ me }) {
                     <LoadError what="The champions" reason={membersFailed.reason} onRetry={retryMembers} />
                   ) : membersLoading ? (
                     <Loading />
+                  ) : members.length === 0 ? (
+                    <Empty title="No champions in this group yet">{canEdit ? "Add one below." : null}</Empty>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
@@ -613,9 +628,6 @@ export default function Groups({ me }) {
                           </AnimatePresence>
                         </tbody>
                       </table>
-                      {members.length === 0 ? (
-                        <Empty title="No champions in this group yet" />
-                      ) : null}
                     </div>
                   )}
                 </Panel>
@@ -637,6 +649,7 @@ export default function Groups({ me }) {
                       onChange={(e) => setMUser(e.target.value)}
                       required
                       disabled={mBusy || allAreChampions}
+                      aria-describedby={usersFailed ? "cm-user-error" : undefined}
                     >
                       <option value="">{allAreChampions ? "Everyone is already a champion" : "Choose a champion"}</option>
                       {addable.map((u) => (
@@ -645,6 +658,12 @@ export default function Groups({ me }) {
                         </option>
                       ))}
                     </select>
+                    {usersFailed ? (
+                      <p id="cm-user-error" className="mt-1.5 text-xs text-danger" role="alert">
+                        People could not be loaded.{" "}
+                        <button type="button" className="link" onClick={loadUsers}>Try again</button>
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <label htmlFor="cm-dept" className="field-label">Department they champion</label>
@@ -695,12 +714,14 @@ export default function Groups({ me }) {
         description="Its champions are unassigned. This cannot be undone."
         confirmLabel="Delete group"
         onConfirm={async () => {
+          const { name } = deletingGroup;
           try {
             await api.delete(`/champion-groups/${deletingGroup.id}/`);
           } catch (e) {
             // 404: another administrator deleted it first; refresh rather than keep a ghost group that every retry fails on.
             if (e?.response?.status !== 404) throw new Error(errorText(e, "Couldn't delete that group."));
           }
+          setGNotice({ kind: "ok", text: `Deleted ${name}.` });
           await loadGroups();
         }}
       />

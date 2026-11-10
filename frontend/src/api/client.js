@@ -205,11 +205,39 @@ api.interceptors.response.use(
       }
       // Tokens only: the workspace choice goes with an explicit sign-out or a new principal (startSession).
       clearTokens();
-      if (window.location.pathname !== "/login") window.location.href = "/login";
+      if (window.location.pathname !== "/login") {
+        noteSessionEnded();
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(error);
   }
 );
+
+const ENDED_KEY = "session-ended";
+
+// The page the person was on when the server ended the session, for the sign-in screen to say so and return there.
+// This tab only (sessionStorage), and only an address inside the app.
+function noteSessionEnded() {
+  try {
+    sessionStorage.setItem(ENDED_KEY, `${window.location.pathname}${window.location.search || ""}`);
+  } catch { /* private mode: the sign-in screen opens without the line */ }
+}
+
+/** "" unless this tab was sent to sign-in because its session ended; otherwise the in-app address to return to. */
+export function sessionEndedAt() {
+  try {
+    const at = sessionStorage.getItem(ENDED_KEY) || "";
+    if (!at) return "";
+    return at.startsWith("/") && !at.startsWith("//") && !at.startsWith("/login") ? at : "/";
+  } catch {
+    return "";
+  }
+}
+
+export function forgetSessionEnded() {
+  try { sessionStorage.removeItem(ENDED_KEY); } catch { /* private mode */ }
+}
 
 export async function login(username, password, second) {
   const body = withSecondFactor({ username, password }, second);
@@ -230,6 +258,7 @@ function clearTokens() {
 function clearSession() {
   clearTokens();
   chooseWorkspace("");
+  forgetSessionEnded();
 }
 
 /** Always resolves: a failed revoke must not trap the user in a signed-in shell. Cookie mode uses /auth/token/clear/,
