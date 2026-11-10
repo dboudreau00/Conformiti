@@ -11,6 +11,35 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5of], 2026-11-09
+
+A second consistency pass over the screens and the API's refusals: what a failed load, a refused request and an irreversible action look like. No migration.
+
+**On upgrade.**
+- No migration, and no stored data changes.
+- A date a template writes (the review reminder, the auditor request reminder, the bridge letter and the Django admin) reads `2026-11-09`, as every other date the server writes does. It read "Nov. 9, 2026" before.
+- A request refused because of the caller's role says who can do it ("Only administrators can do that.") in place of the framework's stock sentence. The status is still 403 and the text is still in `detail`.
+
+**Fixed.**
+- Settings: an account with a passkey and no authenticator app could not turn on two-factor, because the password field was not shown.
+- A session the server ended sent you to the sign-in screen without a word, and signing in again opened the dashboard. The sign-in screen now says the session ended and returns you to the page you were on.
+- With cookie sign-in, an API that did not answer on first load showed the sign-in form to a person who was still signed in. It now says the account could not be loaded and offers Try again.
+- Deactivating a user acted on one click. It asks first, and setting a person's password now says that their sessions are signed out.
+- Risks: a new risk, a mitigation plan or a progress note that was typed and not saved was dropped without a question; a failed read of the summary set every count to zero; a risk with more than 50 progress notes showed 50.
+- Vendors: sending a questionnaire reported success when the email could not be sent, and Discard changes on the matrix acted on one click.
+- The public questionnaire page kept a form that could never be sent when its link was revoked, expired or submitted elsewhere while it was open. It now shows the closed page.
+- A failed load of a pick list (controls, people, vendors, auditors, documents), of the Jira screens and of the champion list looked like an empty list. Each says it failed and offers Try again.
+- The Responsibility matrix could show the earlier framework's rows after a quick switch.
+- Tab could leave a dialog whose last control was a segmented control or a menu.
+
+**Changed.**
+- A refusal names the rule it applies ("Only framework managers can change an audit package.") where it said only that you cannot.
+- The new user form shows each refusal under its own field.
+- The audit trail shows an entry's time as the other screens show dates ("09 Nov 2026 20:02", the server's clock).
+- Champion groups, Responsibility matrix, Risk register and Users no longer repeat the page title as a panel title.
+
+---
+
 ## [0.9.5oe], 2026-11-08
 
 A user-experience and consistency pass over every screen and message, and a safer installer on Windows. Three migrations, none of which change data.
