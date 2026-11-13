@@ -21,6 +21,7 @@ import { useShell } from "../shell.js";
 import { cn } from "../utils/cn.js";
 import { errorText } from "../utils/a11y.js";
 import { fmtDate } from "../utils/format.js";
+import { editionTitle } from "../components/layout/NavParts.jsx";
 import { EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -51,6 +52,8 @@ const roleLabel = (me) => me?.role_detail?.name || (me?.is_superuser ? "Superuse
 
 const DOCS_URL = "https://github.com/dboudreau00/Conformiti";
 const CREDIT_URL = "https://dboudreau00.github.io";
+const SITE_URL = "https://conformiti.app";
+const PRICING_URL = "https://conformiti.app/pricing";
 const isHex = (v) => /^#[0-9a-f]{6}$/i.test(v || "");
 
 function SectionTitle({ title, badge }) {
@@ -1348,8 +1351,18 @@ const signingLabel = (key) => {
   return key?.per_workspace ? "One key per workspace" : "No key configured";
 };
 
-function AboutSection() {
-  const { me, health } = useShell();
+// Shown only where Pro is not installed; the same plain link in About and under the Settings list.
+function UpgradeLink() {
+  return (
+    <a href={PRICING_URL} target="_blank" rel="noopener noreferrer" className="link">
+      Upgrade to Pro
+      <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+    </a>
+  );
+}
+
+function AboutSection({ me }) {
+  const { health } = useShell();
   // An external auditor is refused /frameworks/: do not request it, so there is no 403 on their console and no "nothing loaded".
   const auditor = !!me?.capabilities?.auditor;
   const [frameworks, setFrameworks] = useState(null);
@@ -1401,6 +1414,7 @@ function AboutSection() {
       : `On · not answering${scanning.down_since ? ` since ${String(scanning.down_since).slice(0, 16).replace("T", " ")}` : ""}`;
   const rows = [
     ["Version", health?.version ? `v${health.version}` : "-"],
+    ["Edition", me?.pro ? editionTitle(me) : "Core"],
     ["Core licence", "AGPL-3.0"],
     ["Data", health?.demo_accounts ? "Seeded demo set" : "Live workspace"],
     ...(auditor ? [] : [["Frameworks", frameworks ? `${frameworks.length} loaded` : err ? "-" : "Loading…"]]),
@@ -1480,6 +1494,11 @@ function AboutSection() {
       )}
 
       <div className="mt-6 flex max-w-[720px] flex-wrap items-center gap-x-3 gap-y-2">
+        {me?.pro ? null : <UpgradeLink />}
+        <a href={SITE_URL} target="_blank" rel="noreferrer" className="link">
+          conformiti.app
+          <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+        </a>
         <a href={DOCS_URL} target="_blank" rel="noreferrer" className="link">
           Documentation &amp; source
           <ExternalLinkIcon className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
@@ -1551,6 +1570,19 @@ export default function Account({ me, onUpdate }) {
                 })}
               </ul>
             </nav>
+            {me?.pro ? null : (
+              <div className="border-t border-line p-2">
+                <a
+                  href={PRICING_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-ink"
+                >
+                  <ExternalLinkIcon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                  <span className="text-[13px] font-medium">Upgrade to Pro</span>
+                </a>
+              </div>
+            )}
           </Panel>
         </StackItem>
 
@@ -1568,7 +1600,7 @@ export default function Account({ me, onUpdate }) {
               {section === "security" ? <SecuritySection /> : null}
               {section === "notifications" ? <NotificationsSection me={me} onUpdate={onUpdate} /> : null}
               {section === "access" ? <AccessSection me={me} /> : null}
-              {section === "about" ? <AboutSection /> : null}
+              {section === "about" ? <AboutSection me={me} /> : null}
             </motion.div>
           </AnimatePresence>
         </StackItem>

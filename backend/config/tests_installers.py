@@ -115,6 +115,93 @@ class SyncedFolderWarningTests(SimpleTestCase):
             self.assertIn(name, pattern.group(1))
 
 
+PROMPT = "Load the sample workspace so you can look around first? [Y/n]"
+
+
+@skipUnless(_posix_bash(), "needs bash")
+class SampleWorkspaceQuestionTests(SimpleTestCase):
+    """install.sh asks once whether to load the demo data, and only where nothing has already said and a person is there
+    to answer; the answer then does what --demo or --no-demo does."""
+
+    block = _block(INSTALL_SH, "have_terminal()", "\n}\n")
+
+    def ask(self, *, mode="run", terminal=True, fresh="yes", demo_set="", assume_yes="", typed="\n"):
+        script = ("set -euo pipefail\nCR=$(printf '\\r')\n"
+                  f"{self.block}"
+                  f"have_terminal() {{ return {0 if terminal else 1}; }}\n"
+                  f"MODE={shlex.quote(mode)}; DEMO=false; DEMO_SET={shlex.quote(demo_set)}; "
+                  f"ASSUME_YES={shlex.quote(assume_yes)}\n"
+                  f"offer_demo {shlex.quote(fresh)}\n"
+                  'echo; echo "DEMO=$DEMO DEMO_SET=$DEMO_SET"\n')
+        done = subprocess.run([_posix_bash(), "-c", script], input=typed,capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return PROMPT in done.stdout, done.stdout.strip().splitlines()[-1]
+
+    def test_it_asks_on_a_terminal_when_no_flag_was_given_and_enter_means_yes(self):
+        for mode in ("run", "docker"):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.ask(mode=mode), (True, "DEMO=true DEMO_SET=yes"))
+
+    def test_the_answer_is_what_the_flag_would_have_set(self):
+        for typed, demo in (("y\n", "true"), ("Y\n", "true"), ("yes\n", "true"), ("n\n", "false"), ("No\n", "false"),
+                            ("maybe\n", "false"), ("", "false")):
+            with self.subTest(typed=typed):
+                self.assertEqual(self.ask(typed=typed), (True, f"DEMO={demo} DEMO_SET=yes"))
+
+    def test_a_flag_means_no_question(self):
+        # --demo or --no-demo sets DEMO_SET; DEMO keeps the value the flag gave it.
+        self.assertEqual(self.ask(demo_set="yes"), (False, "DEMO=false DEMO_SET=yes"))
+
+    def test_assume_yes_means_no_question(self):
+        self.assertEqual(self.ask(assume_yes="yes"), (False, "DEMO=false DEMO_SET="))
+
+    def test_without_a_terminal_it_does_not_ask(self):
+        self.assertEqual(self.ask(terminal=False), (False, "DEMO=false DEMO_SET="))
+
+    def test_the_modes_that_do_not_start_the_stack_never_ask(self):
+        for mode in ("setup", "test", "reset"):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.ask(mode=mode), (False, "DEMO=false DEMO_SET="))
+
+    def test_a_kept_installation_is_not_asked(self):
+        self.assertEqual(self.ask(fresh=""), (False, "DEMO=false DEMO_SET="))
+
+    def test_a_piped_run_does_not_wait_for_an_answer(self):
+        # The real terminal test, not the stub: under subprocess, standard input and output are pipes.
+        script = (f"CR=$(printf '\\r')\n{self.block}MODE=run; DEMO=false; DEMO_SET=; ASSUME_YES=\n"
+                  'offer_demo yes\necho "DEMO=$DEMO DEMO_SET=$DEMO_SET"\n')
+        done = subprocess.run([_posix_bash(), "-c", script], input="", capture_output=True, text=True, timeout=30)
+        self.assertEqual((done.returncode, done.stdout.strip()), (0, "DEMO=false DEMO_SET="), done.stderr)
+
+    def test_it_is_called_where_the_stack_is_about_to_start_and_before_anything_uses_the_answer(self):
+        docker_call = INSTALL_SH.index('offer_demo "$FRESH"')
+        self.assertLess(docker_call, INSTALL_SH.index("cat > .env <<ENV"))
+        self.assertLess(docker_call, INSTALL_SH.index("docker compose up -d --build"))
+        local_call = INSTALL_SH.index('offer_demo "$ENV_CREATED"')
+        self.assertGreater(local_call, INSTALL_SH.index('ENV_CREATED="yes"'))
+        self.assertLess(local_call, INSTALL_SH.index('say "Installing frontend dependencies'))
+        self.assertLess(local_call, INSTALL_SH.index('DEMO_PW=""; DEMO_STATE=""'))
+
+    def test_the_help_text_says_so(self):
+        help_text = re.sub(r"\n# ?", " ", INSTALL_SH.split("set -euo pipefail")[0])
+        self.assertIn(PROMPT, help_text)
+
+    def test_install_ps1_asks_the_same_question_in_the_same_places(self):
+        self.assertIn(PROMPT, INSTALL_PS1)
+        function = _block(INSTALL_PS1, "function Request-DemoChoice", "\n}\n")
+        for guard in ("$Demo -or $NoDemo -or $Yes -or -not $Fresh",
+                      "-not $Docker -and ($SetupOnly -or $Test -or $Reset)",
+                      "[Console]::IsInputRedirected -or [Console]::IsOutputRedirected"):
+            self.assertIn(guard, function)
+        self.assertIn("$script:Demo = $true", function)
+        self.assertIn("$script:NoDemo = $true", function)
+        docker_call = INSTALL_PS1.index("Request-DemoChoice ((-not")
+        self.assertLess(docker_call, INSTALL_PS1.index('"SEED_DEMO_DATA=$seedDemo"'))
+        local_call = INSTALL_PS1.index("Request-DemoChoice $envCreated")
+        self.assertGreater(local_call, INSTALL_PS1.index("$envCreated = $true"))
+        self.assertLess(local_call, INSTALL_PS1.index("if ($Reset) {"))
+
+
 class InstallerFollowUpTests(SimpleTestCase):
     def test_install_ps1_warns_when_the_folder_tree_step_fails(self):
         """The step's exit code was thrown away, so the installer said "database ready" over missing folders."""

@@ -24,6 +24,11 @@
 # page), --open (open the browser when ready), --port N (Docker: host port).
 # With --docker and an existing .env, --demo / --no-demo and --port update
 # SEED_DEMO_DATA and CONFORMITI_PORT in it, and the script says so.
+# Without --demo or --no-demo, a first install (a new .env, and on --docker no
+# stack yet) run from a terminal asks "Load the sample workspace so you can
+# look around first? [Y/n]" and then behaves as --demo (Enter or y) or
+# --no-demo (anything else). A script, a pipe, --yes and the other modes
+# (--setup-only, --test, --reset) never ask: the demo stays off.
 #
 # The local path needs no external services: SQLite + console email. Review
 # reminders run on demand (`manage.py send_review_reminders`); the Docker
@@ -175,6 +180,26 @@ retire_demo_advice() {
   "$p" "  docker compose exec backend python manage.py remove_demo_data"
 }
 banner_line() { printf "%s\n" "  $*"; }
+have_terminal() { [ -t 0 ] && [ -t 1 ]; }
+# offer_demo FRESH asks whether to load the demo data, once, when nothing has said:
+# no --demo / --no-demo, no --yes, a mode that starts the stack (not --setup-only,
+# --test or --reset), a terminal on both ends, and FRESH set to "yes" (a first
+# install). A kept installation is never asked, so pressing Enter cannot put five
+# shared accounts into a database that holds real work. The answer sets what the
+# flags set: Enter or y is --demo, anything else (n, a typo, end of input) is --no-demo.
+offer_demo() {
+  local answer=""
+  [ -z "$DEMO_SET" ] && [ -z "$ASSUME_YES" ] && [ "${1:-}" = "yes" ] || return 0
+  [ "$MODE" = "run" ] || [ "$MODE" = "docker" ] || return 0
+  have_terminal || return 0
+  printf "Load the sample workspace so you can look around first? [Y/n] "
+  if read -r answer; then
+    case "${answer%"$CR"}" in ""|[Yy]|[Yy][Ee][Ss]) DEMO="true" ;; *) DEMO="false" ;; esac
+  else
+    echo; DEMO="false"
+  fi
+  DEMO_SET="yes"
+}
 # frontend_deps_current is true when frontend/node_modules already holds what
 # package-lock.json pins: npm's own record of the installed tree
 # (node_modules/.package-lock.json) lists the same packages at the same
@@ -227,6 +252,11 @@ if [ "$MODE" = "docker" ]; then
   fi
   docker info >/dev/null 2>&1 || die "The Docker daemon is not running, or this account may not use it. Start Docker; on Linux, run this with sudo or add your account to the docker group (sudo usermod -aG docker \$USER, then sign in again)."
   command -v curl >/dev/null 2>&1 || die "curl is required to wait for the stack to become healthy."
+
+  # A first install: no .env yet and no containers of this project, so there is no database the demo accounts could land in.
+  FRESH=""
+  if [ ! -f .env ] && [ -z "$(docker compose ps -aq 2>/dev/null | tr -d '\r')" ]; then FRESH="yes"; fi
+  offer_demo "$FRESH"
 
   if [ ! -f .env ]; then
     HOSTS="localhost,127.0.0.1,backend,$(hostname 2>/dev/null || echo conformiti)"
@@ -446,6 +476,7 @@ else
     die ".env sets neither DJANGO_DEBUG nor a DJANGO_SECRET_KEY. It looks like the Docker stack's file, and a local run on it starts with debug off and no key. Add DJANGO_DEBUG=true to .env for local development, or run this from another checkout."
   fi
 fi
+offer_demo "$ENV_CREATED"
 # Sign-in is refused from any origin CSRF_TRUSTED_ORIGINS does not list, and
 # .env.example lists http://localhost:5173 only. A .env this run created is
 # this script's own file, so a moved web app's origin goes into it here, the

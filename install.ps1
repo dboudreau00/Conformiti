@@ -25,7 +25,12 @@
   Combine with -Demo (load the demo data; off by default), -Open
   (launch the browser when ready) and -Port N (Docker host port). With -Docker
   and an existing .env, -Demo / -NoDemo and -Port update SEED_DEMO_DATA and
-  CONFORMITI_PORT in it, and the script says so. Every native command is
+  CONFORMITI_PORT in it, and the script says so. Without -Demo or -NoDemo, a
+  first install (a new .env, and with -Docker no stack yet) run from a
+  terminal asks "Load the sample workspace so you can look around first?
+  [Y/n]" and then behaves as -Demo (Enter or y) or -NoDemo (anything else).
+  A script, a pipe, -Yes and the other modes (-SetupOnly, -Test, -Reset)
+  never ask: the demo stays off. Every native command is
   exit-code checked: a failed step stops the installer instead of reporting
   success.
 #>
@@ -246,6 +251,21 @@ function Show-OriginWarning([int]$WebPort) {
   Warn "CONFORMITI_DEV_PORT is ${WebPort}: add http://localhost:$WebPort to CSRF_TRUSTED_ORIGINS and"
   Warn "CORS_ALLOWED_ORIGINS in .env, or every sign-in from the web app is refused."
 }
+function Request-DemoChoice([bool]$Fresh) {
+  # Asks whether to load the demo data, once, when nothing has said: no -Demo or
+  # -NoDemo, no -Yes, a mode that starts the stack (not -SetupOnly, -Test or
+  # -Reset), a terminal on both ends, and $Fresh (a first install). A kept
+  # installation is never asked, so pressing Enter cannot put five shared
+  # accounts into a database that holds real work. The answer sets what the
+  # switches set: Enter or y is -Demo, anything else (n, a typo, end of input)
+  # is -NoDemo.
+  if ($Demo -or $NoDemo -or $Yes -or -not $Fresh) { return }
+  if (-not $Docker -and ($SetupOnly -or $Test -or $Reset)) { return }
+  if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return }
+  $answer = Read-Host "Load the sample workspace so you can look around first? [Y/n]"
+  if ($null -ne $answer -and $answer.Trim() -match '^(y|yes)?$') { $script:Demo = $true } else { $script:NoDemo = $true }
+  $script:seedDemo = if ($script:Demo -and -not $script:NoDemo) { "true" } else { "false" }
+}
 if ($Port -lt 1 -or $Port -gt 65535) { Fail "-Port must be between 1 and 65535 (got $Port)." }
 # Off unless asked for: an installation carrying the demo data says
 # so on its own sign-in page, which a real deployment should never publish.
@@ -268,6 +288,9 @@ if ($Docker) {
     Warn "could not read the Docker Compose version; the compose file needs 2.24.0 or newer."
   }
   if ((Probe docker info) -ne 0) { Fail "The Docker daemon is not running, or this account may not use it. Start Docker Desktop (or use WSL); if it is running, add your Windows account to the docker-users group and sign in again." }
+
+  # A first install: no .env yet and no containers of this project, so there is no database the demo accounts could land in.
+  Request-DemoChoice ((-not (Test-Path ".env")) -and ((Get-NativeText docker compose ps -aq).Trim() -eq ""))
 
   if (-not (Test-Path ".env")) {
     $hosts = "localhost,127.0.0.1,backend,$($env:COMPUTERNAME.ToLower())"
@@ -493,6 +516,7 @@ if (-not (Test-Path ".env")) {
     Fail ".env sets neither DJANGO_DEBUG nor a DJANGO_SECRET_KEY. It looks like the Docker stack's file, and a local run on it starts with debug off and no key. Add DJANGO_DEBUG=true to .env for local development, or run this from another checkout."
   }
 }
+Request-DemoChoice $envCreated
 # Sign-in is refused from any origin CSRF_TRUSTED_ORIGINS does not list, and
 # .env.example lists http://localhost:5173 only. A .env this run created is
 # this script's own file, so a moved web app's origin goes into it here, the

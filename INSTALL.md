@@ -136,6 +136,13 @@ builds and starts the stack, **waits until `/api/health/` reports `ok`**, and
 prints the URLs. Flags: `--demo` / `-Demo` (load the demo data),
 `--open` / `-Open`, `--port N` / `-Port N`.
 
+On a first install (no `.env` and no containers of this project yet), run
+from a terminal and given neither `--demo` nor `--no-demo`, the script asks
+*Load the sample workspace so you can look around first? [Y/n]*. Enter or `y`
+is the same as `--demo`, anything else the same as `--no-demo`. It does not
+ask in a script or a pipe, with `--yes` / `-Yes`, or on an installation that
+already exists, where the demo stays off unless you pass `--demo`.
+
 With a `.env` already in place, the script leaves it alone unless a flag
 disagrees with it: `--demo` / `--no-demo` (`-Demo` / `-NoDemo`) rewrite
 `SEED_DEMO_DATA`, and `--port N` (`-Port N`) rewrites `CONFORMITI_PORT` and
@@ -779,7 +786,8 @@ cd backend && ../.venv/bin/python manage.py createsuperuser
 ```
 
 To look around with demo data instead, run the installer with `--demo` /
-`-Demo`. It loads the demo data, and the run that creates the demo
+`-Demo`, or answer yes when a first run from a terminal asks whether to load
+the sample workspace. It loads the demo data, and the run that creates the demo
 accounts prints their password in the seeding step's output (the line
 starting `Sign in as`) and again in the closing *Setup complete* banner. A
 re-run keeps the password, and the banner says it is unchanged. After
@@ -803,8 +811,8 @@ Useful flags:
 | `--test` / `-Test` | run the validator, the backend test suite and a production frontend build |
 | `--demo` / `-Demo` | also load the demo data and its five demo accounts |
 | `--reset` / `-Reset` | wipe the SQLite database and the uploads the application is set to use (`db.sqlite3` and `media/` unless `SQLITE_PATH` or `MEDIA_ROOT` say otherwise, and only inside the checkout) and reseed, without starting the servers. It names what it will delete and asks you to type `reset` first |
-| `--yes` / `-Yes` | answer that question for a script |
-| `--no-demo` / `-NoDemo` | the default (no demo data); kept because older notes use it |
+| `--yes` / `-Yes` | answer that question for a script; it also skips the sample-workspace question |
+| `--no-demo` / `-NoDemo` | no demo data, without being asked; kept because older notes use it |
 | `--open` / `-Open` | open the browser when ready |
 
 Re-running the installer is safe: it reuses `.venv` (a `.venv` without a

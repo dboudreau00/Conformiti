@@ -220,3 +220,107 @@ class RedirectTests(TestCase):
         kinds = [type(h) for h in opener.handlers]
         self.assertIn(outbound.NoRedirect, kinds)
         self.assertTrue(any(isinstance(h, outbound.PinnedHTTPSHandler) for h in opener.handlers))
+
+
+class FallbackAcrossValidatedAddressesTests(TestCase):
+    """A name whose first answer cannot be reached (an IPv6 address on a host with no IPv6 route) still connects on a
+    later answer the same lookup validated; the name is never resolved a second time."""
+    URL = "https://hooks.slack.com/services/T/B/x"
+    V6, V4 = "2606:4700::1111", "93.184.216.34"
+
+    def connection(self, pinned):
+        return outbound._PinnedHTTPSConnection("hooks.slack.com", 443, timeout=7, pinned_ip=pinned)
+
+    def dial(self, pinned, outcomes):
+        """Dial with create_connection answering from ``outcomes`` (an exception is raised, anything else returned)."""
+        asked = []
+
+        def create_connection(address, timeout=None, source_address=None):
+            asked.append((address, timeout))
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+
+        with mock.patch("config.outbound.socket.create_connection", side_effect=create_connection), \
+                mock.patch("config.outbound.socket.getaddrinfo") as lookup:
+            try:
+                sock = self.connection(pinned)._dial()
+                error = None
+            except OSError as exc:
+                sock, error = None, exc
+        self.assertFalse(lookup.called, "the name was resolved again")
+        return sock, error, asked
+
+    def test_assert_safe_url_still_returns_the_first_address_and_now_carries_all(self):
+        with resolving_to(self.V6, self.V4):
+            pinned = outbound.assert_safe_url(self.URL, allowed_hosts=SLACK)
+        self.assertEqual(pinned, self.V6)
+        self.assertEqual(str(pinned), self.V6)
+        self.assertIsInstance(pinned, str)
+        self.assertEqual(pinned.addresses, (self.V6, self.V4))
+
+    def test_a_repeated_answer_is_tried_once(self):
+        with resolving_to(self.V4, self.V4, self.V6):
+            pinned = outbound.assert_safe_url(self.URL, allowed_hosts=SLACK)
+        self.assertEqual(pinned.addresses, (self.V4, self.V6))
+
+    def test_the_first_address_unreachable_and_the_second_answering_connects_to_the_second(self):
+        sentinel = object()
+        sock, error, asked = self.dial(
+            outbound.PinnedAddress([self.V6, self.V4]),
+            [OSError(101, "Network is unreachable"), sentinel])
+        self.assertIs(sock, sentinel)
+        self.assertIsNone(error)
+        self.assertEqual(asked, [((self.V6, 443), 7), ((self.V4, 443), 7)])
+
+    def test_every_address_unreachable_raises_the_last_error(self):
+        sock, error, asked = self.dial(
+            [self.V6, self.V4],
+            [OSError(101, "Network is unreachable"), TimeoutError("timed out")])
+        self.assertIsNone(sock)
+        self.assertIsInstance(error, TimeoutError)
+        self.assertEqual([a for a, _ in asked], [(self.V6, 443), (self.V4, 443)])
+
+    def test_a_single_address_is_dialled_once_and_its_error_is_raised(self):
+        sentinel = object()
+        sock, error, asked = self.dial(self.V4, [sentinel])
+        self.assertIs(sock, sentinel)
+        self.assertEqual(asked, [((self.V4, 443), 7)])
+        sock, error, asked = self.dial(self.V4, [OSError(111, "Connection refused")])
+        self.assertIsNone(sock)
+        self.assertEqual(error.errno, 111)
+        self.assertEqual(len(asked), 1)
+
+    def test_the_order_of_the_validated_answers_is_kept(self):
+        addresses = ["198.51.100.7", self.V6, "203.0.113.9", self.V4]
+        failures = [OSError(113, "No route to host")] * 3
+        sock, error, asked = self.dial(outbound.PinnedAddress(addresses), failures + [object()])
+        self.assertEqual([a[0] for a, _ in asked], addresses)
+
+    def test_no_pinned_address_dials_the_name_as_before(self):
+        sock, error, asked = self.dial(None, [object()])
+        self.assertEqual(asked, [(("hooks.slack.com", 443), 7)])
+
+    def test_the_opener_hands_the_connection_every_validated_address(self):
+        for pinned, expected in ((outbound.PinnedAddress([self.V6, self.V4]), (self.V6, self.V4)),
+                                 ([self.V6, self.V4], (self.V6, self.V4)),
+                                 (self.V4, (self.V4,))):
+            with self.subTest(pinned=pinned):
+                handler = next(h for h in outbound.opener(pinned).handlers
+                               if isinstance(h, outbound.PinnedHTTPSHandler))
+                made = []
+                with mock.patch.object(handler, "do_open",
+                                       side_effect=lambda factory, req, **kw: made.append(factory("hooks.slack.com"))):
+                    handler.https_open(urllib.request.Request(self.URL))
+                self.assertEqual(made[0]._pinned_addresses, expected)
+
+    def test_tls_still_verifies_the_original_name_on_whichever_address_answered(self):
+        raw = mock.Mock()
+        context = mock.Mock()
+        connection = outbound._PinnedHTTPSConnection(
+            "hooks.slack.com", 443, timeout=7, context=context, pinned_ip=[self.V6, self.V4])
+        with mock.patch("config.outbound.socket.create_connection",
+                        side_effect=[OSError(101, "Network is unreachable"), raw]):
+            connection.connect()
+        context.wrap_socket.assert_called_once_with(raw, server_hostname="hooks.slack.com")

@@ -65,6 +65,34 @@ test.describe("account settings", () => {
     expect(last).toBe("dboudreau00.github.io");
   });
 
+  test("About names the edition, Core without Pro installed", async ({ page }) => {
+    await section(page, "About").click();
+    const row = page.getByRole("main").locator("dl > div").filter({ hasText: "Edition" });
+    await expect(row.getByRole("term")).toHaveText("Edition");
+    await expect(row.getByRole("definition")).toHaveText("Core");
+  });
+
+  test("Upgrade to Pro is a plain new-tab link in the section list and in About, and About links the site", async ({ page }) => {
+    const listLink = page.getByRole("main").locator("aside").getByRole("link", { name: "Upgrade to Pro", exact: true });
+    for (const name of SECTIONS) {
+      await section(page, name).click();
+      await expect(listLink).toHaveCount(1);
+      await expect(listLink).toHaveAttribute("href", "https://conformiti.app/pricing");
+      await expect(listLink).toHaveAttribute("target", "_blank");
+      await expect(listLink).toHaveAttribute("rel", "noopener noreferrer");
+    }
+    const panel = page.getByRole("main").locator("section")
+      .filter({ has: page.getByRole("heading", { name: "About", exact: true, level: 2 }) });
+    const inAbout = panel.getByRole("link", { name: "Upgrade to Pro", exact: true });
+    await expect(inAbout).toHaveAttribute("href", "https://conformiti.app/pricing");
+    await expect(inAbout).toHaveAttribute("target", "_blank");
+    await expect(inAbout).toHaveAttribute("rel", "noopener noreferrer");
+    const site = panel.getByRole("link", { name: "conformiti.app", exact: true });
+    await expect(site).toHaveAttribute("href", "https://conformiti.app");
+    await expect(site).toHaveAttribute("target", "_blank");
+    await expect(site).toHaveAttribute("rel", /noreferrer/);
+  });
+
   test("the role section reports the signed-in user's capabilities", async ({ page }) => {
     await section(page, "Role & access").click();
     // The section's own panel: the card above the nav names the role whichever section is open.

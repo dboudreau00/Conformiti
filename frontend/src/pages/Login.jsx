@@ -38,6 +38,10 @@ const NO_FACTORS = { totp: false, passkey: false, passkey_suspect: 0, backup_cod
 
 const INSTALL_URL = "https://github.com/dboudreau00/Conformiti/blob/main/INSTALL.md";
 
+function Cmd({ children }) {
+  return <code className="break-words font-mono text-ink">{children}</code>;
+}
+
 function InstallGuide() {
   return (
     <a href={INSTALL_URL} target="_blank" rel="noreferrer" className="link">
@@ -434,7 +438,10 @@ export default function Login({ onDone }) {
             ) : health?.first_admin_needed === true ? (
               // Only while no active account exists, so a working deployment never shows it.
               <p className="mt-4 text-center text-xs text-muted">
-                No account can sign in on this server. Create an administrator on the server, or reactivate an existing account there.{" "}
+                No account can sign in on this server. With Docker, run <Cmd>docker compose exec backend python manage.py createsuperuser</Cmd> in
+                the install folder, or to look around first set <Cmd>SEED_DEMO_DATA=true</Cmd> in <Cmd>.env</Cmd> and run <Cmd>docker compose up -d</Cmd>;
+                the sample password is printed once in <Cmd>docker compose logs backend</Cmd>. Without Docker, run <Cmd>python manage.py createsuperuser</Cmd> in{" "}
+                <Cmd>backend/</Cmd>.{" "}
                 <InstallGuide />
               </p>
             ) : null}

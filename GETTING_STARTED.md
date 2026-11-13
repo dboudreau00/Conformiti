@@ -35,7 +35,10 @@ change to `.env`, starts a log without it. When the log no longer has it,
 the banner says so and gives
 `docker compose exec backend python manage.py changepassword admin`.
 
-`--demo` (`-Demo`) loads the demo data this tour walks through.
+`--demo` (`-Demo`) loads the demo data this tour walks through. Without it
+(and without `--no-demo`), a first install run from a terminal asks whether to
+load the sample workspace, and Enter means yes; a script, a pipe or `--yes`
+is never asked.
 It lands in `.env` as `SEED_DEMO_DATA=true`, which is what the stack reads;
 with a `.env` already in place the script rewrites a line that disagrees,
 and says so. It is off by default, because a real installation should not

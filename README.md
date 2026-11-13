@@ -144,6 +144,12 @@ secret key in it: the container generates its own and keeps it in the
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Docker   # Windows
 ```
 
+On a first install run from a terminal, either script asks *Load the sample
+workspace so you can look around first? [Y/n]* unless you pass `--demo` /
+`-Demo` or `--no-demo` / `-NoDemo`; Enter means yes. A script, a pipe, `--yes`
+and an installation that already exists are never asked, and the demo stays
+off.
+
 Local development without Docker (SQLite, console email, nothing left running):
 
 ```bash

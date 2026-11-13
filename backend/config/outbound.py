@@ -26,17 +26,49 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise OutboundError("redirect", "The endpoint attempted a redirect; refusing it.")
 
 
+class PinnedAddress(str):
+    """The first validated address, which is what ``assert_safe_url`` has always returned, carrying every validated one
+    in ``addresses`` (answer order). It compares and prints as the first address, so a caller that stores, logs or
+    compares the value is unchanged; ``opener`` reads the rest."""
+
+    def __new__(cls, addresses):
+        addresses = tuple(dict.fromkeys(addresses))
+        self = super().__new__(cls, addresses[0])
+        self.addresses = addresses
+        return self
+
+
+def _pinned_addresses(pinned):
+    """The addresses to dial, in order, from None, one address, a ``PinnedAddress`` or a list of addresses."""
+    if not pinned:
+        return ()
+    if isinstance(pinned, PinnedAddress):
+        return pinned.addresses
+    if isinstance(pinned, str):
+        return (str(pinned),)
+    return tuple(dict.fromkeys(str(address) for address in pinned))
+
+
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
-    """Dial a pre-validated IP while TLS still verifies the original name."""
+    """Dial a pre-validated IP while TLS still verifies the original name. With several validated addresses they are
+    tried in order, each with the connection's timeout, and the last error is raised if none answers; the name is never
+    resolved again."""
 
     def __init__(self, host, *args, pinned_ip=None, **kwargs):
         super().__init__(host, *args, **kwargs)
-        self._pinned_ip = pinned_ip
+        self._pinned_addresses = _pinned_addresses(pinned_ip)
+
+    def _dial(self):
+        error = None
+        for address in self._pinned_addresses or (self.host,):
+            try:
+                return socket.create_connection((address, self.port), self.timeout, self.source_address)
+            except OSError as exc:
+                error = exc
+        raise error
 
     def connect(self):
-        sock = socket.create_connection(
-            (self._pinned_ip or self.host, self.port), self.timeout, self.source_address
-        )
+        sock = self._dial()
         if self._tunnel_host:
             self.sock = sock
             self._tunnel()
@@ -47,7 +79,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 class PinnedHTTPSHandler(urllib.request.HTTPSHandler):
     def __init__(self, pinned_ip):
         super().__init__()
-        self._pinned_ip = pinned_ip
+        self._pinned_ip = pinned_ip  # None, one address, a PinnedAddress or a list: see _pinned_addresses
 
     def https_open(self, req):
         # Only the handler's SSL context (None is the stdlib default, which verifies the cert against the hostname).
@@ -169,7 +201,8 @@ def proxy_for(url, proxies=None):
 def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
                     deny_internal_names=True, require_public=True,
                     allowed_schemes=("https",)):
-    """Validate a URL for a server-side request; return the IP to pin to, or None when a proxy will resolve it.
+    """Validate a URL for a server-side request; return the IP to pin to, or None when a proxy will resolve it. The
+    value is a ``PinnedAddress``: the first validated address, which also carries the others for ``opener`` to fall back to.
     ``require_public=False`` must never follow a setting a tenant administrator can change, or it reopens the hole."""
     host, port = check_shape(url, allowed_hosts=allowed_hosts, allowed_ports=allowed_ports,
                              deny_internal_names=deny_internal_names and require_public,
@@ -193,7 +226,7 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
         raise OutboundError("dns", "Could not resolve the host in the URL.")
-    pinned = None
+    addresses = []
     for info in infos:
         addr = info[4][0]
         try:
@@ -203,15 +236,16 @@ def assert_safe_url(url, *, allowed_hosts=None, allowed_ports=(443,),
         # Every answer must be public: a name with both a public and a private address must not pass on one ordering.
         if require_public and not public:
             raise OutboundError("private", "The host must resolve to a public address.")
-        if pinned is None:
-            pinned = addr
-    if pinned is None:
+        addresses.append(addr)
+    if not addresses:
         raise OutboundError("dns", "Could not resolve the host in the URL.")
-    return pinned
+    # The first address, as before; the connection falls back through the rest of the validated answers.
+    return PinnedAddress(addresses)
 
 
 def opener(pinned_ip, proxy=None):
-    """A redirect-refusing urllib opener that dials ``pinned_ip``. Under a proxy (``proxy`` set, or ``pinned_ip`` None)
+    """A redirect-refusing urllib opener that dials ``pinned_ip`` (one address, or the list ``assert_safe_url`` validated,
+    tried in order). Under a proxy (``proxy`` set, or ``pinned_ip`` None)
     it must not pin: pinning replaces the connection and would step around the operator's proxy."""
     if proxy:
         return urllib.request.build_opener(
