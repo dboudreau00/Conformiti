@@ -11,6 +11,21 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5og], 2026-11-13
+
+The first boot and the Settings page point to the next step, and outbound requests survive a host with no IPv6 route. No migration.
+
+**On upgrade.**
+- No migration, and no stored data changes.
+- `install.sh` and `install.ps1`, on a first install run from a terminal with neither `--demo` nor `--no-demo` (`-Demo` / `-NoDemo`), now ask "Load the sample workspace so you can look around first? [Y/n]" and act as the flag would. A script, a pipe, `--yes` / `-Yes`, `--setup-only`, `--test`, `--reset` and an installation that already exists are not asked and behave as before.
+
+**Fixed.**
+- An outbound request (a webhook, Jira, OIDC discovery) to a name whose first answer is an IPv6 address failed with "Network is unreachable" on a host with no IPv6 route, although its IPv4 address would have connected. The connection now tries the addresses the check validated, in order, without resolving the name again, and TLS is still verified against the host name. If none connects, the last error is raised.
+
+**Changed.**
+- The sign-in screen on a server with no account that can sign in now gives the commands: `docker compose exec backend python manage.py createsuperuser`, or `SEED_DEMO_DATA=true` in `.env` and `docker compose up -d` for the sample workspace, and `manage.py createsuperuser` in `backend/` without Docker.
+- Settings, About: an Edition row ("Core", or the Pro or Enterprise edition when it is installed) and a link to conformiti.app. Without Pro, "Upgrade to Pro" links to conformiti.app/pricing in About and under the Settings list.
+
 ## [0.9.5of], 2026-11-09
 
 A second consistency pass over the screens and the API's refusals: what a failed load, a refused request and an irreversible action look like. No migration.
