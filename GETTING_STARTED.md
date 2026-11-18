@@ -121,8 +121,9 @@ list its items. ✓ "Reviews coming up" with **Mark reviewed** (managers/owners
 only).
 
 ### 2 · Theme packs
-Top bar → **Appearance** → try **Audit Ledger**, **Nimbus**, **Ledger Dark**,
-**Obsidian**, then pick an accent. ✓ Every surface, chart and badge
+Top bar → **Appearance** → try **Conformiti** (the default), **Conformiti
+Light**, **Audit Ledger**, **Nimbus**, **Ledger Dark**, **Obsidian**, then pick
+an accent. ✓ Every surface, chart and badge
 recolours instantly and the choice survives a reload. Account menu → Settings
 → Appearance also offers a custom accent colour.
 

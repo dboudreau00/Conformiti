@@ -342,17 +342,19 @@ test.describe("the Appearance menu", () => {
   test("offers the packs and the accents, keeps itself open while you choose, and closes on Escape", async ({ page }) => {
     await open(page, "/", "Dashboard");
     const button = appearanceButton(page);
-    await expect(button).toHaveAccessibleName("Appearance: Ledger Dark theme pack, Azure accent");
+    await expect(button).toHaveAccessibleName("Appearance: Conformiti theme pack, Azure accent");
     await button.click();
     const menu = page.getByRole("menu", { name: "Appearance" });
     await expect(menu).toBeVisible();
 
     const radios = menu.getByRole("menuitemradio");
-    await expect(radios).toHaveCount(8);
+    await expect(radios).toHaveCount(10);
     // A pack whose name does not say its mode says it beside the name.
+    await expect(menu.getByRole("menuitemradio", { name: /^Conformiti\s*Dark$/ })).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: /^Conformiti Light$/ })).toBeVisible();
     await expect(menu.getByRole("menuitemradio", { name: /^Nimbus\s*Light$/ })).toBeVisible();
     await expect(menu.getByRole("menuitemradio", { name: /^Obsidian\s*Dark$/ })).toBeVisible();
-    await expect(menu.getByRole("menuitemradio", { name: /Ledger Dark/ })).toHaveAttribute("aria-checked", "true");
+    await expect(menu.getByRole("menuitemradio", { name: /^Conformiti\s*Dark$/ })).toHaveAttribute("aria-checked", "true");
     await expect(menu.getByRole("menuitemradio", { name: "Azure", exact: true })).toHaveAttribute("aria-checked", "true");
 
     await menu.getByRole("menuitemradio", { name: /Audit Ledger/ }).click();

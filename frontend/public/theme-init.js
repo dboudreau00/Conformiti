@@ -3,13 +3,13 @@
 // Content-Security-Policy can stay `script-src 'self'`. Mirrors src/theme.js.
 (function () {
   try {
-    var THEMES = ["ledger", "nimbus", "ledger-dark", "obsidian"];
+    var THEMES = ["conformiti", "conformiti-light", "ledger", "nimbus", "ledger-dark", "obsidian"];
     var ACCENTS = ["pine", "azure", "violet", "ember"];
     var LEGACY = { blazor: "nimbus", "blazor-dark": "obsidian" };
     var root = document.documentElement;
     var t = localStorage.getItem("theme") || "";
     t = LEGACY[t] || t;
-    if (THEMES.indexOf(t) < 0) t = "ledger-dark";
+    if (THEMES.indexOf(t) < 0) t = "conformiti";
     root.setAttribute("data-theme", t);
     var a = localStorage.getItem("accent") || "";
     if (ACCENTS.indexOf(a) >= 0) {

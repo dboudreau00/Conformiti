@@ -4,7 +4,7 @@ import path from "node:path";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, "..", "..", "assets", "screenshots");
-const THEME = process.env.SHOT_THEME || "ledger-dark";
+const THEME = process.env.SHOT_THEME || "conformiti";
 
 const test = base.extend({
   page: async ({ page }, use) => {

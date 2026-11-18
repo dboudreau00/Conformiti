@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { AnimatePresence } from "framer-motion";
 import api, { cookieMode, isAuthed, loadAuthConfig, logout, renewSession, session } from "./api/client.js";
 import ErrorBoundary, { ChromeFallback } from "./components/ErrorBoundary.jsx";
+import { Backlight } from "./components/layout/Backlight.jsx";
 import { NotForAuditors } from "./components/layout/NotForAuditors.jsx";
 import { PanelTransition } from "./components/layout/PanelTransition.jsx";
 import { SideMenu } from "./components/layout/SideMenu.jsx";
@@ -164,7 +165,9 @@ function Protected({ me, setMe }) {
 
   return (
     <ShellContext.Provider value={{ me, health, counts, refreshCounts }}>
-      <div className="min-h-screen w-full bg-bg">
+      {/* isolate: the backlight sits at z-index -1, above this wrapper's own background and below everything in it. */}
+      <div className="relative isolate min-h-screen w-full bg-bg">
+        <Backlight />
         <SkipLink />
         <ErrorBoundary fallback={<ChromeFallback />}>
           <TopBar onSignOut={signOut} />

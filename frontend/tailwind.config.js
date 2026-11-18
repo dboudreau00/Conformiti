@@ -27,9 +27,9 @@ export default {
       textColor: {
         accent: "rgb(var(--accent-text, var(--accent)) / <alpha-value>)",
       },
-      // Stacks, not downloads: nothing is fetched from a font CDN (see index.html).
+      // Both faces ship with the app (styles/fonts, declared in styles/index.css): nothing is fetched from a font CDN.
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system",
+        sans: ["Nunito Sans", "ui-sans-serif", "system-ui", "-apple-system",
                "Segoe UI", "Roboto", "Helvetica Neue", "Arial",
                "Noto Sans", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo",
@@ -42,7 +42,7 @@ export default {
         label: "0.09em",
       },
       borderRadius: {
-        panel: "14px",
+        panel: "16px",
       },
       boxShadow: {
         panel: "var(--shadow-panel)",

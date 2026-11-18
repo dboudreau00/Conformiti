@@ -290,6 +290,10 @@ def check_frontend_imports(files):
 
 
 # --- 8. CSS classes used in JSX exist in app.css ---
+# Every id frontend/src/theme.js offers; public/theme-init.js applies the same list before first paint.
+THEME_PACKS = ("conformiti", "conformiti-light", "ledger", "nimbus", "ledger-dark", "obsidian")
+
+
 def check_css(files):
     """Theme and accent packs are all defined, nothing imports the retired app.css, and pages hard-code no colours."""
     css_path = os.path.join(FRONTEND, "styles", "index.css")
@@ -297,7 +301,7 @@ def check_css(files):
         err("css", "frontend/src/styles/index.css missing")
         return
     css = read(css_path)
-    for pack in ("ledger", "nimbus", "ledger-dark", "obsidian"):
+    for pack in THEME_PACKS:
         if f'[data-theme="{pack}"]' not in css:
             err("css", f"theme pack '{pack}' is not defined in styles/index.css")
     for accent in ("pine", "azure", "violet", "ember"):
@@ -320,7 +324,7 @@ def check_css(files):
             hard[os.path.relpath(f, ROOT)] += 1
     for where, n in sorted(hard.items()):
         warn("css", f"{where} hard-codes {n} hex colour(s); use theme tokens")
-    print(f"  8. theme system: 4 theme packs + 4 accent packs defined, {len(hard)} file(s) with hard-coded colours (warnings)")
+    print(f"  8. theme system: {len(THEME_PACKS)} theme packs + 4 accent packs defined, {len(hard)} file(s) with hard-coded colours (warnings)")
 
 
 # --- 9. requirements.txt covers third-party imports ---

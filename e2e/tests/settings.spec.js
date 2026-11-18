@@ -292,7 +292,7 @@ test.describe("appearance", () => {
       return { worst, label, token: getComputedStyle(document.documentElement).getPropertyValue("--accent-text").trim() };
     });
     const fails = [];
-    for (const theme of ["ledger", "nimbus", "ledger-dark", "obsidian"]) {
+    for (const theme of ["conformiti", "conformiti-light", "ledger", "nimbus", "ledger-dark", "obsidian"]) {
       for (const accent of ["pine", "azure", "violet", "ember", "#e91e63", "#ffd60a", "#1e3a8a"]) {
         await page.evaluate(([t, a]) => { localStorage.setItem("theme", t); localStorage.setItem("accent", a); }, [theme, accent]);
         await page.reload();

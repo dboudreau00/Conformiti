@@ -507,10 +507,14 @@ account menu with Settings and Sign out. Each page names itself at its own top.
 Under 768 pixels the tabs fold into a **Menu** button that lists every
 section.
 
-Four theme packs (Audit Ledger, Nimbus, Ledger Dark, Obsidian), four accent
-packs and a custom accent colour, applied before first paint and remembered per
-browser. Keyboard-accessible throughout: a *Skip to content* link first, and
-every menu opens, moves and closes from the keyboard.
+Six theme packs: **Conformiti** (the default, dark) and **Conformiti Light**,
+lit from behind with translucent panels and a glow where the accent marks
+progress or the current place, and the flat Audit Ledger, Nimbus, Ledger Dark
+and Obsidian. Four accent packs and a custom accent colour, applied before
+first paint and remembered per browser. The two typefaces (Nunito Sans,
+JetBrains Mono) ship with the app, so no font is fetched from a third party,
+and motion stops when the system asks for reduced motion.
+Keyboard-accessible throughout: a *Skip to content* link first, and every menu opens, moves and closes from the keyboard.
 
 The mark is a shield split along its centreline with one check struck across
 it, in four colourways with **fixed meanings** in the brand files:

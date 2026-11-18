@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { CHECK, SHIELD, SHIELD_LEFT } from "./brand.js";
 
 export const THEME_PACKS = [
+  { id: "conformiti", name: "Conformiti", mode: "Dark", swatch: ["#080b11", "#1d3d7a"] },
+  { id: "conformiti-light", name: "Conformiti Light", mode: "Light", swatch: ["#f2f5fa", "#c9dafb"] },
   { id: "ledger", name: "Audit Ledger", mode: "Light", swatch: ["#f6f5f1", "#ffffff"] },
   { id: "nimbus", name: "Nimbus", mode: "Light", swatch: ["#f3f6fa", "#ffffff"] },
   { id: "ledger-dark", name: "Ledger Dark", mode: "Dark", swatch: ["#0c0e12", "#151820"] },
@@ -17,7 +19,7 @@ export const ACCENT_PACKS = [
   { id: "ember", name: "Ember", hex: "#c23d34" },
 ];
 
-export const DEFAULT_THEME = "ledger-dark";
+export const DEFAULT_THEME = "conformiti";
 export const DEFAULT_ACCENT = "azure";
 
 export const THEMES = THEME_PACKS.map((t) => ({
@@ -51,7 +53,7 @@ export function getAccent() {
   return DEFAULT_ACCENT;
 }
 
-export const isDark = (id = getTheme()) => id === "ledger-dark" || id === "obsidian";
+export const isDark = (id = getTheme()) => id === "conformiti" || id === "ledger-dark" || id === "obsidian";
 
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -156,7 +158,10 @@ export function setAccent(idOrHex) {
 
 export function toggleMode() {
   const cur = getTheme();
-  const next = { ledger: "ledger-dark", "ledger-dark": "ledger", nimbus: "obsidian", obsidian: "nimbus" }[cur] || DEFAULT_THEME;
+  const next = {
+    conformiti: "conformiti-light", "conformiti-light": "conformiti",
+    ledger: "ledger-dark", "ledger-dark": "ledger", nimbus: "obsidian", obsidian: "nimbus",
+  }[cur] || DEFAULT_THEME;
   setTheme(next);
 }
 

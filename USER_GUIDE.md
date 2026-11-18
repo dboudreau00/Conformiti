@@ -103,7 +103,8 @@ The page's own title opens the page, under the bar.
   **Esc** closes. It asks only for what your role may list, so an auditor is
   offered documents and nothing else, and users appear only for accounts that
   can read the user directory.
-- **Appearance**: the four **theme packs** (Audit Ledger, Nimbus, Ledger Dark,
+- **Appearance**: the six **theme packs** (Conformiti, the default, and
+  Conformiti Light, both lit from behind; Audit Ledger, Nimbus, Ledger Dark,
   Obsidian), each with a swatch and, where the name does not say so, whether
   it is light or dark, and four **accent**
   colours. Choosing one recolours the page at once and the menu stays open so

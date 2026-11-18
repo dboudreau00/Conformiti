@@ -2,14 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Both faces ship with the app (OFL-1.1, licences beside them in ./fonts): nothing is fetched from a font CDN. */
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url("./fonts/nunito-sans-latin-opsz-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ==========================================================================
    CONFORMITI THEME SYSTEM
    Every colour in the product resolves to one of these tokens, expressed as
    raw RGB triples so Tailwind can apply opacity (e.g. bg-accent/12).
-   Theme pack  -> data-theme  on <html>   (ledger · nimbus · ledger-dark · obsidian)
+   Theme pack  -> data-theme  on <html>
+                  (conformiti · conformiti-light · ledger · nimbus · ledger-dark · obsidian)
    Accent pack -> data-accent on <html>   (pine · azure · violet · ember · custom)
    Both are applied before first paint by /theme-init.js and managed at
    runtime by src/theme.js.
+
+   The two Conformiti packs light the product from behind: soft accent light
+   bleeds in from the window edges, panels are translucent over it, and the
+   accent glows where it marks progress or the current place. The effect
+   tokens below are off by default, so every other pack keeps its flat look:
+     --fx          1 turns glows on, 0 leaves every glow transparent
+     --glass       a panel's opacity over the backlight (1 = solid)
+     --glow        the backlight's colour (an RGB triple, the accent unless
+                   a pack sets a deeper one for its default accent)
+     --glow-alpha  the backlight's strength; --glow-a is the two together
+     --chrome      the top bar's colour, at --chrome-alpha over the page
    ========================================================================== */
 
 :root {
@@ -18,27 +48,96 @@
   --shadow-panel: 0 1px 2px rgb(15 18 22 / 0.04), 0 8px 24px -12px rgb(15 18 22 / 0.12);
   --shadow-pop: 0 12px 40px -12px rgb(15 18 22 / 0.28);
   color-scheme: dark;
-  /* Fallback tokens (Ledger Dark + Azure) so the first paint is never unstyled */
-  --bg: 12 14 18;
-  --surface: 21 24 30;
-  --surface-2: 26 30 37;
-  --line: 39 44 53;
-  --line-strong: 55 62 74;
-  --ink: 237 239 243;
-  --muted: 154 161 174;
-  --faint: 146 153 164;
-  --success: 71 190 132;
-  --warning: 226 165 62;
-  --danger: 241 119 116;
+  /* Fallback tokens (Conformiti + Azure) so the first paint is never unstyled */
+  --bg: 8 11 17;
+  --surface: 16 21 30;
+  --surface-2: 22 28 39;
+  --line: 36 43 55;
+  --line-strong: 53 62 77;
+  --ink: 243 246 251;
+  --muted: 180 191 208;
+  --faint: 133 146 166;
+  --success: 63 211 145;
+  --warning: 245 184 61;
+  --danger: 253 116 129;
   --danger-ink: 32 9 6;
   --info: 108 160 245;
-  --grid: 32 36 44;
+  --grid: 30 37 49;
   /* The dim behind a dialog or the document viewer: one dark in every pack. --ink is near white on the dark packs, so
      a veil made from it would lighten the page instead of dimming it. Set here only, never in a pack. */
   --scrim: 8 10 14;
-  --accent: 92 150 250;
-  --accent-ink: 6 14 30;
+  --accent: 91 155 255;
+  --accent-ink: 5 10 20;
   --accent-deep: 29 111 224;
+  /* Effects: off here, on in the Conformiti packs (see above). */
+  --fx: 0;
+  --glass: 1;
+  --glow: var(--accent);
+  --glow-alpha: 0;
+  --glow-a: rgb(var(--glow) / var(--glow-alpha));
+  --chrome: var(--surface);
+  --chrome-alpha: 0.85;
+  /* How far the coverage atlas dims the controls a pointed-at one does not share a theme with. */
+  --atlas-dim: 0.38;
+}
+/* ---------- Pack: Conformiti (dark, backlit) ----------
+   The design's own palette: blue marks the action and the current place, green
+   implemented, amber in progress, red only risk. The base stays near neutral so
+   the backlight carries the colour. The red is the design's #ff5d6c moved 15%
+   toward the ink, so that it holds 4.5:1 as badge text on a selected row. */
+[data-theme="conformiti"] {
+  color-scheme: dark;
+  --bg: 8 11 17;
+  --surface: 16 21 30;
+  --surface-2: 22 28 39;
+  --line: 36 43 55;
+  --line-strong: 53 62 77;
+  --ink: 243 246 251;
+  --muted: 180 191 208;
+  --faint: 133 146 166;
+  --success: 63 211 145;
+  --warning: 245 184 61;
+  --danger: 253 116 129;
+  --danger-ink: 32 9 6;
+  --info: 108 160 245;
+  --grid: 30 37 49;
+  --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 24px 60px -32px rgb(0 0 0 / 0.9);
+  --shadow-pop: 0 18px 50px -14px rgb(0 0 0 / 0.75);
+  --fx: 1;
+  --glass: 0.72;
+  --glow-alpha: 0.5;
+  --chrome: var(--bg);
+  --chrome-alpha: 0.6;
+  --atlas-dim: 0.25;
+}
+/* ---------- Pack: Conformiti Light (light, backlit) ----------
+   The light half of the same design. Its status colours and the default
+   accent are the design's, moved toward the ink only as far as 4.5:1 as small
+   text on their own wash needs (green 28%, amber 26%, red 23%, blue 8%). */
+[data-theme="conformiti-light"] {
+  color-scheme: light;
+  --bg: 242 245 250;
+  --surface: 255 255 255;
+  --surface-2: 245 247 251;
+  --line: 229 230 234;
+  --line-strong: 202 206 212;
+  --ink: 10 18 32;
+  --muted: 58 71 92;
+  --faint: 90 104 128;
+  --success: 14 104 70;
+  --warning: 127 79 8;
+  --danger: 166 36 54;
+  --danger-ink: 255 255 255;
+  --info: 27 89 179;
+  --grid: 228 232 239;
+  --shadow-panel: 0 1px 2px rgb(10 18 32 / 0.04), 0 14px 34px -20px rgb(10 18 32 / 0.2);
+  --shadow-pop: 0 16px 44px -14px rgb(10 18 32 / 0.26);
+  --fx: 1;
+  --glass: 0.8;
+  --glow-alpha: 0.3;
+  --chrome: var(--bg);
+  --chrome-alpha: 0.6;
+  --atlas-dim: 0.25;
 }
 /* ---------- Pack: Ledger (light, warm paper) ---------- */
 [data-theme="ledger"] {
@@ -130,21 +229,28 @@
 [data-accent="violet"] { --accent: 118 74 226; --accent-ink: 255 255 255; --accent-deep: 66 32 143; }
 [data-accent="ember"] { --accent: 194 61 52; --accent-ink: 255 255 255; --accent-deep: 143 32 32; }
 /* Dark packs get brighter accents so they stay legible on near-black */
+[data-theme="conformiti"][data-accent="pine"],
 [data-theme="ledger-dark"][data-accent="pine"],
 [data-theme="obsidian"][data-accent="pine"] { --accent: 45 176 148; --accent-ink: 6 22 19; --accent-deep: 17 110 96; }
 [data-theme="ledger-dark"][data-accent="azure"],
 [data-theme="obsidian"][data-accent="azure"] { --accent: 92 150 250; --accent-ink: 6 14 30; --accent-deep: 29 111 224; }
+[data-theme="conformiti"][data-accent="violet"],
 [data-theme="ledger-dark"][data-accent="violet"],
 [data-theme="obsidian"][data-accent="violet"] { --accent: 155 124 250; --accent-ink: 14 8 32; --accent-deep: 118 74 226; }
+[data-theme="conformiti"][data-accent="ember"],
 [data-theme="ledger-dark"][data-accent="ember"],
 [data-theme="obsidian"][data-accent="ember"] { --accent: 244 112 96; --accent-ink: 32 9 6; --accent-deep: 194 61 52; }
+/* The Conformiti packs' default accent is the design's blue, and their backlight a deeper blue than the accent. Any
+   other accent, a custom one or a brand an add-on paints lights the page in its own colour. */
+[data-theme="conformiti"][data-accent="azure"] { --accent: 91 155 255; --accent-ink: 5 10 20; --accent-deep: 29 111 224; --glow: 50 120 255; }
+[data-theme="conformiti-light"][data-accent="azure"] { --accent: 29 92 209; --accent-ink: 255 255 255; --accent-deep: 18 69 143; --glow: 70 130 255; }
 /* data-accent="custom": --accent / --accent-ink / --accent-deep are set inline by theme.js */
 
 html, body, #root { height: 100%; }
 body {
   background-color: rgb(var(--bg));
   color: rgb(var(--ink));
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-family: "Nunito Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   transition: background-color 240ms var(--ease-out), color 240ms var(--ease-out);
 }
@@ -181,15 +287,143 @@ body {
     background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
     background-size: 5px 5px, 5px 5px; }
   textarea.input { @apply h-auto py-2 leading-snug; }
-  .field-label { @apply mb-1.5 block font-mono text-2xs uppercase tracking-label text-faint; }
-  .table-head { @apply font-mono text-2xs uppercase tracking-label text-faint; }
+  .field-label { @apply mb-1.5 block text-xs font-semibold text-muted; }
+  .table-head { @apply text-xs font-semibold text-faint; }
   /* Feedback banners */
   .notice { @apply rounded-lg border px-3 py-2 text-[13px]; }
   .notice-ok { @apply border-success/25 bg-success/10 text-success; }
   .notice-err { @apply border-danger/25 bg-danger/10 text-danger; }
   .notice-warn { @apply border-warning/30 bg-warning/[0.12] text-warning; }
-  .link { @apply inline-flex items-center gap-1 text-xs font-medium text-accent transition-opacity duration-150 ease-out hover:opacity-80; }
+  .link { @apply inline-flex items-center gap-1 text-xs font-bold text-accent transition-opacity duration-150 ease-out hover:opacity-80; }
 }
+
+/* ==========================================================================
+   BACKLIGHT, GLASS AND LIT EDGES
+   Drawn by every pack, seen only where --fx / --glass / --glow-alpha turn them
+   on (the Conformiti packs). Motion stops under prefers-reduced-motion (the
+   rule at the end of this file).
+   ========================================================================== */
+
+/* Edge light: large soft pools bleeding in from the window's edges, behind
+   everything, fixed so content scrolls over it. One hue, three strengths. */
+.backlight {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  --pool-strong: var(--glow-a);
+  --pool-mid: rgb(var(--glow) / calc(var(--glow-alpha) * 0.55));
+  --pool-soft: rgb(var(--glow) / calc(var(--glow-alpha) * 0.32));
+  background:
+    radial-gradient(var(--pool-1-size) at var(--pool-1-at), var(--pool-strong), transparent 70%),
+    radial-gradient(var(--pool-2-size) at var(--pool-2-at), var(--pool-mid), transparent 70%),
+    radial-gradient(var(--pool-3-size) at var(--pool-3-at), var(--pool-soft), transparent 70%);
+}
+.backlight[data-glow="left"] {
+  --pool-1-at: -12% -30%; --pool-1-size: 62vw 70vh;
+  --pool-2-at: 108% 4%; --pool-2-size: 40vw 55vh;
+  --pool-3-at: -6% 118%; --pool-3-size: 42vw 50vh;
+}
+.backlight[data-glow="right"] {
+  --pool-1-at: 112% -24%; --pool-1-size: 60vw 70vh;
+  --pool-2-at: -10% 30%; --pool-2-size: 34vw 55vh;
+  --pool-3-at: 90% 120%; --pool-3-size: 40vw 45vh;
+}
+.backlight[data-glow="center"] {
+  --pool-1-at: 50% -40%; --pool-1-size: 70vw 65vh;
+  --pool-2-at: -12% 100%; --pool-2-size: 40vw 50vh;
+  --pool-3-at: 112% 90%; --pool-3-size: 38vw 50vh;
+}
+:root:not([data-theme^="conformiti"]) .backlight { display: none; }
+
+/* A panel the backlight shows through. Solid wherever --glass is 1. In the components layer, so a background a caller
+   passes to a panel (a utility) still wins. */
+@layer components {
+  .glass { background-color: rgb(var(--surface) / var(--glass)); }
+  .glass-2 { background-color: rgb(var(--surface-2) / var(--glass)); }
+}
+
+/* Lit edge: the one panel on a screen that wins. A dim hairline ring with a
+   bright arc of light running round it every 6s, and a soft blurred copy of the
+   ring that glows off the edge. The ring is the outer element's 1px padding;
+   the content sits in .lit-body. Packs without effects draw a plain panel. */
+.lit {
+  position: relative;
+  isolation: isolate;
+  border-radius: 16px;
+  padding: 1px;
+  box-shadow: 0 30px 80px -30px var(--glow-a);
+}
+.lit-halo {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.9;
+  filter: blur(6px);
+}
+.lit-ring {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 1px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.lit-ring[data-ring="base"] { background: rgb(var(--accent) / 0.22); }
+.lit-halo > .lit-ring { z-index: auto; padding: 3px; }
+.lit-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(250%, 1200px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) rotate(0deg);
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 200deg, rgb(var(--accent) / 0.35) 280deg,
+    rgb(var(--accent)) 340deg, rgb(var(--accent)) 356deg, transparent 360deg);
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 200deg, rgb(var(--accent) / 0.35) 280deg,
+    rgb(var(--accent)) 340deg, color-mix(in oklab, rgb(var(--accent)) 40%, white) 356deg, transparent 360deg);
+  animation: lit-orbit 6s linear infinite;
+  will-change: transform;
+}
+@keyframes lit-orbit {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+.lit-body {
+  position: relative;
+  height: 100%;
+  border-radius: 15px;
+  background-color: rgb(var(--bg) / 0.85);
+}
+:root:not([data-theme^="conformiti"]) .lit {
+  padding: 0;
+  border: 1px solid rgb(var(--line));
+  background-color: rgb(var(--surface));
+  box-shadow: var(--shadow-panel);
+  border-radius: 16px;
+}
+:root:not([data-theme^="conformiti"]) .lit-halo,
+:root:not([data-theme^="conformiti"]) .lit-ring { display: none; }
+:root:not([data-theme^="conformiti"]) .lit-body { background-color: transparent; }
+
+/* A meter's lit end: a bright bead where the fill stops. Effects packs only. */
+.meter-head {
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  height: calc(100% + 4px);
+  aspect-ratio: 1;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgb(var(--meter-tone));
+  background: color-mix(in oklab, rgb(var(--meter-tone)) 35%, white);
+  box-shadow: 0 0 10px 2px rgb(var(--meter-tone));
+}
+:root:not([data-theme^="conformiti"]) .meter-head { display: none; }
 
 /* ==========================================================================
    DASHBOARD LAYOUT
@@ -201,10 +435,17 @@ body {
    The schedule's columns, in turn, answer to the width of the schedule itself.
    ========================================================================== */
 .dash { container-type: inline-size; }
-.dash-lead { display: grid; gap: 1rem; }
+/* The readiness score: as large as the dashboard's width allows, lit from behind in the Conformiti packs. */
+.hero-score { font-size: clamp(60px, 7.2cqi, 104px); text-shadow: 0 0 60px var(--glow-a); }
+.dash-lead { display: grid; gap: 1.25rem; }
 .dash-cells { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
 .dash-atlas { display: grid; gap: 1.25rem; }
 .dash-atlas-side { max-width: 640px; }
+
+/* Over the backlight the cells stay clear and the hairlines between them are drawn as rings, not as the line colour
+   showing through the gaps. */
+:root[data-theme^="conformiti"] .dash-cells { background-color: transparent; }
+:root[data-theme^="conformiti"] .dash-cells > * { background-color: transparent; box-shadow: 0 0 0 1px rgb(var(--line)); }
 
 @container (min-width: 520px) {
   .dash-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -224,14 +465,14 @@ body {
    a row of its own (640px up to where it goes beside the schedule) it becomes
    a band: score, trend and bands side by side. */
 @container (640px <= width < 1040px) {
-  .dash-lead > .dash-ready {
+  .dash-lead .dash-ready {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) minmax(0, 1.4fr) minmax(220px, 1fr);
     column-gap: 2rem;
     align-items: center;
   }
-  .dash-lead > .dash-ready > * { margin-top: 0; }
-  .dash-lead > .dash-ready > :only-child { grid-column: 1 / -1; }
+  .dash-lead .dash-ready > * { margin-top: 0; }
+  .dash-lead .dash-ready > :only-child { grid-column: 1 / -1; }
 }
 
 /* The schedule's columns answer to the width of the schedule's own panel:

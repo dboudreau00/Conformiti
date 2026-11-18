@@ -81,6 +81,9 @@ test.describe("authentication", () => {
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByText("Ada Admin").first()).toBeVisible();
     await expect(accountButton(page)).toHaveAccessibleName(/Ada Admin/);
+    // Let the dashboard's own requests finish first: one still in flight when the session ends answers 401, which is
+    // the sign-out working, not a fault, but the fixture fails a test on any console error.
+    await page.waitForLoadState("networkidle");
 
     await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();

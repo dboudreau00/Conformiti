@@ -130,7 +130,7 @@ backend/            Django project (config/) + apps
                     CSV formula safety, health endpoint
   testutils.py      shared test fixtures
 frontend/src/
-  styles/index.css  theme tokens (4 theme packs, 4 accent packs) + Tailwind
+  styles/index.css  theme tokens (6 theme packs, 4 accent packs) + Tailwind
   theme.js          theme/accent state, useTheme()
   components/ui     Panel, Badge, Button, Meter, SegmentedControl, StatCard,
                     Popover (the one menu primitive)
