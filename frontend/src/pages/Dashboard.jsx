@@ -86,13 +86,14 @@ export default function Dashboard({ me }) {
   }, [controls]);
   const scored = readiness?.score !== null && readiness?.score !== undefined;
   const hero = scored ? readiness.score : readiness?.pct;
+  // The line plots the figure the card shows, from the months that recorded it: a month saved before scores were
+  // stored is left out, never drawn in the other measure.
   const trendPoints = useMemo(() => {
-    const points = readiness?.trend || [];
-    const withScore = points.filter((p) => p.score !== null && p.score !== undefined);
-    return withScore.length >= 2
-      ? withScore.map((p) => ({ label: p.label, value: p.score }))
-      : points.map((p) => ({ label: p.label, value: p.pct }));
-  }, [readiness]);
+    const key = scored ? "score" : "pct";
+    return (readiness?.trend || [])
+      .filter((p) => p[key] !== null && p[key] !== undefined)
+      .map((p) => ({ label: p.label, value: p[key] }));
+  }, [readiness, scored]);
   const delta = scored ? readiness?.score_delta_pts : readiness?.delta_pts;
   const deltaBadge = delta != null ? monthDelta(delta) : null;
   const bandSegments = useMemo(() => {
@@ -161,6 +162,8 @@ export default function Dashboard({ me }) {
                       <TrendLine
                         points={trendPoints}
                         height={72}
+                        showValues
+                        unit={scored ? "" : "%"}
                         ariaLabel={`Readiness trend over the last ${trendPoints.length} months`}
                       />
                     ) : (

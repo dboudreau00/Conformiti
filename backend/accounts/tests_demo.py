@@ -212,6 +212,16 @@ class DemoRetirementTests(TestCase):
         self.assertNotIn("will be", out)
         self.assertNotIn("would", out)
 
+    def test_the_back_filled_months_carry_a_score(self):
+        """The dashboard's trend plots only months that stored a score, so the demo's five back-filled months need one
+        (rising to today's) or its trend would show no history."""
+        from analytics.snapshots import trend
+
+        scores = [p["score"] for p in trend()["points"]]
+        self.assertEqual(len(scores), 6)
+        self.assertNotIn(None, scores)
+        self.assertEqual(scores, sorted(scores))
+
     @staticmethod
     def statuses():
         from collections import Counter

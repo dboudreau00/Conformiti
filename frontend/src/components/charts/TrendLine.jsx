@@ -7,8 +7,9 @@ import { toneVar } from "../../utils/tone.js";
 const FIRST_WIDTH = 320;
 
 /** points: [{label, value}]. The graphic is drawn in the pixels it occupies, so a dot stays round, and each label
- * sits in the same column as its dot. The spoken name always carries the values. */
-export function TrendLine({ points, tone = "accent", height = 96, className, ariaLabel }) {
+ * sits in the same column as its dot. The spoken name always carries the values; showValues also prints each one,
+ * with its unit, under its label. */
+export function TrendLine({ points, tone = "accent", height = 96, className, ariaLabel, showValues = false, unit = "" }) {
   const fillId = `trend-fill-${useId().replace(/:/g, "")}`;
   const box = useRef(null);
   const [w, setW] = useState(FIRST_WIDTH);
@@ -17,7 +18,7 @@ export function TrendLine({ points, tone = "accent", height = 96, className, ari
   const pts = points && points.length ? points : [];
   const max = Math.max(...pts.map((p) => p.value), 1) * 1.15;
   const cell = w / (pts.length || 1);
-  const spoken = [ariaLabel, pts.map((p) => `${p.label} ${p.value}`).join(", ")].filter(Boolean).join(": ") || "No data";
+  const spoken = [ariaLabel, pts.map((p) => `${p.label} ${p.value}${unit}`).join(", ")].filter(Boolean).join(": ") || "No data";
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -93,6 +94,7 @@ export function TrendLine({ points, tone = "accent", height = 96, className, ari
         {pts.map((p, i) => (
           <span key={`${p.label}-${i}`} className="whitespace-nowrap text-center font-mono text-[10px] text-faint">
             {p.label}
+            {showValues ? <span className="tabular block text-muted">{`${p.value}${unit}`}</span> : null}
           </span>
         ))}
       </div>

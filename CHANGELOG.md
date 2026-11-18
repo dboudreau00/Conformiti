@@ -20,6 +20,9 @@ The interface takes the Conformiti theme: the product is lit from behind, its pa
 - **Conformiti** (dark) is the new default theme pack, with **Conformiti Light** beside it. A pack chosen before stays chosen: Audit Ledger, Nimbus, Ledger Dark and Obsidian are still offered and still flat.
 - The typefaces are Nunito Sans and JetBrains Mono, bundled with the app in `frontend/src/styles/fonts` with their OFL-1.1 licences. The installation serves them itself: nothing is fetched from a third party, and the shipped CSP (`font-src 'self'`) is unchanged.
 
+**Fixed.**
+- The dashboard's readiness trend could plot a different figure from the score above it: while fewer than two months had stored a score it drew the share of applicable controls marked implemented, with nothing on screen to say so, and the demo's five back-filled months had no score. The trend now plots the card's own figure from the months that recorded it, shows *No history yet* until there are two, and prints each month's figure under its name. The demo back-fills its months with a score; a history saved before scores were stored starts at its first month with one.
+
 **Changed.**
 - Two theme packs, Conformiti and Conformiti Light. Soft light in the accent colour comes in from the edges of the window behind translucent panels. The readiness card, the selected audit package and the sign-in card have a lit edge with light running round it; progress lines glow where they are filled and grow in when a page opens; the current tab's underline glows. In Conformiti Light the status colours and the default accent are the design's, moved toward the ink only as far as 4.5:1 as small text on their own wash needs.
 - Page headings, panel titles, buttons and badges take the new type. Page and dialog buttons are set in small capitals; small labels are in sentence case rather than mono capitals; a control's status badge carries its status mark (solid, half filled, outline, hatched) instead of a dot.

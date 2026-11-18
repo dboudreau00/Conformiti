@@ -1013,9 +1013,10 @@ class Command(BaseCommand):
                 detail=f"Rows the demo seed created (remove_demo_data deletes these): {', '.join(map(str, pks))}")
 
     def _history(self):
-        """Record today's readiness point and, on a first seed, back-fill five monthly ones. Never into a trend that has
-        a point before today or a workspace the demo was retired from: remove_demo_data could not reach months dated
-        before a revival, and invented months would stay in real history."""
+        """Record today's readiness point and, on a first seed, back-fill five monthly ones, each with a score: the
+        dashboard's trend plots only months that stored one. Never into a trend that has a point before today or a
+        workspace the demo was retired from: remove_demo_data could not reach months dated before a revival, and
+        invented months would stay in real history."""
         from dateutil.relativedelta import relativedelta
 
         from analytics.models import ReadinessSnapshot
@@ -1042,6 +1043,7 @@ class Command(BaseCommand):
                 with_evidence=int(round(now.with_evidence * factor)),
                 evidence_links=int(round(now.evidence_links * factor)),
                 documents_overdue=0, risks_open=now.risks_open,
+                score=None if now.score is None else int(round(now.score * factor)),
             ))
             made += 1
         self.stdout.write(f"  Readiness history: {made} monthly points + today ({now.pct}%)")

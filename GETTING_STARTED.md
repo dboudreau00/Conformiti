@@ -102,10 +102,10 @@ the **Governance** menu.
 ### 1 · Dashboard
 ✓ "Readiness score" out of 100 (the mean score of the applicable controls:
 implementation, an owner, evidence and its freshness, a test, less open
-risks), a trend line
-with one point per month (the demo back-fills five months; an installation
-without it shows the note *History builds from daily snapshots* until a
-second month is recorded) and a bar of readiness bands (Ready, Nearly there,
+risks), a trend line of that score
+with one point per month and each month's figure under its name (the demo
+back-fills five months; an installation without it shows *No history yet*
+until a second month has a score) and a bar of readiness bands (Ready, Nearly there,
 At risk, Not ready). ✓ Beside it the **lead schedule**: a row for each of
 the three frameworks with its controls by status, *Evidence* and
 *Readiness* (that framework's own score), and a **Total** row whose
