@@ -4,6 +4,7 @@ import { ChevronRightIcon, DownloadIcon, PaperclipIcon, SearchIcon } from "lucid
 import api, { downloadFile, fetchAll } from "../api/client.js";
 import { Collapse, EASE, PanelTransition, Stack, StackItem } from "../components/layout/PanelTransition.jsx";
 import { ControlDetail } from "../components/controls/ControlDetail.jsx";
+import { StatusGlyph } from "../components/dashboard/StatusGlyph.jsx";
 import { Badge } from "../components/ui/Badge.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Empty, Label, LoadError, Loading, Panel, PanelHeader } from "../components/ui/Panel.jsx";
@@ -397,9 +398,13 @@ function ControlRow({ control, expanded, onToggle, children }) {
         role="row"
         onClick={onToggle}
         className={cn(
-          "flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line px-4 py-3 text-left lg:px-5",
+          "relative flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line px-4 py-3 text-left lg:px-5",
           "transition-colors duration-150 ease-out hover:bg-surface-2 has-[:focus-visible]:bg-surface-2",
-          expanded && "bg-surface-2",
+          expanded && [
+            "bg-accent/10 hover:bg-accent/10",
+            "before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent",
+            "before:shadow-[0_0_10px_rgb(var(--accent)/var(--fx))]",
+          ].join(" "),
           GRID
         )}
       >
@@ -424,7 +429,7 @@ function ControlRow({ control, expanded, onToggle, children }) {
         </div>
         <div role="cell" className="min-w-0 max-w-full truncate text-xs text-muted" title={control.framework}>{control.framework}</div>
         <div role="cell">
-          <Badge tone={meta.tone} dot>{meta.label}</Badge>
+          <Badge tone={meta.tone} glyph={<StatusGlyph status={control.status} size={9} />}>{meta.label}</Badge>
         </div>
         <div role="cell" className={cn("min-w-0 max-w-full truncate text-xs", control.owner_name ? "text-muted" : "text-danger")}>
           {control.owner_name || "Unassigned"}
