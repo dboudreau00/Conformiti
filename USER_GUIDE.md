@@ -137,19 +137,19 @@ The page's own title opens the page, under the bar.
 **Readiness score** (out of 100, the mean of the applicable controls' scores)
 with the monthly trend line and
 the readiness bands (Ready, Nearly there, At risk, Not ready), beside the
-**lead schedule**. Under them, the **coverage atlas**, then **Needs
-attention**, the compliance calendar and "Reviews coming up". A panel that
+**lead schedule**. Under them, **Needs attention**, then the **coverage
+atlas**, the compliance calendar and "Reviews coming up". A panel that
 cannot be loaded says so and offers a retry, and the rest of the page still
 shows.
 
 **Lead schedule.** One row per framework: its name and version, how many
 controls it has and how many of those are marked not applicable, then
-*Applicable*, *Implemented*, *In progress*, *Not started*, *Evidence linked*
+*Applicable*, *Implemented*, *In progress*, *Not started*, *Evidence*
 and *Readiness*. A framework's *Readiness* is its own score out of 100, the
 mean score of its applicable controls as the headline is for the whole
 program. It is not the share marked implemented. The **Total** row is
 footed to the program: it quotes the dashboard's own figures rather than
-adding rounded rows, so *Evidence linked* matches the evidence coverage
+adding rounded rows, so *Evidence* matches the evidence coverage
 figure and *Readiness* matches the readiness score. A framework's name opens
 the Controls page. With more than six frameworks the schedule shows six and a
 **Show all** button.

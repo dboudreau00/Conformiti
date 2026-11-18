@@ -88,8 +88,8 @@ function defaultDrawn(model) {
 const SQUARE =
   "relative block h-[var(--cell)] w-[var(--cell)] rounded-[3px] border p-0 transition-opacity duration-150 ease-out " +
   "group-data-[big=true]/field:transition-none " +
-  "group-data-[light=true]/field:[&:not([data-lit=true])]:opacity-[0.38] " +
-  "data-[lit=true]:shadow-[0_0_0_1.5px_rgb(var(--accent)),0_0_8px_1px_rgb(var(--accent)/0.55)]";
+  "group-data-[light=true]/field:[&:not([data-lit=true])]:opacity-[var(--atlas-dim)] " +
+  "data-[lit=true]:shadow-[0_0_0_2px_rgb(var(--accent)),0_0_calc(8px_+_6px_*_var(--fx))_1px_rgb(var(--accent)/calc(0.55_+_0.45_*_var(--fx)))]";
 // Important, to win over the global :focus-visible ring on the keyboard's square (the probe).
 const HOT = "!opacity-100 z-10 !outline !outline-2 !outline-offset-1 !outline-ink";
 const PINNED = "!opacity-100 z-10 !outline !outline-[length:3px] !outline-offset-1 !outline-ink";
@@ -413,7 +413,7 @@ export function CoverageAtlas({ data, loading, error, onRetry }) {
               onClear={() => { setPinnedId(null); setQuiet(true); }}
             />
           ) : (
-            <div className="rounded-xl border border-line border-t-2 border-t-accent bg-surface-2 p-4">
+            <div className="rounded-xl border border-line bg-bg/40 p-4">
               <Label>Related controls</Label>
               {probe ? (
                 <>

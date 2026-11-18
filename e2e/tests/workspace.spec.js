@@ -109,7 +109,7 @@ test.describe("dashboard", () => {
 
   const FRAMEWORKS = ["ISO/IEC 27001", "PCI DSS", "SOC 2"];
   const figure = (text) => Number(String(text).replace(/[^\d]/g, ""));
-  /** The six figures of a row: Applicable, Implemented, In progress, Not started, Evidence linked, Readiness. */
+  /** The six figures of a row: Applicable, Implemented, In progress, Not started, Evidence, Readiness. */
   async function figures(row) {
     return (await row.locator("td").allTextContents()).map(figure);
   }
@@ -127,7 +127,7 @@ test.describe("dashboard", () => {
     await expect(schedule.getByText(`${FRAMEWORKS.length} frameworks`, { exact: true })).toBeVisible();
     const table = schedule.getByRole("table");
     await expect(table.getByRole("columnheader")).toHaveText([
-      "Framework", "Applicable", "Implemented", "In progress", "Not started", "Evidence linked", "Readiness",
+      "Framework", "Applicable", "Implemented", "In progress", "Not started", "Evidence", "Readiness",
     ]);
 
     const rows = table.locator("tbody tr");

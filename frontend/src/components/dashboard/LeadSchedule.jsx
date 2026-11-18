@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { PaperclipIcon } from "lucide-react";
 import { cn } from "../../utils/cn.js";
+import { Meter } from "../ui/Meter.jsx";
 import { Empty, Label, LoadError, Panel, PanelHeader } from "../ui/Panel.jsx";
 import { ShowMore } from "../ui/ShowMore.jsx";
 import { StatusGlyph } from "./StatusGlyph.jsx";
@@ -17,7 +18,7 @@ function Head({ glyph, children, first }) {
     >
       <span className={cn("flex flex-col gap-1.5", first ? "items-start" : "items-end")}>
         <span className="flex h-3.5 items-center text-muted">{glyph}</span>
-        <Label className="whitespace-normal text-[10px] leading-[13px] tracking-[0.05em]">{children}</Label>
+        <Label className="whitespace-normal leading-4">{children}</Label>
       </span>
     </th>
   );
@@ -83,22 +84,32 @@ export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
                     <Head glyph={<StatusGlyph status="implemented" />}>Implemented</Head>
                     <Head glyph={<StatusGlyph status="in_progress" />}>In progress</Head>
                     <Head glyph={<StatusGlyph status="not_started" />}>Not started</Head>
-                    <Head glyph={<PaperclipIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>Evidence linked</Head>
+                    <Head glyph={<PaperclipIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>Evidence</Head>
                     <Head>Readiness</Head>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.slice(0, n).map((f) => (
                     <tr key={f.id ?? f.key} className="transition-colors duration-150 ease-out hover:bg-ink/[0.025]">
-                      <th scope="row" className="h-[46px] border-t border-line py-1 pl-5 pr-3 text-left font-normal">
+                      <th scope="row" className="h-[46px] border-t border-line py-3 pl-5 pr-3 text-left font-normal">
                         <Link
                           to={`/controls?framework=${encodeURIComponent(f.key)}`}
-                          className="block break-words text-[13px] font-semibold leading-[18px] tracking-[-0.005em] text-ink underline-offset-[3px] hover:underline"
+                          className="block break-words text-sm font-bold leading-[18px] tracking-[-0.005em] text-ink underline-offset-[3px] hover:underline"
                         >
                           {f.name}
                           {f.version ? <span className="ml-1.5 font-mono text-2xs font-normal text-faint">{f.version}</span> : null}
                         </Link>
                         <Sub total={f.total} notApplicable={f.by_status?.not_applicable || 0} />
+                        {f.applicable ? (
+                          <Meter
+                            value={f.by_status?.implemented || 0}
+                            pending={f.by_status?.in_progress || 0}
+                            total={f.applicable}
+                            height={8}
+                            className="mt-2 w-48 max-w-full"
+                            ariaLabel={`${f.name}: implemented share of applicable controls`}
+                          />
+                        ) : null}
                       </th>
                       <td className={cn(CELL, "border-t border-line")}>{num(f.applicable)}</td>
                       <td className={cn(CELL, "border-t border-line")}>{num(f.by_status?.implemented)}</td>
@@ -123,7 +134,7 @@ export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
                     <TotalCell>{num(controls.by_status?.in_progress)}</TotalCell>
                     <TotalCell>{num(controls.by_status?.not_started)}</TotalCell>
                     <TotalCell>{num(controls.with_evidence)}</TotalCell>
-                    <TotalCell>{num(readiness.score)}</TotalCell>
+                    <TotalCell className="font-bold text-accent">{num(readiness.score)}</TotalCell>
                   </tr>
                 </tfoot>
               </table>
@@ -135,8 +146,8 @@ export function LeadSchedule({ frameworks, readiness, controls, onRetry }) {
   );
 }
 
-function TotalCell({ children }) {
+function TotalCell({ children, className }) {
   return (
-    <td className={cn(CELL, "border-b-4 border-t border-double border-b-ink/70 border-t-ink/70 font-medium")}>{children}</td>
+    <td className={cn(CELL, "border-b-4 border-t border-double border-b-ink/70 border-t-ink/70 font-medium", className)}>{children}</td>
   );
 }

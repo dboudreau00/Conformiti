@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import api from "../api/client.js";
 import { TrendLine } from "../components/charts/TrendLine.jsx";
 import { ComplianceCalendar } from "../components/dashboard/ComplianceCalendar.jsx";
@@ -120,7 +121,7 @@ export default function Dashboard({ me }) {
   // max-md:overflow-x-clip: on a phone nothing here may widen the page.
   return (
     <PanelTransition className="max-md:overflow-x-clip">
-      <Stack className="dash grid grid-cols-12 gap-4">
+      <Stack className="dash grid grid-cols-12 gap-5">
         {failed.length ? (
           <StackItem className="col-span-12">
             <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3" role="status">
@@ -132,17 +133,26 @@ export default function Dashboard({ me }) {
 
         <StackItem className="col-span-12">
           <div className="dash-lead">
-            <Panel className="dash-ready flex h-full min-w-0 flex-col justify-between p-5">
+            <Panel lit className="h-full min-w-0" bodyClassName="dash-ready flex h-full min-w-0 flex-col justify-between p-5 sm:p-6">
               {readiness ? (
                 <>
                   <div>
-                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-                      <Label>{scored ? "Readiness score" : "Share implemented"}</Label>
-                      {deltaBadge ? <Badge tone={deltaBadge.tone} mono>{deltaBadge.text}</Badge> : null}
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                      <Label className="text-sm text-muted">{scored ? "Readiness score" : "Share implemented"}</Label>
+                      {deltaBadge ? (
+                        <Badge
+                          tone={deltaBadge.tone}
+                          glyph={deltaBadge.tone === "success" ? <TrendingUpIcon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />
+                            : deltaBadge.tone === "danger" ? <TrendingDownIcon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" /> : null}
+                          className="font-bold ring-0"
+                        >
+                          {deltaBadge.text}
+                        </Badge>
+                      ) : null}
                     </div>
-                    <div className="mt-3 flex items-end gap-2">
-                      <span className="tabular text-[64px] font-semibold leading-[0.85] tracking-[-0.045em] text-ink">{hero}</span>
-                      <span className="tabular pb-1 text-2xl font-medium text-faint">{scored ? "/100" : "%"}</span>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="hero-score tabular font-extrabold leading-none tracking-[-0.04em] text-ink">{hero}</span>
+                      <span className="tabular text-3xl font-semibold text-faint">{scored ? "/100" : "%"}</span>
                     </div>
                   </div>
 
@@ -194,15 +204,6 @@ export default function Dashboard({ me }) {
         </StackItem>
 
         <StackItem className="col-span-12">
-          <CoverageAtlas
-            data={atlas.data}
-            loading={atlas.loading}
-            error={atlas.error}
-            onRetry={() => setAtlasTry((n) => n + 1)}
-          />
-        </StackItem>
-
-        <StackItem className="col-span-12">
           <NeedsAttention
             overdue={overdue}
             due30={due30}
@@ -210,6 +211,15 @@ export default function Dashboard({ me }) {
             controls={controls}
             docs={docs}
             docTotal={docs?.total}
+          />
+        </StackItem>
+
+        <StackItem className="col-span-12">
+          <CoverageAtlas
+            data={atlas.data}
+            loading={atlas.loading}
+            error={atlas.error}
+            onRetry={() => setAtlasTry((n) => n + 1)}
           />
         </StackItem>
 

@@ -6,7 +6,7 @@ import { Badge } from "../ui/Badge.jsx";
 import { Meter } from "../ui/Meter.jsx";
 import { Label, Panel, PanelHeader } from "../ui/Panel.jsx";
 
-const BIG = "tabular text-[30px] font-semibold leading-none tracking-[-0.03em]";
+const BIG = "tabular text-[32px] font-extrabold leading-none tracking-[-0.03em]";
 const UNKNOWN = "Unavailable";
 
 function Cell({ label, children }) {
@@ -45,7 +45,9 @@ export function NeedsAttention({ overdue, due30, risks, controls, docs, docTotal
       <div className="dash-cells bg-line">
         <Cell label="Reviews overdue">
           <div className="flex items-baseline gap-2">
-            <span className={cn(BIG, overdue > 0 ? TONE_TEXT.danger : "text-ink")}>{overdue ?? "-"}</span>
+            <span className={cn(BIG, overdue > 0 ? cn(TONE_TEXT.danger, "drop-shadow-[0_0_14px_rgb(var(--danger)/calc(var(--fx)*0.55))]") : "text-ink")}>
+              {overdue ?? "-"}
+            </span>
             <span className="text-xs text-muted">overdue</span>
           </div>
           <p className="text-xs leading-snug text-muted">

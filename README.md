@@ -14,7 +14,7 @@
 
 [Install](#quick-install) · [What it does](#what-you-get) · [Audit packages](#handing-evidence-to-an-auditor) · [Architecture](#architecture) · [Configuration](#configuration) · [Operations](#operations-runbook) · [conformiti.app](https://conformiti.app)
 
-<img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard: readiness, the lead schedule, the coverage atlas, what needs attention and the compliance calendar" width="900">
+<img src="assets/screenshots/dashboard.png" alt="Conformiti dashboard: readiness, the lead schedule, what needs attention, the coverage atlas and the compliance calendar" width="900">
 
 </div>
 

@@ -107,15 +107,15 @@ with one point per month (the demo back-fills five months; an installation
 without it shows the note *History builds from daily snapshots* until a
 second month is recorded) and a bar of readiness bands (Ready, Nearly there,
 At risk, Not ready). ✓ Beside it the **lead schedule**: a row for each of
-the three frameworks with its controls by status, *Evidence linked* and
+the three frameworks with its controls by status, *Evidence* and
 *Readiness* (that framework's own score), and a **Total** row whose
-*Readiness* is the headline score. ✓ Under it the **coverage atlas**: 217
-squares in three groups, one per framework. Point at a square, or Tab into
-the atlas and use the arrow keys: every control that answers the same
-crosswalk theme lights up in all three groups and the rest dim. Press
-**Enter** to pin it and read its place card (status, readiness score,
-*Also answers*, **Open control**); **Esc** lets go. ✓ **Needs attention**:
-Reviews overdue, Risk posture, Evidence coverage and Documents. ✓ The
+*Readiness* is the headline score. ✓ Under it **Needs attention**:
+Reviews overdue, Risk posture, Evidence coverage and Documents. ✓ Then
+the **coverage atlas**: 217 squares in three groups, one per framework.
+Point at a square, or Tab into the atlas and use the arrow keys: every
+control that answers the same crosswalk theme lights up in all three groups
+and the rest dim. Press **Enter** to pin it and read its place card (status,
+readiness score, *Also answers*, **Open control**); **Esc** lets go. ✓ The
 compliance calendar with Review/Audit/Task/Other filters; click a day to
 list its items. ✓ "Reviews coming up" with **Mark reviewed** (managers/owners
 only).
