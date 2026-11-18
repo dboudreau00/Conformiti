@@ -3,8 +3,11 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DownloadIcon,
+  Loader2Icon,
   LockIcon,
   RefreshCwIcon,
+  ShieldCheckIcon,
+  ShieldOffIcon,
   UserPlusIcon,
   XIcon,
 } from "lucide-react";
@@ -32,6 +35,48 @@ const PACKAGE_STATUS = {
   sealed: { label: "Sealed", tone: "success" },
   withdrawn: { label: "Withdrawn", tone: "muted" },
 };
+
+/** The package's state as a seal: a lock while it is a draft, turning while it seals, a shield once sealed (lit from
+ * behind in the Conformiti packs), struck through once withdrawn. The badge beside it says the same in words. */
+function SealMark({ state }) {
+  const sealed = state === "sealed";
+  const icon = "h-6 w-6 lg:h-10 lg:w-10";
+  return (
+    <div className="relative grid h-16 w-16 shrink-0 place-items-center lg:h-36 lg:w-36 lg:self-center" aria-hidden="true">
+      <div
+        className={cn("absolute inset-0 rounded-full transition-opacity duration-300 ease-out", sealed ? "opacity-100" : "opacity-0")}
+        style={{ background: "radial-gradient(closest-side, var(--glow-a), transparent)" }}
+      />
+      <div
+        className={cn(
+          "relative grid h-14 w-14 place-items-center rounded-full ring-1 transition-colors duration-200 ease-out lg:h-28 lg:w-28",
+          sealed ? "bg-success/[0.12] ring-success/50" : "bg-surface-2/60 ring-line"
+        )}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={state}
+            className="grid place-items-center"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.18, ease: EASE }}
+          >
+            {sealed ? (
+              <ShieldCheckIcon className="h-7 w-7 text-success lg:h-12 lg:w-12" strokeWidth={1.75} />
+            ) : state === "sealing" ? (
+              <Loader2Icon className={cn(icon, "animate-spin text-accent")} strokeWidth={1.75} />
+            ) : state === "withdrawn" ? (
+              <ShieldOffIcon className={cn(icon, "text-faint")} strokeWidth={1.75} />
+            ) : (
+              <LockIcon className={cn(icon, "text-muted")} strokeWidth={1.75} />
+            )}
+          </motion.span>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
 
 const CONCLUSION = {
   pending: { label: "Not concluded", tone: "faint" },
@@ -406,73 +451,76 @@ export default function Packages({ me }) {
           </Panel>
         ) : (
           <>
-            <Panel className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-[15px] font-semibold text-ink">{selected.name}</h2>
-                  <p className="mt-0.5 text-xs text-muted">
+            <Panel lit className="min-w-0" bodyClassName="p-5 sm:p-6">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+                <div className="min-w-0 flex-1">
+                  <Badge tone={(PACKAGE_STATUS[selected.status] || PACKAGE_STATUS.withdrawn).tone}>
+                    {busy === "seal" ? "Sealing…" : (PACKAGE_STATUS[selected.status] || { label: selected.status }).label}
+                  </Badge>
+                  <h2 className="mt-3 break-words text-2xl font-extrabold leading-tight tracking-tight text-ink sm:text-3xl">{selected.name}</h2>
+                  <p className="mt-1.5 text-[13px] text-muted">
                     {selected.assurance_type_display}
                     {selected.engagement ? ` · ${selected.engagement}` : ""}
                     {selected.audit_firm ? ` · ${selected.audit_firm}` : ""}
                   </p>
+                  {selected.prior_package ? (
+                    <p className="mt-2 text-xs text-muted">
+                      Rolled forward from{" "}
+                      <button type="button" className="link" onClick={() => pick(selected.prior_package)}>
+                        {selected.prior_package_name}
+                      </button>
+                    </p>
+                  ) : null}
+                  {(selected.successors || []).length ? (
+                    <p className="mt-1 text-xs text-muted">
+                      Rolled forward into{" "}
+                      {selected.successors.map((s, i) => (
+                        <span key={s.id}>
+                          {i ? ", " : ""}
+                          <button type="button" className="link" onClick={() => pick(s.id)}>{s.name}</button>
+                        </span>
+                      ))}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    <StatCard label="Controls" value={selected.control_count} />
+                    <StatCard label="Evidence" value={selected.evidence_count} />
+                    <StatCard
+                      label="Integrity"
+                      value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length} changed`) : "-"}
+                      detail={integrity ? undefined : "Not checked"}
+                      tone={integrity ? (integrity.ok ? "success" : "danger") : "muted"}
+                    />
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2 lg:w-60 lg:flex-col lg:items-stretch lg:gap-3">
+                  <SealMark state={busy === "seal" ? "sealing" : selected.status} />
                   {canAssemble && selected.status === "draft" ? (
-                    <Button size="sm" variant="primary" onClick={seal} disabled={busy === "seal"}
-                            icon={<LockIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                    <Button variant="primary" onClick={seal} disabled={busy === "seal"}
+                            icon={<LockIcon className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}>
                       {busy === "seal" ? "Sealing…" : "Seal"}
                     </Button>
                   ) : null}
                   {selected.status !== "draft" ? (
-                    <Button size="sm" onClick={exportBundle} disabled={busy === "export"}
-                            icon={<DownloadIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                    <Button onClick={exportBundle} disabled={busy === "export"}
+                            icon={<DownloadIcon className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}>
                       {busy === "export" ? "Building…" : "Export bundle"}
                     </Button>
                   ) : null}
                   {canAssemble && selected.status === "sealed" ? (
-                    <Button size="sm" variant="danger" onClick={withdraw} disabled={busy === "withdraw"}>
+                    <Button variant="danger" onClick={withdraw} disabled={busy === "withdraw"}>
                       Withdraw
                     </Button>
                   ) : null}
                   {canAssemble && selected.status !== "draft" ? (
-                    <Button size="sm" onClick={rollForward} disabled={busy === "roll"}
-                            icon={<RefreshCwIcon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />}>
+                    <Button onClick={rollForward} disabled={busy === "roll"}
+                            icon={<RefreshCwIcon className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}>
                       {busy === "roll" ? "Rolling…" : "Roll forward"}
                     </Button>
                   ) : null}
                 </div>
               </div>
-              {selected.prior_package ? (
-                <p className="mt-2 text-xs text-muted">
-                  Rolled forward from{" "}
-                  <button type="button" className="link" onClick={() => pick(selected.prior_package)}>
-                    {selected.prior_package_name}
-                  </button>
-                </p>
-              ) : null}
-              {(selected.successors || []).length ? (
-                <p className="mt-1 text-xs text-muted">
-                  Rolled forward into{" "}
-                  {selected.successors.map((s, i) => (
-                    <span key={s.id}>
-                      {i ? ", " : ""}
-                      <button type="button" className="link" onClick={() => pick(s.id)}>{s.name}</button>
-                    </span>
-                  ))}
-                </p>
-              ) : null}
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <StatCard label="Controls" value={selected.control_count} />
-                <StatCard label="Evidence" value={selected.evidence_count} />
-                <StatCard
-                  label="Integrity"
-                  value={integrity ? (integrity.ok ? "OK" : `${integrity.discrepancies.length} changed`) : "-"}
-                  detail={integrity ? undefined : "Not checked"}
-                  tone={integrity ? (integrity.ok ? "success" : "danger") : "muted"}
-                />
-              </div>
-
               {selected.manifest_sha256 ? (
                 <div className="mt-4 rounded-xl border border-line bg-surface-2 p-3">
                   <div className="flex items-center gap-1">
