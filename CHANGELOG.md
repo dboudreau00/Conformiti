@@ -11,6 +11,23 @@ says what changed and what to expect on upgrade.
 
 ---
 
+## [0.9.5oh], 2026-11-18
+
+The interface takes the Conformiti theme: the product is lit from behind, its panels are translucent over that light, and the accent glows where it marks progress or the current place. No migration.
+
+**On upgrade.**
+- No migration, and no stored data changes.
+- **Conformiti** (dark) is the new default theme pack, with **Conformiti Light** beside it. A pack chosen before stays chosen: Audit Ledger, Nimbus, Ledger Dark and Obsidian are still offered and still flat.
+- The typefaces are Nunito Sans and JetBrains Mono, bundled with the app in `frontend/src/styles/fonts` with their OFL-1.1 licences. The installation serves them itself: nothing is fetched from a third party, and the shipped CSP (`font-src 'self'`) is unchanged.
+
+**Changed.**
+- Two theme packs, Conformiti and Conformiti Light. Soft light in the accent colour comes in from the edges of the window behind translucent panels. The readiness card, the selected audit package and the sign-in card have a lit edge with light running round it; progress lines glow where they are filled and grow in when a page opens; the current tab's underline glows. In Conformiti Light the status colours and the default accent are the design's, moved toward the ink only as far as 4.5:1 as small text on their own wash needs.
+- Page headings, panel titles, buttons and badges take the new type. Page and dialog buttons are set in small capitals; small labels are in sentence case rather than mono capitals; a control's status badge carries its status mark (solid, half filled, outline, hatched) instead of a dot.
+- The top bar is 64 pixels tall, and its search, Appearance, notification and account buttons are round.
+- The dashboard puts Needs attention above the coverage atlas, gives each framework in the lead schedule a progress line (implemented, then in progress, of applicable), and heads the schedule's evidence column "Evidence".
+- A selected audit package shows its state as a seal beside its name (a lock while it is a draft, a shield once sealed, struck through once withdrawn), with its actions under it.
+- With the system's reduce-motion setting on, the light stops moving and framer-motion animations keep their fades and drop their movement.
+
 ## [0.9.5og], 2026-11-13
 
 The first boot and the Settings page point to the next step, and outbound requests survive a host with no IPv6 route. No migration.
