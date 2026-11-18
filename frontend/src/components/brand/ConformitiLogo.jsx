@@ -15,7 +15,7 @@ export function ConformitiLogo({ colour = "blue", lockup = "horizontal", size = 
          style={{ gap: Math.round(size * (stacked ? 0.28 : 0.3)) }}>
       <ConformitiMark colour={colour} size={size} title="Conformiti" />
       <div className={cn("flex flex-col", stacked ? "items-center" : "items-start")}>
-        <span className="font-semibold leading-none tracking-[-0.035em] text-ink" style={{ fontSize: wordSize }}>
+        <span className="font-extrabold leading-none tracking-[-0.025em] text-ink" style={{ fontSize: wordSize }}>
           Conform<span className={followsAccent ? "text-accent" : undefined} style={followsAccent ? undefined : { color: palette.base }}>iti</span>
         </span>
         {tagline ? (

@@ -48,7 +48,7 @@ function SideItem({ item, pathname, rail, counts }) {
           <motion.span
             layoutId="nav-active-pill"
             layoutDependency={pathname}
-            className="absolute inset-0 rounded-lg bg-accent"
+            className="absolute inset-0 rounded-lg bg-accent shadow-[0_0_20px_-4px_rgb(var(--accent)/var(--fx))]"
             transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.7 }}
             aria-hidden="true"
           />
@@ -96,8 +96,8 @@ export function SideMenu() {
     <aside
       aria-label={title}
       className={cn(
-        "sticky top-[60px] hidden h-[calc(100dvh-60px)] shrink-0 flex-col overflow-hidden border-r border-line md:flex",
-        "bg-surface-2 bg-gradient-to-b from-accent/[0.08] to-transparent to-[190px]",
+        "sticky top-16 hidden h-[calc(100dvh-64px)] shrink-0 flex-col overflow-hidden border-r border-line md:flex",
+        "glass-2 bg-gradient-to-b from-accent/[0.08] to-transparent to-[190px]",
         "transition-[width,background-color] duration-200 ease-out",
         width
       )}

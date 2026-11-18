@@ -131,7 +131,7 @@ export default function Questionnaire() {
     body = (
       <Panel className="p-6">
         <Header vendor={data?.vendor} organisation={data?.organisation} />
-        <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">Thank you</h1>
+        <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">Thank you</h1>
         <p className="mt-2 text-[13px] leading-snug text-muted">
           Your answers for {data?.vendor} were received{answered ? ` (${answered} of ${questions.length} questions)` : ""}. This link is now closed.
         </p>
@@ -142,7 +142,7 @@ export default function Questionnaire() {
     body = (
       <Panel className="p-6">
         <Header vendor={data?.vendor} organisation={data?.organisation} />
-        <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
+        <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">{heading}</h1>
         <p className="mt-2 text-[13px] leading-snug text-muted">{detail}</p>
         {state.status === "error" ? <Button className="mt-4" onClick={retry}>Try again</Button> : null}
       </Panel>
@@ -152,7 +152,7 @@ export default function Questionnaire() {
       <form onSubmit={(e) => e.preventDefault()} noValidate className="flex flex-col gap-4">
         <Panel className="p-6">
           <Header vendor={data.vendor} organisation={data.organisation} />
-          <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">Security questionnaire for {data.vendor}</h1>
+          <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">Security questionnaire for {data.vendor}</h1>
           <p className="mt-2 text-[13px] leading-snug text-muted">
             From {data.sender}{data.organisation ? `, ${data.organisation}` : ""}. This link works until <span className="text-ink">{fmt(data.expires_at)}</span>.
           </p>

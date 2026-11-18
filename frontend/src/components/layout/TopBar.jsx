@@ -36,7 +36,7 @@ export function TopBar({ onSignOut }) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-[60px] items-center gap-2.5 border-b border-line bg-surface/85 pl-3 pr-3 backdrop-blur-xl transition-colors duration-300 ease-out min-[1061px]:pl-[18px] min-[1061px]:pr-4">
+      <header className="sticky top-0 z-30 flex h-16 items-center gap-2.5 border-b border-line bg-[rgb(var(--chrome)/var(--chrome-alpha))] pl-3 pr-3 backdrop-blur-xl transition-colors duration-300 ease-out min-[1061px]:pl-5 min-[1061px]:pr-5">
         <nav aria-label="Primary" className="flex h-full min-w-0 items-center gap-2">
           <Link to="/" className="flex shrink-0 items-center rounded-lg">
             <span aria-hidden="true" className="flex">
@@ -73,16 +73,16 @@ export function TopBar({ onSignOut }) {
             aria-keyshortcuts="Control+K Meta+K"
             title={`Search (${MAC ? "Cmd" : "Ctrl"} K)`}
             className={cn(
-              "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-muted",
-              "transition-colors duration-150 ease-out hover:border-line-strong hover:bg-surface-2 hover:text-ink",
-              "min-[1181px]:mx-1 min-[1181px]:w-[150px] min-[1181px]:min-w-[150px] min-[1181px]:max-w-[360px] min-[1181px]:flex-1 min-[1181px]:justify-start min-[1181px]:gap-2 min-[1181px]:px-2.5 min-[1181px]:text-left"
+              "glass flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line text-faint",
+              "transition-colors duration-150 ease-out hover:border-accent/60 hover:text-ink",
+              "min-[1181px]:mx-1 min-[1181px]:w-[180px] min-[1181px]:min-w-[180px] min-[1181px]:max-w-[288px] min-[1181px]:flex-1 min-[1181px]:justify-start min-[1181px]:gap-2.5 min-[1181px]:px-4 min-[1181px]:text-left"
             )}
           >
-            <SearchIcon className="h-[15px] w-[15px] shrink-0" strokeWidth={1.75} aria-hidden="true" />
-            <span className="sr-only min-[1181px]:not-sr-only min-[1181px]:min-w-0 min-[1181px]:flex-1 min-[1181px]:truncate min-[1181px]:text-[12.5px]">
+            <SearchIcon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+            <span className="sr-only min-[1181px]:not-sr-only min-[1181px]:min-w-0 min-[1181px]:flex-1 min-[1181px]:truncate min-[1181px]:text-[13px]">
               Search
             </span>
-            <kbd className="hidden shrink-0 rounded-md border border-line-strong bg-surface-2 px-1.5 font-mono text-[10px] font-medium leading-4 text-muted min-[1181px]:inline-block" aria-hidden="true">
+            <kbd className="hidden shrink-0 font-mono text-[10px] font-medium leading-4 text-faint min-[1181px]:inline-block" aria-hidden="true">
               {MAC ? "Cmd K" : "Ctrl K"}
             </kbd>
           </button>
@@ -92,7 +92,7 @@ export function TopBar({ onSignOut }) {
           {note ? (
             <span
               className={cn(
-                "hidden max-w-[150px] shrink-0 truncate rounded-md border px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.06em] min-[1181px]:block",
+                "hidden max-w-[150px] shrink-0 truncate rounded-full border px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.06em] min-[1181px]:block",
                 note.switched ? "border-warning/40 text-warning" : "border-line text-muted"
               )}
               title={note.title}
@@ -103,7 +103,7 @@ export function TopBar({ onSignOut }) {
           ) : null}
 
           {health?.demo_accounts || health?.version ? (
-            <span className="hidden h-[34px] shrink-0 flex-col justify-center rounded-md border border-line px-2.5 font-mono text-[10px] uppercase leading-[13px] tracking-[0.06em] text-muted min-[941px]:flex">
+            <span className="hidden h-10 shrink-0 flex-col justify-center rounded-full border border-line px-3.5 font-mono text-[10px] uppercase leading-[13px] tracking-[0.06em] text-muted min-[941px]:flex">
               {health?.demo_accounts ? (
                 <span>
                   Demo data
@@ -119,7 +119,7 @@ export function TopBar({ onSignOut }) {
         </div>
       </header>
       {/* Outside the header: its backdrop blur is the containing block for fixed descendants, which would
-          confine the dialog overlay to the 60px bar. */}
+          confine the dialog overlay to the 64px bar. */}
       <SearchPalette open={searching} onClose={() => setSearching(false)} />
     </>
   );

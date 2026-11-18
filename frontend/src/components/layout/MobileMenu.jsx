@@ -27,7 +27,7 @@ export function MobileMenu() {
       role="group"
       align="none"
       className="static md:hidden"
-      panelClassName="inset-x-0 top-full max-h-[calc(100dvh-60px)] overflow-y-auto rounded-none border-x-0 pb-2"
+      panelClassName="inset-x-0 top-full max-h-[calc(100dvh-64px)] overflow-y-auto rounded-none border-x-0 pb-2"
       trigger={(p, { open }) => (
         <button
           type="button"

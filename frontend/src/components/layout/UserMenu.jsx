@@ -43,20 +43,20 @@ export function UserMenu({ onSignOut }) {
           {...p}
           aria-label={`${name} ${role} account menu`}
           className={cn(
-            "flex h-10 shrink-0 items-center gap-2 rounded-[10px] border border-transparent py-0 pl-1 pr-1 text-left",
+            "flex h-11 shrink-0 items-center gap-2.5 rounded-full border border-transparent py-0 pl-1 pr-1 text-left",
             "transition-colors duration-150 ease-out hover:border-line hover:bg-surface-2",
-            "min-[1181px]:pr-2.5",
+            "min-[1181px]:pr-3",
             open && "border-line bg-surface-2"
           )}
         >
           <span
             data-initials={initialsOf(name)}
-            className="flex h-[30px] w-[30px] before:content-[attr(data-initials)] shrink-0 items-center justify-center rounded-full bg-accent/[0.14] font-mono text-[11px] font-medium tracking-[0.02em] text-ink ring-1 ring-inset ring-accent/35"
+            className="flex h-9 w-9 before:content-[attr(data-initials)] shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-bold text-ink ring-1 ring-inset ring-line"
             aria-hidden="true"
           />
-          <span className="hidden min-w-0 flex-col leading-[1.2] min-[1181px]:flex" aria-hidden="true">
-            <span className="max-w-[140px] truncate text-[13px] font-semibold text-ink">{name}</span>{" "}
-            <span className="hidden max-w-[140px] truncate text-[11.5px] text-muted min-[1241px]:block">{role}</span>
+          <span className="hidden min-w-0 flex-col leading-tight min-[1181px]:flex" aria-hidden="true">
+            <span className="max-w-[140px] truncate text-sm font-bold text-ink">{name}</span>{" "}
+            <span className="hidden max-w-[140px] truncate text-xs text-faint min-[1241px]:block">{role}</span>
           </span>
         </button>
       )}

@@ -48,11 +48,11 @@ export function PanelTransition({ children, className }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
       transition={{ duration: 0.24, ease: EASE }}
-      className={cn("mx-auto w-full max-w-[1680px] px-6 outline-none", meta ? "pb-6 pt-4" : "py-6", className)}
+      className={cn("mx-auto w-full max-w-[1680px] px-4 outline-none sm:px-6", meta ? "pb-8 pt-7" : "py-8", className)}
     >
       {meta ? (
-        <div className="mb-4 flex flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
-          <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.02em] text-ink">{meta.title}</h1>
+        <div className="mb-6 flex flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
+          <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-4xl">{meta.title}</h1>
         </div>
       ) : null}
       {children}

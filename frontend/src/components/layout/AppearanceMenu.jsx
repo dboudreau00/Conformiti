@@ -1,13 +1,13 @@
 import { motion } from "framer-motion";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { ACCENT_PACKS, THEME_PACKS, accentHex, useTheme } from "../../theme.js";
+import { ACCENT_PACKS, DEFAULT_THEME, THEME_PACKS, accentHex, useTheme } from "../../theme.js";
 import { cn } from "../../utils/cn.js";
 import { Label } from "../ui/Panel.jsx";
 import { Menu, MenuItem, Popover } from "../ui/Popover.jsx";
 
 export function AppearanceMenu() {
   const { theme, accent, setTheme, setAccent } = useTheme();
-  const activeTheme = THEME_PACKS.find((t) => t.id === theme) ?? THEME_PACKS[2];
+  const activeTheme = THEME_PACKS.find((t) => t.id === theme) ?? THEME_PACKS.find((t) => t.id === DEFAULT_THEME);
   const activeAccent = ACCENT_PACKS.find((a) => a.id === accent);
   const accentName = activeAccent ? activeAccent.name : "Custom";
 
@@ -23,7 +23,7 @@ export function AppearanceMenu() {
           aria-label={`Appearance: ${activeTheme.name} theme pack, ${accentName} accent`}
           title="Appearance"
           className={cn(
-            "flex h-[34px] shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2 text-ink",
+            "flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-line px-3 text-ink",
             "transition-colors duration-150 ease-out hover:border-line-strong hover:bg-surface-2",
             open && "border-line-strong bg-surface-2"
           )}

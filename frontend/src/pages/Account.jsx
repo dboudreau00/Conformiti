@@ -1524,8 +1524,8 @@ export default function Account({ me, onUpdate }) {
     <PanelTransition>
       <Stack className="grid grid-cols-12 gap-4">
         <StackItem className="col-span-12 lg:col-span-3">
-          {/* The sticky offset clears the 60px top bar. */}
-          <Panel as="aside" className="overflow-hidden lg:sticky lg:top-[76px]">
+          {/* The sticky offset clears the 64px top bar. */}
+          <Panel as="aside" className="overflow-hidden lg:sticky lg:top-[80px]">
             <div className="flex items-center gap-3 border-b border-line px-4 py-4">
               <span
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-[15px] font-semibold text-accent-ink"

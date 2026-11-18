@@ -81,14 +81,14 @@ export default function NotificationBell() {
           {...p}
           aria-label={`Notifications, ${shown} unread`}
           className={cn(
-            "relative flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-line bg-surface text-muted",
+            "relative flex h-10 w-10 items-center justify-center rounded-full border border-line text-muted",
             "transition-colors duration-150 ease-out hover:border-line-strong hover:bg-surface-2 hover:text-ink",
             open && "border-line-strong bg-surface-2 text-ink"
           )}
         >
           <BellIcon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           {unread > 0 ? (
-            <span className="tabular absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-danger px-1 font-mono text-[9px] font-medium text-danger-ink">
+            <span className="tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-danger px-1 font-mono text-[9px] font-medium text-danger-ink shadow-[0_0_12px_-2px_rgb(var(--danger)/var(--fx))]">
               {shown}
             </span>
           ) : null}

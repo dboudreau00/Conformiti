@@ -1,13 +1,14 @@
 import { cn } from "../../utils/cn.js";
 import { TONE_FILL, TONE_RING, TONE_TEXT, TONE_WASH } from "../../utils/tone.js";
 
-export function Badge({ children, tone = "muted", dot = false, mono = false, className, ...rest }) {
+/** `glyph` (a status mark, an icon) takes the place of the dot. */
+export function Badge({ children, tone = "muted", dot = false, glyph, mono = false, className, ...rest }) {
   const t = TONE_TEXT[tone] ? tone : "muted";
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-medium ring-1",
-        mono && "font-mono uppercase tracking-label",
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-xs font-semibold leading-4 ring-1",
+        mono && "font-mono text-2xs uppercase tracking-label",
         TONE_TEXT[t],
         TONE_WASH[t],
         TONE_RING[t],
@@ -15,7 +16,7 @@ export function Badge({ children, tone = "muted", dot = false, mono = false, cla
       )}
       {...rest}
     >
-      {dot ? <span className={cn("h-1.5 w-1.5 rounded-full", TONE_FILL[t])} aria-hidden="true" /> : null}
+      {glyph ?? (dot ? <span className={cn("h-1.5 w-1.5 rounded-full", TONE_FILL[t])} aria-hidden="true" /> : null)}
       {children}
     </span>
   );

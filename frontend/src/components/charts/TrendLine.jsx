@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "../../utils/cn.js";
 import { toneVar } from "../../utils/tone.js";
@@ -9,6 +9,7 @@ const FIRST_WIDTH = 320;
 /** points: [{label, value}]. The graphic is drawn in the pixels it occupies, so a dot stays round, and each label
  * sits in the same column as its dot. The spoken name always carries the values. */
 export function TrendLine({ points, tone = "accent", height = 96, className, ariaLabel }) {
+  const fillId = `trend-fill-${useId().replace(/:/g, "")}`;
   const box = useRef(null);
   const [w, setW] = useState(FIRST_WIDTH);
   const h = height;
@@ -43,11 +44,17 @@ export function TrendLine({ points, tone = "accent", height = 96, className, ari
 
   return (
     <div ref={box} className={cn("w-full", className)}>
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} role="img" aria-label={spoken}>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full overflow-visible" style={{ height }} role="img" aria-label={spoken}>
+        <defs>
+          <linearGradient id={fillId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor={toneVar(tone)} stopOpacity="0.28" />
+            <stop offset="1" stopColor={toneVar(tone)} stopOpacity="0" />
+          </linearGradient>
+        </defs>
         {area ? (
           <motion.path
             d={area}
-            fill={toneVar(tone, 0.1)}
+            fill={`url(#${fillId})`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1], delay: 0.2 }}
@@ -61,29 +68,30 @@ export function TrendLine({ points, tone = "accent", height = 96, className, ari
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
+            style={{ filter: `drop-shadow(0 0 6px ${toneVar(tone, "var(--fx)")})` }}
             initial={{ pathLength: 0 }}
             animate={{ pathLength: 1 }}
             transition={{ duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
           />
         ) : null}
-        {coords.map((c, i) => (
+        {/* The latest month is the one marked: ringed in the page colour so it stands off the line. */}
+        {coords.length ? (
           <motion.circle
-            key={`${c.label}-${i}`}
-            cx={c.x}
-            cy={c.y}
-            r={i === coords.length - 1 ? 3.5 : 2.5}
-            fill={toneVar(i === coords.length - 1 ? tone : "surface")}
-            stroke={toneVar(tone)}
-            strokeWidth={1.5}
+            cx={coords[coords.length - 1].x}
+            cy={coords[coords.length - 1].y}
+            r={4}
+            fill={toneVar(tone)}
+            stroke={toneVar("bg")}
+            strokeWidth={2}
             initial={{ opacity: 0, scale: 0.6 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1], delay: 0.3 + i * 0.05 }}
+            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1], delay: 0.6 }}
           />
-        ))}
+        ) : null}
       </svg>
       <div className="mt-1 grid" style={{ gridTemplateColumns: `repeat(${pts.length || 1}, minmax(0, 1fr))` }} aria-hidden="true">
         {pts.map((p, i) => (
-          <span key={`${p.label}-${i}`} className="whitespace-nowrap text-center font-mono text-2xs uppercase tracking-label text-faint">
+          <span key={`${p.label}-${i}`} className="whitespace-nowrap text-center font-mono text-[10px] text-faint">
             {p.label}
           </span>
         ))}

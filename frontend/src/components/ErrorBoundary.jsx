@@ -38,7 +38,7 @@ export default class ErrorBoundary extends Component {
 
 export function ChromeFallback() {
   return (
-    <header className="flex h-[60px] items-center justify-between gap-3 border-b border-line bg-surface px-4 text-[13px] text-muted">
+    <header className="flex h-16 items-center justify-between gap-3 border-b border-line bg-surface px-4 text-[13px] text-muted">
       <span>The navigation could not be drawn.</span>
       <Button size="sm" onClick={() => window.location.reload()}>Try again</Button>
     </header>

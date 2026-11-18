@@ -64,7 +64,7 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
               title={opt.label}
               onClick={() => onChange(opt.id)}
               className={cn(
-                "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium",
+                "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-semibold",
                 "transition-colors duration-150 ease-out",
                 active ? "text-ink" : "text-muted hover:text-ink"
               )}
@@ -72,13 +72,15 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
               {active ? (
                 <motion.span
                   layoutId={layoutId}
-                  className="absolute inset-0 rounded-md border border-line bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.06)]"
+                  className="absolute inset-0 rounded-md border border-accent/60 bg-accent/10 shadow-[0_0_18px_-6px_rgb(var(--accent)/var(--fx))]"
                   transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.6 }}
                   aria-hidden="true"
                 />
               ) : null}
               <span className="relative max-w-[14rem] truncate whitespace-nowrap">{opt.label}</span>
-              {opt.count !== undefined ? <span className="tabular relative font-mono text-2xs text-faint">{opt.count}</span> : null}
+              {opt.count !== undefined ? (
+                <span className={cn("tabular relative font-mono text-2xs", active ? "text-accent" : "text-faint")}>{opt.count}</span>
+              ) : null}
             </button>
           );
         })}
@@ -88,7 +90,7 @@ export function SegmentedControl({ options, value, onChange, layoutId, ariaLabel
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="relative flex h-7 shrink-0 items-center rounded-md px-2.5 text-[13px] font-medium text-accent transition-colors duration-150 ease-out hover:text-ink"
+          className="relative flex h-7 shrink-0 items-center rounded-md px-2.5 text-[13px] font-semibold text-accent transition-colors duration-150 ease-out hover:text-ink"
         >
           {open ? "Show fewer" : `Show ${hidden} more`}
         </button>
@@ -105,7 +107,7 @@ export function Chip({ active, onClick, tone, count, disabled, children, classNa
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium disabled:cursor-default",
+        "flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold disabled:cursor-default",
         "transition-[background-color,border-color,color] duration-150 ease-out",
         active ? "border-accent bg-accent/10 text-accent" : "border-line text-muted hover:border-line-strong hover:text-ink",
         className

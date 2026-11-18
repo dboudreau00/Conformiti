@@ -1,11 +1,25 @@
 import { cn } from "../../utils/cn.js";
 import { Button } from "./Button.jsx";
 
-export function Panel({ children, className, padded = false, as: Tag = "section", ...rest }) {
+/** A panel the backlight shows through. `lit` is for the one panel on a screen that wins: light runs round its edge
+ * (in the Conformiti packs; elsewhere it is a plain panel). A lit panel's `className` places the panel and
+ * `bodyClassName` lays out what is inside it. */
+export function Panel({ children, className, bodyClassName, padded = false, lit = false, as: Tag = "section", ...rest }) {
+  if (lit) {
+    return (
+      <Tag className={cn("lit", className)} {...rest}>
+        <div className="lit-halo" aria-hidden="true">
+          <div className="lit-ring"><div className="lit-orbit" /></div>
+        </div>
+        <div className="lit-ring" data-ring="base" aria-hidden="true"><div className="lit-orbit" /></div>
+        <div className={cn("lit-body", padded && "p-5", bodyClassName)}>{children}</div>
+      </Tag>
+    );
+  }
   return (
     <Tag
       className={cn(
-        "rounded-panel border border-line bg-surface shadow-panel",
+        "glass rounded-panel border border-line shadow-panel",
         "transition-colors duration-300 ease-out",
         padded && "p-5",
         className
@@ -22,10 +36,10 @@ export function PanelHeader({ title, meta, children, className, inline = false }
   const caption = typeof meta === "string" || typeof meta === "number";
   const metaNode = meta === null || meta === undefined || meta === false || meta === ""
     ? null
-    : caption ? <Label>{meta}</Label> : meta;
-  const heading = title ? <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h2> : null;
+    : caption ? <Label className="font-normal">{meta}</Label> : meta;
+  const heading = title ? <h2 className="text-[15px] font-bold tracking-[-0.005em] text-ink">{title}</h2> : null;
   return (
-    <header className={cn("flex items-center gap-4 border-b border-line px-5 py-3.5", title ? "justify-between" : "justify-end", className)}>
+    <header className={cn("flex items-center gap-4 border-b border-line px-5 py-4", title ? "justify-between" : "justify-end", className)}>
       {inline ? (
         <div className="flex items-baseline gap-3">
           {heading}
@@ -44,7 +58,7 @@ export function PanelHeader({ title, meta, children, className, inline = false }
 
 export function Label({ children, className, as: Tag = "span", ...rest }) {
   return (
-    <Tag className={cn("whitespace-nowrap font-mono text-2xs uppercase tracking-label text-faint", className)} {...rest}>
+    <Tag className={cn("whitespace-nowrap text-xs font-semibold text-faint", className)} {...rest}>
       {children}
     </Tag>
   );
@@ -79,7 +93,7 @@ export function LoadError({ what = "This", reason, onRetry, className }) {
 
 export function Loading({ children = "Loading…", className }) {
   return (
-    <div className={cn("px-5 py-10 text-center font-mono text-2xs uppercase tracking-label text-faint", className)} role="status">
+    <div className={cn("px-5 py-10 text-center text-xs font-semibold text-faint", className)} role="status">
       {children}
     </div>
   );

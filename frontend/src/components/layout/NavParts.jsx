@@ -7,7 +7,7 @@ export function NavCount({ kind, value, className }) {
   return (
     <span
       className={cn(
-        "tabular rounded-full bg-surface-2 px-1.5 py-0.5 font-mono text-[10.5px] leading-3 text-muted ring-1 ring-inset ring-line-strong",
+        "tabular rounded-full border border-line px-1.5 py-px font-mono text-[10px] leading-3 text-muted",
         className
       )}
     >
@@ -19,10 +19,11 @@ export function NavCount({ kind, value, className }) {
 
 /** The current tab is marked by aria-current="page" (links) or data-active="true" (the Governance button). */
 export const TAB_CLASS = cn(
-  "relative flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap px-2 text-[13px] font-medium text-muted",
+  "relative flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-sm font-semibold text-faint",
   "transition-colors duration-150 ease-out hover:text-ink aria-[current=page]:text-ink aria-expanded:text-ink data-[active=true]:text-ink",
   "before:absolute before:inset-x-0.5 before:inset-y-3 before:-z-10 before:rounded-lg before:bg-ink/0 before:transition-colors before:duration-150 hover:before:bg-ink/5",
-  "after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:origin-left after:scale-x-0 after:rounded-t-sm after:bg-accent after:transition-transform after:duration-200 after:ease-out",
+  "after:absolute after:inset-x-2.5 after:-bottom-px after:h-0.5 after:origin-left after:scale-x-0 after:rounded-full after:bg-accent after:transition-transform after:duration-200 after:ease-out",
+  "after:shadow-[0_0_12px_rgb(var(--accent)/var(--fx))]",
   "aria-[current=page]:after:scale-x-100 data-[active=true]:after:scale-x-100",
   "focus-visible:rounded-lg focus-visible:-outline-offset-4"
 );

@@ -6,6 +6,7 @@ import axios from "axios";
 import { forgetSessionEnded, login, oidcConfig, redeemSso, samlConfig, sessionEndedAt } from "../api/client.js";
 import { getAssertion, passkeyErrorText, passkeysSupported } from "../api/webauthn.js";
 import { ConformitiLogo } from "../components/brand/ConformitiLogo.jsx";
+import { Backlight } from "../components/layout/Backlight.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Panel } from "../components/ui/Panel.jsx";
 
@@ -293,17 +294,18 @@ export default function Login({ onDone }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+    <div className="relative isolate flex min-h-screen items-center justify-center bg-bg px-4">
+      <Backlight variant="center" />
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
         className="w-full max-w-[400px]"
       >
-        <Panel as="div" className="p-6">
+        <Panel as="div" lit bodyClassName="p-6 sm:p-7">
           <form onSubmit={submit} noValidate>
             <ConformitiLogo colour="accent" size={40} />
-            <h1 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-ink">{heading}</h1>
+            <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">{heading}</h1>
             {intro ? <p className="mt-1 text-[13px] leading-snug text-muted">{intro}</p> : null}
             {endedAt && !mfaStep && !err ? (
               <p className="notice notice-warn mt-4" role="status">Your session ended. Sign in again.</p>

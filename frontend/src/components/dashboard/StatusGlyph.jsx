@@ -8,16 +8,17 @@ export const STATUS_FILL = {
     borderColor: toneVar("success"),
   },
   in_progress: {
-    background: `linear-gradient(to top, ${toneVar("warning")} 50%, ${toneVar("surface-2")} 50%)`,
+    background: `linear-gradient(to top, ${toneVar("warning")} 50%, transparent 50%)`,
     borderColor: toneVar("warning"),
+    borderWidth: "1.5px",
   },
   not_started: {
-    background: toneVar("surface-2"),
-    borderColor: toneVar("line-strong"),
+    background: "transparent",
+    borderColor: toneVar("faint", 0.6),
   },
   not_applicable: {
-    background: `repeating-linear-gradient(135deg, ${toneVar("line-strong")} 0 1px, transparent 1px 3px), ${toneVar("surface-2")}`,
-    borderColor: toneVar("line-strong"),
+    background: `repeating-linear-gradient(135deg, ${toneVar("faint", 0.6)} 0 1px, transparent 1px 4px)`,
+    borderColor: "transparent",
   },
 };
 
