@@ -54,6 +54,7 @@
 **Under the hood**
 - [Tech stack](#tech-stack)
 - [Architecture](#architecture)
+- [Design trade-offs and known limitations](#design-trade-offs-and-known-limitations)
 - [The API](#the-api)
 - [Quality gates](#quality-gates)
 - [Project structure](#project-structure)
@@ -1469,6 +1470,74 @@ stores no token: the browser sends the HttpOnly cookies, the client adds
 Django's CSRF token to every unsafe request, a 401 triggers one refresh
 through the refresh cookie, a reload after the access cookie has lapsed renews through
 `/api/auth/token/renew/` before it shows sign-in, and sign-out goes through `/api/auth/token/clear/`.
+
+---
+
+## Design trade-offs and known limitations
+
+The reasons behind the design are in [Architecture](#architecture) and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The residual risks are in
+[SECURITY.md](SECURITY.md), and every review finding with its status today is
+in [REVIEWS.md](REVIEWS.md). This is the short version of what the main choices
+cost.
+
+### Trade-offs
+
+- **Tenancy by a workspace key, not a database per tenant.** Every
+  organisation-owned model carries a `workspace` foreign key and a manager that
+  filters on the active workspace, and the filter is re-applied whenever a
+  queryset is chained. One database is simpler to run and back up. The cost is
+  that isolation rests on every tenant query using that manager, and code that
+  has to span workspaces opts out explicitly with `tenancy.unscoped()`.
+- **Permissions live in the API, and the interface mirrors them.** A hidden
+  button is not a control; a permission class is. Folder access is bypassed in
+  exactly two places, both in `attestations/access.py`, so the bypass can be
+  reviewed in one sitting. The cost is that every rule exists twice.
+- **Evidence is served only through the API.** nginx refuses direct requests to
+  the media locations and sends a file only after the API has checked the
+  caller's folder grants and written an audit row. The cost is that nginx is not
+  optional and no file can be handed out by URL.
+- **Cookie transport by default.** Tokens travel as `HttpOnly`, `SameSite=Lax`
+  cookies with Django's CSRF check. The gain is limited: script injected into a
+  page can still act as the user while the page is open, but it can no longer
+  carry a credential away. `AUTH_TRANSPORT=header` restores tokens in
+  `localStorage`.
+- **Sealed, signed audit packages.** A package is a snapshot with detached
+  Ed25519 signatures over its manifest and file list, and an offline verifier in
+  every bundle. A signature proves that a key holder signed a manifest. It
+  cannot prove the key was never stolen or when it was signed, so publish the
+  fingerprint out of band. Workspace signing keys derive from one installation
+  key, so that key protects all of them.
+- **Encryption at rest protects a stolen dump, not a stolen key.** The TOTP
+  secret, the Jira token and the chat webhook URLs are AES-256-GCM encrypted
+  under a key ring kept in the secrets volume. That does not stop an attacker who
+  also has the key, and `scripts/backup.sh` writes the keys beside the database
+  dump unless you keep them apart.
+- **Quarantine keeps the bytes.** A file a re-scan flags is refused on every
+  route that serves it but stays on disk for the investigation. Deleting it is a
+  person's decision.
+- **A maintenance-only edition.** 0.9.5 is the last version number. Releases
+  after it are revision letters that carry fixes, dependency updates and
+  compatibility work, so the project does not follow semantic versioning.
+  Automated evidence collection and more framework libraries are not planned
+  for this edition.
+
+### Known limitations
+
+- **No per-account lockout.** The sign-in (8 a minute by default), MFA (10),
+  refresh (30) and anonymous (30) limits are per client address, so a guess
+  spread over many addresses is bounded only per address.
+- **A new version can clear a quarantine.** With scanning off, which is the
+  default, an editor of the folder who uploads a new version clears a quarantine
+  that an earlier scan set.
+- **A passkey cannot be used as proof when changing a factor.** An account
+  provisioned through single sign-on whose only factor is a passkey, with its
+  backup codes spent, needs an administrator's MFA reset to add or remove one.
+- **One token can survive a password change.** An access token minted in the
+  same second as a password change keeps working until it expires, 60 minutes by
+  default, and cannot be renewed.
+- **SQLite is for local use.** PostgreSQL is the production database.
+- **Security fixes go to the latest 0.9.5 revision only.** Upgrade to take one.
 
 ---
 
